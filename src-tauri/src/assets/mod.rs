@@ -4,6 +4,7 @@ use sha2::Digest;
 use std::path::{Path, PathBuf};
 
 pub mod probe;
+pub mod thumbs;
 
 /// Maps a sniffed MIME type to its asset category directory.
 pub fn category_for_mime(mime: &str) -> Option<&'static str> {

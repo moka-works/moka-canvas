@@ -337,6 +337,9 @@ impl ProjectStore for RefusesAfter {
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError> {
         self.inner.current().await
     }
+    async fn project_root(&self) -> Result<std::path::PathBuf, ProjectError> {
+        self.inner.project_root().await
+    }
     async fn self_check_status(
         &self,
     ) -> Result<Option<(moka_canvas::domain::SelfCheckReport, bool)>, ProjectError> {

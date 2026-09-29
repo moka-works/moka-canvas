@@ -522,6 +522,9 @@ impl FsProjectStore {
         let (report, jobs) = Self::stat_check(&root, &moka);
         let verified = jobs.is_empty();
         let token = self.opens.fetch_add(1, Ordering::Relaxed) + 1;
+        // Whatever was drawn of files this project no longer holds has nothing
+        // left to be asked for.
+        crate::assets::thumbs::prune(&root, &moka);
         {
             let mut guard = self.state.lock().expect("store poisoned");
             *guard = Some(OpenState {
@@ -919,6 +922,10 @@ impl ProjectStore for FsProjectStore {
             self_check: state.self_check.clone(),
             self_check_verified: state.self_check_verified,
         }))
+    }
+
+    async fn project_root(&self) -> Result<PathBuf, ProjectError> {
+        self.open_root()
     }
 
     async fn self_check_status(&self) -> Result<Option<(SelfCheckReport, bool)>, ProjectError> {

@@ -149,6 +149,12 @@ pub trait ProjectStore: Send + Sync {
     ) -> Result<OpenProject, ProjectError>;
     async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError>;
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError>;
+    /// The open project's root, without the document that stands in it.
+    ///
+    /// A caller that wants somewhere to put something — a drawing of a picture,
+    /// a package going out — asks this rather than reading the document back
+    /// out to throw it away.
+    async fn project_root(&self) -> Result<PathBuf, ProjectError>;
     /// The open project's latest file check, and whether the read behind it has
     /// finished. `None` when no project is open.
     async fn self_check_status(&self) -> Result<Option<(SelfCheckReport, bool)>, ProjectError>;

@@ -584,6 +584,122 @@ async fn canvas_settings_change_a_part_and_keep_the_rest() {
 }
 
 #[tokio::test]
+async fn a_picture_is_served_small_from_the_project_s_own_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let created = create_project(&app, &temp.path().join("projects"), "Thumbs").await;
+    let root = created["root"].as_str().unwrap().to_string();
+
+    let uploaded = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("lake.png", &make_test_png()),
+            &[],
+        ))
+        .await
+        .unwrap();
+    let asset_id = body_json(uploaded).await["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let uri = format!("/api/v1/projects/current/assets/{asset_id}");
+
+    // Asked for at a width, a picture is answered as a drawing of that size.
+    let small = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{uri}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(small.status(), StatusCode::OK);
+    assert_eq!(
+        small.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
+    let drawn = to_bytes(small.into_body(), usize::MAX).await.unwrap();
+    let picture = image::load_from_memory(&drawn).unwrap();
+    assert_eq!((picture.width(), picture.height()), (32, 32));
+
+    // It is kept beside the project, and asking again reads it rather than
+    // drawing it again.
+    let cache = std::path::Path::new(&root).join("cache/thumbs");
+    let kept: Vec<std::path::PathBuf> = std::fs::read_dir(&cache)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    let stamp = std::fs::metadata(&kept[0]).unwrap().modified().unwrap();
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{uri}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(&kept[0]).unwrap().modified().unwrap(),
+        stamp
+    );
+
+    // The width is read as the ceiling and the floor it is, and a picture is
+    // never made larger than it is: a request past either is answered with what
+    // was really drawn.
+    for (asked, drawn) in [("1", 32), ("100000", 64)] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("{uri}?w={asked}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), drawn);
+    }
+
+    // A width on something that is not a picture is ignored: the file is served
+    // as it always is.
+    let text = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("notes.txt", b"a line of words"),
+            &[],
+        ))
+        .await
+        .unwrap();
+    let text_id = body_json(text).await["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let served = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{text_id}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(
+        served.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/plain"
+    );
+}
+
+#[tokio::test]
 async fn asset_upload_stream_range_and_delete() {
     let temp = tempfile::tempdir().unwrap();
     let app = test_app(temp.path());
