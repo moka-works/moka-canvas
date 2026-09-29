@@ -132,9 +132,22 @@ export function useTransport(): void {
       audio.setTimeline(activeTimeline());
     });
 
+    // The cut the room has taken up has its sound asked for before anything
+    // waits on it: a voice reads a small copy of a film's sound, and making
+    // that copy is a read of the whole picture file.
+    const warmCut = (): void => {
+      const timeline = activeTimeline();
+      if (timeline) audio.warm(timeline);
+    };
+    warmCut();
+    const offTimeline = useClipStore.subscribe((state, previous) => {
+      if (state.activeTimelineId !== previous.activeTimelineId) warmCut();
+    });
+
     return () => {
       offClip();
       offProject();
+      offTimeline();
       stop();
     };
   }, []);

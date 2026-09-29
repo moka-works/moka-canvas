@@ -143,26 +143,38 @@ fn write_cached(target: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
     Ok(())
 }
 
-/// Drops the drawings of files the project no longer has.
+/// Drops the drawings (and the sound) of files the project no longer has.
 ///
 /// One directory read on open, against the registry the document just gave: a
 /// file removed, or replaced by one filed under a new name, leaves drawings
 /// whose key nothing will ever ask for. Ignored on error — a cache that cannot
 /// be tidied is still a cache.
 pub fn prune(root: &Path, moka: &MokaFile) {
-    let dir = cache_dir(root);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return;
-    };
     let held: std::collections::BTreeSet<&str> = moka
         .resources
         .all()
         .map(|entry| entry.id.as_str())
         .collect();
+    // A drawing is `{id}-{width}-{key}.jpg`; a rendition is `{id}-{key}.m4a`.
+    prune_dir(&cache_dir(root), &held, 2);
+    prune_dir(&crate::assets::audio::cache_dir(root), &held, 1);
+}
+
+/// Drops the files of one cache directory whose id the project no longer holds.
+///
+/// The id comes first in a cached file's name and carries dashes of its own —
+/// it is read back from the right, where the fields the cache appended are,
+/// rather than from the left, where the id is not yet whole. A name that is
+/// not a cached file's at all is left where it is.
+fn prune_dir(dir: &Path, held: &std::collections::BTreeSet<&str>, trailing: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let Some((id, _)) = name.split_once('-') else {
+        let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+        let Some(id) = stem.rsplitn(trailing + 1, '-').nth(trailing) else {
             continue;
         };
         if !held.contains(id) {
@@ -281,6 +293,26 @@ mod tests {
         );
     }
 
+    /// The id of a real asset carries dashes of its own, so the fields the
+    /// cache appended are what a name is read back from.
+    #[test]
+    fn an_id_with_dashes_in_it_still_reads_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let dir = super::cache_dir(root);
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "01a0e375-b769-75c1-8f83-cb6c8434be52";
+        let kept = format!("{id}-320-338dcc79.jpg");
+        let gone = "01a0eaaa-b769-75c1-8f83-cb6c8434be52-320-11111111.jpg";
+        std::fs::write(dir.join(&kept), b"drawing").unwrap();
+        std::fs::write(dir.join(gone), b"drawing").unwrap();
+
+        prune(root, &moka_holding(&[id]));
+
+        assert!(dir.join(&kept).is_file(), "the held file's drawing stays");
+        assert!(!dir.join(gone).exists());
+    }
+
     #[test]
     fn an_open_drops_the_drawings_of_files_the_project_no_longer_holds() {
         let temp = tempfile::tempdir().unwrap();
@@ -294,5 +326,31 @@ mod tests {
 
         assert!(dir.join("kept-32-01234567.jpg").is_file());
         assert!(!dir.join("gone-32-01234567.jpg").exists());
+    }
+
+    #[test]
+    fn an_open_drops_the_sound_of_files_the_project_no_longer_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let dir = crate::assets::audio::cache_dir(root);
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "01a0e375-b769-75c1-8f83-cb6c8434be52";
+        let kept = format!("{id}-338dcc79.m4a");
+        std::fs::write(dir.join(&kept), b"sound").unwrap();
+        std::fs::write(
+            dir.join("01a0eaaa-b769-75c1-8f83-cb6c8434be52-11111111.m4a"),
+            b"sound",
+        )
+        .unwrap();
+        // A name that is not a rendition's is left where it is.
+        std::fs::write(dir.join("notes.txt"), b"not ours").unwrap();
+
+        prune(root, &moka_holding(&[id]));
+
+        assert!(dir.join(&kept).is_file());
+        assert!(!dir
+            .join("01a0eaaa-b769-75c1-8f83-cb6c8434be52-11111111.m4a")
+            .exists());
+        assert!(dir.join("notes.txt").is_file());
     }
 }
