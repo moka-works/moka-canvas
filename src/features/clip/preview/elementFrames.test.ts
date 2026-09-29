@@ -225,6 +225,24 @@ describe("the elements a file is read from", () => {
     expect(playing).toBe(element.element);
   });
 
+  it("leaves a playing run alone when the window prepares for its own clip", () => {
+    const engine = elementEngine();
+    const asset = assetId("asset-running");
+    engine.beginFrame();
+    const playing = start(engine, asset, clipId("clip"), 1_000);
+    const element = forAsset(asset)[0];
+    expect(playing).toBe(element.element);
+
+    // The window the clock is about to reach is prepared for the very clip
+    // that is playing: preparing asks about the moment the window now holds,
+    // and moving the element there every paint is a seek under the picture.
+    engine.beginFrame();
+    engine.prepare(asset, clipId("clip"), 1_500);
+    engine.beginFrame();
+    engine.prepare(asset, clipId("clip"), 1_900);
+    expect(element.seeks).toEqual([1]);
+  });
+
   it("draws the picture it holds while a run's first seek lands", () => {
     const engine = elementEngine();
     const asset = assetId("asset-seeking");

@@ -331,6 +331,11 @@ export function prepareElement(
   const key = keyFor(assetId, clipId, true);
   const held = slots.get(key);
   if (held && held.busyClip !== null && held.busyClip !== clipId) return;
+  // A clip whose run is already going is not prepared for: the element plays
+  // its own picture, and preparing asks about the moment the window has just
+  // reached, not where the run started — a seek under a playing element, on
+  // every paint, which is the walk this path exists to avoid.
+  if (held && held.busyClip === clipId && !held.element.paused) return;
   const slot = slotFor(assetId, clipId, true);
   if (!slot) return;
   slot.busyClip = clipId;

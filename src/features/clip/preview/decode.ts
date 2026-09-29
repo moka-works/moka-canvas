@@ -815,7 +815,16 @@ const STREAM_MAX_LEAD_MS = 2_000;
  * has fallen behind is owed.
  */
 const STREAM_MIN_LEAD_MS = 1_000;
-/** The most frames a run keeps for the consumer; a ceiling the lead stays far under. */
+/**
+ * The most frames a run may have delivered or in flight at once.
+ *
+ * The two are counted together: a chunk handed to the decoder is a frame on
+ * its way, and a limit that saw only delivered frames would let a burst land
+ * past it — the overflow is dropped from the head, which is exactly where the
+ * frames the picture is about to ask for are. What the limit leaves is a
+ * second of run ahead of the picture at every rate, which is the lead the run
+ * is meant to hold.
+ */
 const STREAM_QUEUE_LIMIT = 32;
 /** How long a run waits for the consumer before it looks again. */
 const STREAM_WAIT_MS = 100;
@@ -884,6 +893,8 @@ class SequentialStream implements FrameStream {
   private next = 0;
   private rotationDeg = 0;
   private queue: QueuedFrame[] = [];
+  /** Chunks handed to the decoder whose frames have not come back yet. */
+  private inFlight = 0;
   /** Frames already drawn with, newest last; two deep, so a paint is never cut short. */
   private handed: QueuedFrame[] = [];
   /**
@@ -1077,6 +1088,7 @@ class SequentialStream implements FrameStream {
   }
 
   private onFrame(frame: VideoFrame): void {
+    if (this.inFlight > 0) this.inFlight -= 1;
     if (this.closed) {
       frame.close();
       return;
@@ -1113,7 +1125,10 @@ class SequentialStream implements FrameStream {
       const leadUs = next === null ? 0 : next - anchorUs;
       const overCeiling = next !== null && leadUs > STREAM_MAX_LEAD_MS * 1_000;
       const underFloor = next !== null && leadUs < STREAM_MIN_LEAD_MS * 1_000;
-      if (this.queue.length >= STREAM_QUEUE_LIMIT || overCeiling) {
+      if (
+        this.queue.length + this.inFlight >= STREAM_QUEUE_LIMIT ||
+        overCeiling
+      ) {
         // A full queue holds a run either behind the floor, whose frames are
         // owed to a picture already past them, or ahead of it; only the first
         // has a reason to look again quickly.
@@ -1144,6 +1159,7 @@ class SequentialStream implements FrameStream {
       }
       try {
         this.decoder.decode(chunk);
+        this.inFlight += 1;
       } catch {
         this.stumble("The decoder refused a chunk mid-run");
         return;
