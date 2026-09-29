@@ -465,20 +465,90 @@ async fn disabled_executor_blocks_the_run() {
 async fn missing_asset_blocks_the_run() {
     let temp = tempfile::tempdir().unwrap();
     let app = test_app(temp.path());
-    let created = create_project(&app, &temp.path().join("projects"), "Unready").await;
+    let (canvas_id, root, entry_path) = project_with_one_picture(&app, temp.path()).await;
+
+    // Delete the underlying file: the registry entry stays, the bytes are gone.
+    std::fs::remove_file(Path::new(&root).join(&entry_path)).unwrap();
+
+    let response = start_run(&app, &canvas_id, json!(["n-op"])).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let problem = body_json(response).await;
+    let codes: Vec<&str> = problem["details"]["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|issue| issue["code"].as_str().unwrap())
+        .collect();
+    assert!(codes.contains(&"ASSET_NOT_READY"));
+}
+
+/// The size an entry recorded is what a run reads before it starts: a file of
+/// another length is not the material the node was placed with.
+#[tokio::test]
+async fn a_run_refuses_an_asset_whose_length_moved() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let (canvas_id, root, entry_path) = project_with_one_picture(&app, temp.path()).await;
+
+    std::fs::write(
+        Path::new(&root).join(&entry_path),
+        b"not the picture that was filed",
+    )
+    .unwrap();
+
+    let response = start_run(&app, &canvas_id, json!(["n-op"])).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let problem = body_json(response).await;
+    let codes: Vec<&str> = problem["details"]["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|issue| issue["code"].as_str().unwrap())
+        .collect();
+    assert!(codes.contains(&"ASSET_NOT_READY"));
+}
+
+/// A file rewritten in place kept its length, and a run is not where that is
+/// found out: reading every asset a run is about to use is what the project's
+/// own check does behind the room, and doing it again here would put gigabytes
+/// of video between a reader and the Run button.
+#[tokio::test]
+async fn a_run_does_not_read_an_asset_that_kept_its_length() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let (canvas_id, root, entry_path) = project_with_one_picture(&app, temp.path()).await;
+
+    let mut edited = make_test_png();
+    let middle = edited.len() / 2;
+    edited[middle] ^= 0xff;
+    std::fs::write(Path::new(&root).join(&entry_path), &edited).unwrap();
+
+    let response = start_run(&app, &canvas_id, json!(["n-op"])).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let run_id = body_json(response).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let finished = wait_for_terminal(&app, &run_id).await;
+    assert_eq!(finished["status"], "succeeded");
+}
+
+/// A project holding one picture on a canvas with a join above it, which is
+/// what the run tests about assets all begin from.
+async fn project_with_one_picture(app: &axum::Router, home: &Path) -> (String, String, String) {
+    let created = create_project(app, &home.join("projects"), "Unready").await;
     let canvas_id = created["moka"]["canvas"][0]["id"]
         .as_str()
         .unwrap()
         .to_string();
     let root = created["root"].as_str().unwrap().to_string();
 
-    let png = make_test_png();
     let response = app
         .clone()
         .oneshot(multipart_request(
             "/api/v1/projects/current/assets",
             "still.png",
-            &png,
+            &make_test_png(),
         ))
         .await
         .unwrap();
@@ -489,7 +559,7 @@ async fn missing_asset_blocks_the_run() {
         .to_string();
 
     apply(
-        &app,
+        app,
         json!([
             { "type": "addNode", "canvasId": canvas_id, "node": text_node("n-text", "caption") },
             { "type": "addNode", "canvasId": canvas_id, "node": image_node("n-img", &asset_id) },
@@ -500,7 +570,6 @@ async fn missing_asset_blocks_the_run() {
     )
     .await;
 
-    // Delete the underlying file: the registry entry stays, the bytes are gone.
     let current = app
         .clone()
         .oneshot(
@@ -516,18 +585,7 @@ async fn missing_asset_blocks_the_run() {
         .as_str()
         .unwrap()
         .to_string();
-    std::fs::remove_file(Path::new(&root).join(&entry_path)).unwrap();
-
-    let response = start_run(&app, &canvas_id, json!(["n-op"])).await;
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    let problem = body_json(response).await;
-    let codes: Vec<&str> = problem["details"]["issues"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|issue| issue["code"].as_str().unwrap())
-        .collect();
-    assert!(codes.contains(&"ASSET_NOT_READY"));
+    (canvas_id, root, entry_path)
 }
 
 #[tokio::test]
