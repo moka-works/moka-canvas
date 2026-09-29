@@ -48,6 +48,19 @@ textarea {
   width: 100%;
 }
 
+/* A checkbox and a radio draw their own small control and are their own size,
+   so the field shape above is taken back off them — `width: 100%` on a box
+   makes it claim whatever width stands around it, which beside a label's
+   words starves them into a column. Declared once here rather than reset at
+   each control, since the box is the same box wherever it stands. */
+input[type="checkbox"],
+input[type="radio"] {
+  background: none;
+  border: none;
+  padding: 0;
+  width: auto;
+}
+
 textarea {
   border-radius: var(--radius-sm);
   line-height: 1.45;
@@ -5212,21 +5225,32 @@ body.is-dragging-split {
   gap: 6px;
 }
 
+/* The language is a choice among a handful of short names, so the field keeps
+   to the width of its own words rather than eating the row and leaving the two
+   controls beside it a squeezed column. */
 .clip-text-transcribe > .clip-text-field {
-  flex: 1 1 120px;
+  flex: 0 1 auto;
   min-width: 0;
+}
+
+.clip-text-transcribe > .clip-text-field > select {
+  width: auto;
 }
 
 .clip-text-check {
   align-items: center;
   color: var(--muted);
   display: inline-flex;
+  flex: none;
   font-size: 12px;
   gap: 5px;
   padding-bottom: 2px;
 }
 
+/* The box keeps a margin of its own off, since a checkbox carries one; the
+   accent is the one its siblings in the settings forms wear. */
 .clip-text-check > input {
+  accent-color: var(--primary);
   margin: 0;
 }
 
