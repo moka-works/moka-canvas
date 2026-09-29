@@ -356,6 +356,35 @@ describe("walking a file's boxes", () => {
       "MOKA_MP4_INVALID",
     );
   });
+
+  it("names a VP9 picture in the codec string, decimal digits and all", () => {
+    // The vpcC record holds profile and level as plain numbers and the depth
+    // in a nibble, and the codec string writes all three as two-digit
+    // decimals: a level of 1.1 is "11", not the "0b" its byte would be as hex.
+    const packed = (depth: number, chroma: number): number =>
+      (depth << 4) | chroma;
+    const entry = visualEntry(
+      "vp09",
+      320,
+      180,
+      fullBox("vpcC", 0, 11, packed(8, 1), 1, 1, 1, 1, 0, 0),
+    );
+    const levelOne = parseFile(
+      bytes(ftyp(), moov(videoTrak({ format: "vp09", entry }))),
+    );
+    expect(levelOne.video?.codec).toBe("vp09.00.11.08");
+
+    const deeper = visualEntry(
+      "vp09",
+      1920,
+      1080,
+      fullBox("vpcC", 2, 41, packed(10, 1), 1, 1, 1, 1, 0, 0),
+    );
+    const levelFour = parseFile(
+      bytes(ftyp(), moov(videoTrak({ format: "vp09", entry: deeper }))),
+    );
+    expect(levelFour.video?.codec).toBe("vp09.02.41.10");
+  });
 });
 
 // ---------------------------------------------------------------------------
