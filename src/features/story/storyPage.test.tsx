@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { createStory, STORY_STEPS, type MokaFile } from "../../shared/domain";
 import {
@@ -165,8 +166,178 @@ describe("the five steps", () => {
   });
 
   it("marks the step whose pieces did not come back", async () => {
-    // A batch that ran, answered nothing, and ended: what the step shows is a
-    // count of the pieces that failed, which the document cannot know.
+    // A batch the room is watching: it is out when the room opens, and the
+    // look that comes back says it ended with a piece short. What the step
+    // shows is a count of the pieces that failed, which the document cannot
+    // know — and the count is the room's own news, not a number read off
+    // every record the server has kept.
+    const out = {
+      id: "job-1",
+      projectId: "project-1",
+      storyId: storyIds().story,
+      kind: "storyboard",
+      status: "running",
+      model: "a-writer",
+      items: [
+        {
+          id: `storyboard:${storyIds().chapterFirst}`,
+          target: {
+            kind: "storyboard",
+            chapterId: storyIds().chapterFirst,
+          },
+          capability: "text",
+          prompt: "board this",
+          inputs: [],
+          params: {},
+          status: "running",
+        },
+      ],
+      cancelRequested: false,
+      createdAt: "2026-01-02T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    };
+    const short = {
+      ...out,
+      status: "failed",
+      items: [
+        { ...out.items[0], status: "failed", error: "the provider refused" },
+      ],
+    };
+    let looks = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      let payload: unknown = {
+        root: "/tmp/moka-story-test",
+        moka: useProjectStore.getState().moka,
+        selfCheck: { ok: true, issues: [] },
+      };
+      if (url.endsWith("/read")) {
+        payload = { ...short, readAt: "2026-01-02T00:00:00Z" };
+      } else if (url.includes("/story/jobs")) {
+        payload = looks++ === 0 ? [out] : [short];
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    // A story settled only through the outline: the board is still behind the
+    // elements, and a step that cannot be walked to says that first.
+    const moka = buildStoryMokaFile();
+    moka.stories![0].confirmedSteps = ["idea", "outline"];
+    vi.useFakeTimers();
+    try {
+      openRoom(moka);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+
+      const badge = screen.getByTestId("story-step-failed-storyboard");
+      expect(badge.textContent).toBe("1");
+      const button = screen.getByTestId("story-step-storyboard");
+      expect(button.className).toContain("is-failed");
+      expect(button.getAttribute("title")).toBe("Elements comes first.");
+      // The step with nothing wrong with it carries no mark.
+      expect(screen.queryByTestId("story-step-failed-outline")).toBeNull();
+    } finally {
+      act(() => {
+        useStoryJobStore.getState().reset();
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it("says on the step's bubble why its pieces did not come back", async () => {
+    // The bubble over the badge is the only place a step says why it is red,
+    // and a reader who has to open the batch to find out will not.
+    const out = {
+      id: "job-1",
+      projectId: "project-1",
+      storyId: storyIds().story,
+      kind: "outline",
+      status: "running",
+      model: "a-writer",
+      items: [
+        {
+          id: "outline",
+          target: { kind: "outline" },
+          capability: "text",
+          prompt: "tell this",
+          inputs: [],
+          params: {},
+          status: "running",
+        },
+      ],
+      cancelRequested: false,
+      createdAt: "2026-01-02T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    };
+    const short = {
+      ...out,
+      status: "failed",
+      items: [
+        {
+          ...out.items[0],
+          status: "failed",
+          error: "model gpt-4o-mini has no stored API key",
+          errorCode: "PROVIDER_KEY_MISSING",
+          errorDetails: { model: "gpt-4o-mini" },
+        },
+      ],
+    };
+    let looks = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      let payload: unknown = {
+        root: "/tmp/moka-story-test",
+        moka: useProjectStore.getState().moka,
+        selfCheck: { ok: true, issues: [] },
+      };
+      if (url.endsWith("/read")) {
+        payload = { ...short, readAt: "2026-01-02T00:00:00Z" };
+      } else if (url.includes("/story/jobs")) {
+        payload = looks++ === 0 ? [out] : [short];
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    vi.useFakeTimers();
+    try {
+      openRoom(buildStoryMokaFile());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+
+      const badge = screen.getByTestId("story-step-failed-outline");
+      expect(badge.textContent).toBe("1");
+      // The step it happened on has been earned, so the bubble says the
+      // reason rather than what comes first.
+      expect(
+        screen.getByTestId("story-step-outline").getAttribute("title"),
+      ).toBe(
+        "1 pieces did not come back: model gpt-4o-mini has no stored API key",
+      );
+    } finally {
+      act(() => {
+        useStoryJobStore.getState().reset();
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not mark a step for a failure that came home before the room was looking", async () => {
+    // The record of a batch that failed days ago is on the list the room
+    // opens over. The count over the step is the room's own now, so what
+    // happened while nobody was watching is not a number that stands there —
+    // and is not brought back by opening the project again.
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       const payload = url.includes("/story/jobs")
@@ -194,74 +365,14 @@ describe("the five steps", () => {
                 },
               ],
               cancelRequested: false,
+              readAt: "2026-01-02T00:00:00Z",
               createdAt: "2026-01-02T00:00:00Z",
               updatedAt: "2026-01-02T00:00:00Z",
             },
           ]
         : {
             root: "/tmp/moka-story-test",
-            moka: buildStoryMokaFile(),
-            selfCheck: { ok: true, issues: [] },
-          };
-      return Promise.resolve(
-        new Response(JSON.stringify(payload), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    });
-
-    // A story settled only through the outline: the board is still behind the
-    // elements, and a step that cannot be walked to says that first.
-    const moka = buildStoryMokaFile();
-    moka.stories![0].confirmedSteps = ["idea", "outline"];
-    openRoom(moka);
-
-    const badge = await screen.findByTestId("story-step-failed-storyboard");
-    expect(badge.textContent).toBe("1");
-    const button = screen.getByTestId("story-step-storyboard");
-    expect(button.className).toContain("is-failed");
-    expect(button.getAttribute("title")).toBe("Elements comes first.");
-    // The step with nothing wrong with it carries no mark.
-    expect(screen.queryByTestId("story-step-failed-outline")).toBeNull();
-  });
-
-  it("says on the step's bubble why its pieces did not come back", async () => {
-    // The bubble over the badge is the only place a step says why it is red,
-    // and a reader who has to open the batch to find out will not.
-    fetchMock.mockImplementation((input: RequestInfo | URL) => {
-      const url = String(input);
-      const payload = url.includes("/story/jobs")
-        ? [
-            {
-              id: "job-1",
-              projectId: "project-1",
-              storyId: storyIds().story,
-              kind: "outline",
-              status: "failed",
-              model: "a-writer",
-              items: [
-                {
-                  id: "outline",
-                  target: { kind: "outline" },
-                  capability: "text",
-                  prompt: "tell this",
-                  inputs: [],
-                  params: {},
-                  status: "failed",
-                  error: "model gpt-4o-mini has no stored API key",
-                  errorCode: "PROVIDER_KEY_MISSING",
-                  errorDetails: { model: "gpt-4o-mini" },
-                },
-              ],
-              cancelRequested: false,
-              createdAt: "2026-01-02T00:00:00Z",
-              updatedAt: "2026-01-02T00:00:00Z",
-            },
-          ]
-        : {
-            root: "/tmp/moka-story-test",
-            moka: buildStoryMokaFile(),
+            moka: useProjectStore.getState().moka,
             selfCheck: { ok: true, issues: [] },
           };
       return Promise.resolve(
@@ -273,13 +384,13 @@ describe("the five steps", () => {
     });
 
     openRoom(buildStoryMokaFile());
-
-    const badge = await screen.findByTestId("story-step-failed-outline");
-    expect(badge.textContent).toBe("1");
-    // The step it happened on is the one being read, so the bubble says the
-    // reason rather than what comes first.
-    expect(screen.getByTestId("story-step-outline").getAttribute("title")).toBe(
-      "1 pieces did not come back: model gpt-4o-mini has no stored API key",
+    // The room has read the list — the record is held, not dropped.
+    await waitFor(() =>
+      expect(useStoryJobStore.getState().jobs).toHaveLength(1),
+    );
+    expect(screen.queryByTestId("story-step-failed-storyboard")).toBeNull();
+    expect(screen.getByTestId("story-step-storyboard").className).not.toContain(
+      "is-failed",
     );
   });
 
