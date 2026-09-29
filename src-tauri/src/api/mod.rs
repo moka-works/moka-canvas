@@ -133,6 +133,12 @@ pub fn router() -> axum::Router<ApiState> {
         .route("/api/v1/projects/open", post(routes::open_project))
         .route("/api/v1/projects/import", post(routes::import_project))
         .route("/api/v1/projects/current", get(routes::current_project))
+        // The file check lands behind a room: a client that entered before the
+        // read finished asks here rather than reading the document again.
+        .route(
+            "/api/v1/projects/current/self-check",
+            get(routes::current_self_check),
+        )
         .route(
             "/api/v1/projects/current/commands",
             post(routes::apply_commands),

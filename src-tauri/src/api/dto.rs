@@ -227,6 +227,18 @@ pub struct OpenProjectResponse {
     pub root: String,
     pub moka: MokaFile,
     pub self_check: SelfCheckReport,
+    /// False while the read behind the check is still going, and `self_check`
+    /// may yet grow.
+    pub self_check_verified: bool,
+}
+
+/// The open project's file check on its own, for a client that entered a room
+/// before the read behind it had finished.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfCheckResponse {
+    pub report: SelfCheckReport,
+    pub verified: bool,
 }
 
 #[derive(Debug, Serialize)]

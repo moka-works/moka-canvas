@@ -5,8 +5,8 @@ use super::dto::{
     FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
     ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
     PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, RevealRequest,
-    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, StartRunRequest,
-    StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
+    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
+    StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState};
@@ -61,6 +61,7 @@ fn open_response(opened: OpenProject) -> OpenProjectResponse {
         root: opened.root.to_string_lossy().into_owned(),
         moka: opened.moka,
         self_check: opened.self_check,
+        self_check_verified: opened.self_check_verified,
     }
 }
 
@@ -310,13 +311,19 @@ pub async fn current_project(
     State(state): State<ApiState>,
 ) -> Result<Json<OpenProjectResponse>, Problem> {
     let Some(opened) = state.store.current().await? else {
-        return Err(Problem::new(
-            StatusCode::CONFLICT,
-            "PROJECT_NOT_OPEN",
-            "No project is open",
-        ));
+        return Err(project_not_open());
     };
     Ok(Json(open_response(opened)))
+}
+
+/// The file check on its own, for a room that was entered before it finished.
+pub async fn current_self_check(
+    State(state): State<ApiState>,
+) -> Result<Json<SelfCheckResponse>, Problem> {
+    let Some((report, verified)) = state.store.self_check_status().await? else {
+        return Err(project_not_open());
+    };
+    Ok(Json(SelfCheckResponse { report, verified }))
 }
 
 pub async fn apply_commands(

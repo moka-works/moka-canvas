@@ -152,6 +152,85 @@ async fn current_project_is_a_problem_when_nothing_is_open() {
 }
 
 #[tokio::test]
+async fn self_check_status_follows_the_read_behind_the_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let projects_dir = temp.path().join("checked");
+    let created = create_project(&app, &projects_dir, "Checked").await;
+    let root = created["root"].as_str().unwrap().to_string();
+
+    // Nothing is filed yet, so there is nothing to read and the check is done
+    // before anyone can ask about it.
+    assert_eq!(created["selfCheckVerified"], true);
+
+    // A picture gives the read behind an open something to do.
+    let uploaded = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("still.png", &make_test_png()),
+            &[],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(uploaded.status(), StatusCode::CREATED);
+
+    let reopened = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/open",
+            json!({ "path": root }),
+        ))
+        .await
+        .unwrap();
+    let opened = body_json(reopened).await;
+    assert_eq!(opened["selfCheckVerified"], false);
+    assert_eq!(opened["selfCheck"]["ok"], true);
+
+    // The route answers with the check as it stands, and says when it is done.
+    let mut verified = false;
+    for _ in 0..200 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/projects/current/self-check")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body["report"]["ok"], true);
+        if body["verified"] == true {
+            verified = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(verified, "the file check never finished");
+}
+
+#[tokio::test]
+async fn self_check_status_is_a_problem_when_nothing_is_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/current/self-check")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(body_json(response).await["code"], "PROJECT_NOT_OPEN");
+}
+
+#[tokio::test]
 async fn create_open_and_recent_flow() {
     let temp = tempfile::tempdir().unwrap();
     let app = test_app(temp.path());

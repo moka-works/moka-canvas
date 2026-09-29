@@ -41,6 +41,10 @@ pub struct OpenProject {
     pub root: PathBuf,
     pub moka: MokaFile,
     pub self_check: SelfCheckReport,
+    /// Whether the read behind the check has finished; false while the files
+    /// whose contents could not be spoken for by their sizes are still being
+    /// read, and the report may grow.
+    pub self_check_verified: bool,
 }
 
 pub struct CreateProject {
@@ -145,6 +149,9 @@ pub trait ProjectStore: Send + Sync {
     ) -> Result<OpenProject, ProjectError>;
     async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError>;
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError>;
+    /// The open project's latest file check, and whether the read behind it has
+    /// finished. `None` when no project is open.
+    async fn self_check_status(&self) -> Result<Option<(SelfCheckReport, bool)>, ProjectError>;
     async fn apply_commands(
         &self,
         expected_revision: i32,

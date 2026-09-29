@@ -598,13 +598,55 @@ async fn self_check_reports_missing_and_changed_files() {
         moka_canvas::domain::SelfCheckReason::Missing
     );
 
-    // Restore with different bytes: reported as changed.
-    std::fs::write(root.join(&entry.path), make_test_png_alt()).unwrap();
+    // Restore with a different length: a size the open reads, so the answer is
+    // there before the room draws.
+    let mut longer = make_test_png();
+    longer.extend_from_slice(b"\n");
+    std::fs::write(root.join(&entry.path), &longer).unwrap();
     let reopened = store.open_project(&root).await.unwrap();
+    // Nothing is left to read once the length disagrees: the issue is final.
+    assert!(reopened.self_check_verified);
     assert_eq!(
         reopened.self_check.issues[0].reason,
         moka_canvas::domain::SelfCheckReason::Changed
     );
+
+    // The rest of the file is put back, so what the read behind the open has to
+    // speak about is a change of content alone: the sizes agree and only the
+    // bytes say otherwise.
+    let mut edited_in_place = make_test_png();
+    let middle = edited_in_place.len() / 2;
+    edited_in_place[middle] ^= 0xff;
+    std::fs::write(root.join(&entry.path), &edited_in_place).unwrap();
+    let reopened = store.open_project(&root).await.unwrap();
+    assert!(
+        reopened.self_check.ok,
+        "a file that kept its length is not something the sizes can speak about"
+    );
+    let (report, verified) = wait_for_verification(&store).await;
+    assert!(verified);
+    assert_eq!(report.issues.len(), 1);
+    assert_eq!(
+        report.issues[0].reason,
+        moka_canvas::domain::SelfCheckReason::Changed
+    );
+    assert_eq!(report.issues[0].expected_path, entry.path);
+}
+
+/// Waits for the read behind an open to finish, so a test can speak about what
+/// it found. Bounded on purpose: a check that never lands is a failed test, not
+/// a hung suite.
+async fn wait_for_verification(
+    store: &Arc<FsProjectStore>,
+) -> (moka_canvas::domain::SelfCheckReport, bool) {
+    for _ in 0..200 {
+        let (report, verified) = store.self_check_status().await.unwrap().unwrap();
+        if verified {
+            return (report, verified);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("the file check never finished");
 }
 
 #[tokio::test]
@@ -1293,21 +1335,6 @@ fn make_test_png() -> Vec<u8> {
     let mut png = image::RgbaImage::new(64, 64);
     for pixel in png.pixels_mut() {
         *pixel = image::Rgba([200, 120, 60, 255]);
-    }
-    let mut bytes = Vec::new();
-    image::DynamicImage::ImageRgba8(png)
-        .write_to(
-            &mut std::io::Cursor::new(&mut bytes),
-            image::ImageFormat::Png,
-        )
-        .unwrap();
-    bytes
-}
-
-fn make_test_png_alt() -> Vec<u8> {
-    let mut png = image::RgbaImage::new(64, 64);
-    for pixel in png.pixels_mut() {
-        *pixel = image::Rgba([10, 220, 90, 255]);
     }
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgba8(png)
