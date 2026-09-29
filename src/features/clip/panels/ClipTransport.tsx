@@ -31,6 +31,29 @@ const QUALITY_LABELS: { value: PreviewQuality; label: string }[] = [
 ];
 
 /**
+ * The row's clock: the playhead, and the end of the cut beside it.
+ *
+ * A component of its own so the moment moving re-renders this line and not the
+ * row around it — every button, slider and select here belongs to the reader's
+ * hands, and a clock that dragged them all through a render each frame would
+ * be work nobody asked for.
+ */
+function TransportTimecode({ endMs, fps }: { endMs: number; fps: number }) {
+  const { t } = useTranslation();
+  const playheadMs = useClipStore((state) => state.playheadMs);
+  return (
+    <span
+      className="clip-transport-time"
+      data-testid="transport-timecode"
+      title={t("clip:transport.clockHint")}
+    >
+      {formatTimecode(playheadMs, fps)} /{" "}
+      {formatTimecode(endMs <= 0 ? 0 : endMs, fps)}
+    </span>
+  );
+}
+
+/**
  * The row under the picture: everything that plays the cut.
  *
  * A reading of the store rather than a player of its own — pressing play sets
@@ -48,7 +71,6 @@ const QUALITY_LABELS: { value: PreviewQuality; label: string }[] = [
 export function ClipTransport({ timeline }: ClipTransportProps) {
   const { t } = useTranslation();
   const playing = useClipStore((state) => state.playing);
-  const playheadMs = useClipStore((state) => state.playheadMs);
   const quality = useClipStore((state) => state.quality);
   const masterVolume = useClipStore((state) => state.masterVolume);
   const loop = useClipStore((state) => state.loop);
@@ -73,7 +95,10 @@ export function ClipTransport({ timeline }: ClipTransportProps) {
     if (!blob) return;
     // The clock's own colons are not a name a file may wear, so the moment is
     // written the way the rest of the name is.
-    const moment = formatTimecode(playheadMs, fps).replace(/:/g, "-");
+    const moment = formatTimecode(
+      useClipStore.getState().playheadMs,
+      fps,
+    ).replace(/:/g, "-");
     const destination = await askSavePath({
       title: t("clip:transport.saveSnapshotTitle"),
       defaultName: `${fileSafeName(timeline.name)}-${moment}.png`,
@@ -148,14 +173,7 @@ export function ClipTransport({ timeline }: ClipTransportProps) {
         </button>
       </div>
 
-      <span
-        className="clip-transport-time"
-        data-testid="transport-timecode"
-        title={t("clip:transport.clockHint")}
-      >
-        {formatTimecode(playheadMs, fps)} /{" "}
-        {formatTimecode(empty ? 0 : endMs, fps)}
-      </span>
+      <TransportTimecode endMs={endMs} fps={fps} />
 
       <div className="clip-transport-group">
         <button

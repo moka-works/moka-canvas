@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Mp4Error, parseFile, parseMoov } from "./mp4";
+import { planFor } from "./samplePlan";
 
 /**
  * The parser, against boxes built by hand.
@@ -356,6 +357,35 @@ describe("walking a file's boxes", () => {
       "MOKA_MP4_INVALID",
     );
   });
+
+  it("names a VP9 picture in the codec string, decimal digits and all", () => {
+    // The vpcC record holds profile and level as plain numbers and the depth
+    // in a nibble, and the codec string writes all three as two-digit
+    // decimals: a level of 1.1 is "11", not the "0b" its byte would be as hex.
+    const packed = (depth: number, chroma: number): number =>
+      (depth << 4) | chroma;
+    const entry = visualEntry(
+      "vp09",
+      320,
+      180,
+      fullBox("vpcC", 0, 11, packed(8, 1), 1, 1, 1, 1, 0, 0),
+    );
+    const levelOne = parseFile(
+      bytes(ftyp(), moov(videoTrak({ format: "vp09", entry }))),
+    );
+    expect(levelOne.video?.codec).toBe("vp09.00.11.08");
+
+    const deeper = visualEntry(
+      "vp09",
+      1920,
+      1080,
+      fullBox("vpcC", 2, 41, packed(10, 1), 1, 1, 1, 1, 0, 0),
+    );
+    const levelFour = parseFile(
+      bytes(ftyp(), moov(videoTrak({ format: "vp09", entry: deeper }))),
+    );
+    expect(levelFour.video?.codec).toBe("vp09.02.41.10");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -493,5 +523,24 @@ describe("parsing a real file", () => {
     expect(video.width).toBeGreaterThan(0);
     expect(video.height).toBeGreaterThan(0);
     expect(at.durationMs).toBeGreaterThan(0);
+  });
+
+  it("reads the browser suite's long-GOP fixture as one four-second group", () => {
+    const raw = readFileSync(
+      new URL("../../../../e2e/fixtures/longgop.mp4", import.meta.url),
+    );
+    const at = parseFile(new Uint8Array(raw));
+    const video = at.video!;
+    // VP9 in MP4, written by ffmpeg: the cut suite stands on this file being
+    // decodable by the bundled Chromium and cold at every cut, so the codec
+    // string and the single keyframe are exactly what must not drift.
+    expect(video.codec).toBe("vp09.00.11.08");
+    expect(video.samples).toHaveLength(40);
+    expect(video.samples.filter((sample) => sample.key)).toHaveLength(1);
+    expect(at.durationMs).toBe(4000);
+    // A moment three and a half seconds in still reads the whole group.
+    const plan = planFor(video, 3500);
+    expect(plan?.chunks).toHaveLength(36);
+    expect(plan?.chunks[0].key).toBe(true);
   });
 });

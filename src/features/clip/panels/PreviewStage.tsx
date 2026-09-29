@@ -38,6 +38,44 @@ const QUALITY_BACKING_WIDTH: Record<PreviewQuality, number> = {
 };
 
 /**
+ * A value that is published to React only when it is news.
+ *
+ * A composition happens on every frame the playhead moves, and most of what
+ * one reports — the engine, the moment drawn, whether a loading place was
+ * drawn — is the same as the composition before: publishing it again would put
+ * the room through a render for nothing. What a composition said is written on
+ * the stage itself, so React only hears about the parts the markup is drawn
+ * from.
+ */
+function usePublished<T>(initial: T): [T, (value: T) => void] {
+  const [value, setValue] = useState(initial);
+  const kept = useRef(initial);
+  const publish = useCallback((next: T) => {
+    if (Object.is(kept.current, next)) return;
+    kept.current = next;
+    setValue(next);
+  }, []);
+  return [value, publish];
+}
+
+/**
+ * The clock over the picture.
+ *
+ * A component of its own so that the moment moving repaints this line and
+ * nothing else: the stage it sits over is the canvas's business, and a
+ * timecode that re-rendered the pane around it would be the very coupling the
+ * composition loop is kept out of.
+ */
+function PreviewTimecode({ fps }: { fps: number }) {
+  const playheadMs = useClipStore((state) => state.playheadMs);
+  return (
+    <span className="clip-preview-time" data-testid="preview-timecode">
+      {formatTimecode(playheadMs, fps)}
+    </span>
+  );
+}
+
+/**
  * The picture the cut is being judged against, and the transport under it.
  *
  * The frame under the playhead, composed from the document: the background,
@@ -63,7 +101,6 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
   const generationRef = useRef(0);
   const sources = previewFrames();
   const capabilities = previewCapabilities();
-  const playheadMs = useClipStore((state) => state.playheadMs);
   const quality = useClipStore((state) => state.quality);
   // A grade being dragged reaches the frame through the composition rather
   // than through the document, which is what makes the picture answer the
@@ -71,10 +108,35 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
   const adjustDraft = useClipStore((state) => state.adjustDraft);
   // Words being edited reach it the same way, through the same kind of draft.
   const textDraft = useClipStore((state) => state.textDraft);
-  const [engine, setEngine] = useState<PreviewEngine>("none");
-  const [frameMs, setFrameMs] = useState<number | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, publishNote] = usePublished<string | null>(null);
   const fps = timeline?.settings.fps ?? 30;
+
+  /**
+   * What the last composition was made with, written on the stage itself.
+   *
+   * These are readings of a composition — which engine drew the frame, which
+   * moment it shows, whether a loading place was drawn — and nothing in the
+   * markup is drawn from them. Writing them through React would put the room
+   * through a render for every frame the playhead moves; written here, a
+   * composition costs the canvas and nothing else. The one thing React is told
+   * is the badge: what the picture is an approximation of is worth a render.
+   */
+  const writeReadings = useCallback(
+    (drawn: PreviewEngine, report: FrameReport, atMs: number): void => {
+      const stage = sectionRef.current;
+      if (!stage) return;
+      stage.dataset.engine = drawn;
+      stage.dataset.frameMs = String(atMs);
+      if (report.materialMs === null) delete stage.dataset.frameMaterialMs;
+      else stage.dataset.frameMaterialMs = String(report.materialMs);
+      stage.dataset.pictureState = report.waiting
+        ? "waiting"
+        : report.materialMs !== null
+          ? "picture"
+          : "empty";
+    },
+    [],
+  );
 
   const paint = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -129,10 +191,18 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
     const drawn = frameEngine(report.clips, (assetId) =>
       sources.engineOf(assetId),
     );
-    setEngine(drawn);
-    setFrameMs(atMs);
-    setNote(approximateReason(capabilities, drawn, report.coloursSkipped));
-  }, [timeline, sources, capabilities, quality, adjustDraft, textDraft]);
+    writeReadings(drawn, report, atMs);
+    publishNote(approximateReason(capabilities, drawn, report.coloursSkipped));
+  }, [
+    timeline,
+    sources,
+    capabilities,
+    quality,
+    adjustDraft,
+    textDraft,
+    writeReadings,
+    publishNote,
+  ]);
 
   const schedule = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -197,8 +267,6 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
     <section
       aria-label={t("clip:preview.label")}
       className="clip-preview"
-      data-engine={timeline ? engine : "none"}
-      data-frame-ms={frameMs ?? undefined}
       data-quality={quality}
       ref={sectionRef}
     >
@@ -209,12 +277,7 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
           ) : (
             <>
               <canvas className="clip-preview-canvas" ref={canvasRef} />
-              <span
-                className="clip-preview-time"
-                data-testid="preview-timecode"
-              >
-                {formatTimecode(playheadMs, fps)}
-              </span>
+              <PreviewTimecode fps={fps} />
               {note !== null && (
                 <span className="clip-preview-badge" title={note}>
                   {t("clip:preview.approximateBadge")}

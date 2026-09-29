@@ -74,7 +74,7 @@ async function load(assetId: AssetId): Promise<void> {
     givenUp.add(assetId);
   }, THUMB_DEADLINE_MS);
   const off = elementEngine().onArrive(() => {
-    const element = elementEngine().elementFor(`thumb:${assetId}`, assetId, 0);
+    const element = elementEngine().elementFor(assetId, 0);
     if (!element) return;
     clearTimeout(deadline);
     off();
