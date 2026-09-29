@@ -289,7 +289,7 @@ describe("the asset picker", () => {
       .sort((left, right) => left.startMs - right.startMs);
     expect(landed.map((clip) => clip.startMs)).toEqual([5_000, 9_000]);
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "Added 2 files, one after another.",
+      "Added 2 files, one after another",
     );
   });
 });

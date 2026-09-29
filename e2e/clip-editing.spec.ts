@@ -680,7 +680,7 @@ test("a locked row refuses the drag until it is unlocked", async ({ page }) => {
     { x: box.x + CLIP_BODY_X + 120, y: video.y },
   );
   await expect(page.locator(".toast").first()).toContainText(
-    "That track is locked.",
+    "That track is locked",
   );
   expect(await timeline(page).getAttribute("data-clip-spans")).toBe(before);
 

@@ -99,7 +99,7 @@ describe("parseSrt", () => {
   it("refuses a file that yields no cue at all", () => {
     expect(parseSrt("")).toEqual({
       ok: false,
-      message: "No subtitles found in the file.",
+      message: "No subtitles found in the file",
     });
     expect(parseSrt("just some prose\nwithout a time line").ok).toBe(false);
   });

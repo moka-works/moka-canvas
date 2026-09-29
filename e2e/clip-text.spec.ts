@@ -60,7 +60,7 @@ const ON_TOP_SRT = [
 ].join("\n");
 
 /** The moment the overlapping pair meets, as the toast names it. */
-const OVERLAP_MESSAGE = "The subtitles overlap each other at 00:00:04:00.";
+const OVERLAP_MESSAGE = "The subtitles overlap each other at 00:00:04:00";
 
 function timeline(page: Page) {
   return page.locator(".clip-timeline");
@@ -475,7 +475,7 @@ test("Import .srt lands every cue in one step, and a row jumps to its time", asy
   await textPage(page);
   await importFile(page, "cues.srt", CUES_SRT);
 
-  await expect(page.locator(".toast").last()).toContainText("Imported 2 cues.");
+  await expect(page.locator(".toast").last()).toContainText("Imported 2 cues");
   const landed = await drawnSpans(page, 2);
   expect(landed.map((span) => [span.startMs, span.durationMs])).toEqual([
     [1_000, 2_000],
@@ -512,7 +512,7 @@ test("an .srt that runs into itself, or into the row, is refused whole", async (
   // A batch that would land on the row's own clip is refused with the row named.
   await importFile(page, "on-top.srt", ON_TOP_SRT);
   await expect(page.locator(".toast").last()).toContainText(
-    "The subtitles overlap a clip already on Text 1.",
+    "The subtitles overlap a clip already on Text 1",
   );
   await expect(cueRows(page)).toHaveCount(1);
 
@@ -633,7 +633,7 @@ test("auto subtitles read the sound on the cut, and a missing model is a place t
   await expect(go).toBeDisabled();
   await expect(go).toHaveAttribute(
     "title",
-    "Nothing to recognize — choose a sound or a shot, or move the playhead onto one.",
+    "Nothing to recognize — choose a sound or a shot, or move the playhead onto one",
   );
 
   // A sound laid at the playhead is what the ask is about. The shelf is a

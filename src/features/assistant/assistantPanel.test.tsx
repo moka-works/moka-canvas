@@ -36,7 +36,7 @@ const ids = goldenNodeIds();
 const said = conversationIds();
 const T = "2026-01-01T00:00:00.000Z";
 
-const NOTHING_CARRIED = "Nothing said before this question is sent with it.";
+const NOTHING_CARRIED = "Nothing said before this question is sent with it";
 
 function hydrate(document: MokaFile) {
   useProjectStore.getState().hydrate({
@@ -241,7 +241,7 @@ describe("what a turn is about", () => {
     render(<AssistantPanel />);
 
     expect(about()).toBe(
-      "About nothing yet — choose a card, or name one with @.",
+      "About nothing yet — choose a card, or name one with @",
     );
 
     choose(ids.operation);
@@ -266,7 +266,7 @@ describe("what a turn is about", () => {
     useProjectStore.getState().close();
     render(<AssistantPanel />);
 
-    expect(screen.getByText("No canvas is open.").className).toContain(
+    expect(screen.getByText("No canvas is open").className).toContain(
       "prompt-panel-note",
     );
   });
@@ -435,7 +435,7 @@ describe("a conversation longer than the column", () => {
     expect(list()[0].textContent).toBe("Reference image — gone");
     expect(list()[0].className).toContain("is-gone");
     expect(list()[0].getAttribute("title")).toBe(
-      "This card is no longer on the canvas.",
+      "This card is no longer on the canvas",
     );
     expect(list()[1].textContent).toBe("Export");
   });
@@ -458,7 +458,7 @@ describe("sending what was said before", () => {
     expect(note()).toBe(
       `About ${
         earlierWords(messages, 2).length
-      } characters of this conversation go with the ask.`,
+      } characters of this conversation go with the ask`,
     );
 
     // Picked out again, and the memory is off rather than merely emptied.
@@ -523,7 +523,7 @@ describe("before anything can be asked", () => {
     render(<AssistantPanel />);
 
     expect(screen.getByRole("alert").textContent).toBe(
-      "No text model is configured yet.",
+      "No text model is configured yet",
     );
     expect(screen.queryByLabelText("Ask about this canvas")).toBeNull();
 
@@ -540,7 +540,7 @@ describe("before anything can be asked", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Image" }));
     expect(screen.getByRole("alert").textContent).toBe(
-      "No image model is configured yet.",
+      "No image model is configured yet",
     );
   });
 });

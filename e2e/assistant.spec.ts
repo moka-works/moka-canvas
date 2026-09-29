@@ -432,7 +432,7 @@ test("a canvas holds several conversations, and reads the one it was pointed at"
     "New conversation",
   );
   await expect(
-    column(page).getByText("A new conversation, nothing said in it yet."),
+    column(page).getByText("A new conversation, nothing said in it yet"),
   ).toBeVisible();
 
   const second = "Is it dusk there?";

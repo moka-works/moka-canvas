@@ -179,9 +179,7 @@ describe("lineFailed", () => {
   });
 
   it("says that nothing arrived when the trouble said nothing itself", () => {
-    expect(lineFailed(new Error(""), T).text).toBe(
-      "The answer did not arrive.",
-    );
+    expect(lineFailed(new Error(""), T).text).toBe("The answer did not arrive");
     expect(lineFailed("not even an error", T).failure?.code).toBe(
       "PROVIDER_UNAVAILABLE",
     );

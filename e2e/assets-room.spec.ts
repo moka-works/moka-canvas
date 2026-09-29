@@ -181,7 +181,7 @@ test("a project's files are read whole in one room and placed from the rooms tha
   await newTimeline(page, "Timeline 1");
   await expect(
     page.getByText(
-      "This cut holds no material yet — import files, or take them from the project.",
+      "This cut holds no material yet — import files, or take them from the project",
     ),
   ).toBeVisible();
   await page.getByTestId("clip-from-project").click();
@@ -243,7 +243,7 @@ test("a project's files are read whole in one room and placed from the rooms tha
   // so rather than showing an empty shelf.
   await page.getByTestId("assets-view-unused").click();
   await expect(
-    page.getByText("Nothing is unused — every file is placed somewhere."),
+    page.getByText("Nothing is unused — every file is placed somewhere"),
   ).toBeVisible();
 
   forgetHome(home);

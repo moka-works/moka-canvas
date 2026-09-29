@@ -26,12 +26,12 @@
     "trackVideo": "Video {{n}}"
   },
   "page": {
-    "emptyHint": "Create a timeline to start cutting.",
+    "emptyHint": "Create a timeline to start cutting",
     "emptyTitle": "No timelines yet",
     "historyBoundary": "Clip room",
     "newTimeline": "New timeline",
-    "saveConflict": "Saving is blocked by a revision conflict — go back to the canvas to resolve it.",
-    "saveFailed": "Saving failed — go back to the canvas to try again."
+    "saveConflict": "Saving is blocked by a revision conflict — go back to the canvas to resolve it",
+    "saveFailed": "Saving failed — go back to the canvas to try again"
   },
   "topBar": {
     "exportVideo": "Export video…"
@@ -172,15 +172,15 @@
     "text": "Text"
   },
   "mediaLenses": {
-    "cut": "This cut holds no material yet — import files, or take them from the project."
+    "cut": "This cut holds no material yet — import files, or take them from the project"
   },
   "filters": {
     "cool": "Cool",
     "fade": "Fade",
     "mono": "Mono",
     "none": "None",
-    "selectHint": "Select a clip to give it a look.",
-    "toggleHint": "Press the look a clip already wears to take it off again.",
+    "selectHint": "Select a clip to give it a look",
+    "toggleHint": "Press the look a clip already wears to take it off again",
     "vivid": "Vivid",
     "warm": "Warm"
   },
@@ -188,14 +188,14 @@
     "brightness": "Brightness",
     "contrast": "Contrast",
     "saturation": "Saturation",
-    "selectHint": "Select a clip to adjust."
+    "selectHint": "Select a clip to adjust"
   },
   "textPanel": {
-    "clipGone": "The clip that was recognized has been deleted, so nothing landed.",
+    "clipGone": "The clip that was recognized has been deleted, so nothing landed",
     "diarize": "Tell speakers apart",
     "exportSrt": "Export .srt",
-    "fileTooLarge": "That subtitles file is larger than 2MB.",
-    "heardNothing": "No speech was heard in the recording.",
+    "fileTooLarge": "That subtitles file is larger than 2MB",
+    "heardNothing": "No speech was heard in the recording",
     "importSrt": "Import .srt",
     "importSubtitles": "Import subtitles",
     "language": "Language",
@@ -205,10 +205,10 @@
     "languageKo": "Korean",
     "languageYue": "Cantonese",
     "languageZh": "Chinese",
-    "noAsrModel": "No speech recognition model is set up yet.",
-    "noClips": "No text clips yet.",
-    "noSourceClip": "Nothing to recognize — choose a sound or a shot, or move the playhead onto one.",
-    "noTimeline": "There is no timeline yet.",
+    "noAsrModel": "No speech recognition model is set up yet",
+    "noClips": "No text clips yet",
+    "noSourceClip": "Nothing to recognize — choose a sound or a shot, or move the playhead onto one",
+    "noTimeline": "There is no timeline yet",
     "openSettings": "Set up models",
     "preset": "Preset",
     "saveSrtTitle": "Save the subtitles",
@@ -216,14 +216,14 @@
     "srtSaved": "Subtitles saved to {{path}}",
     "subtitles": "Subtitles",
     "transcribe": "Auto subtitles",
-    "transcribeNoTask": "The recognition never started.",
-    "transcribeTimeout": "The recognition took too long — try again later.",
-    "transcribed": "{{cues}} subtitles written.",
-    "transcribedWithSkipped": "{{cues}} subtitles written ({{skipped}} too short to keep).",
+    "transcribeNoTask": "The recognition never started",
+    "transcribeTimeout": "The recognition took too long — try again later",
+    "transcribed": "{{cues}} subtitles written",
+    "transcribedWithSkipped": "{{cues}} subtitles written ({{skipped}} too short to keep)",
     "transcribing": "Recognizing…",
     "transcribingLand": "Laying them down…",
     "transcribingSubmit": "Uploading…",
-    "windowChanged": "The clip was trimmed while it was being recognized, so nothing landed — recognize it again.",
+    "windowChanged": "The clip was trimmed while it was being recognized, so nothing landed — recognize it again",
     "noAsrModelReason": "Cannot transcribe yet: {{reason}}"
   },
   "textPresets": {
@@ -233,29 +233,29 @@
     "title": "Title"
   },
   "timelineArea": {
-    "emptyHint": "Drop media on a track to build the cut.",
+    "emptyHint": "Drop media on a track to build the cut",
     "emptyTitle": "Nothing here yet",
     "label": "Timeline"
   },
   "preview": {
     "approximateBadge": "Approximate preview",
-    "cannotBeRead": "{{name}} cannot be read.",
-    "elementFramesOut": "This file cannot be decoded frame by frame here, so its pictures come from a seeked video element and can be a frame or two out.",
-    "empty": "No timeline to preview.",
+    "cannotBeRead": "{{name}} cannot be read",
+    "elementFramesOut": "This file cannot be decoded frame by frame here, so its pictures come from a seeked video element and can be a frame or two out",
+    "empty": "No timeline to preview",
     "filePlaceholder": "A file",
     "label": "Preview",
     "loading": "Loading",
-    "noColourFilters": "This canvas cannot apply colour filters, so grades and preset looks are not shown.",
-    "noWebCodecs": "This browser has no WebCodecs, so pictures come from a seeked video element and can be a frame or two out.",
-    "silent": "Playback is silent: audio could not start."
+    "noColourFilters": "This canvas cannot apply colour filters, so grades and preset looks are not shown",
+    "noWebCodecs": "This browser has no WebCodecs, so pictures come from a seeked video element and can be a frame or two out",
+    "silent": "Playback is silent: audio could not start"
   },
   "exportDialog": {
     "close": "Close",
     "done": "Done",
     "looking": "Looking for a renderer…",
-    "noAss": "Text cannot be burned in without an ffmpeg built with libass.",
-    "notAvailable": "The renderer is not available on this machine yet.",
-    "nothingToRender": "This timeline has nothing to render.",
+    "noAss": "Text cannot be burned in without an ffmpeg built with libass",
+    "notAvailable": "The renderer is not available on this machine yet",
+    "nothingToRender": "This timeline has nothing to render",
     "progress": "Export progress",
     "reveal": "Reveal in folder",
     "saveTitle": "Save the video",
@@ -265,7 +265,7 @@
     "unknown": "unknown"
   },
   "inspector": {
-    "empty": "Select a clip, a file, or a seam.",
+    "empty": "Select a clip, a file, or a seam",
     "label": "Inspector"
   },
   "clipFields": {
@@ -286,11 +286,11 @@
     "out": "Out",
     "soundSection": "Sound",
     "speedLabel": "Speed ×",
-    "speedLocked": "A still runs its own length, so it has no pace to change.",
+    "speedLocked": "A still runs its own length, so it has no pace to change",
     "speedSection": "Speed",
     "start": "Start",
     "textSection": "Text",
-    "tooFastToast": "Too short to run that fast.",
+    "tooFastToast": "Too short to run that fast",
     "volumeLabel": "Volume"
   },
   "textFields": {
@@ -316,7 +316,7 @@
     "positionCenterAria": "Position center",
     "positionTopAria": "Position top",
     "right": "Right",
-    "selectOneTextClip": "Select one text clip to edit its words.",
+    "selectOneTextClip": "Select one text clip to edit its words",
     "size": "Size",
     "smaller": "Smaller {{name}}",
     "stroke": "Stroke",
@@ -350,7 +350,7 @@
     "frameRate": "Frame rate",
     "length": "Length",
     "name": "Name",
-    "selectHint": "Select a clip to edit how it plays.",
+    "selectHint": "Select a clip to edit how it plays",
     "title": "Timeline",
     "tracks": "Tracks"
   },
@@ -387,30 +387,30 @@
     "unmuteTrack": "Unmute {{name}}"
   },
   "actions": {
-    "added": "Added {{name}}.",
-    "audioOnAudioTrack": "An audio file goes on an audio track.",
-    "durationUnknown": "Duration unknown — the clip runs 4s; trim it to fit.",
-    "playheadNotOverClip": "The playhead is not over the selected clip.",
-    "seamTooShort": "These clips are too short for a transition.",
-    "textClipsOnTextPage": "Text clips are made on the Text page.",
-    "tooShortToSplit": "Too short to split at the playhead.",
-    "trackLocked": "That track is locked.",
-    "videoOnVideoTrack": "A video or an image goes on a video track.",
-    "addedInOrder": "Added {{count}} files, one after another."
+    "added": "Added {{name}}",
+    "audioOnAudioTrack": "An audio file goes on an audio track",
+    "durationUnknown": "Duration unknown — the clip runs 4s; trim it to fit",
+    "playheadNotOverClip": "The playhead is not over the selected clip",
+    "seamTooShort": "These clips are too short for a transition",
+    "textClipsOnTextPage": "Text clips are made on the Text page",
+    "tooShortToSplit": "Too short to split at the playhead",
+    "trackLocked": "That track is locked",
+    "videoOnVideoTrack": "A video or an image goes on a video track",
+    "addedInOrder": "Added {{count}} files, one after another"
   },
   "cues": {
     "editor": "Subtitle text",
-    "noRoom": "There is no room for another subtitle here.",
+    "noRoom": "There is no room for another subtitle here",
     "placeholder": "Type the words"
   },
   "subtitles": {
-    "clipLimit": "The timeline holds at most {{max}} clips — delete {{extra}} first.",
-    "imported": "Imported {{cues}} cues.",
-    "importedWithSkipped": "Imported {{cues}} cues ({{skipped}} skipped as too short).",
-    "noCuesFound": "No subtitles found in the file.",
-    "noCuesLongEnough": "No cues were long enough to import.",
-    "overlapClip": "The subtitles overlap a clip already on {{name}}.",
-    "overlapEachOther": "The subtitles overlap each other at {{timecode}}."
+    "clipLimit": "The timeline holds at most {{max}} clips — delete {{extra}} first",
+    "imported": "Imported {{cues}} cues",
+    "importedWithSkipped": "Imported {{cues}} cues ({{skipped}} skipped as too short)",
+    "noCuesFound": "No subtitles found in the file",
+    "noCuesLongEnough": "No cues were long enough to import",
+    "overlapClip": "The subtitles overlap a clip already on {{name}}",
+    "overlapEachOther": "The subtitles overlap each other at {{timecode}}"
   },
   "history": {
     "addClip": "Add clip",

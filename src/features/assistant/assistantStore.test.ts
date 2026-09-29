@@ -1121,7 +1121,7 @@ describe("asking a card again", () => {
     const ghost: AssistantMessage = {
       id: "m-ghost",
       role: "error",
-      text: "The card did not come back with anything.",
+      text: "The card did not come back with anything",
       createdAt: WHEN,
       toolCalls: [
         { runId: "r-gone", nodeId: "n-gone", summary: "Made nothing" },
@@ -1137,7 +1137,7 @@ describe("asking a card again", () => {
     expect(server.order).not.toContain("retry");
     expect(sessionsOf()[0].messages).toHaveLength(1);
     expect(useEditorStore.getState().announcement).toBe(
-      "The card that answer named is no longer on the canvas.",
+      "The card that answer named is no longer on the canvas",
     );
   });
 

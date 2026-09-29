@@ -400,7 +400,7 @@ describe("the film of a telling", () => {
     );
     const said = useAppStore.getState().toasts.at(-1);
     expect(said?.message).toBe(
-      "The film is saved to /tmp/moka-edit-test/films/the film.mp4.",
+      "The film is saved to /tmp/moka-edit-test/films/the film.mp4",
     );
     expect(said?.choice?.label).toBe("Open in the cutting room");
   });
@@ -447,7 +447,7 @@ describe("the film of a telling", () => {
     // server has not taken yet is not in the way of it.
     await waitFor(() =>
       expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-        "The film is saved to /tmp/moka-edit-test/films/the film.mp4.",
+        "The film is saved to /tmp/moka-edit-test/films/the film.mp4",
       ),
     );
     expect(useProjectStore.getState().pending.length).toBe(waiting);

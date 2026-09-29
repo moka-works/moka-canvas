@@ -201,7 +201,7 @@ describe("start", () => {
     expect(useTranscribeStore.getState().phase).toBe("idle");
     expect(useTranscribeStore.getState().error).toBeNull();
     expect(toasts().map((toast) => toast.message)).toEqual([
-      "1 subtitles written.",
+      "1 subtitles written",
     ]);
   });
 
@@ -251,7 +251,7 @@ describe("start", () => {
 
     expect(sent).toHaveLength(2);
     expect(useTranscribeStore.getState().error).toBe(
-      "The clip was trimmed while it was being recognized, so nothing landed — recognize it again.",
+      "The clip was trimmed while it was being recognized, so nothing landed — recognize it again",
     );
     expect(cut().clips.every((clip) => clip.kind !== "text")).toBe(true);
     expect(toasts()).toEqual([]);
@@ -301,7 +301,7 @@ describe("start", () => {
 
     expect(sent).toEqual([]);
     expect(toasts().map((toast) => toast.message)).toEqual([
-      "Nothing to recognize — choose a sound or a shot, or move the playhead onto one.",
+      "Nothing to recognize — choose a sound or a shot, or move the playhead onto one",
     ]);
   });
 

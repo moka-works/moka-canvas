@@ -268,7 +268,7 @@ describe("srtImportPlan", () => {
     const plan = srtImportPlan(withTextClips([]), [cue(1_000, 1_050)], style);
     expect(plan).toEqual({
       ok: false,
-      message: "No cues were long enough to import.",
+      message: "No cues were long enough to import",
     });
   });
 
@@ -280,7 +280,7 @@ describe("srtImportPlan", () => {
     );
     expect(plan).toEqual({
       ok: false,
-      message: "The subtitles overlap each other at 00:00:04:12.",
+      message: "The subtitles overlap each other at 00:00:04:12",
     });
   });
 
@@ -302,7 +302,7 @@ describe("srtImportPlan", () => {
     const plan = srtImportPlan(timeline, [cue(4_400, 6_000)], style);
     expect(plan).toEqual({
       ok: false,
-      message: "The subtitles overlap a clip already on Text 1.",
+      message: "The subtitles overlap a clip already on Text 1",
     });
   });
 
@@ -378,7 +378,7 @@ describe("srtImportPlan", () => {
     // The fixture already holds one video clip and the text clip added here.
     expect(plan).toEqual({
       ok: false,
-      message: "The timeline holds at most 400 clips — delete 2 first.",
+      message: "The timeline holds at most 400 clips — delete 2 first",
     });
   });
 
@@ -418,7 +418,7 @@ describe("srtImportPlan", () => {
     );
     expect(plan).toEqual({
       ok: false,
-      message: "The subtitles overlap each other at 00:00:04:12.",
+      message: "The subtitles overlap each other at 00:00:04:12",
     });
   });
 });
@@ -446,7 +446,7 @@ describe("landTranscribedCues", () => {
     open(buildTimelineMokaFile(), ids.timeline);
     expect(landTranscribedCues([cue(1_000, 1_050)], style)).toEqual({
       ok: false,
-      message: "No cues were long enough to import.",
+      message: "No cues were long enough to import",
     });
     expect(cut().clips).toHaveLength(1);
     expect(entryCount()).toBe(0);
@@ -552,7 +552,7 @@ describe("editCue", () => {
     editCue(clip);
     expect(useClipStore.getState().cueEditor).toBeNull();
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "That track is locked.",
+      "That track is locked",
     );
   });
 });
@@ -673,7 +673,7 @@ describe("newCueAt", () => {
     newCueAt(ids.textTrack, 0);
     expect(useClipStore.getState().cueEditor).toBeNull();
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "That track is locked.",
+      "That track is locked",
     );
   });
 
@@ -689,7 +689,7 @@ describe("newCueAt", () => {
     newCueAt(ids.textTrack, 1_010);
     expect(useClipStore.getState().cueEditor).toBeNull();
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "There is no room for another subtitle here.",
+      "There is no room for another subtitle here",
     );
   });
 });
@@ -770,18 +770,18 @@ describe("importSrt", () => {
     expect(entryCount()).toBe(1);
     expect(
       useAppStore.getState().toasts.map((notice) => notice.message),
-    ).toContain("Imported 2 cues (1 skipped as too short).");
+    ).toContain("Imported 2 cues (1 skipped as too short)");
   });
 
   it("says nothing was imported when the file is empty or every cue is short", () => {
     open(textlessMoka(), ids.timeline, 0);
     importSrt("just prose, no time line", style);
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "No subtitles found in the file.",
+      "No subtitles found in the file",
     );
     importSrt(file("1", "00:00:01,000 --> 00:00:01,050", "short", ""), style);
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
-      "No cues were long enough to import.",
+      "No cues were long enough to import",
     );
     expect(cut().clips.filter((clip) => clip.kind === "text")).toHaveLength(0);
     expect(entryCount()).toBe(0);
@@ -817,8 +817,6 @@ describe("the cut fixture's own text clip", () => {
     const plan = srtImportPlan(timeline, [cue(0, 500)], style);
     expect(plan.ok).toBe(false);
     if (plan.ok) return;
-    expect(plan.message).toBe(
-      "The subtitles overlap a clip already on Text 1.",
-    );
+    expect(plan.message).toBe("The subtitles overlap a clip already on Text 1");
   });
 });
