@@ -1,251 +1,251 @@
-# Build Guide
+# 构建指南
 
-Prerequisites and commands for building and packaging Moka Canvas on each host.
+在各类主机上构建与打包摩卡画布的必备条件与命令。
 
-## Common prerequisites
+## 通用前置条件
 
-| Tool           | Version | Notes                                             |
-| -------------- | ------- | ------------------------------------------------- |
-| Node.js        | 22+     | LTS recommended                                   |
-| npm            | 10+     | Ships with Node.js                                |
-| Rust toolchain | stable  | Includes `cargo` and `rustup`                     |
-| Tauri CLI      | 2.x     | Installed as a dev dependency (`@tauri-apps/cli`) |
+| 工具        | 版本   | 说明                                  |
+| ----------- | ------ | ------------------------------------- |
+| Node.js     | 22+    | 推荐 LTS                              |
+| npm         | 10+    | 随 Node.js 附带                       |
+| Rust 工具链 | stable | 包含 `cargo` 与 `rustup`              |
+| Tauri CLI   | 2.x    | 作为开发依赖安装（`@tauri-apps/cli`） |
 
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) is the upstream reference for the bundling toolchains; what each host needs for this project is below.
+[Tauri 前置条件](https://tauri.app/start/prerequisites/) 是打包工具链的上游参考；本项目中各主机具体需要什么见下文。
 
-## Platform prerequisites
+## 平台前置条件
 
 ### macOS
 
-| Requirement     | Install                                                           |
-| --------------- | ----------------------------------------------------------------- |
-| Xcode CLI tools | `xcode-select --install` — clang, the SDK and `codesign`          |
-| Rust toolchain  | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| Node.js 22+     | `brew install node`, or the installer from nodejs.org             |
+| 要求             | 安装方式                                                          |
+| ---------------- | ----------------------------------------------------------------- |
+| Xcode 命令行工具 | `xcode-select --install` —— clang、SDK 与 `codesign`              |
+| Rust 工具链      | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Node.js 22+      | `brew install node`，或来自 nodejs.org 的安装器                   |
 
-The window renders in the system's own WebKit, so the desktop app runs with nothing else installed. `make package-macos` needs no further tools either.
+窗口由系统自带的 WebKit 渲染，因此桌面应用不需要安装其他任何东西即可运行。`make package-macos` 也不需要更多工具。
 
 ### Windows
 
-| Requirement          | Install                                                                                                                                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| MSVC C++ build tools | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` — the "Desktop development with C++" workload |
-| Rust toolchain       | `winget install Rustlang.Rustup`, then `rustup default stable-msvc` (the MSVC host target, not GNU)                                                                                                    |
-| Node.js 22+          | `winget install OpenJS.NodeJS.LTS`                                                                                                                                                                     |
-| WebView2 Runtime     | preinstalled on Windows 11 and current Windows 10; on a machine without one, install the Evergreen Bootstrapper from the [WebView2 page](https://developer.microsoft.com/microsoft-edge/webview2/)     |
+| 要求              | 安装方式                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MSVC C++ 生成工具 | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` —— 即「使用 C++ 的桌面开发」工作负载 |
+| Rust 工具链       | `winget install Rustlang.Rustup`，然后 `rustup default stable-msvc`（MSVC 宿主目标，不是 GNU）                                                                                                |
+| Node.js 22+       | `winget install OpenJS.NodeJS.LTS`                                                                                                                                                            |
+| WebView2 运行时   | Windows 11 与当前 Windows 10 预装；没有的机器请从 [WebView2 页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装 Evergreen Bootstrapper                                       |
 
-The app's window is drawn by WebView2 — Edge's rendering engine — so it is needed to run `make tauri-dev` as much as the installed app: without it there is no window to draw in. The NSIS setup installs it on machines that lack it, by downloading Microsoft's bootstrapper, so that install needs network. WiX and NSIS themselves are only needed to build installers, which `make package-windows` covers per the Tauri prerequisites.
+应用的窗口由 WebView2——Edge 的渲染引擎——绘制，因此无论是运行 `make tauri-dev` 还是使用安装后的应用都需要它：没有它就没有窗口可画。NSIS 安装包在缺少它的机器上会下载微软的引导程序来安装，所以那次安装需要联网。WiX 与 NSIS 本身只在构建安装器时才需要，`make package-windows` 按 Tauri 前置条件覆盖了这些。
 
-## Clip export (ffmpeg)
+## 片段导出（ffmpeg）
 
-Timeline export is done by ffmpeg, which is not bundled. The program runs without it — export reports itself unavailable and its dialog names every way out — and a machine that is meant to export needs a build with **libass** (the `ass` filter that burns captions in) and `xfade` (the transitions). The plain `brew install ffmpeg` formula is built without libass: a cut with no words exports, and one with words is refused by name rather than quietly losing them.
+时间线导出由 ffmpeg 完成，它不随程序打包。没有它程序照常运行——导出会自报不可用，其对话框列出每一条出路——要导出的机器需要一份带 **libass**（烧录字幕的 `ass` 滤镜）与 `xfade`（转场）的构建。`brew install ffmpeg` 的普通 formula 编译时不含 libass：没有台词的剪辑可以导出，带台词的剪辑会被点名拒绝，而不是悄悄把台词丢掉。
 
-The renderer is looked for in three places, in this order: `clip.ffmpegPath` in the configuration file (`clip` in `config/moka.example.yaml`), the `MOKA_FFMPEG` environment variable, then the platform search path. A named path that is not there is unavailable rather than a different ffmpeg being run instead, which is what makes a machine's renderer deterministic.
+渲染器按以下顺序在三个地方查找：配置文件中的 `clip.ffmpegPath`（`config/moka.example.yaml` 里的 `clip` 一节）、`MOKA_FFMPEG` 环境变量，然后是平台搜索路径。指名而不存在的路径视为不可用，而不会改用另一个 ffmpeg 运行——这正是让一台机器上的渲染器保持确定的原因。
 
-macOS:
+macOS：
 
 ```sh
 brew install ffmpeg-full
 ```
 
-`ffmpeg-full` is keg-only — linking it would shadow the slim `ffmpeg` — so point the program at it afterwards: `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` on Apple Silicon, `/usr/local/opt/ffmpeg-full/bin/ffmpeg` on Intel.
+`ffmpeg-full` 是 keg-only —— 链接它会遮蔽精简的 `ffmpeg` —— 所以之后要让程序指向它：Apple Silicon 上是 `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`，Intel 上是 `/usr/local/opt/ffmpeg-full/bin/ffmpeg`。
 
 ```sh
 MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make tauri-dev
 ```
 
-or write it into the configuration file as `clip.ffmpegPath` so every run finds it. The Rust suites look for their renderer the same way, and a machine whose ffmpeg lacks libass fails the two clip tests that burn a caption in, so a full run on macOS is `MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make check`.
+或者写进配置文件作为 `clip.ffmpegPath`，让每次运行都能找到。Rust 测试套件以同样方式查找渲染器；ffmpeg 缺 libass 的机器会在两个烧录字幕的片段测试上失败，因此在 macOS 上完整跑一遍是 `MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make check`。
 
-Windows: install a full-featured build — gyan.dev's ["full"](https://www.gyan.dev/ffmpeg/builds/), or a [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) release — and name it the same way, `clip.ffmpegPath: 'C:\path\to\ffmpeg.exe'` or `MOKA_FFMPEG`, or put its `bin` directory on `PATH`.
+Windows：安装一份全功能构建——gyan.dev 的 ["full"](https://www.gyan.dev/ffmpeg/builds/)，或 [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) 的发布版——同样指名它，`clip.ffmpegPath: 'C:\path\to\ffmpeg.exe'` 或 `MOKA_FFMPEG`，或把它的 `bin` 目录放进 `PATH`。
 
-Any build can be asked what it has: `ffmpeg -h filter=ass` describes the filter when it is there, and says `Unknown filter 'ass'.` when it is not.
+任何构建都可以被问它有什么：`ffmpeg -h filter=ass` 在滤镜存在时会描述它，不存在时会说 `Unknown filter 'ass'.`。
 
-## Setup
+## 安装依赖
 
 ```sh
 make install   # npm ci
 ```
 
-## Verify the toolchain
+## 验证工具链
 
 ```sh
 make check
 ```
 
-Runs the frontend build, Prettier/ESLint/TypeScript checks and the Vitest suite, then `cargo fmt --check`, `cargo clippy -D warnings`, and `cargo test` for the Rust server. `make test` runs only the two test suites (Vitest and `cargo test`).
+先运行前端构建、Prettier/ESLint/TypeScript 检查与 Vitest 套件，然后对 Rust 服务器运行 `cargo fmt --check`、`cargo clippy -D warnings` 与 `cargo test`。`make test` 只跑两个测试套件（Vitest 与 `cargo test`）。
 
-## Local run
+## 本地运行
 
 ```sh
-make web-serve   # Build frontend, serve dist/ + API at http://127.0.0.1:8080
-make tauri-dev   # Build frontend, run the Tauri desktop app
+make web-serve   # 构建前端，在 http://127.0.0.1:8080 提供 dist/ + API
+make tauri-dev   # 构建前端，运行 Tauri 桌面应用
 ```
 
-## Versioning
+## 版本号
 
 ```sh
 make set-version 1.2.3
 ```
 
-Sets the version of all build outputs in one place: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the `moka-canvas` entry in `src-tauri/Cargo.lock`. Windows installer metadata and the DMG/setup filenames derive from these, so run this before packaging a release.
+一处设定所有构建产物的版本：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`，以及 `src-tauri/Cargo.lock` 中的 `moka-canvas` 条目。Windows 安装器元数据与 DMG/setup 文件名都由这些派生，因此发布打包前先运行它。
 
-## Localization
+## 界面语言
 
-The interface carries English and Simplified Chinese side by side. The catalogues live under `src/shared/i18n/locales/en/` and `.../zh/`, one file per area (`editor`, `clip`, `settings`, `assistant`, `app`, `common`, `domain`, `errors`, `problems`); the code names its words by key and the catalogues hold them. The interface follows the machine's language, and a reader can pin English or Chinese in Settings → Preferences → Language, remembered on that machine. The automated suites pin English, so their assertions read the English catalogue word for word.
+界面同时携带英文与简体中文。语言包位于 `src/shared/i18n/locales/en/` 与 `.../zh/`，按区域每个文件一份（`editor`、`clip`、`settings`、`assistant`、`story`、`app`、`common`、`domain`、`errors`、`problems`）；代码用键命名它的词语，语言包持有这些词。界面跟随机器的语言，读者也可以在 设置 → 偏好设置 → 语言 中钉住英文或中文，在该机器上记住。自动化测试套件钉住英文，因此它们的断言逐字读英文语言包。
 
-The packaged app names each have their own rule, described in the Windows installer and macOS DMG sections below.
+打包后的应用名有自己的规则，见下文 Windows 安装器与 macOS DMG 两节。
 
-## Converter protocols
+## 转换器协议
 
-Every protocol this program speaks is a converter, and a converter is a directory under the models tree — there is no protocol table in Rust or TypeScript. On a desktop install that tree is `models/` beside the metadata directory (`~/Library/Application Support/MokaCanvas/models` on macOS, `%APPDATA%\MokaCanvas\models` on Windows); on a server it is `models/` beside the configured `metadata.dir`.
+本程序说出的每个协议都是一个转换器，而转换器是模型目录下的一个目录——Rust 或 TypeScript 里没有协议表。桌面安装上，该目录是元数据目录旁边的 `models/`（macOS 为 `~/Library/Application Support/MokaCanvas/models`，Windows 为 `%APPDATA%\MokaCanvas\models`）；服务器上，它是配置的 `metadata.dir` 旁边的 `models/`。
 
 ```
-<models root>/<capability>/<id>/
-  model.json      what the protocol declares
-  <script>.lua    what it does
+<模型根目录>/<capability>/<id>/
+  model.json      协议声明了什么
+  <script>.lua    它做什么
 ```
 
-`<capability>` is one of `text`, `image`, `speech`, `music`, `video`, `asr`. `<id>` is the directory's own name: the wire name a model configuration stores, so it must not change once a model speaks it. The `.lua` file name is free — `model.json` names it. A directory under a capability nothing reads — an `audio/` from before sound was split into speech and music — is left where it is: the built-in deploy writes beside it rather than over it, and removing it is a reader's own tidying.
+`<capability>` 是 `text`、`image`、`speech`、`music`、`video`、`asr` 之一。`<id>` 是目录自身的名字：模型配置存储的线上名字，因此一旦有模型使用它就不能更改。`.lua` 文件名是自由的——由 `model.json` 指名。没有任何东西读取的能力目录——比如声音拆分为语音与音乐之前的 `audio/`——留在原处：内置部署写在它旁边而不是覆盖它，移除它是读者自己的整理。
 
-`model.json` is the whole declaration:
+`model.json` 就是全部声明：
 
-| Field         | Meaning                                                                                                                                                                                                                                                                                                    |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `displayName` | The name it goes by where no label matches, and the name the server's own messages use. Required.                                                                                                                                                                                                          |
-| `labels`      | Names per locale, e.g. `{"zh": "…"}`. A language with no entry falls back to `displayName`, then to the id.                                                                                                                                                                                                |
-| `urlExample`  | An address shown to the reader as a shape to copy. Required.                                                                                                                                                                                                                                               |
-| `script`      | The Lua file beside this document. Required.                                                                                                                                                                                                                                                               |
-| `order`       | Where it sits within its capability, ascending, ties by name (default 1000).                                                                                                                                                                                                                               |
-| `auth`        | Where the credential rides: `{"header": "Authorization", "scheme": "Bearer"}` unless it says otherwise; `{"header": "x-goog-api-key", "scheme": ""}` for a key with no scheme; `{"header": ""}` for an endpoint that takes none. Only addresses inside the configured endpoint's origin are ever given it. |
-| `features`    | Free-form flags the interface reads, e.g. `{"mask": true}` for an image protocol with a mask field of its own.                                                                                                                                                                                             |
-| `version`     | How the built-in deploy decides whether to take over a directory (see below). Omit for a hand-written converter.                                                                                                                                                                                           |
+| 字段          | 含义                                                                                                                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `displayName` | 没有匹配标签时它使用的名字，也是服务器自身消息使用的名字。必填。                                                                                                                                                                   |
+| `labels`      | 各语言的名字，例如 `{"zh": "…"}`。没有条目的语言回退到 `displayName`，再回退到 id。                                                                                                                                                |
+| `urlExample`  | 展示给读者、作为可复制形状的地址。必填。                                                                                                                                                                                           |
+| `script`      | 本文档旁边的 Lua 文件。必填。                                                                                                                                                                                                      |
+| `order`       | 它在自己的能力内所处的位置，升序，同名按名称排（默认 1000）。                                                                                                                                                                      |
+| `auth`        | 凭据搭载在哪里：除非另有说明，是 `{"header": "Authorization", "scheme": "Bearer"}`；没有 scheme 的密钥用 `{"header": "x-goog-api-key", "scheme": ""}`；不接受凭据的端点用 `{"header": ""}`。只有配置端点同源之内的地址才会拿到它。 |
+| `features`    | 界面读取的自由形式标志，例如 `{"mask": true}` 表示某个图像协议有自己的蒙版字段。                                                                                                                                                   |
+| `version`     | 内置部署据此决定是否接管一个目录（见下）。手写的转换器省略此项。                                                                                                                                                                   |
 
-The Lua side is a set of hooks, all optional, and which ones a script exports is what the host believes it can do:
+Lua 侧是一组钩子，全部可选，脚本导出了哪些钩子就是宿主认为自己能做什么：
 
-| Hook                                         | Purpose                                                                                                                                                                                                              |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build_request(call, req, inputs)`           | Describes one call: `{method, url, headers = {name = value}, body = …}`, or `{request = …, handler = …}` when the answer needs a function of its own to read it, or `{error = …}` to refuse before anything is sent. |
-| `parse_response(status, headers, body)`      | Reads that answer into `{text, items, usage, error}`.                                                                                                                                                                |
-| `build_stream_request(call, req, inputs)`    | The same, for an endpoint that answers in events; exporting it is what says the converter streams. Each event is read by `parse_event(event)`.                                                                       |
-| `build_task_request` / `parse_task_response` | Starts a job that outlives one request; the reply names the provider's handle with `{reference = …}`.                                                                                                                |
-| `build_poll_request` / `parse_poll_response` | One look at that job: `{status = "pending"}`, `{status = "succeeded", result = {items = …}}`, `{status = "failed", error = …}`, or `{status = "expired"}`.                                                           |
+| 钩子                                         | 用途                                                                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build_request(call, req, inputs)`           | 描述一次调用：`{method, url, headers = {name = value}, body = …}`；当应答需要自己的函数来读取时用 `{request = …, handler = …}`；在发出任何东西之前就拒绝用 `{error = …}`。 |
+| `parse_response(status, headers, body)`      | 把该应答读成 `{text, items, usage, error}`。                                                                                                                               |
+| `build_stream_request(call, req, inputs)`    | 同上，用于以事件作答的端点；导出它就表示该转换器是流式的。每个事件由 `parse_event(event)` 读取。                                                                           |
+| `build_task_request` / `parse_task_response` | 启动一个比单次请求更长寿的任务；应答用 `{reference = …}` 点名服务商的句柄。                                                                                                |
+| `build_poll_request` / `parse_poll_response` | 看一眼那个任务：`{status = "pending"}`、`{status = "succeeded", result = {items = …}}`、`{status = "failed", error = …}` 或 `{status = "expired"}`。                       |
 
-Inside a script, `call` is `{url, model}` (the complete configured endpoint and the provider's model name), `req` is `{prompt, system, capability, params}`, and each input is `{role, filename, mime, data_url}` with its bytes base64-encoded in the data URL. An item may report its bytes as `{url = …}` (the host fetches it, with the credential following the same origin rule), `{data_url = …}`, `{base64 = …}`, or `{raw = true}` for the answer's own body. The host API is `json`, `base64`, `log` and `util`; the credential is never handed to a script.
+脚本内部，`call` 是 `{url, model}`（完整配置的端点与服务商的模型名），`req` 是 `{prompt, system, capability, params}`，每个输入是 `{role, filename, mime, data_url}`，字节以 base64 编码在 data URL 中。条目可以以 `{url = …}` 报告其字节（宿主去抓取，凭据遵循同样的同源规则）、`{data_url = …}`、`{base64 = …}`，或用 `{raw = true}` 表示应答自身的 body。宿主 API 是 `json`、`base64`、`log` 与 `util`；凭据从不交给脚本。
 
-Built-in converters ship with the program: `src-tauri/build.rs` embeds every directory under `src-tauri/converter-scripts/models/` at compile time (a malformed directory fails the build), and startup writes each one into the models root unless the version already deployed there is at least as new — so a converter a reader edited survives until a later built-in version overtakes it. Directories this build does not know are never read, written, or removed.
+内置转换器随程序发布：`src-tauri/build.rs` 在编译时嵌入 `src-tauri/converter-scripts/models/` 下的每个目录（畸形的目录会使构建失败），启动时把每一个写入模型根目录，除非那里已部署的版本至少同样新——因此读者编辑过的转换器会保留，直到更高版本的内置版本超过它。本构建不认识的目录永远不会被读取、写入或移除。
 
-Adding a protocol is therefore that directory and nothing else: no Rust, no TypeScript, no i18n file. Drop it in, restart, and the name is offered in Settings beside the built-ins. `src-tauri/tests/converter_extensibility.rs` is the executable form of that claim.
+所以添加一个协议就是那个目录本身，别无其他：没有 Rust、没有 TypeScript、没有 i18n 文件。放进去、重启，名字就会出现在设置里与内置协议并列。`src-tauri/tests/converter_extensibility.rs` 是这一主张的可执行形式。
 
-## Package targets
+## 打包目标
 
-### Web (any host)
+### Web（任何主机）
 
 ```sh
 make package-web
 ```
 
-Builds the frontend, compiles the `moka-server` release binary, and stages a self-contained distribution under `release/moka-canvas-web-<version>-<platform>-<arch>/` containing `dist/`, the native server binary, and a `README.txt`. Run the staged server with:
+构建前端、编译 `moka-server` 发布二进制，并在 `release/moka-canvas-web-<version>-<platform>-<arch>/` 下暂存一份自包含发行版，包含 `dist/`、原生服务器二进制与一份 `README.txt`。运行暂存的服务器：
 
 ```sh
 ./moka-server --static-dir dist --port 8080
 ```
 
-### macOS DMG (macOS only)
+### macOS DMG（仅 macOS）
 
 ```sh
 make package-macos
 ```
 
-Produces `Moka Canvas_<version>_<arch>.dmg` (`aarch64` on Apple Silicon, `x64` on Intel), copied into `release/` (the tauri-bundler output remains under `src-tauri/target/release/bundle/dmg/`), with the branded background and app/Applications drop slots configured via `bundle.macOS.dmg` in `src-tauri/tauri.conf.json`. The `.app` bundle is ad-hoc signed (`bundle.macOS.signingIdentity` = `"-"`); the DMG itself is left unsigned, which Tauri does deliberately for self-signed identities. Gatekeeper still warns on first launch because ad-hoc signatures are not notarized — right-click and choose Open.
+生成 `Moka Canvas_<version>_<arch>.dmg`（Apple Silicon 上 `aarch64`，Intel 上 `x64`），复制进 `release/`（tauri-bundler 的输出保留在 `src-tauri/target/release/bundle/dmg/` 下），带品牌背景与 app/Applications 投放槽，通过 `src-tauri/tauri.conf.json` 的 `bundle.macOS.dmg` 配置。`.app` 包为 ad-hoc 签名（`bundle.macOS.signingIdentity` = `"-"`）；DMG 自身不签名，这是 Tauri 对自签名身份的刻意做法。首次启动时 Gatekeeper 仍会警告，因为 ad-hoc 签名未公证——右键选择「打开」。
 
-The bundle keeps its English name — the `.app` folder, the executable, and the DMG file name. On a Chinese system Finder, the Dock, and the menu bar show 摩卡画布 instead: `bundle.macOS.files` ships `Contents/Resources/zh-Hans.lproj/InfoPlist.strings` (and `zh-Hant` beside it), and macOS reads the localized `CFBundleDisplayName`/`CFBundleName` from there; every other language falls back to the bundle's own name. The files are copied before the bundle is signed, so the ad-hoc signature still verifies.
+包保留英文名——`.app` 文件夹、可执行文件与 DMG 文件名。在中文系统上，访达、程序坞与菜单栏显示的是摩卡画布：`bundle.macOS.files` 随附 `Contents/Resources/zh-Hans.lproj/InfoPlist.strings`（以及旁边的 `zh-Hant`），macOS 从那里读取本地化的 `CFBundleDisplayName`/`CFBundleName`；其他语言回退到包自身的名字。这些文件在包签名之前复制，因此 ad-hoc 签名仍然可验证。
 
-> Rebuilding deletes the previous DMG, so eject any mounted copy before running `make package-macos` again — otherwise the DMG stays mounted as a leftover volume and the Finder styling step fails with a generic `error running bundle_dmg.sh`.
+> 重新构建会删除上一个 DMG，所以在再次运行 `make package-macos` 之前先弹出任何已挂载的副本——否则 DMG 会作为残留卷保持挂载，Finder 样式化步骤会以通用的 `error running bundle_dmg.sh` 失败。
 
-### Windows installers (Windows host)
+### Windows 安装器（Windows 主机）
 
 ```sh
 make package-windows
 ```
 
-Produces MSI and NSIS installers under `src-tauri/target/release/bundle/` and copies them into `release/`. Requires Microsoft C++ Build Tools, WebView2, and WiX/NSIS tooling per Tauri's Windows prerequisites.
+在 `src-tauri/target/release/bundle/` 下生成 MSI 与 NSIS 安装器，并复制进 `release/`。需要 Microsoft C++ Build Tools、WebView2，以及按 Tauri 的 Windows 前置条件所需的 WiX/NSIS 工具链。
 
-The NSIS installer is built from a custom template (`src-tauri/installer/installer.nsi`, forked from the Tauri default) that provides branded welcome and finish pages plus header bitmaps from `src-tauri/installer/`; it is selected via `bundle.windows.nsis.template` in `src-tauri/tauri.conf.json`. Because the template is forked, it does not automatically pick up upstream Tauri fixes — re-diff it against the [upstream template](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi) whenever the Tauri CLI is upgraded.
+NSIS 安装器由自定义模板构建（`src-tauri/installer/installer.nsi`，从 Tauri 默认模板派生），提供品牌欢迎页与完成页，以及来自 `src-tauri/installer/` 的头部位图；通过 `src-tauri/tauri.conf.json` 的 `bundle.windows.nsis.template` 选用。因为模板是派生的，它不会自动获得上游 Tauri 的修复——每次升级 Tauri CLI 时都要重新与[上游模板](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi)做 diff。
 
-The installer is bilingual. `bundle.windows.nsis.languages` lists `English` and `SimpChinese`, and an interactive install opens on the standard MUI language picker as its first step; `/P` and `/UPDATE` runs instead reuse the language the previous install stored, so what is already on disk keeps its name. The texts the template adds are NSIS `LangString`s near its bottom (the file must stay UTF-8 without BOM) and must be defined for every language in that list — a missing one is only a compile-time warning (6040) and renders as an empty string. The app's visible name follows the chosen language: the desktop and start-menu shortcuts, the entry in the programs list, and the `.moka` association texts read 摩卡画布 on Chinese and "Moka Canvas" otherwise. The compile-time `${PRODUCTNAME}` ("Moka Canvas") stays the identity behind it all — install folder, registry keys, `uninstall.exe`, and the setup file name — so upgrades and uninstalls keep matching, and a run in the other language replaces the old-named shortcuts rather than leaving them beside the new ones.
+安装器是双语的。`bundle.windows.nsis.languages` 列出 `English` 与 `SimpChinese`，交互式安装以标准 MUI 语言选择页作为第一步；`/P` 与 `/UPDATE` 运行则复用上一次安装存储的语言，因此磁盘上已有的名字保持不变。模板添加的文本是靠近文件底部的 NSIS `LangString`（文件必须保持无 BOM 的 UTF-8），且必须为该列表中的每种语言定义——缺失只会是编译期警告（6040），并渲染为空字符串。应用的可见名跟随所选语言：桌面与开始菜单快捷方式、程序列表条目、`.moka` 关联文本在中文下显示摩卡画布，否则显示 "Moka Canvas"。编译期的 `${PRODUCTNAME}`（"Moka Canvas"）仍是背后一切的身份——安装文件夹、注册表键、`uninstall.exe` 与安装文件名——因此升级与卸载始终匹配，另一种语言下的安装会替换旧名快捷方式，而不是把它们留在新的旁边。
 
-### Windows installer cross-compile (macOS host)
+### Windows 安装器交叉编译（macOS 主机）
 
 ```sh
 make cross-package-windows
 ```
 
-Cross-compiles the NSIS installer (`Moka Canvas_<version>_x64-setup.exe`) from macOS using the `x86_64-pc-windows-gnu` Rust target and mingw-w64, then copies it into `release/`.
+用 `x86_64-pc-windows-gnu` Rust 目标与 mingw-w64 在 macOS 上交叉编译 NSIS 安装器（`Moka Canvas_<version>_x64-setup.exe`），然后复制进 `release/`。
 
-Host prerequisites:
+主机前置条件：
 
 ```sh
 brew install mingw-w64 makensis
 ```
 
-The Makefile enforces these checks and installs the missing Rust target automatically. The build sets `LC_ALL=en_US.UTF-8` because makensis aborts with `std::bad_alloc` under non-UTF-8 locales ([NSIS bug 1165](https://sourceforge.net/p/nsis/bugs/1165/)).
+Makefile 强制这些检查，并在缺失时自动安装 Rust 目标。构建设置 `LC_ALL=en_US.UTF-8`，因为 makensis 在非 UTF-8 locale 下会以 `std::bad_alloc` 中止（[NSIS bug 1165](https://sourceforge.net/p/nsis/bugs/1165/)）。
 
-Caveats:
+注意事项：
 
-- The bundled exe is unsigned; Windows SmartScreen may warn.
-- The cross-built installer has not been smoke-tested on a physical Windows machine; verify by installing once before distribution.
-- Never run `cross-package-windows` concurrently with another package task (`package-macos`, `package-web`, `web-build`). All of them rebuild `dist/`, and vite empties `dist/` at the start of a rebuild. If the bundler resolves resources while `dist/` is empty, Tauri's resource walker silently skips the directory, producing an installer without `web/` — the installed app then exits immediately on launch (the embedded HTTP server requires the `web/` resource directory). If an installed Windows build "does nothing" on double-click, check that the installer actually contains `web/` (`7zz l <setup.exe>`) and rebuild.
+- 打包的 exe 未签名；Windows SmartScreen 可能会警告。
+- 交叉构建的安装器尚未在物理 Windows 机器上冒烟测试；分发前先安装一次验证。
+- 绝不要把 `cross-package-windows` 与另一个打包任务（`package-macos`、`package-web`、`web-build`）并发运行。它们都会重建 `dist/`，而 vite 在重建开始时清空 `dist/`。如果 bundler 在 `dist/` 为空时解析资源，Tauri 的资源遍历器会静默跳过该目录，产出没有 `web/` 的安装器——安装后的应用启动即退出（内嵌 HTTP 服务器需要 `web/` 资源目录）。如果安装好的 Windows 构建双击「没反应」，检查安装器确实包含 `web/`（`7zz l <setup.exe>`）并重建。
 
-### Updating app icons
+### 更新应用图标
 
-Windows uses the icon through two independent paths, both sourced from `src-tauri/icons/`:
+Windows 通过两条独立路径使用图标，都源自 `src-tauri/icons/`：
 
-- The `.rsrc` section of the exe (explorer/shortcut icons), written by tauri-build.
-- An RGBA copy embedded at compile time by the `generate_context!()` macro (runtime window/taskbar icon).
+- exe 的 `.rsrc` 段（资源管理器/快捷方式图标），由 tauri-build 写入。
+- 一个在编译时由 `generate_context!()` 宏嵌入的 RGBA 副本（运行时窗口/任务栏图标）。
 
-`tauri-build` does not emit `rerun-if-changed` for `icons/icon.ico`, so after replacing icons, a stale build cache can keep the old runtime icon even though the source files are new. Force the lib crate to rebuild before packaging:
+`tauri-build` 不会为 `icons/icon.ico` 发出 `rerun-if-changed`，因此替换图标后，陈旧的构建缓存可能仍保留旧的运行时图标，即使源文件是新的。打包前强制重建 lib crate：
 
 ```sh
 touch src-tauri/src/lib.rs
 ```
 
-or run `make clean` once. Afterwards, Windows may still show the old icon from its shell icon cache — refresh it on the Windows machine by unpinning the app from the taskbar, reinstalling, re-pinning, then running `ie4uinit.exe -show` (or restarting explorer.exe) to flush the icon cache.
+或运行一次 `make clean`。之后 Windows 可能仍从其 shell 图标缓存显示旧图标——在 Windows 机器上刷新它：从任务栏取消固定应用、重新安装、重新固定，然后运行 `ie4uinit.exe -show`（或重启 explorer.exe）以刷新图标缓存。
 
-### `.moka` file association
+### `.moka` 文件关联
 
-`*.moka` documents are registered to open with the app and use their own document icon (the previous app icon design), built as `src-tauri/icons/moka-file.icns` / `moka-file.ico` and shipped via `bundle.resources` in `src-tauri/tauri.conf.json`:
+`*.moka` 文档注册为用本应用打开，并使用自己的文档图标（上一版应用图标设计），构建为 `src-tauri/icons/moka-file.icns` / `moka-file.ico`，并通过 `src-tauri/tauri.conf.json` 的 `bundle.resources` 随附：
 
-- **macOS**: `src-tauri/Info.plist` (auto-merged into the bundle's Info.plist by Tauri) declares the `app.canvas.moka` UTI and document type with `CFBundleTypeIconFile` = `moka-file`.
-- **Windows (NSIS)**: the forked `installer/installer.nsi` hardcodes `APP_ASSOCIATE`/`APP_UNASSOCIATE` for `.moka` with `DefaultIcon` = `$INSTDIR\moka-file.ico`. This replaces the upstream `{{#each file_associations}}` loop, which cannot use a separate document icon — re-apply the divergence when re-diffing against the upstream template.
-- The MSI bundle (built by `package-windows` on a Windows host) does **not** register the association, and its texts stay English; distribute the NSIS setup exe for both.
+- **macOS**：`src-tauri/Info.plist`（由 Tauri 自动合并进包的 Info.plist）声明 `app.canvas.moka` UTI 与文档类型，`CFBundleTypeIconFile` = `moka-file`。
+- **Windows（NSIS）**：派生的 `installer/installer.nsi` 为 `.moka` 硬编码 `APP_ASSOCIATE`/`APP_UNASSOCIATE`，`DefaultIcon` = `$INSTDIR\moka-file.ico`。这替换了上游的 `{{#each file_associations}}` 循环，后者无法使用单独的文档图标——与上游模板重新 diff 时重新应用这处分歧。
+- MSI 包（在 Windows 主机上由 `package-windows` 构建）**不**注册该关联，其文本保持英文；两者的分发都请用 NSIS setup exe。
 
-## Clean
+## 清理
 
 ```sh
 make clean
 ```
 
-Removes `dist/`, `release/`, `src-tauri/target/`, and TypeScript build caches (`node_modules/.tmp`).
+移除 `dist/`、`release/`、`src-tauri/target/` 与 TypeScript 构建缓存（`node_modules/.tmp`）。
 
-## Signing and notarization
+## 签名与公证
 
-### macOS ad-hoc signing (default)
+### macOS ad-hoc 签名（默认）
 
-`bundle.macOS.signingIdentity` is set to `"-"` in `src-tauri/tauri.conf.json`, so the bundler ad-hoc signs the `.app` inside out — external binaries such as `moka-server` and any frameworks first, then the bundle itself. Without this the bundle ships with no `_CodeSignature/CodeResources` at all, only the linker-generated ad-hoc signature on each Mach-O, and `codesign --verify` fails with `code has no resources but signature indicates they must be present`. Verify a build with:
+`src-tauri/tauri.conf.json` 中 `bundle.macOS.signingIdentity` 设为 `"-"`，因此 bundler 由内而外 ad-hoc 签名 `.app`——先外部二进制如 `moka-server` 与任何框架，再包本身。没有它，包完全不带 `_CodeSignature/CodeResources`，只有每个 Mach-O 上链接器生成的 ad-hoc 签名，`codesign --verify` 会以 `code has no resources but signature indicates they must be present` 失败。用以下命令验证构建：
 
 ```sh
 codesign --verify --verbose=3 "Moka Canvas.app"
-codesign -dv --verbose=2 "Moka Canvas.app"   # expect Sealed Resources version=2
+codesign -dv --verbose=2 "Moka Canvas.app"   # 期待 Sealed Resources version=2
 ```
 
-Ad-hoc signing proves the bundle's contents are intact and consistent with each other. It does **not** satisfy Gatekeeper: ad-hoc signatures cannot be notarized, so a downloaded DMG still prompts, and `spctl` keeps rejecting it. It is what a build with no Apple credentials available can honestly claim, and nothing more.
+Ad-hoc 签名证明包的内容完整、彼此一致。它**不**满足 Gatekeeper：ad-hoc 签名无法公证，因此下载的 DMG 仍会提示，`spctl` 持续拒绝它。这是没有任何 Apple 凭据的构建能诚实宣称的，仅此而已。
 
-### Developer ID signing and notarization (release)
+### Developer ID 签名与公证（发布）
 
-Release signing (Authenticode for Windows, Developer ID + notarization for macOS) requires organization-specific credentials and is out of scope for this baseline. When they are available, macOS needs no config change: the CLI reads `APPLE_SIGNING_IDENTITY` and lets it win over `signingIdentity`, so a real identity is supplied per-build without editing the tracked config.
+发布签名（Windows 的 Authenticode，macOS 的 Developer ID + 公证）需要组织特定的凭据，超出此基线范围。有凭据时 macOS 无需改配置：CLI 读取 `APPLE_SIGNING_IDENTITY` 并让它胜过 `signingIdentity`，因此真实身份按构建提供，无需编辑受跟踪的配置。
 
 ```sh
 APPLE_SIGNING_IDENTITY="Developer ID Application: <org> (<team id>)" make package-macos
 ```
 
-Notarization is then attempted automatically when `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` (or the `APPLE_API_KEY*` equivalents) are present, and skipped with a warning when they are not. Note that the DMG stays unsigned whenever the identity is `"-"` — Tauri skips self-signed DMGs on purpose — so signing the DMG itself also requires a real identity.
+当 `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`（或 `APPLE_API_KEY*` 等价物）存在时会自动尝试公证，不存在时跳过并给出警告。注意身份为 `"-"` 时 DMG 保持未签名——Tauri 有意跳过自签名 DMG——因此给 DMG 本身签名同样需要真实身份。

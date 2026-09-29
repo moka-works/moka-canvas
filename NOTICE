@@ -1,0 +1,34 @@
+Moka Canvas
+Copyright 2026 Moka Canvas
+
+This product includes software developed by third parties.
+
+Components licensed under the Apache License, Version 2.0:
+
+* bson - https://github.com/mongodb/js-bson
+  Copyright The MongoDB NodeJS Team
+
+* dpi - https://github.com/rust-windowing/winit
+
+* memo-map - https://github.com/mitsuhiko/memo-map
+  Copyright Armin Ronacher
+
+* minijinja - https://github.com/mitsuhiko/minijinja
+  Copyright Armin Ronacher
+
+* ring - https://github.com/briansmith/ring
+  Copyright 2015-2025 Brian Smith; portions Copyright the BoringSSL Authors
+
+* sync_wrapper - https://github.com/Actyx/sync_wrapper
+  Copyright Actyx AG
+
+* tao - https://github.com/tauri-apps/tao
+  Copyright the Tauri Programme within The Commons Conservancy and the winit
+  contributors
+
+* zopfli - https://github.com/zopfli-rs/zopfli
+  Copyright the zopfli-rs contributors
+
+Other third-party components are available under permissive licenses, including
+MIT, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0, MPL-2.0 and
+CDLA-Permissive-2.0.

@@ -4,6 +4,7 @@ version = "0.3.0"
 default-run = "moka-canvas"
 description = "Local-first visual video workflow editor"
 authors = ["Moka Canvas"]
+license = "Apache-2.0"
 edition = "2021"
 rust-version = "1.77"
 
