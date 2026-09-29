@@ -184,6 +184,42 @@ function elementOnlyNow(assetId: AssetId, reason: string | null = null): void {
   elementOnly.set(assetId, reason);
 }
 
+/** How many reads may fail for a reason that may pass before an asset is handed to the elements. */
+const MAX_TRANSIENT_FAILURES = 3;
+
+/**
+ * The assets whose reads have failed for reasons that may pass, and how often.
+ *
+ * A fetch that timed out, a decoder that stumbled under contention: these are
+ * the failures a busy preview meets in ordinary use, and holding one against
+ * an asset for the session would send a perfectly decodable file to the
+ * elements for good. They are counted instead, and only a run of them — never
+ * a single bad moment — rules the file out.
+ */
+const transientFailures = new Map<AssetId, number>();
+
+/** A read that failed for a reason that may pass: counted, and only a run of them rules the asset out. */
+function transient(assetId: AssetId, detail: string): void {
+  const count = (transientFailures.get(assetId) ?? 0) + 1;
+  transientFailures.set(assetId, count);
+  if (count >= MAX_TRANSIENT_FAILURES) elementOnlyNow(assetId, detail);
+}
+
+/** A read that succeeded: whatever went wrong before was this moment's trouble, not the file's. */
+function cleared(assetId: AssetId): void {
+  transientFailures.delete(assetId);
+}
+
+/**
+ * Gives every asset its recoverable failures back.
+ *
+ * Called when playback stops: a new run is a new chance for the decode path,
+ * and only the files that are unreadable on their own terms stay ruled out.
+ */
+export function resetTransientFailures(): void {
+  transientFailures.clear();
+}
+
 /** Whether decode has been ruled out for an asset this session. */
 export function isElementOnly(assetId: AssetId): boolean {
   return elementOnly.has(assetId);
@@ -249,6 +285,8 @@ async function decodeOn(
   const timer = setTimeout(() => controller.abort(), DECODE_TIMEOUT_MS);
   let hit: VideoFrame | null = null;
   let stopped = false;
+  /** Why this read did not succeed, in the terms the failure is counted in. */
+  let why = "The decode did not answer";
   try {
     const fetched = await readRange(
       assetUrl(assetId),
@@ -286,24 +324,41 @@ async function decodeOn(
       DECODE_TIMEOUT_MS,
     );
     // A run that stopped answering, failed, or produced nothing at all is a
-    // file this decoder cannot serve: the elements are asked from here on.
+    // read that did not succeed: counted, and a run of them hands the file to
+    // the elements — one bad moment under load is not the file's verdict.
+    if (flushed === null) why = "The decoder did not answer in time";
+    else if (slot.failed) why = "The decoder failed on the run";
+    else if (hit === null) why = "No frame came out of the run";
     if (flushed === null || slot.failed || hit === null) {
       stopped = true;
       return null;
     }
+    cleared(assetId);
     return cacheFrame(key, hit);
-  } catch {
+  } catch (problem) {
     stopped = true;
+    why = problem instanceof Error ? problem.message : String(problem);
     return null;
   } finally {
     clearTimeout(timer);
     slot.sink = null;
     if (stopped) {
-      elementOnlyNow(assetId);
+      transient(assetId, why);
       if (!hit) dropSlot(slot);
     }
   }
 }
+
+/**
+ * The reads in flight, by asset and target sample.
+ *
+ * Several paints can ask for the same frame at once — a fresh seek repaints
+ * the ruler and the stage in the same turn — and one decode is enough for all
+ * of them: the second caller waits on the first's promise rather than
+ * competing for a decoder with it, which is what made concurrent reads fail
+ * each other in the first place.
+ */
+const inFlight = new Map<string, Promise<DecodedPicture | null>>();
 
 /**
  * A frame for a material moment, or null when this asset cannot be decoded.
@@ -317,20 +372,35 @@ export async function decodeFrameAt(
 ): Promise<DecodedPicture | null> {
   if (elementOnly.has(assetId)) return null;
   const index = await mp4IndexFor(assetId);
-  if (!index?.video) return null;
+  const video = index?.video;
+  if (!index || !video) return null;
   if (typeof VideoDecoder === "undefined") {
     elementOnlyNow(assetId);
     return null;
   }
-  const slot = await takeSlot();
-  slot.busy = decodeOn(slot, assetId, index, materialMs);
-  try {
-    const frame = await slot.busy;
-    if (!frame) return null;
-    return { frame, rotationDeg: index.video.rotationDeg };
-  } finally {
-    slot.busy = null;
-  }
+  const plan = planFor(video, materialMs);
+  if (!plan) return null;
+  const wanted = video.samples[plan.target];
+  const key = `${assetId}:${wanted.ctsUs}`;
+  const kept = cached(key);
+  if (kept) return { frame: kept, rotationDeg: video.rotationDeg };
+  const running = inFlight.get(key);
+  if (running) return running;
+  const job = (async () => {
+    const slot = await takeSlot();
+    slot.busy = decodeOn(slot, assetId, index, materialMs);
+    try {
+      const frame = await slot.busy;
+      if (!frame) return null;
+      return { frame, rotationDeg: video.rotationDeg };
+    } finally {
+      slot.busy = null;
+    }
+  })().finally(() => {
+    inFlight.delete(key);
+  });
+  inFlight.set(key, job);
+  return job;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,10 +588,26 @@ class SequentialStream implements FrameStream {
     this.room = null;
   }
 
-  /** A file this run cannot read is one the still path owns from here on. */
-  private fail(): void {
-    this.gaveUp = true;
+  /** A file this run cannot read at all: the elements own it from here on. */
+  private unreadable(): void {
     elementOnlyNow(this.assetId);
+    this.stop();
+  }
+
+  /**
+   * A read that failed for a reason that may pass.
+   *
+   * This run is over — the still path and the elements read the frame in the
+   * meantime — but the file is not held against, and the next playback gives
+   * the decode path a fresh run at it.
+   */
+  private stumble(why: string): void {
+    transient(this.assetId, why);
+    this.stop();
+  }
+
+  private stop(): void {
+    this.gaveUp = true;
     this.close();
   }
 
@@ -535,7 +621,7 @@ class SequentialStream implements FrameStream {
         video.samples.length === 0 ||
         typeof VideoDecoder === "undefined"
       ) {
-        this.fail();
+        this.unreadable();
         return;
       }
       const config = videoConfig(video);
@@ -544,20 +630,20 @@ class SequentialStream implements FrameStream {
       );
       if (this.closed) return;
       if (!support?.supported) {
-        this.fail();
+        this.unreadable();
         return;
       }
       this.rotationDeg = video.rotationDeg;
       this.decoder = new VideoDecoder({
         output: (frame) => this.onFrame(frame),
-        error: () => this.fail(),
+        error: () => this.stumble("The decoder failed on the run"),
       });
       this.decoder.configure(config);
       // A run starts where decoding can: back to the keyframe the moment sits
       // behind, since a mid-GOP start decodes to noise until the next one.
       const target = sampleAt(video.samples, this.fromMs);
       if (target < 0) {
-        this.fail();
+        this.unreadable();
         return;
       }
       this.samples = video.samples;
@@ -565,8 +651,9 @@ class SequentialStream implements FrameStream {
       while (this.next > 0 && !this.samples[this.next].key) this.next -= 1;
       void this.pump();
     } catch {
-      // A file that will not open for a stream is a file the stills own.
-      this.fail();
+      // A file that will not open for a stream is a file the stills own — and
+      // one the parser has already named, where it has a name for it.
+      this.unreadable();
     }
   }
 
@@ -575,6 +662,8 @@ class SequentialStream implements FrameStream {
       frame.close();
       return;
     }
+    // A frame out is the run working: earlier trouble was the moment's, not the file's.
+    cleared(this.assetId);
     // A B-frame run arrives out of decode order and the moment is found by
     // presentation time, so the queue is kept in that order.
     let at = this.queue.length;
@@ -606,9 +695,12 @@ class SequentialStream implements FrameStream {
       let chunk: EncodedVideoChunk | null;
       try {
         chunk = await this.nextChunk();
-      } catch {
-        // A fetch that failed mid-run ends the run; the stills take over.
-        this.fail();
+      } catch (problem) {
+        // A fetch that failed mid-run ends the run; the stills take over, and
+        // the file is not held against for a connection that did not answer.
+        this.stumble(
+          problem instanceof Error ? problem.message : String(problem),
+        );
         return;
       }
       if (this.closed) return;
@@ -625,7 +717,7 @@ class SequentialStream implements FrameStream {
       try {
         this.decoder.decode(chunk);
       } catch {
-        this.fail();
+        this.stumble("The decoder refused a chunk mid-run");
         return;
       }
     }

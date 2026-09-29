@@ -9,6 +9,7 @@ import {
   elementOnlyReason,
   isElementOnly,
   mp4IndexFor,
+  resetTransientFailures,
   streamFrom,
   type FrameStream,
 } from "./decode";
@@ -93,6 +94,15 @@ export function createFrameSources(): PreviewFrameSources {
   const reported = new Set<AssetId>();
   /** The runs playing clips own, by clip, oldest first; a paused room holds none. */
   const streams = new Map<ClipId, { stream: FrameStream; assetId: AssetId }>();
+  /**
+   * The clips whose run gave up this playback.
+   *
+   * A run that failed for a passing reason is not remade on the next paint —
+   * that would be a fetch per frame against a file already struggling — and
+   * the clip reads from the elements until the clock stops, where every run is
+   * let go of and the next playback gives the decode path its fresh start.
+   */
+  const gaveUp = new Set<ClipId>();
   let arrivals: (() => void)[] = [];
 
   const notifyArrive = (): void => {
@@ -198,10 +208,12 @@ export function createFrameSources(): PreviewFrameSources {
   ): FrameStream | null => {
     const assetId = clip.assetId;
     if (!assetId) return null;
+    if (gaveUp.has(clip.id)) return null;
     const kept = streams.get(clip.id);
     if (kept && (kept.assetId !== assetId || kept.stream.failed)) {
       kept.stream.close();
       streams.delete(clip.id);
+      if (kept.stream.failed && kept.assetId === assetId) gaveUp.add(clip.id);
     }
     let stream = streams.get(clip.id)?.stream ?? null;
     if (stream) {
@@ -231,6 +243,11 @@ export function createFrameSources(): PreviewFrameSources {
   const stopPlayback = (): void => {
     for (const kept of streams.values()) kept.stream.close();
     streams.clear();
+    // A stopped clock is the seam between two playbacks: every passing failure
+    // is forgotten, so the next run asks the decode path again rather than
+    // living with the last one's trouble.
+    gaveUp.clear();
+    resetTransientFailures();
     elementEngine().stopPlayback();
   };
 
@@ -266,16 +283,21 @@ export function createFrameSources(): PreviewFrameSources {
           ? decodedPicture(decoded.frame, decoded.rotationDeg)
           : { kind: "waiting" };
       }
-    }
-    if (engine === "webcodecs") {
+      // No run for this clip this playback — it gave up, and the elements read
+      // it until the clock stops. A still decode per paint is the very cost the
+      // run exists to avoid, so a playing clip is never sent down that path.
+    } else if (engine === "webcodecs") {
       try {
         const decoded = await decodeFrameAt(assetId, materialMs);
         if (decoded) return decodedPicture(decoded.frame, decoded.rotationDeg);
       } catch {
-        // A decode that failed after the engine was chosen sends the file to
-        // the elements rather than failing the frame.
+        // A decode that failed after the engine was chosen falls back to the
+        // elements for this frame rather than failing it.
       }
-      engines.set(assetId, "element");
+      // Only a file the decoder has really given up on changes engines: a read
+      // that failed once under load is the moment's trouble, and the next
+      // paint asks the decoder again.
+      if (isElementOnly(assetId)) engines.set(assetId, "element");
     }
     if (playing) {
       // The element plays its own picture; the room's clock only asks where.
