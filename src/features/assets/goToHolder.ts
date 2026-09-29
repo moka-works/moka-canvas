@@ -91,6 +91,7 @@ function stepFor(target: StorySlotTarget): StoryStep {
     case "keyframeVideo":
     case "actVideo":
     case "actVoice":
+    case "lineVoice":
     case "actMusic":
       return "storyboard";
   }
