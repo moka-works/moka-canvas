@@ -7,24 +7,31 @@ import {
   type Mp4Sample,
   type Mp4VideoTrack,
 } from "./mp4";
-import { planFor, sampleAt, type SampleChunk } from "./samplePlan";
+import {
+  planFor,
+  sampleAt,
+  type SampleChunk,
+  type SamplePlan,
+} from "./samplePlan";
 
 /**
  * Frames straight out of the file, through WebCodecs.
  *
- * A decoder is asked for one frame at a time: the samples from a keyframe to
- * the moment are fetched as one window and handed over as chunks, the frame
- * that shows the moment is kept and the rest of the run is let go of as it
- * comes out. Two decoders are kept and shared, because a cut with two picture
- * tracks on screen at once is the case this exists for, and the frames
- * themselves live in a small cache with an eviction rule — dragging the
- * playhead across a second of video must not decode that second again for
- * every move of the pointer.
+ * A still is read by a run fed forward from the keyframe the moment sits
+ * behind: the samples between are fetched and handed over once, and the frame
+ * that shows the moment is kept — in a small shared cache with an eviction
+ * rule, since a moment drawn once is one a later paint asks for again. A drag
+ * asks for a new moment every paint, so each file keeps its run between the
+ * asks of one drag: a further moment costs only the samples between it and the
+ * last, never the whole group over again.
  *
- * An asset that cannot be decoded is remembered as such for the session, so
- * the element engine is asked for it rather than the same failure being
- * rediscovered on every frame. Frames belong to the cache: a caller draws from
- * one and never closes it.
+ * Two decoders are shared between the files being read, which is what a cut
+ * with two picture tracks on screen at once needs; a file whose asks have
+ * stopped offers its decoder up as soon as another file wants one. An asset
+ * that cannot be decoded is remembered as such for the session, so the element
+ * engine is asked for it rather than the same failure being rediscovered on
+ * every frame. Frames belong to the cache: a caller draws from one and never
+ * closes it.
  */
 
 export interface DecodedPicture {
@@ -43,13 +50,24 @@ const DECODE_TIMEOUT_MS = 8_000;
 
 interface Slot {
   decoder: VideoDecoder;
-  /** Where the job in flight's frames are collected; null between jobs. */
+  /** Where the holder's frames are delivered; null while the slot is free. */
   sink: ((frame: VideoFrame) => void) | null;
-  /** The job in flight, which the next caller on this decoder waits behind. */
-  busy: Promise<VideoFrame | null> | null;
-  /** Whether the job in flight failed, which its own await cannot always say. */
+  /** The reader holding this decoder, or null while it is free to lend. */
+  loan: Loan | null;
+  /** Whether the decoder failed on the run it was last given. */
   failed: boolean;
   usedAt: number;
+}
+
+/** One reader's hold on a decoder, given back by the reader or on request. */
+interface Loan {
+  /** Resolved when the slot is given back, whichever way it went. */
+  held: Promise<void>;
+  freed: boolean;
+  /** Lets the slot go when the holder has nothing in flight; false when it has. */
+  yieldTo: () => boolean;
+  /** Gives the slot back: nothing more is delivered on it, and it can be lent. */
+  give(): void;
 }
 
 const slots: Slot[] = [];
@@ -125,38 +143,68 @@ function openSlot(): Slot {
   const slot: Slot = {
     decoder: null as unknown as VideoDecoder,
     sink: null,
-    busy: null,
+    loan: null,
     failed: false,
     usedAt: 0,
   };
   slot.decoder = new VideoDecoder({
-    // A frame that arrives with no job waiting for it is one nobody kept.
+    // A frame that arrives with no holder waiting for it is one nobody kept.
     output: (frame) => (slot.sink ? slot.sink(frame) : frame.close()),
     error: () => {
-      // The failure is read from the job's own await, which is where it can be acted on.
+      // The failure is read from the run's own await, which is where it can be acted on.
       slot.failed = true;
     },
   });
   return slot;
 }
 
-/** A decoder to work on: an idle one, a free pool place, or the one idle longest. */
+/**
+ * Hands a decoder over to one reader, held until the reader gives it back.
+ *
+ * The hold is what keeps a run warm between the asks of a drag — the decoder
+ * is not re-lent and reconfigured under it — and the loan is what lets a file
+ * that has stopped asking offer its decoder up instead of keeping it from a
+ * file that is being read now.
+ */
+function lend(slot: Slot): Slot {
+  let resolveHeld = (): void => undefined;
+  const loan: Loan = {
+    held: new Promise((resolve) => {
+      resolveHeld = resolve;
+    }),
+    freed: false,
+    yieldTo: () => false,
+    give() {
+      if (loan.freed) return;
+      loan.freed = true;
+      slot.loan = null;
+      slot.sink = null;
+      resolveHeld();
+    },
+  };
+  slot.usedAt = Date.now();
+  slot.loan = loan;
+  return slot;
+}
+
+/** A decoder to work on: a free one, a free pool place, or an idle holder's offered up. */
 async function takeSlot(): Promise<Slot> {
   for (;;) {
-    const idle = slots.filter((slot) => slot.busy === null);
-    if (idle.length > 0) {
-      const slot = idle.reduce((a, b) => (a.usedAt <= b.usedAt ? a : b));
-      slot.usedAt = Date.now();
-      return slot;
-    }
+    const free = slots.filter((slot) => slot.loan === null);
+    if (free.length > 0)
+      return lend(free.reduce((a, b) => (a.usedAt <= b.usedAt ? a : b)));
     if (slots.length < MAX_DECODERS) {
       const slot = openSlot();
       slots.push(slot);
-      slot.usedAt = Date.now();
-      return slot;
+      return lend(slot);
     }
-    // Both are working: wait for whichever finishes first, then look again.
-    await Promise.race(slots.map((slot) => slot.busy ?? Promise.resolve()));
+    // Every decoder is in use: one held with nothing in flight lets its own go
+    // before anyone waits on a decoder that is working.
+    if (slots.some((slot) => slot.loan?.yieldTo())) continue;
+    // All of them are working: wait for whichever finishes first, then look again.
+    await Promise.race(
+      slots.map((slot) => slot.loan?.held ?? Promise.resolve()),
+    );
   }
 }
 
@@ -257,65 +305,247 @@ export async function mp4IndexFor(assetId: AssetId): Promise<Mp4Index | null> {
   }
 }
 
-async function decodeOn(
-  slot: Slot,
-  assetId: AssetId,
-  index: Mp4Index,
-  materialMs: number,
-): Promise<VideoFrame | null> {
-  const video = index.video;
-  if (!video) return null;
-  const plan = planFor(video, materialMs);
-  if (!plan) return null;
-  const wanted = video.samples[plan.target];
-  const key = `${assetId}:${wanted.ctsUs}`;
-  const kept = cached(key);
-  if (kept) return kept;
+// ---------------------------------------------------------------------------
+// Reading stills, a run per file
+// ---------------------------------------------------------------------------
 
-  const config: VideoDecoderConfig = videoConfig(video);
-  const support = await VideoDecoder.isConfigSupported(config).catch(
-    () => null,
-  );
-  if (!support?.supported) {
-    elementOnlyNow(assetId);
+/** How many frames past the target a read hands over: the reorder depth it covers. */
+const SEEK_REORDER_AHEAD = 4;
+/** How long a read waits for its frame before the flush fallback is asked. */
+const SEEK_HOLD_MS = 250;
+
+/**
+ * The assets a decoder has said it takes.
+ *
+ * The question is asked once per file: its answer does not change between the
+ * reads of a drag, and a drag is the reads this exists for. A file the decoder
+ * says it cannot take is not remembered here but ruled out for the session,
+ * which is a stronger thing than a cached no.
+ */
+const codecAccepted = new Set<AssetId>();
+
+/** One read of one moment, and the callers waiting on it. */
+interface Ask {
+  readonly plan: SamplePlan;
+  /** The presentation time of the sample that shows the moment. */
+  readonly ctsUs: number;
+  /** Set when a newer ask became the one being read: this moment is passed over. */
+  superseded: boolean;
+  /** Set when the frame this ask wants has come out of the run. */
+  arrived: boolean;
+  /** Set once the waiters have been answered. */
+  done: boolean;
+  waiters: ((picture: DecodedPicture | null) => void)[];
+}
+
+/**
+ * The asks one file's stills are answered from, and the run they share.
+ *
+ * A drag is a stream of reads of one file, and every read after the first has
+ * no whole group to decode: the run stays where the last one left it — at the
+ * keyframe the moments sit behind, fed forward to the target — and a further
+ * moment costs only the samples between. One read of one file is in hand at a
+ * time: a read arriving while another is in hand is the newer reading, the ask
+ * it passed is told so, and the run carries on to the newer moment rather than
+ * starting the group over.
+ *
+ * The decoder is held across the asks of a drag and offered up the moment
+ * anybody else wants one, so a file nobody is reading does not keep a decoder
+ * from a file that is.
+ */
+class StillPipeline {
+  private readonly assetId: AssetId;
+  private readonly video: Mp4VideoTrack;
+  /** The decoder in hand; null between giving one up and the next ask. */
+  private slot: Slot | null = null;
+  /** The keyframe the run began at, or -1 with no run. */
+  private runStart = -1;
+  /** The last sample the run was fed, or -1 before its first. */
+  private fed = -1;
+  /** The moments fed whose frames have not come out yet. */
+  private readonly owed = new Set<number>();
+  /** The ask being read; the frames arriving on the slot belong to it. */
+  private serving: Ask | null = null;
+  /** The asks waiting a turn, oldest first; only the newest is read. */
+  private pending: Ask[] = [];
+  private driving = false;
+  /** The read in flight, cut only for a newer moment in another group. */
+  private fetch: AbortController | null = null;
+  /** Whether the read in flight was cut by its own clock rather than a newer ask. */
+  private timedOut = false;
+  /** Woken when the frame the served ask waits for arrives. */
+  private wake: (() => void) | null = null;
+
+  constructor(assetId: AssetId, video: Mp4VideoTrack) {
+    this.assetId = assetId;
+    this.video = video;
+  }
+
+  /**
+   * The frame showing a moment, or null when the moment was passed over.
+   *
+   * A frame already decoded is the answer at once; otherwise the moment is
+   * registered as the one to read and the caller waits. Null is not a failure:
+   * it is a moment a newer read has taken the place of, and the paint that
+   * asked for it is a paint drawing from the past.
+   */
+  ask(plan: SamplePlan): Promise<DecodedPicture | null> {
+    const wanted = this.video.samples[plan.target];
+    const kept = cached(this.key(wanted.ctsUs));
+    if (kept)
+      return Promise.resolve({
+        frame: kept,
+        rotationDeg: this.video.rotationDeg,
+      });
+    const open = this.openAsk(plan.target);
+    if (open) return this.waitOn(open);
+    const ask: Ask = {
+      plan,
+      ctsUs: wanted.ctsUs,
+      superseded: false,
+      arrived: false,
+      done: false,
+      waiters: [],
+    };
+    this.supersede(ask);
+    this.pending.push(ask);
+    void this.drive();
+    return this.waitOn(ask);
+  }
+
+  /** The ask already open for a sample: the one being read, or one waiting its turn. */
+  private openAsk(target: number): Ask | null {
+    const serving = this.serving;
+    if (serving && !serving.done && serving.plan.target === target)
+      return serving;
+    for (const ask of this.pending) if (ask.plan.target === target) return ask;
     return null;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DECODE_TIMEOUT_MS);
-  let hit: VideoFrame | null = null;
-  let stopped = false;
-  /** Why this read did not succeed, in the terms the failure is counted in. */
-  let why = "The decode did not answer";
-  try {
-    const fetched = await readRange(
-      assetUrl(assetId),
-      plan.startOffset,
-      plan.endOffset,
-      controller.signal,
-    );
-    const bytes = fetched.bytes;
-    slot.failed = false;
-    slot.sink = (frame) => {
-      if (frame.timestamp === wanted.ctsUs && hit === null) hit = frame;
-      else frame.close();
-    };
-    // A reset decoder starts from a keyframe, which is the plan's first chunk.
-    slot.decoder.reset();
-    slot.decoder.configure(config);
-    for (const chunk of plan.chunks) {
-      const at = chunk.offset - plan.startOffset;
-      slot.decoder.decode(
-        new EncodedVideoChunk({
-          type: chunk.key ? "key" : "delta",
-          timestamp: chunk.ctsUs,
-          // The sample's own place in the window; the chunk takes its copy.
-          data: bytes.subarray(at, at + chunk.size),
-        }),
-      );
+  private waitOn(ask: Ask): Promise<DecodedPicture | null> {
+    return new Promise((resolve) => ask.waiters.push(resolve));
+  }
+
+  /**
+   * The newest ask becomes the one being read.
+   *
+   * The asks it passed are drawings of moments the run has gone by, and their
+   * callers are paints that have been overtaken, so they are answered now
+   * rather than waited on. The read in flight is cut with them: its bytes are
+   * the newest moment's bytes too, and the run's own bookkeeping — the samples
+   * fed, the group they came from — is what the newer read starts from, so
+   * nothing crossed is crossed again.
+   */
+  private supersede(newest: Ask): void {
+    let cut = false;
+    for (const ask of [this.serving, ...this.pending]) {
+      if (!ask || ask === newest || ask.done) continue;
+      // A moment behind the newest is one the run has gone by, whether or not
+      // the paint that asked for it is still on screen.
+      if (ask.plan.target >= newest.plan.target) continue;
+      ask.superseded = true;
+      this.settle(ask, null);
+      if (ask === this.serving) {
+        this.wakeArrival();
+        cut = true;
+      }
     }
-    // The frame wanted waits for the flush, which is where a decode order that
-    // reaches back for a B-frame finally comes out.
+    if (cut) this.fetch?.abort();
+  }
+
+  /** Reads the asks, newest first; the ones it passed are answered as such. */
+  private async drive(): Promise<void> {
+    if (this.driving) return;
+    this.driving = true;
+    try {
+      while (this.pending.length > 0) {
+        const ask = this.pending.pop() as Ask;
+        for (const passed of this.pending) this.settle(passed, null);
+        this.pending = [];
+        this.serving = ask;
+        try {
+          await this.work(ask);
+        } finally {
+          this.serving = null;
+        }
+      }
+    } finally {
+      this.driving = false;
+    }
+  }
+
+  /** Reads the frame one ask wants, on the decoder the asks before it kept warm. */
+  private async work(ask: Ask): Promise<void> {
+    const video = this.video;
+    // The frame may have been decoded while this ask waited its turn.
+    const kept = cached(this.key(ask.ctsUs));
+    if (kept) {
+      this.settle(ask, { frame: kept, rotationDeg: video.rotationDeg });
+      return;
+    }
+    // The browser's answer about a codec never changes, so it is asked once per
+    // file: an explicit no rules the file out for good, and a question that
+    // could not be answered at all is left to the configure below.
+    if (!codecAccepted.has(this.assetId)) {
+      const support = await VideoDecoder.isConfigSupported(
+        videoConfig(video),
+      ).catch(() => null);
+      if (ask.superseded) {
+        this.settle(ask, null);
+        return;
+      }
+      if (support && !support.supported) {
+        elementOnlyNow(this.assetId);
+        this.settle(ask, null);
+        return;
+      }
+      if (support?.supported) codecAccepted.add(this.assetId);
+    }
+
+    if (this.slot === null) {
+      const slot = await takeSlot();
+      if (ask.superseded) {
+        slot.loan?.give();
+        this.settle(ask, null);
+        return;
+      }
+      this.keep(slot);
+    }
+    const slot = this.slot as Slot;
+
+    const plan = ask.plan;
+    const reach = Math.min(
+      video.samples.length - 1,
+      plan.target + SEEK_REORDER_AHEAD,
+    );
+    // A run that does not cover where this ask begins — another group, or a
+    // moment already fed and gone by — is started over from its keyframe.
+    if (
+      this.runStart !== plan.sync ||
+      (plan.target <= this.fed && !this.owed.has(ask.ctsUs))
+    )
+      this.beginRun(plan, videoConfig(video));
+
+    if (this.fed < reach && !(await this.feed(ask, reach))) return;
+    if (ask.superseded) {
+      this.settle(ask, null);
+      return;
+    }
+    // The samples past the target cover the reorder the decoder has not handed
+    // over yet; the hold is what a deeper one is given before the flush, which
+    // is the file's last word on a frame that has still not come out.
+    if (await this.waitArrival(ask, SEEK_HOLD_MS)) {
+      this.deliver(ask);
+      return;
+    }
+    if (ask.superseded) {
+      this.settle(ask, null);
+      return;
+    }
+    if (slot.failed) {
+      this.miss(ask, "The decoder failed on the run");
+      return;
+    }
     const flushed = await withDeadline(
       slot.decoder.flush().then(
         () => true,
@@ -323,48 +553,220 @@ async function decodeOn(
       ),
       DECODE_TIMEOUT_MS,
     );
-    // A run that stopped answering, failed, or produced nothing at all is a
-    // read that did not succeed: counted, and a run of them hands the file to
-    // the elements — one bad moment under load is not the file's verdict.
-    if (flushed === null) why = "The decoder did not answer in time";
-    else if (slot.failed) why = "The decoder failed on the run";
-    else if (hit === null) why = "No frame came out of the run";
-    if (flushed === null || slot.failed || hit === null) {
-      stopped = true;
-      return null;
+    if (flushed === null) {
+      this.miss(ask, "The decoder did not answer in time");
+      return;
     }
-    cleared(assetId);
-    return cacheFrame(key, hit);
-  } catch (problem) {
-    stopped = true;
-    why = problem instanceof Error ? problem.message : String(problem);
-    return null;
-  } finally {
-    clearTimeout(timer);
-    slot.sink = null;
-    if (stopped) {
-      transient(assetId, why);
-      if (!hit) dropSlot(slot);
+    if (ask.superseded) {
+      this.settle(ask, null);
+      return;
     }
+    if (slot.failed) {
+      this.miss(ask, "The decoder failed on the run");
+      return;
+    }
+    if (!ask.arrived) {
+      this.miss(ask, "No frame came out of the run");
+      return;
+    }
+    this.deliver(ask);
+  }
+
+  /**
+   * Fetches and hands over the samples from where the run stands to `reach`.
+   *
+   * One read covers the whole step — the bytes from the last sample fed to the
+   * reach — so a drag crossing a group pays for it once and every step after
+   * it pays only for what the step added. False is an ask already answered:
+   * cut short for a newer reading, or failed.
+   */
+  private async feed(ask: Ask, reach: number): Promise<boolean> {
+    const samples = this.video.samples;
+    const first = this.fed + 1;
+    let start = Number.POSITIVE_INFINITY;
+    let end = 0;
+    for (let index = first; index <= reach; index += 1) {
+      const sample = samples[index];
+      start = Math.min(start, sample.offset);
+      end = Math.max(end, sample.offset + sample.size);
+    }
+    const controller = new AbortController();
+    this.fetch = controller;
+    this.timedOut = false;
+    const timer = setTimeout(() => {
+      this.timedOut = true;
+      controller.abort();
+    }, DECODE_TIMEOUT_MS);
+    let bytes: Uint8Array;
+    try {
+      bytes = (
+        await readRange(assetUrl(this.assetId), start, end, controller.signal)
+      ).bytes;
+    } catch (problem) {
+      if (ask.superseded) {
+        // Cut short for a newer reading: nothing is held against the file.
+        this.settle(ask, null);
+        return false;
+      }
+      this.miss(
+        ask,
+        this.timedOut
+          ? "The decoder did not answer in time"
+          : problem instanceof Error
+            ? problem.message
+            : String(problem),
+      );
+      return false;
+    } finally {
+      clearTimeout(timer);
+      if (this.fetch === controller) this.fetch = null;
+    }
+    const slot = this.slot as Slot;
+    try {
+      for (let index = first; index <= reach; index += 1) {
+        const sample = samples[index];
+        this.owed.add(sample.ctsUs);
+        slot.decoder.decode(
+          new EncodedVideoChunk({
+            type: sample.key ? "key" : "delta",
+            timestamp: sample.ctsUs,
+            // The sample's own place in the window; the chunk takes its copy.
+            data: bytes.subarray(
+              sample.offset - start,
+              sample.offset - start + sample.size,
+            ),
+          }),
+        );
+        this.fed = index;
+      }
+    } catch {
+      this.miss(ask, "The decoder refused a chunk");
+      return false;
+    }
+    return true;
+  }
+
+  /** A frame out of the run: kept for the asks to come, and the served ask's answer. */
+  private onFrame(frame: VideoFrame): void {
+    const ctsUs = frame.timestamp;
+    this.owed.delete(ctsUs);
+    // A frame out is the file working: earlier trouble was the moment's, not the file's.
+    cleared(this.assetId);
+    cacheFrame(this.key(ctsUs), frame);
+    const serving = this.serving;
+    if (serving && serving.ctsUs === ctsUs) {
+      serving.arrived = true;
+      this.wakeArrival();
+    }
+  }
+
+  /** Waits for the frame the ask wants: its arrival, a supersede, or the clock. */
+  private async waitArrival(ask: Ask, ms: number): Promise<boolean> {
+    if (ask.arrived) return true;
+    if (ask.superseded) return false;
+    const woken = new Promise<void>((resolve) => {
+      this.wake = resolve;
+    });
+    await withDeadline(woken, ms);
+    this.wake = null;
+    return ask.arrived;
+  }
+
+  /** Wakes the served ask's wait for its frame: it arrived, or the ask was passed over. */
+  private wakeArrival(): void {
+    const resolve = this.wake;
+    this.wake = null;
+    resolve?.();
+  }
+
+  /** Hands the frame the run produced to the ask's waiters. */
+  private deliver(ask: Ask): void {
+    const kept = cached(this.key(ask.ctsUs));
+    this.settle(
+      ask,
+      kept ? { frame: kept, rotationDeg: this.video.rotationDeg } : null,
+    );
+  }
+
+  private settle(ask: Ask, picture: DecodedPicture | null): void {
+    if (ask.done) return;
+    ask.done = true;
+    const waiters = ask.waiters;
+    ask.waiters = [];
+    for (const waiter of waiters) waiter(picture);
+  }
+
+  /** A read that failed for a reason that may pass: counted, and its decoder let go of. */
+  private miss(ask: Ask, why: string): void {
+    transient(this.assetId, why);
+    if (this.slot) {
+      dropSlot(this.slot);
+      this.slot = null;
+      this.forgetRun();
+    }
+    this.settle(ask, null);
+  }
+
+  /** Starts the run over: the decoder goes back to the keyframe the plan begins at. */
+  private beginRun(plan: SamplePlan, config: VideoDecoderConfig): void {
+    const slot = this.slot as Slot;
+    slot.failed = false;
+    slot.decoder.reset();
+    slot.decoder.configure(config);
+    this.runStart = plan.sync;
+    this.fed = plan.sync - 1;
+    this.owed.clear();
+  }
+
+  /** Forgets where the run stood: the decoder it stood in is not in hand. */
+  private forgetRun(): void {
+    this.runStart = -1;
+    this.fed = -1;
+    this.owed.clear();
+  }
+
+  /** Takes a decoder for this pipeline, a fresh one for a fresh run. */
+  private keep(slot: Slot): void {
+    this.slot = slot;
+    slot.sink = (frame) => this.onFrame(frame);
+    if (slot.loan) slot.loan.yieldTo = () => this.yieldNow();
+    // Whatever a decoder held when it was lent out belongs to the reader that
+    // configured it; this one starts the file over.
+    this.forgetRun();
+  }
+
+  /** Gives the decoder back so another file can have it. */
+  private letGo(): void {
+    const slot = this.slot;
+    if (!slot) return;
+    slot.loan?.give();
+    this.slot = null;
+    this.forgetRun();
+  }
+
+  /** Offers the decoder up when nothing is in flight; false when something is. */
+  private yieldNow(): boolean {
+    if (this.driving || this.pending.length > 0) return false;
+    this.letGo();
+    return true;
+  }
+
+  /** The frame cache's key for a sample of this file. */
+  private key(ctsUs: number): string {
+    return `${this.assetId}:${ctsUs}`;
   }
 }
 
-/**
- * The reads in flight, by asset and target sample.
- *
- * Several paints can ask for the same frame at once — a fresh seek repaints
- * the ruler and the stage in the same turn — and one decode is enough for all
- * of them: the second caller waits on the first's promise rather than
- * competing for a decoder with it, which is what made concurrent reads fail
- * each other in the first place.
- */
-const inFlight = new Map<string, Promise<DecodedPicture | null>>();
+/** The still pipelines, by asset: the run each file's asks are read from. */
+const pipelines = new Map<AssetId, StillPipeline>();
 
 /**
- * A frame for a material moment, or null when this asset cannot be decoded.
+ * A frame for a material moment, or null when the moment was passed over.
  *
  * The frame belongs to the cache: it is drawn with and never closed by the
  * caller, and a key it was stored under is a frame a later call gets back.
+ * Null is not a failure — it is a moment a newer read has taken the place of,
+ * which the stage's own freshness check is the judge of.
  */
 export async function decodeFrameAt(
   assetId: AssetId,
@@ -380,27 +782,12 @@ export async function decodeFrameAt(
   }
   const plan = planFor(video, materialMs);
   if (!plan) return null;
-  const wanted = video.samples[plan.target];
-  const key = `${assetId}:${wanted.ctsUs}`;
-  const kept = cached(key);
-  if (kept) return { frame: kept, rotationDeg: video.rotationDeg };
-  const running = inFlight.get(key);
-  if (running) return running;
-  const job = (async () => {
-    const slot = await takeSlot();
-    slot.busy = decodeOn(slot, assetId, index, materialMs);
-    try {
-      const frame = await slot.busy;
-      if (!frame) return null;
-      return { frame, rotationDeg: video.rotationDeg };
-    } finally {
-      slot.busy = null;
-    }
-  })().finally(() => {
-    inFlight.delete(key);
-  });
-  inFlight.set(key, job);
-  return job;
+  let pipeline = pipelines.get(assetId);
+  if (!pipeline) {
+    pipeline = new StillPipeline(assetId, video);
+    pipelines.set(assetId, pipeline);
+  }
+  return pipeline.ask(plan);
 }
 
 // ---------------------------------------------------------------------------

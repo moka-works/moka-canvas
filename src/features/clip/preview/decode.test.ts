@@ -10,6 +10,7 @@ import {
   resetTransientFailures,
   streamFrom,
 } from "./decode";
+import { sampleAt } from "./samplePlan";
 
 /**
  * What a reader is told when a file cannot be decoded, and what a busy preview
@@ -40,6 +41,10 @@ let decodes = 0;
 let decoders = 0;
 /** The material moment the run has decoded up to, in milliseconds. */
 let headMs = 0;
+/** The byte ranges asked for, as sent — the inclusive last byte and all. */
+let ranges: { start: number; end: number }[] = [];
+/** How many times the browser's decoder was asked whether it takes a codec. */
+let supportChecks = 0;
 
 /** As much of a frame as the cache touches. */
 function frameAt(timestamp: number): VideoFrame {
@@ -75,6 +80,7 @@ class FakeDecoder {
     this.output = init.output;
   }
   static async isConfigSupported(): Promise<{ supported: boolean }> {
+    supportChecks += 1;
     return { supported: mode !== "unsupported" };
   }
   configure(): void {}
@@ -109,7 +115,9 @@ function serveFixture(): void {
         new Response(fixture as unknown as BodyInit, { status: 200 }),
       );
     const start = Number(match[1]);
-    const end = Math.min(Number(match[2]) + 1, fixture.byteLength);
+    const last = Number(match[2]);
+    ranges.push({ start, end: last });
+    const end = Math.min(last + 1, fixture.byteLength);
     return Promise.resolve(
       new Response(fixture.subarray(start, end) as unknown as BodyInit, {
         status: 206,
@@ -126,6 +134,8 @@ beforeEach(() => {
   decodes = 0;
   decoders = 0;
   headMs = 0;
+  ranges = [];
+  supportChecks = 0;
   fetchMock.mockReset();
   fetchMock.mockImplementation(() =>
     Promise.resolve(
@@ -283,6 +293,8 @@ describe("the failures a busy preview meets", () => {
   it("runs one decode however many paints ask for the same frame", async () => {
     serveFixture();
     const assetId = notAnMp4("asset-shared-read");
+    await mp4IndexFor(assetId);
+    ranges = [];
     decodes = 0;
 
     const asked = await Promise.all([
@@ -295,10 +307,105 @@ describe("the failures a busy preview meets", () => {
     // first's read rather than competing for a decoder with it.
     expect(asked[1]).toBe(asked[0]);
     expect(asked[2]).toBe(asked[0]);
-    // No second decoder was made for them, and the group was crossed once:
-    // three jobs would have decoded its thirty-six chunks three times over.
+    // The group was read, fetched and crossed exactly once.
     expect(decoders).toBeLessThanOrEqual(1);
+    expect(ranges).toHaveLength(1);
     expect(decodes).toBeGreaterThan(30);
     expect(decodes).toBeLessThan(45);
+  });
+
+  it("reads a further moment of the same group without the bytes before it", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-incremental");
+    const index = await mp4IndexFor(assetId);
+    const samples = index?.video?.samples ?? [];
+    expect(samples.length).toBe(40);
+    ranges = [];
+    decodes = 0;
+
+    expect(await decodeFrameAt(assetId, 1_500)).not.toBeNull();
+    const firstDecodes = decodes;
+    expect(await decodeFrameAt(assetId, 2_000)).not.toBeNull();
+
+    // The second read begins where the first one's bytes ended: a moment a few
+    // frames on does not have the group's head read and decoded again for it.
+    expect(ranges).toHaveLength(2);
+    expect(ranges[0].start).toBe(samples[0].offset);
+    expect(ranges[1].start).toBe(ranges[0].end + 1);
+    const target = sampleAt(samples, 2_000);
+    expect(ranges[1].end).toBe(
+      samples[target + 4].offset + samples[target + 4].size - 1,
+    );
+    // Five samples handed over — the step and the reorder past it — not the
+    // twenty the first read crossed.
+    expect(decodes - firstDecodes).toBe(5);
+  });
+
+  it("pays for a group once however long the drag across it is", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-dragged");
+    await mp4IndexFor(assetId);
+    ranges = [];
+    decodes = 0;
+
+    let last: Awaited<ReturnType<typeof decodeFrameAt>> = null;
+    for (const materialMs of [
+      500, 600, 700, 800, 900, 1_000, 1_100, 1_200, 1_300, 1_400,
+    ]) {
+      last = await decodeFrameAt(assetId, materialMs);
+      expect(last).not.toBeNull();
+    }
+    expect(last?.frame.timestamp).toBe(1_400_000);
+    // Ten steps across one group, fifteen frames decoded: the first read
+    // crossed the group and every step after it found its frame in hand. The
+    // per-moment reads this replaces would have decoded it ten times over.
+    expect(decodes).toBe(15);
+    expect(ranges).toHaveLength(2);
+  });
+
+  it("reads the newest moment of a drag and passes the ones behind it", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-superseded");
+    decodes = 0;
+
+    const [left, middle, last] = await Promise.all([
+      decodeFrameAt(assetId, 500),
+      decodeFrameAt(assetId, 900),
+      decodeFrameAt(assetId, 1_400),
+    ]);
+    // The paints that asked for the moments behind the newest were overtaken
+    // before anything was read for them, and the run went to the newest one.
+    expect(left).toBeNull();
+    expect(middle).toBeNull();
+    expect(last?.frame.timestamp).toBe(1_400_000);
+    // One crossing of the group, to the newest moment — not one per step.
+    expect(decodes).toBe(19);
+  });
+
+  it("asks the browser about a file's codec once, however many reads there are", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-asked-once");
+
+    expect(await decodeFrameAt(assetId, 1_500)).not.toBeNull();
+    expect(await decodeFrameAt(assetId, 2_500)).not.toBeNull();
+    expect(await decodeFrameAt(assetId, 500)).not.toBeNull();
+    expect(supportChecks).toBe(1);
+  });
+
+  it("gives a decoder up to a file that is being read now", async () => {
+    serveFixture();
+    const kept = notAnMp4("asset-kept-warm");
+    const other = notAnMp4("asset-also-open");
+    const third = notAnMp4("asset-one-too-many");
+
+    expect(await decodeFrameAt(kept, 1_500)).not.toBeNull();
+    expect(await decodeFrameAt(other, 1_500)).not.toBeNull();
+    // Both pool places are held, one of them by a file nobody is reading, so
+    // the third read is given the idle decoder rather than waiting on it: a
+    // holder that has nothing in flight offers its own up.
+    expect(await decodeFrameAt(third, 1_500)).not.toBeNull();
+    expect(decoders).toBeLessThanOrEqual(2);
+    // And the file that gave its decoder up can have one back.
+    expect(await decodeFrameAt(kept, 2_000)).not.toBeNull();
   });
 });

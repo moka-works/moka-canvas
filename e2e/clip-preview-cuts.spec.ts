@@ -54,6 +54,8 @@ const SAMPLE_MS = 100;
 const CATCHUP_MS = 500;
 /** How far behind the clock the picture may still be once that window is out. */
 const CATCHUP_TOLERANCE_MS = 250;
+/** How long a stopped drag is given to have its moment on screen. */
+const DRAG_CATCHUP_MS = 300;
 
 const VIDEO_ROW_Y =
   RULER_H + TRACK_HEIGHT.text + TRACK_HEIGHT.audio + TRACK_HEIGHT.video / 2;
@@ -177,6 +179,86 @@ async function focusRoom(page: Page) {
   if (!box) throw new Error("the timeline canvas is not there");
   await canvas.click({ position: { x: box.width - 20, y: VIDEO_ROW_Y } });
 }
+
+test("the picture catches the pointer when a drag stops", async ({
+  page,
+  browserName,
+}) => {
+  test.setTimeout(90_000);
+  // The window is the one the plan put on this clock for the Chromium the room
+  // is measured in: WebKit's own reads are longer, and its drag is watched by
+  // hand rather than asserted here.
+  test.skip(
+    browserName !== "chromium",
+    "the drag window is a Chromium reading",
+  );
+  const home = await clipRoom(page, "Drag Catch-up");
+  await newTimeline(page, "Timeline 1");
+  await page.getByLabel("Import files", { exact: true }).setInputFiles({
+    name: "longgop.mp4",
+    mimeType: "video/mp4",
+    buffer: readFileSync("e2e/fixtures/longgop.mp4"),
+  });
+  const assetId = await expect
+    .poll(() => filedId(page, "longgop.mp4"), { timeout: 15_000 })
+    .not.toBe("")
+    .then(() => filedId(page, "longgop.mp4"));
+
+  // The slow origin is the pressure: a drag's reads each pay the hold, and the
+  // picture still has to be the pointer's own moment a blink after it stops.
+  await page.route("**/projects/current/assets/*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, ASSET_DELAY_MS));
+    await route.continue();
+  });
+
+  await dropAssetOnTimeline(page, assetId, {
+    x: xFor(FIRST_START_MS),
+    y: VIDEO_ROW_Y,
+  });
+  await expect(page.locator(".clip-timeline")).toHaveAttribute(
+    "data-clip-count",
+    "1",
+  );
+
+  // A drag along the ruler, paused: the read path a still moment takes, once
+  // per move, across a group that is cold when the drag starts.
+  const canvas = page.locator(".clip-tl-canvas");
+  const box = (await canvas.boundingBox())!;
+  const ruler = { y: 10 };
+  await canvas.click({
+    position: { x: xFor(FIRST_START_MS + 200), y: ruler.y },
+  });
+  await page.mouse.move(box.x + xFor(FIRST_START_MS + 200), box.y + ruler.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + xFor(FIRST_START_MS + 2_400), box.y + ruler.y, {
+    steps: 12,
+  });
+  await page.mouse.up();
+
+  // Where the pointer left the playhead is where the piece's picture is owed:
+  // the stage's own reading has to reach it, and waiting is not reaching it.
+  const live = () => {
+    const sample = readStage(page);
+    return sample.then((s) => {
+      if (s.materialMs === null) return false;
+      return (
+        Math.abs(s.materialMs - (s.clockMs - FIRST_START_MS)) <=
+        CATCHUP_TOLERANCE_MS
+      );
+    });
+  };
+  await expect
+    .poll(live, {
+      message: "the picture is the moment the pointer left behind",
+      timeout: DRAG_CATCHUP_MS,
+      // The window is shorter than the default between tries, so a picture
+      // that arrives a hundred and fifty milliseconds late is still seen.
+      intervals: [25],
+    })
+    .toBe(true);
+
+  forgetHome(home);
+});
 
 test("both pieces show their picture as the clock crosses their cuts", async ({
   page,

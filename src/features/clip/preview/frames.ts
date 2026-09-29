@@ -404,8 +404,12 @@ export function createFrameSources(): PreviewFrameSources {
       }
       // Only a file the decoder has really given up on changes engines: a read
       // that failed once under load is the moment's trouble, and the next
-      // paint asks the decoder again.
+      // paint asks the decoder again. Anything else that came back empty — a
+      // moment a newer read took the place of, a decoder busy with the one
+      // after it — is a wait, not a reason to walk an element to the same
+      // place the decoder is already on its way to.
       if (isElementOnly(assetId)) engines.set(assetId, "element");
+      else return { kind: "waiting" };
     }
     if (playing) {
       // The element plays its own picture; the room's clock only asks where.
