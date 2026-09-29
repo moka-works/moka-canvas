@@ -20,15 +20,19 @@ import { TEXT_STYLE_PRESETS } from "../textStyles";
 import { frameAligned } from "../timeline/timecode";
 import {
   MAX_SUBTITLE_FILE_BYTES,
+  addTextClipAt,
   addTextClipAtPlayhead,
   clampFontSize,
   clampStrokeWidth,
   clampTextContent,
+  cueStyleAt,
   cueSummary,
+  cueWindowAt,
   editCue,
   importSrt,
   landTranscribedCues,
   legalStyle,
+  newCueAt,
   sameText,
   srtImportPlan,
   styleApplyPatches,
@@ -123,6 +127,14 @@ function textClip(
 function withTextClips(clips: TimelineClip[]): TimelineDocument {
   const timeline = buildTimelineMokaFile().timelines![0];
   return { ...timeline, clips: [...timeline.clips, ...clips] };
+}
+
+/** The same cut as an openable document, for the actions that write. */
+function mokaWith(clips: TimelineClip[]): MokaFile {
+  const moka = buildTimelineMokaFile();
+  const timeline = moka.timelines![0];
+  moka.timelines = [{ ...timeline, clips: [...timeline.clips, ...clips] }];
+  return moka;
 }
 
 const ids = timelineIds();
@@ -527,7 +539,10 @@ describe("editCue", () => {
     useClipStore.getState().setPlayhead(1_500);
     editCue(clip);
     expect(useClipStore.getState().playheadMs).toBe(1_500);
-    expect(useClipStore.getState().cueEditor?.clipId).toBe(clip.id);
+    expect(useClipStore.getState().cueEditor).toMatchObject({
+      kind: "clip",
+      clipId: clip.id,
+    });
   });
 
   it("refuses a cue on a locked row, the way every edit there is refused", () => {
@@ -539,6 +554,171 @@ describe("editCue", () => {
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
       "That track is locked.",
     );
+  });
+});
+
+describe("the window a new cue would take", () => {
+  it("plans the default length on an empty row, on the frame clock", () => {
+    const plan = cueWindowAt(withTextClips([]), ids.textTrack, 1_010);
+    expect(plan).toEqual({
+      ok: true,
+      startMs: 1_000,
+      durationMs: 2_000,
+      style: defaultTextStyle(),
+    });
+  });
+
+  it("lands inside the gap it was pointed at, cut to the room ahead", () => {
+    const timeline = withTextClips([
+      textClip("before", ids.textTrack, 0, 1_000),
+      textClip("after", ids.textTrack, 2_000, 2_000),
+    ]);
+    const plan = cueWindowAt(timeline, ids.textTrack, 1_500);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.startMs).toBe(1_500);
+    expect(plan.durationMs).toBe(500);
+  });
+
+  it("steps the start back when the moment sits too close to the next cue", () => {
+    const timeline = withTextClips([
+      textClip("after", ids.textTrack, 2_050, 1_000),
+    ]);
+    const plan = cueWindowAt(timeline, ids.textTrack, 2_000);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.startMs).toBe(1_950);
+    expect(plan.durationMs).toBe(100);
+  });
+
+  it("refuses a gap that cannot hold even the shortest cue", () => {
+    const timeline = withTextClips([
+      textClip("before", ids.textTrack, 0, 1_000),
+      textClip("after", ids.textTrack, 1_050, 1_000),
+    ]);
+    expect(cueWindowAt(timeline, ids.textTrack, 1_010)).toEqual({
+      ok: false,
+      reason: "noRoom",
+    });
+  });
+
+  it("refuses a locked row and a cut at its ceiling, each by its own name", () => {
+    const base = withTextClips([]);
+    const locked: TimelineDocument = {
+      ...base,
+      tracks: base.tracks.map((track) =>
+        track.id === ids.textTrack ? { ...track, locked: true } : track,
+      ),
+    };
+    expect(cueWindowAt(locked, ids.textTrack, 0)).toEqual({
+      ok: false,
+      reason: "locked",
+    });
+    // One video clip and 399 text clips: the ceiling is 400, so the next cue
+    // would be the one past it.
+    const full = withTextClips(
+      Array.from({ length: 399 }, (_, index) =>
+        textClip(`filler-${index}`, ids.textTrack, index * 10_000, 1_000),
+      ),
+    );
+    expect(cueWindowAt(full, ids.textTrack, 5_000)).toEqual({
+      ok: false,
+      reason: "full",
+    });
+  });
+
+  it("continues the look of the nearest words on the row", () => {
+    const warm = { ...style, fontSize: 64 };
+    const cool = { ...style, fontSize: 20 };
+    const wearing = (id: string, startMs: number, look: typeof style) => {
+      const clip = textClip(id, ids.textTrack, startMs, 1_000, id);
+      return { ...clip, text: { content: id, style: look } };
+    };
+    const timeline = withTextClips([
+      wearing("a", 0, style),
+      wearing("b", 2_000, warm),
+      wearing("c", 4_000, cool),
+    ]);
+    expect(cueStyleAt(timeline, ids.textTrack, 3_000)).toEqual(warm);
+    expect(cueStyleAt(timeline, ids.textTrack, 9_000)).toEqual(cool);
+    // With nothing behind the moment, the first words ahead are the row's look.
+    expect(
+      cueStyleAt(withTextClips([wearing("a", 2_000, warm)]), ids.textTrack, 0),
+    ).toEqual(warm);
+    expect(cueStyleAt(withTextClips([]), ids.textTrack, 0)).toEqual(
+      defaultTextStyle(),
+    );
+  });
+});
+
+describe("newCueAt", () => {
+  it("opens the editor over the planned window, the playhead taken there", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 0);
+    newCueAt(ids.textTrack, 1_010);
+    const state = useClipStore.getState();
+    expect(state.cueEditor).toEqual({
+      kind: "new",
+      trackId: ids.textTrack,
+      startMs: 1_000,
+      durationMs: 2_000,
+      style: defaultTextStyle(),
+    });
+    expect(state.playheadMs).toBe(1_000);
+    expect(entryCount()).toBe(0);
+  });
+
+  it("refuses a locked row without opening anything", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 0);
+    setTrackFlag(cut(), ids.textTrack, "locked", true);
+    newCueAt(ids.textTrack, 0);
+    expect(useClipStore.getState().cueEditor).toBeNull();
+    expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
+      "That track is locked.",
+    );
+  });
+
+  it("says the room is too tight when the gap is too narrow", () => {
+    open(
+      mokaWith([
+        textClip("before", ids.textTrack, 0, 1_000),
+        textClip("after", ids.textTrack, 1_050, 1_000),
+      ]),
+      ids.timeline,
+      0,
+    );
+    newCueAt(ids.textTrack, 1_010);
+    expect(useClipStore.getState().cueEditor).toBeNull();
+    expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
+      "There is no room for another subtitle here.",
+    );
+  });
+});
+
+describe("addTextClipAt", () => {
+  it("lands the whole cue in one step and chooses it", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 0);
+    const clip = addTextClipAt(
+      ids.textTrack,
+      1_000,
+      1_500,
+      style,
+      "written in place",
+    );
+    expect(clip).not.toBeNull();
+    if (!clip) return;
+    const landed = cut().clips.find((each) => each.id === clip.id);
+    expect(landed?.startMs).toBe(1_000);
+    expect(landed?.durationMs).toBe(1_500);
+    expect(landed?.text?.content).toBe("written in place");
+    expect(useClipStore.getState().selection.clipIds).toEqual([clip.id]);
+    expect(entryCount()).toBe(1);
+  });
+
+  it("lands nothing for words nobody wrote", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 0);
+    expect(addTextClipAt(ids.textTrack, 1_000, 1_500, style, "")).toBeNull();
+    expect(cut().clips).toHaveLength(1);
+    expect(entryCount()).toBe(0);
   });
 });
 

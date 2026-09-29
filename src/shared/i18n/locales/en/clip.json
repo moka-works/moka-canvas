@@ -88,12 +88,14 @@
     "splitLabel": "Height of the preview"
   },
   "menu": {
+    "addSubtitle": "Add subtitle here",
     "addTrack": "Add track",
     "addTrackAbove": "Add track above",
     "addTrackBelow": "Add track below",
     "align": "Align",
     "alignLeft": "Align left",
     "distributeEvenly": "Distribute evenly",
+    "editSubtitle": "Edit subtitle",
     "joinButted": "Join butted",
     "removeTrack": "Remove track",
     "rename": "Rename…",
@@ -405,6 +407,7 @@
   },
   "cues": {
     "editor": "Subtitle text",
+    "noRoom": "There is no room for another subtitle here.",
     "placeholder": "Type the words"
   },
   "subtitles": {

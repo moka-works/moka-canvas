@@ -21,6 +21,7 @@ import {
   splitSelectionAtPlayhead,
 } from "../interactions/clipActions";
 import { useClipStore } from "../stores/clipStore";
+import { editCue, newCueAt } from "../interactions/textActions";
 
 /**
  * The cut's own menus.
@@ -37,7 +38,16 @@ import { useClipStore } from "../stores/clipStore";
 
 /** What a right-click landed on, which decides the list. */
 export type TimelineMenuTarget =
-  { kind: "clips"; onClip: boolean } | { kind: "track"; trackId: TrackId };
+  | {
+      kind: "clips";
+      onClip: boolean;
+      /**
+       * The blank of a row it landed on, and the moment under the pointer:
+       * where a cue can be written if the row takes words. Null on a clip.
+       */
+      blank: { trackId: TrackId; atMs: number } | null;
+    }
+  | { kind: "track"; trackId: TrackId };
 
 interface TimelineMenuProps {
   timeline: TimelineDocument;
@@ -76,6 +86,13 @@ export function TimelineMenu({
   }
   const chosen = selectedClips(timeline, selection);
   const crosses = clipsCrossingPlayhead(timeline, playheadMs).length > 0;
+  // A blank on a text row is somewhere a cue can be written; a blank on any
+  // other row offers nothing, since pictures and sounds are not typed.
+  const blank = target.blank;
+  const blankTrack = blank
+    ? (timeline.tracks.find((row) => row.id === blank.trackId) ?? null)
+    : null;
+  const takesWords = blankTrack?.kind === "text";
   return (
     <MenuPanel
       label={t("clip:menu.timelineMenu")}
@@ -85,6 +102,15 @@ export function TimelineMenu({
     >
       {target.onClip ? (
         <>
+          {chosen.length === 1 && chosen[0].kind === "text" && (
+            <MenuItem
+              label={t("clip:menu.editSubtitle")}
+              onSelect={() => {
+                onClose();
+                editCue(chosen[0]);
+              }}
+            />
+          )}
           <MenuItem
             disabled={!crosses}
             label={t("clip:common.splitAtPlayhead")}
@@ -139,14 +165,28 @@ export function TimelineMenu({
           )}
         </>
       ) : (
-        <MenuItem
-          disabled={timeline.clips.length === 0}
-          label={t("clip:common.selectAll")}
-          onSelect={() => {
-            onClose();
-            selectAll();
-          }}
-        />
+        <>
+          {takesWords && blank && (
+            <>
+              <MenuItem
+                label={t("clip:menu.addSubtitle")}
+                onSelect={() => {
+                  onClose();
+                  newCueAt(blank.trackId, blank.atMs);
+                }}
+              />
+              <div className="menu-sep" />
+            </>
+          )}
+          <MenuItem
+            disabled={timeline.clips.length === 0}
+            label={t("clip:common.selectAll")}
+            onSelect={() => {
+              onClose();
+              selectAll();
+            }}
+          />
+        </>
       )}
     </MenuPanel>
   );

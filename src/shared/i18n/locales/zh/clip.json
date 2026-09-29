@@ -88,12 +88,14 @@
     "splitLabel": "预览高度"
   },
   "menu": {
+    "addSubtitle": "在此添加字幕",
     "addTrack": "添加轨道",
     "addTrackAbove": "在上方添加轨道",
     "addTrackBelow": "在下方添加轨道",
     "align": "对齐",
     "alignLeft": "左对齐",
     "distributeEvenly": "均匀分布",
+    "editSubtitle": "编辑字幕",
     "joinButted": "首尾相接",
     "removeTrack": "移除轨道",
     "rename": "重命名…",
@@ -405,6 +407,7 @@
   },
   "cues": {
     "editor": "字幕文字",
+    "noRoom": "这里放不下新的字幕。",
     "placeholder": "输入字幕文字"
   },
   "subtitles": {

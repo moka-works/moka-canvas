@@ -5,8 +5,10 @@ import type {
   ClipId,
   MokaFile,
   TextClipData,
+  TextClipStyle,
   TimelineDocument,
   TimelineId,
+  TrackId,
   TransitionId,
 } from "../../../shared/domain";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -212,13 +214,23 @@ export interface TextDraft {
  * session opened; a clip whose words have drifted from it since was changed
  * from under the session, which then closes rather than overwrite the change.
  */
-export interface CueEditorSession {
-  kind: "clip";
-  /** The cue being rewritten. */
-  clipId: ClipId;
-  /** The words the session opened on. */
-  seed: string;
-}
+export type CueEditorSession =
+  | {
+      kind: "clip";
+      /** The cue being rewritten. */
+      clipId: ClipId;
+      /** The words the session opened on. */
+      seed: string;
+    }
+  | {
+      /** A cue not written yet: the editor is the only place it exists. */
+      kind: "new";
+      trackId: TrackId;
+      startMs: number;
+      durationMs: number;
+      /** The look it lands with: the row's nearest words, or the default. */
+      style: TextClipStyle;
+    };
 
 /**
  * How finely the preview composes: its own size, or a fraction of it.

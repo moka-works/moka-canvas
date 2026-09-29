@@ -3,26 +3,29 @@ import { useTranslation } from "react-i18next";
 import type { TimelineDocument } from "../../../shared/domain";
 import { execute } from "../../editor/commands/execute";
 import { patchCommands } from "../inspector/clipFieldMath";
-import { clampTextContent } from "../interactions/textActions";
+import { addTextClipAt, clampTextContent } from "../interactions/textActions";
 import { useClipStore, type CueEditorSession } from "../stores/clipStore";
 import { trackRows } from "./geometry";
 
 /**
- * The words being rewritten where they stand on the timeline.
+ * The words being written where they stand on the timeline.
  *
- * A small textarea laid exactly over the cue's own block: the block is what
- * the editor is a view of, so its rectangle is the editor's, measured in the
- * canvas's own content coordinates — the same ones the spacer and the drawn
- * rows are measured in — and the scrolling that moves the block moves the
- * editor with it, with no following of its own.
+ * A small textarea laid exactly over the cue's own block — the block a cue the
+ * document holds already is, or the window a new cue would take: the editor is
+ * a view of the rectangle, so it is measured in the canvas's own content
+ * coordinates, the same ones the spacer and the drawn rows are measured in,
+ * and the scrolling that moves the block moves the editor with it, with no
+ * following of its own.
  *
- * The words are the session's while it stands: every keystroke goes to the
- * store as a text draft, which the preview composites in place of the
- * document's own words, and a command is sent once, at the commit point —
- * Enter, or the blur that a click anywhere else is. Escape lets the session
- * go without a command, and a cue that was taken off the cut, or whose words
- * changed from under the session, closes it the same way rather than
- * overwriting what happened.
+ * The words are the session's while it stands: for a cue already on the cut
+ * every keystroke goes to the store as a text draft, which the preview
+ * composites in place of the document's own words, and a command is sent once,
+ * at the commit point — Enter, or the blur that a click anywhere else is. A
+ * session for a cue not written yet has nothing to preview and lands through
+ * its own single command at the same point. Escape lets the session go without
+ * a command; a cue that was taken off the cut, or whose words changed from
+ * under the session, closes it the same way rather than overwriting what
+ * happened.
  */
 export function CueEditor({
   timeline,
@@ -33,10 +36,14 @@ export function CueEditor({
 }) {
   const { t } = useTranslation();
   const pxPerSec = useClipStore((state) => state.view.pxPerSec);
-  const clip = timeline.clips.find(
-    (candidate) => candidate.id === session.clipId,
+  const clip =
+    session.kind === "clip"
+      ? timeline.clips.find((candidate) => candidate.id === session.clipId)
+      : undefined;
+  const trackId = session.kind === "clip" ? clip?.trackId : session.trackId;
+  const [words, setWords] = useState(
+    session.kind === "clip" ? session.seed : "",
   );
-  const [words, setWords] = useState(session.seed);
   // One gesture leaves one command: a blur and an Enter are both endings of
   // the same session, and whichever comes second finds it already gone.
   const settled = useRef(false);
@@ -49,6 +56,18 @@ export function CueEditor({
   /** Writes what has been typed, when it is a change, and lets the session go. */
   const commit = () => {
     if (settled.current) return;
+    if (session.kind === "new") {
+      // Empty words are a cue nobody wrote: the command is not sent at all.
+      addTextClipAt(
+        session.trackId,
+        session.startMs,
+        session.durationMs,
+        session.style,
+        words,
+      );
+      close();
+      return;
+    }
     const text = clip?.kind === "text" ? clip.text : undefined;
     if (clip && text) {
       const content = clampTextContent(words);
@@ -72,15 +91,23 @@ export function CueEditor({
 
   // A cue taken off the cut, or one whose words have drifted from the seed,
   // was changed from under the session; it closes without writing anything.
+  // A session for a cue not written yet closes when its row goes away, since
+  // the window it was drawn in no longer exists.
   useEffect(() => {
     if (settled.current) return;
+    if (session.kind === "new") {
+      const track = timeline.tracks.find((row) => row.id === session.trackId);
+      if (!track || track.kind !== "text") close();
+      return;
+    }
     if (!clip || clip.kind !== "text" || !clip.text) close();
     else if (clip.text.content !== session.seed) close();
-  }, [clip, session.seed]);
+  }, [clip, session, timeline.tracks]);
 
   /** A keystroke: the words are the session's and the preview's, not the cut's. */
   const type = (next: string) => {
     setWords(next);
+    if (session.kind !== "clip") return;
     const style = clip?.text?.style;
     if (!style) return;
     useClipStore.getState().setTextDraft({
@@ -89,18 +116,22 @@ export function CueEditor({
     });
   };
 
-  if (!clip || clip.kind !== "text" || !clip.text) return null;
+  const startMs = session.kind === "clip" ? clip?.startMs : session.startMs;
+  const durationMs =
+    session.kind === "clip" ? clip?.durationMs : session.durationMs;
   const row = trackRows(timeline).find(
-    (candidate) => candidate.track.id === clip.trackId,
+    (candidate) => candidate.track.id === trackId,
   );
-  if (!row) return null;
+  if (session.kind === "clip" && (!clip || clip.kind !== "text" || !clip.text))
+    return null;
+  if (startMs === undefined || durationMs === undefined || !row) return null;
   return (
     <div
       className="clip-tl-cue"
       style={{
-        left: (clip.startMs / 1_000) * pxPerSec,
+        left: (startMs / 1_000) * pxPerSec,
         top: row.top,
-        width: (clip.durationMs / 1_000) * pxPerSec,
+        width: (durationMs / 1_000) * pxPerSec,
         height: row.height - 1,
       }}
     >
