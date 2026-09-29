@@ -14,6 +14,7 @@
 
 pub mod ass;
 pub mod audio;
+pub mod fonts;
 pub mod jobs;
 pub mod locate;
 pub mod plan;

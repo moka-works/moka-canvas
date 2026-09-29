@@ -316,7 +316,7 @@ fn the_real_fixtures_read_into_a_plan_of_the_shape_the_cut_asks_for() {
     // The caption is burned in, and never enters the picture graph.
     let ass = plan.ass.expect("the words are written down");
     assert!(ass.contains("Burned in\\Nfor the export"), "{ass}");
-    assert!(plan.graph.contains("ass=subs.ass[vout]"));
+    assert!(plan.graph.contains("ass=subs.ass:fontsdir=fonts[vout]"));
     // The crossfade window is the one the document patched.
     assert!(
         plan.graph.contains("xfade=transition=fade:duration=0.2"),
@@ -679,4 +679,183 @@ fn the_fixture_files_the_cut_reads_are_real_files() {
     let fields = moka_canvas::assets::probe::probe_media("audio/wav", &beep);
     assert_eq!(fields.sample_rate, Some(48_000));
     assert_eq!(fields.duration_ms, Some(500));
+}
+
+/// A cut of nothing but two captions, one after the other on the text row.
+///
+/// Both are four characters long and wear the same style, so a renderer
+/// drawing boxes instead of glyphs would draw the very same picture twice.
+fn caption_timeline() -> TimelineDocument {
+    let caption = |id: &str, content: &str, start_ms: i64| {
+        let mut words = material(id, "track-text", TrackKind::Text, "", start_ms, 1_000);
+        words.asset_id = None;
+        words.text = Some(TextClipData {
+            content: content.to_string(),
+            style: caption_style(),
+        });
+        words
+    };
+    TimelineDocument {
+        id: "timeline-glyphs".to_string(),
+        name: "Glyph cut".to_string(),
+        schema_version: 1,
+        settings: TimelineSettings {
+            fps: 30,
+            width: 1920,
+            height: 1080,
+            background: "#000000".to_string(),
+        },
+        tracks: vec![track("track-text", TrackKind::Text)],
+        clips: vec![
+            caption("cue-one", "中文标题", 0),
+            caption("cue-two", "风雨雷电", 1_000),
+        ],
+        transitions: Vec::new(),
+        created_at: NOW.to_string(),
+        updated_at: NOW.to_string(),
+    }
+}
+
+/// One frame of a render, read back as plain grey bytes.
+fn gray_frame(program: &Path, video: &Path, at_secs: f64) -> Option<Vec<u8>> {
+    let output = std::process::Command::new(program)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            &at_secs.to_string(),
+            "-i",
+            &video.to_string_lossy(),
+            "-frames:v",
+            "1",
+            "-pix_fmt",
+            "gray",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ])
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
+/// How much of a grey frame is words rather than the dark background.
+fn ink(frame: &[u8]) -> usize {
+    frame.iter().filter(|&&value| value > 160).count()
+}
+
+/// The words leave the app as glyphs, not as the boxes a renderer draws for
+/// glyphs it cannot find.
+///
+/// This is the shape the whole-render test could not see: a caption rendered
+/// as `.notdef` boxes is still a caption as far as size and stream count go.
+/// Two different four-character captions are exported in one render and one
+/// frame is read out of each half: boxes would make the two frames identical,
+/// while real glyphs differ wherever the words do — and either way both
+/// frames have ink in them at all, so a render with no words cannot pass for
+/// one with words either.
+#[tokio::test]
+async fn a_rendered_caption_arrives_as_glyphs_and_not_boxes() {
+    let Some(program) = machine_ffmpeg() else {
+        println!(
+            "skipping the glyph test: no ffmpeg on this machine \
+             (the plan half above still ran)"
+        );
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let app = test_app(home.path(), Some(program.clone()));
+
+    let created = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects",
+            json!({
+                "directory": home.path().join("project").to_string_lossy(),
+                "name": "Glyph evidence",
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let applied = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/current/commands",
+            json!({ "expectedRevision": 0, "commands": [{ "type": "addTimeline", "timeline": caption_timeline() }] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        applied.status(),
+        StatusCode::OK,
+        "{}",
+        body_json(applied).await
+    );
+
+    let saved = home.path().join("saved");
+    std::fs::create_dir_all(&saved).unwrap();
+    let destination = saved.join("Glyphs.mp4");
+    let started = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/clip/export",
+            json!({
+                "timelineId": "timeline-glyphs",
+                "destination": destination.to_string_lossy(),
+            }),
+        ))
+        .await
+        .unwrap();
+    let status = started.status();
+    let task = body_json(started).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{task}");
+    let handle = task["id"].as_str().expect("a handle").to_string();
+
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let finished = loop {
+        assert!(
+            Instant::now() < deadline,
+            "the render did not finish in time"
+        );
+        let polled = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/clip/export/{handle}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let task = body_json(polled).await;
+        match task["status"].as_str().unwrap_or("") {
+            "queued" | "running" => {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            _ => break task,
+        }
+    };
+    assert_eq!(finished["status"], "done", "{finished}");
+
+    // One frame out of the middle of each caption.
+    let first = gray_frame(&program, &destination, 0.5).expect("a frame of the first caption");
+    let second = gray_frame(&program, &destination, 1.5).expect("a frame of the second caption");
+    assert!(ink(&first) > 500, "the first caption drew words");
+    assert!(ink(&second) > 500, "the second caption drew words");
+    let differing = first
+        .iter()
+        .zip(&second)
+        .filter(|(left, right)| left != right)
+        .count();
+    assert!(
+        differing > 1_000,
+        "the two captions differ where their words do: {differing} pixels differ"
+    );
 }

@@ -147,6 +147,12 @@ pub async fn run(
     if let Some(ass) = &spec.ass {
         std::fs::write(spec.temp_dir.join(ASS_FILE), ass.as_bytes())
             .map_err(|error| RunError::Unstartable(error.to_string()))?;
+        // The faces travel beside the script and are named by the graph: the
+        // renderer resolves them from this directory rather than from
+        // whatever the machine happens to have installed.
+        super::fonts::install(&spec.temp_dir.join(super::fonts::FONTS_DIR)).map_err(|error| {
+            RunError::Unstartable(format!("Could not write the burn-in fonts: {error}"))
+        })?;
     }
     let args = ffmpeg_args(&spec);
     run_command(
@@ -594,6 +600,39 @@ mod tests {
             other => panic!("expected a failure, got {other:?}"),
         }
         assert!(!temp_dir.exists(), "a failed render leaves no scratch");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_render_with_words_gets_its_script_and_faces_beside_it() {
+        // The renderer resolves the burn-in's faces from its working
+        // directory, so both the script and the faces have to be there before
+        // it starts — and the faces are the bundled ones, not the machine's.
+        let root = tempfile::tempdir().unwrap();
+        let script = write_script(
+            root.path(),
+            "fake-ffmpeg.sh",
+            "#!/bin/sh\n\
+             ls fonts > fonts.txt\n\
+             printf 'progress=end\\n'\n\
+             printf 'artifact' > out.mp4\n\
+             exit 0\n",
+        );
+        let temp_dir = root.path().join("export-fonts");
+        let spec = RunSpec {
+            ass: Some("[Script Info]\n".to_string()),
+            ..spec(script, temp_dir.clone(), false)
+        };
+        let (_cancel, cancel_rx) = oneshot::channel();
+        let artifact = run(spec, cancel_rx, |_| {})
+            .await
+            .expect("the stand-in answers");
+        let listing = std::fs::read_to_string(temp_dir.join("fonts.txt")).expect("the listing");
+        assert!(listing.contains("Inter-Regular.ttf"), "{listing}");
+        assert!(listing.contains("NotoSansSC-Regular.ttf"), "{listing}");
+        assert!(temp_dir.join(ASS_FILE).is_file(), "the script is there too");
+        drop(artifact);
+        assert!(!temp_dir.exists(), "the faces leave with the scratch");
     }
 
     #[cfg(unix)]
