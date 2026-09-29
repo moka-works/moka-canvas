@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   TimelineClip,
   TimelineDocument,
@@ -7,6 +8,7 @@ import type {
 } from "../../../shared/domain";
 import {
   audibleClipsAt,
+  audioEngine,
   clipGainAt,
   needsResync,
   transitionGain,
@@ -176,5 +178,128 @@ describe("the clips that sound at a moment", () => {
     expect(
       audibleClipsAt(timeline, 3_700).map((entry) => entry.clip.id),
     ).toEqual(["a"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The voices, over a context and elements the tests stand in for
+// ---------------------------------------------------------------------------
+
+/** The elements every voice is built on, in the order they were made. */
+const voicesMade: HTMLAudioElement[] = [];
+
+function fakeGain() {
+  return {
+    gain: {
+      value: 1,
+      setValueAtTime: () => undefined,
+      linearRampToValueAtTime: () => undefined,
+      cancelScheduledValues: () => undefined,
+    },
+    connect: () => undefined,
+  };
+}
+
+class FakeAudioContext {
+  currentTime = 0;
+  state = "running";
+  destination = {};
+  createGain() {
+    return fakeGain();
+  }
+  createMediaElementSource(element: HTMLAudioElement) {
+    voicesMade.push(element);
+    return { connect: () => undefined };
+  }
+  resume() {
+    return Promise.resolve();
+  }
+}
+
+/** jsdom's own pause is a shrug and its play is unimplemented; the tests stand in. */
+function setPaused(element: HTMLMediaElement, value: boolean): void {
+  Object.defineProperty(element, "paused", { value, configurable: true });
+}
+
+beforeEach(() => {
+  vi.stubGlobal("AudioContext", FakeAudioContext);
+  vi.spyOn(window.HTMLMediaElement.prototype, "play").mockImplementation(
+    function (this: HTMLMediaElement) {
+      setPaused(this, false);
+      return Promise.resolve();
+    },
+  );
+  vi.spyOn(window.HTMLMediaElement.prototype, "pause").mockImplementation(
+    function (this: HTMLMediaElement) {
+      setPaused(this, true);
+    },
+  );
+  vi.spyOn(window.HTMLMediaElement.prototype, "load").mockImplementation(
+    () => undefined,
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("the voices the preview keeps", () => {
+  /** One sound track with one four-second piece on it. */
+  function soundCut(): TimelineDocument {
+    return {
+      id: "timeline-1",
+      name: "Cut",
+      schemaVersion: 1,
+      settings: { fps: 30, width: 1920, height: 1080, background: "#000000" },
+      tracks: [track()],
+      clips: [clip()],
+      transitions: [],
+      createdAt: T0,
+      updatedAt: T0,
+    };
+  }
+
+  /** The voice holding a file at this moment: there is one while the clock runs. */
+  function soundingVoice(): HTMLAudioElement {
+    const voice = voicesMade.find(
+      (element) => element.getAttribute("src") !== null,
+    );
+    if (!voice) throw new Error("no voice is holding a file");
+    return voice;
+  }
+
+  it("holds its file only while it sounds, and sets its own position", () => {
+    const engine = audioEngine();
+    engine.setTimeline(soundCut());
+    engine.play(1_000);
+
+    const voice = soundingVoice();
+    // The file is asked for as there is something to play, not minutes ahead:
+    // a whole picture file told to preload everything is a cut's connections.
+    expect(voice.preload).toBe("metadata");
+    expect(voice.getAttribute("src")).toBe(
+      "/api/v1/projects/current/assets/asset-a",
+    );
+
+    engine.pause();
+    expect(engine.allPaused()).toBe(true);
+    // The voice let the file go rather than buffering it in the background.
+    expect(voice.getAttribute("src")).toBeNull();
+  });
+
+  it("takes its file up again on the same voice, rather than making another", () => {
+    const engine = audioEngine();
+    engine.setTimeline(soundCut());
+    engine.play(1_000);
+    const voice = soundingVoice();
+    const pool = voicesMade.length;
+
+    engine.pause();
+    engine.play(1_000);
+    // The pool is the same pool and the voice is the same voice: a release
+    // makes a voice free to use, not a voice to replace.
+    expect(voicesMade.length).toBe(pool);
+    expect(soundingVoice()).toBe(voice);
   });
 });

@@ -312,10 +312,17 @@ function hevcCodec(prefix: string, record: Uint8Array): string {
   return parts.join(".");
 }
 
-/** The vp09 profile from a vpcC record, which is where its own codec string lives. */
+/**
+ * The vp09 codec string from a vpcC record, which is where it lives.
+ *
+ * The three fields are two-digit decimals — a profile of 2 is "02", a level of
+ * 1.1 is "11" — where the record holds them as plain numbers: writing the level
+ * byte as hex turns 11 into "0b", which no decoder recognises.
+ */
 function vp9Codec(record: Uint8Array): string {
   if (record.byteLength < 7) return "vp09";
-  return `vp09.${hex2(record[4])}.${hex2(record[5])}.${hex2(record[6] >> 4)}`;
+  const dec2 = (value: number) => String(value).padStart(2, "0");
+  return `vp09.${dec2(record[4])}.${dec2(record[5])}.${dec2(record[6] >> 4)}`;
 }
 
 /** The av01 profile from an av1C record. */

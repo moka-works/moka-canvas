@@ -511,6 +511,81 @@ describe("drawing the frame under the playhead", () => {
     expect(label.args[0]).toBe("Loading");
     expect(drawnSources(calls)).toEqual([]);
   });
+
+  it("reports the material moment of the topmost picture it drew", async () => {
+    const lower = clip({ id: "lower", trackId: "v1", inPointMs: 1000 });
+    const upper = clip({
+      id: "upper",
+      trackId: "v2",
+      startMs: 1000,
+      inPointMs: 4000,
+      speed: 2,
+    });
+    const timeline = cut(
+      [track("v1", "video"), track("v2", "video")],
+      [lower, upper],
+    );
+    const { ctx } = recordingContext();
+    const report = await composeFrame(ctx, {
+      width: 1000,
+      height: 1000,
+      timeline,
+      atMs: 1500,
+      sources: sourcesFor(() => picture(LOWER, 400, 200)),
+      filter: true,
+    });
+    // The upper clip's clock, not the lower's: it drew last, so it is the one
+    // the eye is on — 4000 + 500ms at double speed.
+    expect(report?.materialMs).toBe(5000);
+    expect(report?.waiting).toBe(false);
+  });
+
+  it("tells a loading place from a drawn picture, and a gap from both", async () => {
+    const timeline = cut(
+      [track("v1", "video")],
+      [clip({ id: "piece", trackId: "v1" })],
+    );
+    const waiting = await composeFrame(recordingContext().ctx, {
+      width: 1000,
+      height: 1000,
+      timeline,
+      atMs: 100,
+      sources: sourcesFor(() => ({ kind: "waiting" })),
+      filter: true,
+    });
+    expect(waiting?.waiting).toBe(true);
+    expect(waiting?.materialMs).toBeNull();
+
+    const blank = await composeFrame(recordingContext().ctx, {
+      width: 1000,
+      height: 1000,
+      timeline: cut([track("v1", "video")], []),
+      atMs: 100,
+      sources: sourcesFor(() => ({ kind: "waiting" })),
+      filter: true,
+    });
+    expect(blank?.waiting).toBe(false);
+    expect(blank?.materialMs).toBeNull();
+  });
+
+  it("reports no material moment for a picture the fades left out", async () => {
+    const timeline = cut(
+      [track("v1", "video")],
+      [clip({ id: "faded", trackId: "v1", opacity: 0 })],
+    );
+    const { ctx, calls } = recordingContext();
+    const report = await composeFrame(ctx, {
+      width: 1000,
+      height: 1000,
+      timeline,
+      atMs: 100,
+      sources: sourcesFor(() => picture(LOWER, 400, 200)),
+      filter: true,
+    });
+    // Nothing reached the canvas, so there is no moment under the eye to name.
+    expect(drawnSources(calls)).toEqual([]);
+    expect(report?.materialMs).toBeNull();
+  });
 });
 
 describe("the grade a clip wears", () => {

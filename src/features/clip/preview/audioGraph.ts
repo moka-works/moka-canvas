@@ -190,7 +190,12 @@ function makeVoice(ctx: AudioContext): Voice | null {
   let node: MediaElementAudioSourceNode;
   try {
     element = document.createElement("audio");
-    element.preload = "auto";
+    // A voice is pointed at a whole 27–37MB picture file, and four voices can
+    // hold three of them: told to preload everything, the elements spend the
+    // cut's six connections fetching minutes of sound nobody will hear. The
+    // file is asked for as the voice is assigned — the position is set and it
+    // plays — which is enough for a source that starts where the clock stands.
+    element.preload = "metadata";
     node = ctx.createMediaElementSource(element);
   } catch {
     // A document that will not hand out media elements is one that cannot
@@ -230,6 +235,18 @@ function stopVoice(voice: Voice): void {
   } catch {
     // An element that cannot pause is one that was never playing.
   }
+  // The voice lets its file go rather than keeping it warm: paused but
+  // pointed at a 30MB picture, the element goes on buffering it in the
+  // background, and those fetches are what the next cut's first frame is
+  // queued behind. An assigned voice is pointed again — the source is set
+  // whenever the asset changes, and a released voice has none.
+  voice.element.removeAttribute("src");
+  try {
+    voice.element.load();
+  } catch {
+    // A document that will not reload the element has still dropped the source.
+  }
+  voice.assetId = null;
   voice.clipId = null;
   voice.clip = null;
   voice.track = null;

@@ -80,6 +80,10 @@ export function useTransport(): void {
         state.setPlayheadFromClock(atMs);
       }
       audio.tick(atMs);
+      // The clock that just moved is what the runs are aimed by: the clips the
+      // coming window will show are given their head start here, a frame ahead
+      // of the moment the picture is asked for them.
+      if (timeline) frames.prepareAhead(timeline, atMs);
       follow(atMs);
       raf = requestAnimationFrame(frame);
     };
