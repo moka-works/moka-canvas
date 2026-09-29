@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Mp4Error, parseFile, parseMoov } from "./mp4";
+import { planFor } from "./samplePlan";
 
 /**
  * The parser, against boxes built by hand.
@@ -522,5 +523,24 @@ describe("parsing a real file", () => {
     expect(video.width).toBeGreaterThan(0);
     expect(video.height).toBeGreaterThan(0);
     expect(at.durationMs).toBeGreaterThan(0);
+  });
+
+  it("reads the browser suite's long-GOP fixture as one four-second group", () => {
+    const raw = readFileSync(
+      new URL("../../../../e2e/fixtures/longgop.mp4", import.meta.url),
+    );
+    const at = parseFile(new Uint8Array(raw));
+    const video = at.video!;
+    // VP9 in MP4, written by ffmpeg: the cut suite stands on this file being
+    // decodable by the bundled Chromium and cold at every cut, so the codec
+    // string and the single keyframe are exactly what must not drift.
+    expect(video.codec).toBe("vp09.00.11.08");
+    expect(video.samples).toHaveLength(40);
+    expect(video.samples.filter((sample) => sample.key)).toHaveLength(1);
+    expect(at.durationMs).toBe(4000);
+    // A moment three and a half seconds in still reads the whole group.
+    const plan = planFor(video, 3500);
+    expect(plan?.chunks).toHaveLength(36);
+    expect(plan?.chunks[0].key).toBe(true);
   });
 });

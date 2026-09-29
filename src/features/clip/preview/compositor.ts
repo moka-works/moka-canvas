@@ -90,6 +90,17 @@ export interface FrameReport {
   clips: TimelineClip[];
   /** Whether an ungraded picture was drawn because the canvas cannot filter. */
   coloursSkipped: boolean;
+  /**
+   * The material moment of the last video picture drawn, or null when the
+   * frame drew none.
+   *
+   * This is what the picture on screen is actually showing — the fact a
+   * stutter hides, since the clock and the picture part ways without saying
+   * so. Reported for the stage to publish rather than kept private.
+   */
+  materialMs: number | null;
+  /** Whether a clip with no picture yet was drawn as loading. */
+  waiting: boolean;
 }
 
 /**
@@ -165,9 +176,9 @@ function drawPictureClip(
   frameHeight: number,
   filterEnabled: boolean,
   draftedAdjust: ClipAdjust | undefined,
-): boolean {
+): { coloursSkipped: boolean; drew: boolean } {
   const alpha = Math.max(0, Math.min(1, clip.opacity)) * fadeFactor(clip, atMs);
-  if (alpha <= 0) return false;
+  if (alpha <= 0) return { coloursSkipped: false, drew: false };
   const look = clipLook({
     adjust: draftedAdjust ?? clip.adjust,
     filter: clip.filter,
@@ -218,7 +229,7 @@ function drawPictureClip(
     ctx.fillRect(box.x, box.y, box.width, box.height);
   }
   ctx.restore();
-  return coloursSkipped;
+  return { coloursSkipped, drew: true };
 }
 
 /** What a clip with no picture yet shows: a place being read rather than a black frame. */
@@ -228,9 +239,9 @@ function drawWaiting(
   atMs: number,
   frameWidth: number,
   frameHeight: number,
-): void {
+): boolean {
   const alpha = Math.max(0, Math.min(1, clip.opacity)) * fadeFactor(clip, atMs);
-  if (alpha <= 0) return;
+  if (alpha <= 0) return false;
   const inset = Math.min(frameWidth, frameHeight) * 0.06;
   // Like the picture path, whatever the context carries is part of the blend.
   const carried = ctx.globalAlpha;
@@ -253,6 +264,16 @@ function drawWaiting(
   ctx.textBaseline = "middle";
   ctx.fillText(i18n.t("clip:preview.loading"), frameWidth / 2, frameHeight / 2);
   ctx.restore();
+  return true;
+}
+
+/** What one drawn clip contributed to the frame's report. */
+interface DrawReport {
+  coloursSkipped: boolean;
+  /** The material moment of the picture it drew, or null when it drew none. */
+  materialMs: number | null;
+  /** Whether it drew the loading placeholder. */
+  waiting: boolean;
 }
 
 /**
@@ -332,12 +353,12 @@ export async function composeFrame(
           text: options.textDraft.text,
         }
       : null;
-  /** Draws one clip as the track would show it alone; says if a grade was dropped. */
+  /** Draws one clip as the track would show it alone; reports what it drew. */
   const drawOne = (
     target: CanvasRenderingContext2D,
     clip: TimelineClip,
     picture: FramePicture | null,
-  ): boolean => {
+  ): DrawReport => {
     if (clip.kind === "text") {
       const data = draftedText?.ids.has(clip.id) ? draftedText.text : clip.text;
       if (data)
@@ -348,10 +369,10 @@ export async function composeFrame(
           timeline.settings.width,
           Math.max(0, Math.min(1, clip.opacity)) * fadeFactor(clip, atMs),
         );
-      return false;
+      return { coloursSkipped: false, materialMs: null, waiting: false };
     }
-    if (picture?.kind === "picture")
-      return drawPictureClip(
+    if (picture?.kind === "picture") {
+      const drawn = drawPictureClip(
         target,
         clip,
         picture.picture,
@@ -361,24 +382,44 @@ export async function composeFrame(
         options.filter,
         drafted?.ids.has(clip.id) ? drafted.adjust : undefined,
       );
+      // A picture that was drawn is the moment the eye is really on; one the
+      // fades left out is nothing drawn at all.
+      return {
+        coloursSkipped: drawn.coloursSkipped,
+        materialMs: drawn.drew ? materialMoment(clip, atMs) : null,
+        waiting: false,
+      };
+    }
     if (picture?.kind === "waiting")
-      drawWaiting(target, clip, atMs, width, height);
-    return false;
+      return {
+        coloursSkipped: false,
+        materialMs: null,
+        waiting: drawWaiting(target, clip, atMs, width, height),
+      };
+    return { coloursSkipped: false, materialMs: null, waiting: false };
+  };
+  /** Folds one drawn clip's report into the frame's own. */
+  let materialMs: number | null = null;
+  let waiting = false;
+  const fold = (report: DrawReport): void => {
+    coloursSkipped = report.coloursSkipped || coloursSkipped;
+    // The last picture folded in is the topmost drawn — the one the eye is on.
+    if (report.materialMs !== null) materialMs = report.materialMs;
+    waiting = report.waiting || waiting;
   };
   for (const layer of chosen) {
     try {
       if (layer.kind === "clip") {
-        coloursSkipped =
-          drawOne(ctx, layer.clip, layer.picture) || coloursSkipped;
+        fold(drawOne(ctx, layer.clip, layer.picture));
         continue;
       }
       // Both sides of the seam draw as regular clips, through the kind's own
-      // blend; what one side would report about a dropped grade is folded in.
-      let skipped = false;
+      // blend; what either side reports is folded in, the follower last.
+      const reports: DrawReport[] = [];
       const side =
         (clip: TimelineClip, picture: FramePicture | null) =>
         (target: CanvasRenderingContext2D) => {
-          skipped = drawOne(target, clip, picture) || skipped;
+          reports.push(drawOne(target, clip, picture));
         };
       drawTransition(
         ctx,
@@ -387,7 +428,7 @@ export async function composeFrame(
         side(layer.seam.leader, layer.leaderPicture),
         side(layer.seam.follower, layer.followerPicture),
       );
-      coloursSkipped = skipped || coloursSkipped;
+      for (const report of reports) fold(report);
     } catch {
       // A picture that will not draw — a frame already let go of, an element
       // that never had data — leaves its layer out rather than taking the rest
@@ -401,5 +442,7 @@ export async function composeFrame(
         : [layer.seam.leader, layer.seam.follower],
     ),
     coloursSkipped,
+    materialMs,
+    waiting,
   };
 }

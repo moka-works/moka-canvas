@@ -73,6 +73,8 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
   const textDraft = useClipStore((state) => state.textDraft);
   const [engine, setEngine] = useState<PreviewEngine>("none");
   const [frameMs, setFrameMs] = useState<number | null>(null);
+  const [materialMs, setMaterialMs] = useState<number | null>(null);
+  const [waiting, setWaiting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const fps = timeline?.settings.fps ?? 30;
 
@@ -131,6 +133,10 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
     );
     setEngine(drawn);
     setFrameMs(atMs);
+    // Where the picture on screen really stands: the clock and the material
+    // part ways whenever a frame is late, and this is the reading that says so.
+    setMaterialMs(report.materialMs);
+    setWaiting(report.waiting);
     setNote(approximateReason(capabilities, drawn, report.coloursSkipped));
   }, [timeline, sources, capabilities, quality, adjustDraft, textDraft]);
 
@@ -199,6 +205,16 @@ export function PreviewStage({ timeline }: PreviewStageProps) {
       className="clip-preview"
       data-engine={timeline ? engine : "none"}
       data-frame-ms={frameMs ?? undefined}
+      data-frame-material-ms={materialMs ?? undefined}
+      data-picture-state={
+        frameMs === null
+          ? undefined
+          : waiting
+            ? "waiting"
+            : materialMs !== null
+              ? "picture"
+              : "empty"
+      }
       data-quality={quality}
       ref={sectionRef}
     >
