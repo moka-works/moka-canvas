@@ -61,6 +61,7 @@ function route(url: string, init?: RequestInit): Response {
       root: "/tmp/shelf",
       moka: buildShelfMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current/runs") return json([]);

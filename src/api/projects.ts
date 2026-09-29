@@ -9,6 +9,18 @@ export interface OpenProjectResult {
   root: string;
   moka: MokaFile;
   selfCheck: SelfCheckReport;
+  /**
+   * Whether the server has finished reading the files whose sizes could not
+   * speak for them. False means the report may still grow — what a same-length
+   * change looks like — and `selfCheck()` is how the rest arrives.
+   */
+  selfCheckVerified: boolean;
+}
+
+/** The open project's file check on its own, and whether it is finished. */
+export interface SelfCheckStatus {
+  report: SelfCheckReport;
+  verified: boolean;
 }
 
 export interface SaveResult {
@@ -70,6 +82,15 @@ export const projectsApi = {
     return http.request<OpenProjectResult>("/api/v1/projects/current", {
       signal,
     });
+  },
+
+  selfCheck(signal?: AbortSignal): Promise<SelfCheckStatus> {
+    return http.request<SelfCheckStatus>(
+      "/api/v1/projects/current/self-check",
+      {
+        signal,
+      },
+    );
   },
 
   applyCommands(

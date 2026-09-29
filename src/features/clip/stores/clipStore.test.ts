@@ -36,6 +36,7 @@ function open(moka: MokaFile) {
     moka,
     root: `/tmp/${moka.metadata.id}`,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 

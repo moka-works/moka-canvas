@@ -94,6 +94,7 @@ function openCut() {
     root: "/tmp/moka-test",
     moka: buildCutMokaFile(),
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useClipStore.setState({ activeTimelineId: ids.timeline });
   return ids;

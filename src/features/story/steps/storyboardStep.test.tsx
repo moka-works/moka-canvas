@@ -108,6 +108,7 @@ function serving(): void {
           root: "/tmp/moka-board-test",
           moka: useProjectStore.getState().moka,
           selfCheck: { ok: true, issues: [] },
+          selfCheckVerified: true,
         });
       }
       return json({});
@@ -297,6 +298,7 @@ function openAtBoard(moka: MokaFile, chapter = 0): void {
     moka,
     root: "/tmp/moka-board-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useStoryStore.getState().adopt(moka);
   const target = moka.stories![0].chapters[chapter];

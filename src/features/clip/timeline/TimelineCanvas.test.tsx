@@ -176,6 +176,7 @@ describe("the timeline canvas", () => {
       root: "/tmp/moka-test",
       moka: buildCutMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     useClipStore.setState({ activeTimelineId: ids.timeline });
     const { container } = render(<Harness timeline={cut()} />);

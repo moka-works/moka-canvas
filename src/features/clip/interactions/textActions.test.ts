@@ -68,6 +68,7 @@ function open(moka: MokaFile, timelineId: string, playheadMs = 0): void {
     root: "/tmp/moka-test",
     moka,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useClipStore.setState({
     activeTimelineId: timelineId,

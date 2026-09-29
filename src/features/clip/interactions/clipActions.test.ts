@@ -83,6 +83,7 @@ function open(
     root: "/tmp/moka-test",
     moka,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useClipStore.setState({
     activeTimelineId: options.timelineId,

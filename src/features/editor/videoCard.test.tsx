@@ -63,6 +63,7 @@ function openCanvas({
       moka,
       activeCanvasId: ids.canvasMain,
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     useEditorStore.setState({
       camera: { x: 0, y: 0, zoom },

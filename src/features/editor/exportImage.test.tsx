@@ -60,6 +60,7 @@ async function openGolden() {
           root: "/tmp/golden",
           moka: buildGoldenMokaFile(),
           selfCheck: { ok: true, issues: [] },
+          selfCheckVerified: true,
         }),
       );
     }

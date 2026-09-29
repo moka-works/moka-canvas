@@ -42,6 +42,7 @@ beforeEach(() => {
     root: "/tmp/moka-test",
     moka: buildGoldenMokaFile(),
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useEditorStore.getState().setSelection({
     nodeIds: [goldenNodeIds().text],

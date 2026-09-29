@@ -39,6 +39,7 @@ function openShelf(moka: MokaFile) {
     moka,
     root: "/tmp/moka-shelf-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<SidePanel />);
   fireEvent.click(screen.getByTestId("left-tab-assets"));

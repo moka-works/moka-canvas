@@ -47,6 +47,7 @@ function route(url: string): Response {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current/runs") return json([]);

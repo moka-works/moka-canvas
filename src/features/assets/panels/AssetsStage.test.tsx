@@ -72,6 +72,7 @@ function show(moka: MokaFile, assetId: string) {
     moka,
     root: "/tmp/moka-assets-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useAssetsStore.getState().select(assetId);
   render(<AssetsStage />);

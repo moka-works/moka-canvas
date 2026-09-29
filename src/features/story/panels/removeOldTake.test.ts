@@ -14,6 +14,7 @@ function open(): void {
     moka: buildStoryMokaFile(),
     root: "/tmp/moka-remove-take-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 

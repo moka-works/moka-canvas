@@ -39,6 +39,7 @@ function serving(answers: Record<string, unknown>) {
       root: "/tmp/moka-story-jobs-test",
       moka: buildStoryMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     },
     ...answers,
   };
@@ -134,6 +135,7 @@ function open(): void {
     moka: buildStoryMokaFile(),
     root: "/tmp/moka-story-jobs-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 
@@ -833,6 +835,7 @@ describe("a room opened over the batches it has already read", () => {
             root: "/tmp/moka-story-jobs-test",
             moka: buildStoryMokaFile(),
             selfCheck: { ok: true, issues: [] },
+            selfCheckVerified: true,
           });
         }),
       );

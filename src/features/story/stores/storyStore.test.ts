@@ -38,6 +38,7 @@ function open(moka: MokaFile) {
     moka,
     root: "/tmp/moka-story-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 

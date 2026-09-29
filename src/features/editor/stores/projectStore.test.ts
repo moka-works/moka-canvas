@@ -16,6 +16,7 @@ function hydrate(moka?: MokaFile) {
     root: "/tmp/moka-test",
     moka: document,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   return document;
 }
@@ -195,6 +196,7 @@ describe("reading the stored document back in", () => {
     root: "/tmp/moka-test",
     moka,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 
   it("lands what is waiting before the stored document replaces it", async () => {
@@ -362,6 +364,7 @@ describe("project creation", () => {
           root: "/tmp/moka-test",
           moka: opened,
           selfCheck: { ok: true, issues: [] },
+          selfCheckVerified: true,
         }),
       );
 
@@ -389,6 +392,7 @@ describe("project creation", () => {
         root: "/tmp/projects/nested",
         moka: opened,
         selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
       }),
     );
 
@@ -396,5 +400,108 @@ describe("project creation", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(String(init?.body)).useSubdirectory).toBe(true);
+  });
+});
+
+describe("the file check behind the open", () => {
+  const issue = {
+    assetId: "asset-1",
+    name: "still.png",
+    expectedPath: "assets/images/still.png",
+    reason: "changed" as const,
+    referencingNodes: [],
+  };
+
+  const opened = (selfCheckVerified: boolean) => ({
+    root: "/tmp/moka-test",
+    moka: buildGoldenMokaFile(),
+    selfCheck: { ok: true, issues: [] },
+    selfCheckVerified,
+  });
+
+  it("follows a check that is not finished, and stops when it is", async () => {
+    let asked = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/self-check")) {
+        asked += 1;
+        return jsonResponse(200, {
+          report: { ok: true, issues: [] },
+          verified: true,
+        });
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    useProjectStore.getState().hydrate(opened(false));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toBe(1);
+    expect(useProjectStore.getState().selfCheckVerified).toBe(true);
+
+    // The answer said it was finished, so nothing more is asked.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(asked).toBe(1);
+  });
+
+  it("says a change the open had not named, once", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/self-check")) {
+        return jsonResponse(200, {
+          report: { ok: false, issues: [issue] },
+          verified: false,
+        });
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    useProjectStore.getState().hydrate(opened(false));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const state = useProjectStore.getState();
+    expect(state.selfCheck?.issues).toHaveLength(1);
+    expect(state.saveStatus).toBe("saved");
+    const toasts = useAppStore.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].message).toContain("1 file changed on disk");
+
+    // The same finding on the next poll is not said a second time.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(useAppStore.getState().toasts).toHaveLength(1);
+  });
+
+  it("drops an answer for a project that was put down meanwhile", async () => {
+    let release: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/self-check")) {
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      }
+      return Promise.reject(new Error(`unexpected call: ${url}`));
+    });
+
+    useProjectStore.getState().hydrate(opened(false));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(release).toBeDefined();
+
+    useProjectStore.getState().close();
+    release?.(
+      jsonResponse(200, {
+        report: { ok: false, issues: [issue] },
+        verified: true,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(useProjectStore.getState().selfCheck).toBeNull();
+    expect(useAppStore.getState().toasts).toHaveLength(0);
+  });
+
+  it("asks nothing when the open was already finished", async () => {
+    hydrate();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

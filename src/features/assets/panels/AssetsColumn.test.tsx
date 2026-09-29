@@ -23,6 +23,7 @@ function openColumn(moka: MokaFile) {
     moka,
     root: "/tmp/moka-assets-column-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<AssetsColumn />);
   return moka;

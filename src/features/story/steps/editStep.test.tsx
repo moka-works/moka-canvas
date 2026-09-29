@@ -113,6 +113,7 @@ function serving(): void {
           root: "/tmp/moka-edit-test",
           moka: reloaded ?? useProjectStore.getState().moka,
           selfCheck: { ok: true, issues: [] },
+          selfCheckVerified: true,
         });
       }
       return json({});
@@ -153,6 +154,7 @@ function openAtEdit(moka: MokaFile): void {
     moka,
     root: "/tmp/moka-edit-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useStoryStore.getState().adopt(moka);
   render(<StoryPage />);
@@ -305,6 +307,7 @@ describe("assembling a telling", () => {
             root: "/tmp/moka-edit-test",
             moka: useProjectStore.getState().moka,
             selfCheck: { ok: true, issues: [] },
+            selfCheckVerified: true,
           });
         }
         return json([]);

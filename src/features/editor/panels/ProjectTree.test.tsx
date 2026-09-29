@@ -30,6 +30,7 @@ function openTree(moka: MokaFile) {
     moka,
     root: "/tmp/moka-tree-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<SidePanel />);
   return moka;

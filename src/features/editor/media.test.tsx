@@ -55,6 +55,7 @@ function hydrate(moka?: MokaFile, selfCheck?: SelfCheckReport) {
     root: "/tmp/moka-test",
     moka: document,
     selfCheck: selfCheck ?? { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   return document;
 }

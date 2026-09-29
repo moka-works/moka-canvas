@@ -47,6 +47,7 @@ function openAtStep(moka: MokaFile, step: "storyboard" | "edit" | "outline") {
     moka,
     root: "/tmp/moka-import-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useStoryStore.getState().adopt(moka);
   render(<StoryPage />);

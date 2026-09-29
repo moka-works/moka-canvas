@@ -18,6 +18,7 @@ import {
 } from "../../../api/projects";
 import { isApiError } from "../../../api/client";
 import { i18n } from "../../../shared/i18n";
+import { useAppStore } from "./appStore";
 import { useOpenCanvases } from "./openCanvases";
 
 export type SaveStatus = "saved" | "saving" | "conflicted" | "error";
@@ -27,6 +28,9 @@ interface ProjectState {
   moka: MokaFile | null;
   activeCanvasId: CanvasId | null;
   selfCheck: SelfCheckReport | null;
+  /** Whether the server has finished reading the files it could not speak for
+      by their sizes; false means `selfCheck` may still grow. */
+  selfCheckVerified: boolean;
   saveStatus: SaveStatus;
   saveError: string | null;
   /** Optimistically applied commands not yet acknowledged by the server. */
@@ -86,7 +90,15 @@ interface ProjectState {
 }
 
 const FLUSH_DEBOUNCE_MS = 400;
+const SELF_CHECK_POLL_MS = 1500;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+// The watch on the file check that is still going, if one is: a project is
+// opened on what the sizes said, and the files whose contents could not be
+// spoken for by a size are read by the server meanwhile. Bumped whenever a
+// watch is replaced or a project is put down, so an answer to a question nobody
+// is asking any more is dropped rather than written down.
+let selfCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let selfCheckWatch = 0;
 // A flush in flight shares its promise: concurrent callers (the autosave
 // debounce racing an explicit save) must not send the same batch twice —
 // the duplicate would arrive with a stale expected revision and surface a
@@ -114,11 +126,77 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     }, FLUSH_DEBOUNCE_MS);
   };
 
+  /** Stops watching the file check, if a watch is on. */
+  const stopSelfCheckWatch = () => {
+    selfCheckWatch += 1;
+    if (selfCheckTimer) clearTimeout(selfCheckTimer);
+    selfCheckTimer = null;
+  };
+
+  /**
+   * Follows the file check the server is still making.
+   *
+   * A project is opened on what the sizes said, so the room draws at once; the
+   * files whose contents a size cannot speak for are read behind it. The answer
+   * is asked for until it is finished, and what it adds is said once — a file
+   * the open already named is not named again — and kept in the report the
+   * rooms read their badges from. A check that cannot be read is not a room
+   * that cannot be used: the watch simply stops, and what the open said stands.
+   */
+  const watchSelfCheck = () => {
+    stopSelfCheckWatch();
+    const generation = selfCheckWatch;
+    const projectId = get().moka?.metadata.id ?? null;
+    const said = new Set(
+      (get().selfCheck?.issues ?? []).map(
+        (issue) => `${issue.assetId}:${issue.reason}`,
+      ),
+    );
+    const tick = async (): Promise<void> => {
+      const state = get();
+      if (generation !== selfCheckWatch) return;
+      if (!state.moka || state.selfCheckVerified) return;
+      if (projectId !== null && state.moka.metadata.id !== projectId) return;
+      try {
+        const status = await projectsApi.selfCheck();
+        if (generation !== selfCheckWatch) return;
+        if (get().moka?.metadata.id !== projectId) return;
+        const fresh = status.report.issues.filter(
+          (issue) => !said.has(`${issue.assetId}:${issue.reason}`),
+        );
+        for (const issue of fresh) {
+          said.add(`${issue.assetId}:${issue.reason}`);
+        }
+        set({ selfCheck: status.report, selfCheckVerified: status.verified });
+        if (fresh.length > 0) {
+          useAppStore
+            .getState()
+            .pushToast(
+              "error",
+              i18n.t(
+                fresh.length === 1
+                  ? "app:missingAssets.checkedLaterOne"
+                  : "app:missingAssets.checkedLaterMany",
+                { count: fresh.length },
+              ),
+            );
+        }
+        if (!status.verified) {
+          selfCheckTimer = setTimeout(() => void tick(), SELF_CHECK_POLL_MS);
+        }
+      } catch {
+        // The report the open gave is what the badges keep.
+      }
+    };
+    void tick();
+  };
+
   return {
     root: null,
     moka: null,
     activeCanvasId: null,
     selfCheck: null,
+    selfCheckVerified: true,
     saveStatus: "saved",
     saveError: null,
     pending: [],
@@ -151,10 +229,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         activeCanvasId:
           staying ?? openedOnto ?? opened.moka.canvas[0]?.id ?? null,
         selfCheck: opened.selfCheck,
+        selfCheckVerified: opened.selfCheckVerified,
         saveStatus: "saved",
         saveError: null,
         pending: [],
       });
+      // A check that is still going is followed from here, where the project
+      // it belongs to is known.
+      if (opened.selfCheckVerified) {
+        stopSelfCheckWatch();
+      } else {
+        watchSelfCheck();
+      }
       return opened.selfCheck;
     },
 
@@ -222,12 +308,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       flushTimer = null;
       flushInFlight = null;
       readInFlight = null;
+      stopSelfCheckWatch();
       useOpenCanvases.getState().forget();
       set({
         root: null,
         moka: null,
         activeCanvasId: null,
         selfCheck: null,
+        selfCheckVerified: true,
         saveStatus: "saved",
         saveError: null,
         pending: [],
