@@ -600,6 +600,29 @@ h2 {
   width: auto;
 }
 
+/* The fold a model's request fields are kept in. One group per set of
+   scenarios — a single group where the category has but one shape — and the
+   summary keeps saying what the group answers while its fields are away. */
+.settings-group {
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+}
+
+.settings-group > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  padding: 8px 12px;
+}
+
+.settings-group-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
 .model-card-list,
 .model-list {
   display: grid;

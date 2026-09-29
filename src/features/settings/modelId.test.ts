@@ -12,8 +12,8 @@ describe("identifierStem", () => {
     expect(identifierStem("Writer")).toBe("writer");
   });
 
-  it("turns spaces into underscores and drops the symbols around them", () => {
-    expect(identifierStem("GPT-4o mini (OpenAI)")).toBe("gpt-4o_mini_openai");
+  it("turns the spaces and symbols between words into single hyphens", () => {
+    expect(identifierStem("GPT-4o mini (OpenAI)")).toBe("gpt-4o-mini-openai");
   });
 
   it("keeps a hyphen, which is how the identifiers already stored are written", () => {
@@ -21,7 +21,7 @@ describe("identifierStem", () => {
   });
 
   it("collapses the separators a dropped symbol leaves behind", () => {
-    expect(identifierStem("Writer - the best")).toBe("writer_the_best");
+    expect(identifierStem("Writer - the best")).toBe("writer-the-best");
   });
 
   it("carries no separator in or out", () => {
@@ -41,12 +41,12 @@ describe("identifierStem", () => {
 
 describe("suggestedModelId", () => {
   it("joins the stem to a random tail", () => {
-    expect(suggestedModelId("Composer")).toMatch(/^composer_[a-z0-9]{6}$/);
+    expect(suggestedModelId("Composer")).toMatch(/^composer-[a-z0-9]{6}$/);
   });
 
   it("still names a model when the name has nothing readable in it", () => {
-    expect(suggestedModelId("!!!")).toMatch(/^model_[a-z0-9]{6}$/);
-    expect(suggestedModelId("")).toMatch(/^model_[a-z0-9]{6}$/);
+    expect(suggestedModelId("!!!")).toMatch(/^model-[a-z0-9]{6}$/);
+    expect(suggestedModelId("")).toMatch(/^model-[a-z0-9]{6}$/);
   });
 
   it("never goes over the ceiling", () => {
@@ -75,7 +75,7 @@ describe("identifierSuffix", () => {
 describe("uniqueModelId", () => {
   it("suggests the readable identifier when nothing holds it", () => {
     expect(uniqueModelId("Composer", () => false)).toMatch(
-      /^composer_[a-z0-9]{6}$/,
+      /^composer-[a-z0-9]{6}$/,
     );
   });
 
@@ -90,12 +90,12 @@ describe("uniqueModelId", () => {
       return false;
     });
     expect(taken.has(id)).toBe(false);
-    expect(id).toMatch(/^writer_[a-z0-9]{6}$/);
+    expect(id).toMatch(/^writer-[a-z0-9]{6}$/);
   });
 
   it("gives up on an identifier somebody else holds, so the form says so", () => {
     expect(uniqueModelId("Writer", () => true, 3)).toMatch(
-      /^writer_[a-z0-9]{6}$/,
+      /^writer-[a-z0-9]{6}$/,
     );
   });
 });

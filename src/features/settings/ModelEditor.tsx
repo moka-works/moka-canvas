@@ -8,7 +8,6 @@ import type {
 } from "../../api";
 import {
   CAPABILITY_LABELS,
-  MAX_MODEL_ID_LENGTH,
   MAX_MODEL_NAME_LENGTH,
   MAX_VIDEO_SECONDS,
   MODEL_SCENE_LABELS,
@@ -34,10 +33,20 @@ interface Props {
   onDone: () => void;
 }
 
+/**
+ * One scenario group as the form holds it: the address as text so a blank
+ * field can mean "wherever the first group asks", and whether the group's
+ * fields are showing.
+ */
+interface GroupDraft {
+  model: string;
+  url: string;
+  scenes: ModelScene[];
+  /** Whether the group's fields show; a form opens with them showing. */
+  open: boolean;
+}
+
 interface FormState {
-  id: string;
-  /** Whether the identifier was typed, or is still the suggested one. */
-  idTouched: boolean;
   /** The id of a converter directory, which is the protocol's wire name. */
   protocol: string;
   url: string;
@@ -45,74 +54,92 @@ interface FormState {
   displayName: string;
   /** The longest one clip may be, as text so a blank field can mean none. */
   maxVideoSeconds: string;
-  /** Per-scenario rows; empty means the one model answers everything. */
-  subModels: SubModelDraft[];
+  /** The scenarios the first group's own model answers. */
+  scenes: ModelScene[];
+  /** Whether the first group's fields show. */
+  open: boolean;
+  /** The groups after the first; empty for a category with no scenarios. */
+  groups: GroupDraft[];
   enabled: boolean;
   apiKey: string;
 }
 
 /**
- * One scenario row as the form holds it: the address as text so a blank field
- * can mean "wherever the main one asks".
- */
-export interface SubModelDraft {
-  model: string;
-  url: string;
-  scenes: ModelScene[];
-}
-
-/**
- * The rows with one scene's check moved to the row that just took it.
+ * The form with one scenario's check moved to the group that just took it.
  *
- * A scenario is answered by at most one sub-model, so checking it somewhere
- * takes it from wherever it was: two rows both claiming one scene would be a
+ * A scenario is answered by one group, so checking it somewhere takes it from
+ * wherever it was: two groups both claiming one scenario would be a
  * configuration the server refuses, and a form that can build one is a form
- * that fails at save.
+ * that fails at save. Group 0 is the first group, which holds the
+ * model-level fields.
  */
-export function toggleScene(
-  rows: SubModelDraft[],
+function toggleScene(
+  form: FormState,
   at: number,
   scene: ModelScene,
   checked: boolean,
-): SubModelDraft[] {
-  return rows.map((row, index) => {
-    if (index === at) {
-      const scenes = checked
-        ? [...row.scenes.filter((held) => held !== scene), scene]
-        : row.scenes.filter((held) => held !== scene);
-      return { ...row, scenes };
-    }
-    return checked && row.scenes.includes(scene)
-      ? { ...row, scenes: row.scenes.filter((held) => held !== scene) }
-      : row;
-  });
+): FormState {
+  const withCheck = (scenes: ModelScene[]) =>
+    checked
+      ? scenes.includes(scene)
+        ? scenes
+        : [...scenes, scene]
+      : scenes.filter((held) => held !== scene);
+  const withoutScene = (scenes: ModelScene[]) =>
+    checked ? scenes.filter((held) => held !== scene) : scenes;
+  return {
+    ...form,
+    scenes: at === 0 ? withCheck(form.scenes) : withoutScene(form.scenes),
+    groups: form.groups.map((group, index) => ({
+      ...group,
+      scenes:
+        index === at - 1 ? withCheck(group.scenes) : withoutScene(group.scenes),
+    })),
+  };
 }
 
-/** The scenes no row answers for, in the category's own order. */
-export function uncoveredScenes(
-  category: Capability,
-  rows: SubModelDraft[],
-): ModelScene[] {
-  const claimed = new Set(rows.flatMap((row) => row.scenes));
+/** The scenarios no group answers for, in the category's own order. */
+function uncoveredScenes(category: Capability, form: FormState): ModelScene[] {
+  const claimed = new Set([
+    ...form.scenes,
+    ...form.groups.flatMap((group) => group.scenes),
+  ]);
   return SCENES_OF_CATEGORY[category].filter((scene) => !claimed.has(scene));
 }
 
-/** What one row is missing, as a message key, or null when it is complete. */
-export function subModelProblem(row: SubModelDraft): string | null {
-  if (row.model.trim() === "") return "settings:editor.subModelNeedsModel";
-  if (row.url.trim() !== "" && !/^https?:\/\/\S+$/.test(row.url.trim())) {
-    return "settings:editor.subModelUrlBad";
+/**
+ * The scenarios a form opens on: what the configuration says its own model
+ * answers, or — where nothing was said and nothing routes — every scenario of
+ * the category, because that is what a configuration claiming nothing answers.
+ */
+function initialScenes(
+  category: Capability,
+  source: ModelView | null,
+): ModelScene[] {
+  const scenes = SCENES_OF_CATEGORY[category];
+  if (source === null) return [...scenes];
+  const said = source.scenes ?? [];
+  if (said.length > 0) return [...said];
+  return (source.subModels ?? []).length > 0 ? [] : [...scenes];
+}
+
+/** What one group after the first is missing, as a message key, or null. */
+function groupProblem(group: GroupDraft): string | null {
+  if (group.model.trim() === "") return "settings:editor.groupNeedsModel";
+  if (group.url.trim() !== "" && !/^https?:\/\/\S+$/.test(group.url.trim())) {
+    return "settings:editor.groupUrlBad";
   }
-  if (row.scenes.length === 0) return "settings:editor.subModelNeedsScene";
+  if (group.scenes.length === 0) return "settings:editor.groupNeedsScene";
   return null;
 }
 
-/** The stored rows as the form holds them. */
-function draftRows(subModels: SubModel[] | undefined): SubModelDraft[] {
+/** The stored groups as the form holds them. */
+function draftGroups(subModels: SubModel[] | undefined): GroupDraft[] {
   return (subModels ?? []).map((sub) => ({
     model: sub.model,
     url: sub.url ?? "",
     scenes: [...sub.scenes],
+    open: true,
   }));
 }
 
@@ -124,11 +151,8 @@ function initialForm(
 ): FormState {
   if (model === null && copySource !== null) {
     // A copy starts from the source's fields, including the protocol it may
-    // alone speak; the identifier is left to the suggestion, which follows
-    // the display name the way a plain new model's does.
+    // alone speak.
     return {
-      id: "",
-      idTouched: false,
       protocol: copySource.protocol,
       url: copySource.url,
       model: copySource.model,
@@ -137,7 +161,9 @@ function initialForm(
         MAX_MODEL_NAME_LENGTH,
       ),
       maxVideoSeconds: ceilingText(copySource.maxVideoSeconds),
-      subModels: draftRows(copySource.subModels),
+      scenes: initialScenes(category, copySource),
+      open: true,
+      groups: draftGroups(copySource.subModels),
       enabled: copySource.enabled,
       apiKey: "",
     };
@@ -148,27 +174,27 @@ function initialForm(
     // form may start with no protocol at all and adopt one when it arrives.
     const choice = protocolChoices(protocols, category)[0] ?? null;
     return {
-      id: "",
-      idTouched: false,
       protocol: choice?.id ?? "",
       url: choice?.urlExample ?? "",
       model: "",
       displayName: "",
       maxVideoSeconds: "",
-      subModels: [],
+      scenes: initialScenes(category, null),
+      open: true,
+      groups: [],
       enabled: true,
       apiKey: "",
     };
   }
   return {
-    id: model.id,
-    idTouched: true,
     protocol: model.protocol,
     url: model.url,
     model: model.model,
     displayName: model.displayName,
     maxVideoSeconds: ceilingText(model.maxVideoSeconds),
-    subModels: draftRows(model.subModels),
+    scenes: initialScenes(category, model),
+    open: true,
+    groups: draftGroups(model.subModels),
     enabled: model.enabled,
     apiKey: "",
   };
@@ -188,9 +214,16 @@ function ceilingText(seconds: number | null | undefined): string {
  * than a relationship — duplicating carries the fields and the key, and the
  * two can then diverge without touching each other.
  *
- * The identifier is the one field nobody has to think about: it is suggested
- * from the display name and can be overwritten, because what it does — stay
- * the reference a node holds — matters more than what it reads as.
+ * Everything below the display name is kept in folds: a category that splits
+ * its work by scenario — drawing from editing, a shot from its framing — gets
+ * one group per set of scenarios, and a category with one shape gets a single
+ * group holding its fields. A scenario is checked in at most one group, and a
+ * scenario no group checks is refused at generation time, which the form says
+ * before the save rather than after.
+ *
+ * The identifier is the one thing nobody has to think about: it is derived
+ * from the display name and never shown, because what it does — stay the
+ * reference a node holds — matters more than what it reads as.
  */
 export function ModelEditor({
   model,
@@ -208,6 +241,11 @@ export function ModelEditor({
 
   const edit = (patch: Partial<FormState>) =>
     setForm((state) => ({ ...state, ...patch }));
+
+  const sceneChoices = SCENES_OF_CATEGORY[category];
+  // A category that splits its work by scenario offers a group per set of
+  // them; a category with one shape has nothing to split and says nothing.
+  const routed = sceneChoices.length > 0;
 
   /**
    * What the protocol picker offers. A stored configuration whose script
@@ -265,35 +303,17 @@ export function ModelEditor({
   );
 
   /**
-   * The identifier this form will save.
-   *
-   * A new configuration is handed one derived from its display name, which
-   * follows the name as it is typed — writing an identifier is optional,
-   * having one is not. Typing one takes over, and clearing the field hands it
-   * back to the suggestion rather than saving nothing. An existing
-   * configuration's identifier is the one its nodes already store.
+   * The identifier this form will save, which is never shown or typed: a new
+   * configuration is handed one derived from its display name — following the
+   * name as it is typed, since that is what it reads as — and an existing
+   * configuration keeps the one its nodes already store.
    */
-  const identifier = useMemo(() => {
-    if (model !== null) return model.id;
-    if (form.idTouched) return form.id.trim();
-    return uniqueModelId(form.displayName, isTaken);
-  }, [model, form.idTouched, form.id, form.displayName, isTaken]);
+  const identifier = useMemo(
+    () =>
+      model !== null ? model.id : uniqueModelId(form.displayName, isTaken),
+    [model, form.displayName, isTaken],
+  );
 
-  const chooseId = (typed: string) => {
-    if (typed.trim() === "") {
-      edit({ id: "", idTouched: false });
-      return;
-    }
-    edit({ id: typed, idTouched: true });
-  };
-
-  const idTaken = model === null && isTaken(identifier);
-  const idShaped = !/\s/.test(identifier);
-  const idProblem = idTaken
-    ? t("settings:editor.identifierTaken")
-    : idShaped
-      ? null
-      : t("settings:editor.identifierSpaces");
   const urlShaped = /^https?:\/\/\S+$/.test(form.url.trim());
   // A clip ceiling is a video model's alone, and a number outside what one
   // clip may be is nothing to plan with: the field says so before the save.
@@ -305,23 +325,31 @@ export function ModelEditor({
       Number.isInteger(ceilingNumber) &&
       ceilingNumber >= 1 &&
       ceilingNumber <= MAX_VIDEO_SECONDS);
+  // The scenarios a routed category has that no group answers for, and whether
+  // any group answers for one at all. A configuration claiming nothing would
+  // answer everything by the server's oldest rule, which is not what an
+  // emptied form says, so such a form is not one to save.
+  const uncovered = routed ? uncoveredScenes(category, form) : [];
+  const claimedEmpty =
+    routed &&
+    form.scenes.length === 0 &&
+    form.groups.every((group) => group.scenes.length === 0);
   const canSave =
     !saving &&
-    !idTaken &&
-    idShaped &&
     form.protocol !== "" &&
     form.displayName.trim() !== "" &&
     form.model.trim() !== "" &&
     ceilingOk &&
     urlShaped &&
-    form.subModels.every((row) => subModelProblem(row) === null);
-  // The scenarios a routed category has that no row answers for. Only said
-  // once routing exists: a configuration with no sub-models answers every
-  // scenario itself, which is how one behaved before the rows existed.
-  const uncovered =
-    category === "image" || category === "video"
-      ? uncoveredScenes(category, form.subModels)
-      : [];
+    !claimedEmpty &&
+    form.groups.every((group) => groupProblem(group) === null);
+
+  const setGroup = (at: number, patch: Partial<GroupDraft>) =>
+    edit({
+      groups: form.groups.map((group, index) =>
+        index === at ? { ...group, ...patch } : group,
+      ),
+    });
 
   const save = async () => {
     const draft: ModelDraft = {
@@ -338,17 +366,19 @@ export function ModelEditor({
     if (category === "video" && ceilingNumber !== null) {
       draft.maxVideoSeconds = ceilingNumber;
     }
-    // Scenario routing belongs to video and image models, and the rows travel
-    // only where there is something to say — or something stored to clear.
-    if (
-      (category === "image" || category === "video") &&
-      (form.subModels.length > 0 || (model?.subModels?.length ?? 0) > 0)
-    ) {
-      draft.subModels = form.subModels.map((row) => ({
-        model: row.model.trim(),
-        ...(row.url.trim() === "" ? {} : { url: row.url.trim() }),
-        scenes: [...row.scenes],
-      }));
+    // Scenario claims belong to video and image models, and they travel only
+    // where there is something to say — or something stored to clear.
+    if (routed) {
+      if (form.scenes.length > 0 || (model?.scenes ?? []).length > 0) {
+        draft.scenes = [...form.scenes];
+      }
+      if (form.groups.length > 0 || (model?.subModels ?? []).length > 0) {
+        draft.subModels = form.groups.map((group) => ({
+          model: group.model.trim(),
+          ...(group.url.trim() === "" ? {} : { url: group.url.trim() }),
+          scenes: [...group.scenes],
+        }));
+      }
     }
     // A blank key field keeps whatever is stored; typing one replaces it.
     // Clearing is its own button, so saving an unrelated edit cannot cost a
@@ -375,6 +405,112 @@ export function ModelEditor({
     await useModelStore.getState().setKey(model.id, null);
     onDone();
   };
+
+  /** What a group's fold says while its fields are put away. */
+  const groupTitle = (scenes: ModelScene[]): string =>
+    scenes.length === 0
+      ? t("settings:editor.groupNoScenes")
+      : scenes.map((scene) => t(MODEL_SCENE_LABELS[scene])).join(" / ");
+
+  /** The scenarios one group answers, checked at the top of its fields. */
+  const sceneRow = (at: number, scenes: ModelScene[]) => (
+    <div className="settings-row" data-testid={`model-group-${at}-scenes`}>
+      {sceneChoices.map((scene) => (
+        <label className="settings-check" key={scene}>
+          <input
+            aria-label={`${t("settings:editor.groupScenes")} ${at + 1} ${t(MODEL_SCENE_LABELS[scene])}`}
+            checked={scenes.includes(scene)}
+            data-testid={`model-group-${at}-scene-${scene}`}
+            onChange={(event) =>
+              setForm((state) =>
+                toggleScene(state, at, scene, event.target.checked),
+              )
+            }
+            type="checkbox"
+          />
+          <span>{t(MODEL_SCENE_LABELS[scene])}</span>
+        </label>
+      ))}
+    </div>
+  );
+
+  /** The fields every group's first one has: how this model is reached. */
+  const protocolField = (
+    <>
+      <label className="dialog-field">
+        <span>{t("settings:editor.protocol")}</span>
+        <select
+          aria-label={t("settings:editor.protocol")}
+          onChange={(event) => chooseProtocol(event.target.value)}
+          value={form.protocol}
+        >
+          {choices.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {choices.length === 0 && (
+        <p className="settings-hint" role="alert">
+          {t("settings:editor.noProtocols")}
+        </p>
+      )}
+    </>
+  );
+
+  const modelField = (at: number | null) => {
+    const suffix = at === null ? "" : ` ${at + 1}`;
+    return (
+      <label className="dialog-field">
+        <span>{t("settings:editor.modelName")}</span>
+        <input
+          aria-label={`${t("settings:editor.modelName")}${suffix}`}
+          data-testid={at === null ? "model-name" : `model-group-${at}-model`}
+          maxLength={MAX_MODEL_NAME_LENGTH}
+          onChange={(event) =>
+            at === null
+              ? edit({ model: event.target.value })
+              : setGroup(at - 1, { model: event.target.value })
+          }
+          placeholder={t("settings:editor.modelNameTip")}
+          value={at === null ? form.model : form.groups[at - 1].model}
+        />
+      </label>
+    );
+  };
+
+  const keyField = (
+    <>
+      <label className="dialog-field">
+        <span>{t("settings:editor.apiKey")}</span>
+        <input
+          aria-label={t("settings:editor.apiKey")}
+          onChange={(event) => edit({ apiKey: event.target.value })}
+          placeholder={
+            model?.apiKey.set
+              ? t("settings:editor.keyStoredTip", {
+                  masked: model.apiKey.masked ?? t("settings:keyFallback"),
+                })
+              : copySource?.apiKey.set
+                ? t("settings:editor.keyCopiedTip", {
+                    name: copySource.displayName,
+                  })
+                : "sk-…"
+          }
+          type="password"
+          value={form.apiKey}
+        />
+      </label>
+      {model !== null && model.apiKey.set && (
+        <div className="settings-row">
+          <button disabled={saving} onClick={clearKey} type="button">
+            {t("settings:editor.clearKey")}
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="settings-section">
@@ -409,254 +545,162 @@ export function ModelEditor({
         />
       </label>
 
-      <label className="dialog-field">
-        <span>{t("settings:editor.identifier")}</span>
-        <input
-          aria-label={t("settings:editor.identifierAria")}
-          disabled={model !== null}
-          maxLength={MAX_MODEL_ID_LENGTH}
-          onChange={(event) => chooseId(event.target.value)}
-          title={
-            model !== null
-              ? t("settings:editor.identifierLockedTip")
-              : undefined
-          }
-          value={identifier}
-        />
-      </label>
-      {model === null && (
-        <p className="settings-hint">{t("settings:editor.identifierHint")}</p>
-      )}
-      {idProblem && (
-        <p className="settings-hint" role="alert">
-          {idProblem}
-        </p>
-      )}
+      <details
+        className="settings-group"
+        data-testid="model-group-0"
+        onToggle={(event) => edit({ open: event.currentTarget.open })}
+        open={form.open}
+      >
+        <summary>
+          {routed ? groupTitle(form.scenes) : t("settings:editor.groupConfig")}
+        </summary>
+        <div className="settings-group-body">
+          {routed && sceneRow(0, form.scenes)}
 
-      <label className="dialog-field">
-        <span>{t("settings:editor.protocol")}</span>
-        <select
-          aria-label={t("settings:editor.protocol")}
-          onChange={(event) => chooseProtocol(event.target.value)}
-          value={form.protocol}
-        >
-          {choices.map((choice) => (
-            <option key={choice.id} value={choice.id}>
-              {choice.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {choices.length === 0 && (
-        <p className="settings-hint" role="alert">
-          {t("settings:editor.noProtocols")}
-        </p>
-      )}
+          {protocolField}
 
-      <label className="dialog-field">
-        <span>{t("settings:editor.url")}</span>
-        <input
-          aria-label={t("settings:editor.urlAria")}
-          onChange={(event) => edit({ url: event.target.value })}
-          placeholder={protocolUrlExample(protocols, form.protocol)}
-          value={form.url}
-        />
-      </label>
-      <p className="settings-hint">
-        {urlShaped
-          ? t("settings:editor.urlHint")
-          : `${t("settings:editor.urlHint")} ${t("settings:editor.urlHintScheme")}`}
-      </p>
-
-      <label className="dialog-field">
-        <span>{t("settings:editor.modelName")}</span>
-        <input
-          aria-label={t("settings:editor.modelName")}
-          maxLength={MAX_MODEL_NAME_LENGTH}
-          onChange={(event) => edit({ model: event.target.value })}
-          placeholder={t("settings:editor.modelNameTip")}
-          value={form.model}
-        />
-      </label>
-
-      {category === "video" && (
-        <>
           <label className="dialog-field">
-            <span>{t("settings:editor.maxVideoSeconds")}</span>
+            <span>{t("settings:editor.url")}</span>
             <input
-              aria-label={t("settings:editor.maxVideoSeconds")}
-              max={MAX_VIDEO_SECONDS}
-              min={1}
-              onChange={(event) =>
-                edit({ maxVideoSeconds: event.target.value })
-              }
-              placeholder="—"
-              step={1}
-              type="number"
-              value={form.maxVideoSeconds}
+              aria-label={t("settings:editor.urlAria")}
+              onChange={(event) => edit({ url: event.target.value })}
+              placeholder={protocolUrlExample(protocols, form.protocol)}
+              value={form.url}
             />
           </label>
           <p className="settings-hint">
-            {ceilingOk
-              ? t("settings:editor.maxVideoSecondsHint")
-              : t("settings:editor.maxVideoSecondsRange", {
-                  max: MAX_VIDEO_SECONDS,
-                })}
+            {urlShaped
+              ? t("settings:editor.urlHint")
+              : `${t("settings:editor.urlHint")} ${t("settings:editor.urlHintScheme")}`}
           </p>
-        </>
-      )}
 
-      {(category === "image" || category === "video") && (
-        <>
-          <h4 className="settings-heading">{t("settings:editor.subModels")}</h4>
-          <p className="settings-hint">{t("settings:editor.subModelsHint")}</p>
-          {form.subModels.map((row, at) => {
-            const problem = subModelProblem(row);
-            return (
-              <div className="settings-sub-model" key={at}>
-                <label className="dialog-field">
-                  <span>{t("settings:editor.subModelModel")}</span>
-                  <input
-                    aria-label={`${t("settings:editor.subModelModel")} ${at + 1}`}
-                    data-testid={`model-sub-${at}-model`}
-                    maxLength={MAX_MODEL_NAME_LENGTH}
-                    onChange={(event) =>
-                      edit({
-                        subModels: form.subModels.map((held, index) =>
-                          index === at
-                            ? { ...held, model: event.target.value }
-                            : held,
-                        ),
-                      })
-                    }
-                    placeholder={t("settings:editor.subModelModelTip")}
-                    value={row.model}
-                  />
-                </label>
-                <label className="dialog-field">
-                  <span>{t("settings:editor.subModelUrl")}</span>
-                  <input
-                    aria-label={`${t("settings:editor.subModelUrl")} ${at + 1}`}
-                    data-testid={`model-sub-${at}-url`}
-                    onChange={(event) =>
-                      edit({
-                        subModels: form.subModels.map((held, index) =>
-                          index === at
-                            ? { ...held, url: event.target.value }
-                            : held,
-                        ),
-                      })
-                    }
-                    placeholder={
-                      form.url.trim() === ""
-                        ? t("settings:editor.subModelUrlTip")
-                        : form.url.trim()
-                    }
-                    value={row.url}
-                  />
-                </label>
-                <div className="settings-row">
-                  {SCENES_OF_CATEGORY[category].map((scene) => (
-                    <label className="settings-check" key={scene}>
-                      <input
-                        aria-label={`${t("settings:editor.subModelScene")} ${at + 1} ${t(MODEL_SCENE_LABELS[scene])}`}
-                        checked={row.scenes.includes(scene)}
-                        data-testid={`model-sub-${at}-scene-${scene}`}
-                        onChange={(event) =>
-                          edit({
-                            subModels: toggleScene(
-                              form.subModels,
-                              at,
-                              scene,
-                              event.target.checked,
-                            ),
-                          })
-                        }
-                        type="checkbox"
-                      />
-                      <span>{t(MODEL_SCENE_LABELS[scene])}</span>
-                    </label>
-                  ))}
-                  <button
-                    aria-label={`${t("settings:editor.subModelRemove")} ${at + 1}`}
-                    data-testid={`model-sub-${at}-remove`}
-                    onClick={() =>
-                      edit({
-                        subModels: form.subModels.filter(
-                          (_held, index) => index !== at,
-                        ),
-                      })
-                    }
-                    type="button"
-                  >
-                    {t("settings:editor.subModelRemove")}
-                  </button>
-                </div>
-                {problem !== null && (
-                  <p className="settings-hint" role="alert">
-                    {t(problem)}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-          <div className="settings-row">
-            <button
-              data-testid="model-sub-add"
-              onClick={() =>
-                edit({
-                  subModels: [
-                    ...form.subModels,
-                    { model: "", url: "", scenes: [] },
-                  ],
-                })
-              }
-              type="button"
-            >
-              {t("settings:editor.subModelAdd")}
-            </button>
-          </div>
-          {form.subModels.length > 0 && uncovered.length > 0 && (
-            <p
-              className="settings-hint"
-              role="status"
-              data-testid="model-sub-uncovered"
-            >
-              {t("settings:editor.subModelsUncovered")}{" "}
-              {uncovered
-                .map((scene) => t(MODEL_SCENE_LABELS[scene]))
-                .join(" / ")}
-            </p>
+          {modelField(null)}
+
+          {category === "video" && (
+            <>
+              <label className="dialog-field">
+                <span>{t("settings:editor.maxVideoSeconds")}</span>
+                <input
+                  aria-label={t("settings:editor.maxVideoSeconds")}
+                  max={MAX_VIDEO_SECONDS}
+                  min={1}
+                  onChange={(event) =>
+                    edit({ maxVideoSeconds: event.target.value })
+                  }
+                  placeholder="—"
+                  step={1}
+                  type="number"
+                  value={form.maxVideoSeconds}
+                />
+              </label>
+              <p className="settings-hint">
+                {ceilingOk
+                  ? t("settings:editor.maxVideoSecondsHint")
+                  : t("settings:editor.maxVideoSecondsRange", {
+                      max: MAX_VIDEO_SECONDS,
+                    })}
+              </p>
+            </>
           )}
-        </>
-      )}
 
-      <label className="dialog-field">
-        <span>{t("settings:editor.apiKey")}</span>
-        <input
-          aria-label={t("settings:editor.apiKey")}
-          onChange={(event) => edit({ apiKey: event.target.value })}
-          placeholder={
-            model?.apiKey.set
-              ? t("settings:editor.keyStoredTip", {
-                  masked: model.apiKey.masked ?? t("settings:keyFallback"),
-                })
-              : copySource?.apiKey.set
-                ? t("settings:editor.keyCopiedTip", {
-                    name: copySource.displayName,
-                  })
-                : "sk-…"
-          }
-          type="password"
-          value={form.apiKey}
-        />
-      </label>
-      {model !== null && model.apiKey.set && (
+          {keyField}
+        </div>
+      </details>
+
+      {form.groups.map((group, at) => {
+        const ordinal = at + 1;
+        const problem = groupProblem(group);
+        return (
+          <details
+            className="settings-group"
+            data-testid={`model-group-${ordinal}`}
+            key={ordinal}
+            onToggle={(event) =>
+              setGroup(at, { open: event.currentTarget.open })
+            }
+            open={group.open}
+          >
+            <summary>{groupTitle(group.scenes)}</summary>
+            <div className="settings-group-body">
+              {sceneRow(ordinal, group.scenes)}
+              {modelField(ordinal)}
+              <label className="dialog-field">
+                <span>{t("settings:editor.url")}</span>
+                <input
+                  aria-label={`${t("settings:editor.urlAria")} ${ordinal + 1}`}
+                  data-testid={`model-group-${ordinal}-url`}
+                  onChange={(event) =>
+                    setGroup(at, { url: event.target.value })
+                  }
+                  placeholder={
+                    form.url.trim() === ""
+                      ? t("settings:editor.groupUrlTip")
+                      : form.url.trim()
+                  }
+                  value={group.url}
+                />
+              </label>
+              <p className="settings-hint">
+                {t("settings:editor.groupInherits")}
+              </p>
+              {problem !== null && (
+                <p className="settings-hint" role="alert">
+                  {t(problem)}
+                </p>
+              )}
+              <div className="settings-row">
+                <button
+                  aria-label={`${t("settings:editor.groupRemove")} ${ordinal + 1}`}
+                  data-testid={`model-group-${ordinal}-remove`}
+                  onClick={() =>
+                    edit({
+                      groups: form.groups.filter(
+                        (_group, index) => index !== at,
+                      ),
+                    })
+                  }
+                  type="button"
+                >
+                  {t("settings:editor.groupRemove")}
+                </button>
+              </div>
+            </div>
+          </details>
+        );
+      })}
+
+      {routed && uncovered.length > 0 && (
         <div className="settings-row">
-          <button disabled={saving} onClick={clearKey} type="button">
-            {t("settings:editor.clearKey")}
+          <button
+            data-testid="model-group-add"
+            onClick={() =>
+              edit({
+                groups: [
+                  ...form.groups,
+                  { model: "", url: "", scenes: [], open: true },
+                ],
+              })
+            }
+            type="button"
+          >
+            {t("settings:editor.groupAdd")}
           </button>
         </div>
+      )}
+      {routed && uncovered.length > 0 && (
+        <p
+          className="settings-hint"
+          role="status"
+          data-testid="model-uncovered"
+        >
+          {t("settings:editor.groupUncovered")}{" "}
+          {uncovered.map((scene) => t(MODEL_SCENE_LABELS[scene])).join(" / ")}
+        </p>
+      )}
+      {claimedEmpty && (
+        <p className="settings-hint" role="alert" data-testid="model-unclaimed">
+          {t("settings:editor.groupNeedsOne")}
+        </p>
       )}
 
       <label className="settings-check">

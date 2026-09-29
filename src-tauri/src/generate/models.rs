@@ -94,6 +94,9 @@ pub struct ModelView {
     /// The longest one clip this model films, when the deployment knows it.
     /// `None` means the app's own ceiling stands in for it.
     pub max_video_seconds: Option<u32>,
+    /// The scenarios this configuration's own model answers, where the
+    /// deployment routes them.
+    pub scenes: Vec<Scene>,
     /// Per-scenario models, where the configuration routes them.
     pub sub_models: Vec<SubModel>,
     pub enabled: bool,
@@ -177,6 +180,7 @@ impl ModelRepo {
                 model: model.model,
                 display_name: model.display_name,
                 max_video_seconds: model.max_video_seconds,
+                scenes: model.scenes,
                 sub_models: model.sub_models,
                 enabled: model.enabled,
                 api_key: ApiKeyView::disclosed(secret),
@@ -241,7 +245,7 @@ impl ModelRepo {
         // any other kind: a text model carrying one is dropped rather than
         // refused, since what it asks for is a form that never had the field.
         draft.max_video_seconds = check_video_ceiling(draft.category, draft.max_video_seconds)?;
-        check_sub_models(&mut draft)?;
+        check_scene_claims(&mut draft)?;
         Ok(self.metadata.upsert_model(&draft).await?)
     }
 
@@ -537,23 +541,29 @@ fn resolve_in(
 
 /// The model name and address one scene is answered by.
 ///
-/// A configuration with no sub-models answers everything itself, whatever the
-/// scene — which is how every configuration behaved before sub-models existed.
-/// A caller that names no scene (a configuration-level resolve, a job note
-/// from before scenes were kept) is served the same way rather than refused,
-/// because there is nothing to route. And a scene no sub-model claims is
-/// refused: sending it to some other model would be the guess this feature
+/// A configuration that claims nothing — no scenes of its own and no
+/// sub-models either — answers everything itself, whatever the scene, which is
+/// how every configuration behaved before scenes could be claimed. A caller
+/// that names no scene (a configuration-level resolve, a job note from before
+/// scenes were kept) is served by the configuration's own model rather than
+/// refused, because there is nothing to route. And a scene no claim covers is
+/// refused: sending it to some other model would be the guess this routing
 /// exists to remove.
 fn route_scene(
     config: &ModelConfig,
     scene: Option<Scene>,
 ) -> Result<(String, String), ProviderError> {
-    if config.sub_models.is_empty() {
-        return Ok((config.model.clone(), config.url.clone()));
+    let claims_nothing = config.scenes.is_empty() && config.sub_models.is_empty();
+    let own = || (config.model.clone(), config.url.clone());
+    if claims_nothing {
+        return Ok(own());
     }
     let Some(scene) = scene else {
-        return Ok((config.model.clone(), config.url.clone()));
+        return Ok(own());
     };
+    if config.scenes.contains(&scene) {
+        return Ok(own());
+    }
     for sub in &config.sub_models {
         if sub.scenes.contains(&scene) {
             let url = sub.url.clone().unwrap_or_else(|| config.url.clone());
@@ -567,18 +577,40 @@ fn route_scene(
     })
 }
 
-/// The sub-models a draft may keep, or the refusal it is.
+/// The scenes a draft may claim, and the refusal it is.
 ///
-/// A sub-model is a routing entry rather than a model of its own: it needs a
-/// model name, at least one scene of its own category, and an address of its
-/// own only where the provider serves it elsewhere. No scene may be claimed
-/// twice across the rows, since a scene that routed two ways would answer
-/// whichever row was written first.
-fn check_sub_models(draft: &mut ModelDraft) -> Result<(), ProviderError> {
+/// A scene is claimed by the configuration's own model or by one sub-model,
+/// never both: a scene that routed two ways would answer whichever claim was
+/// written first. Every claim names a scene of the draft's own category — a
+/// capability that has no scenes of its own to split has nothing to claim —
+/// and a sub-model, which is a routing entry rather than a model of its own,
+/// needs a model name and an address of its own only where the provider serves
+/// it elsewhere.
+fn check_scene_claims(draft: &mut ModelDraft) -> Result<(), ProviderError> {
+    let scenes = Scene::of_category(draft.category);
+    if !draft.scenes.is_empty() && scenes.is_empty() {
+        return Err(ProviderError::invalid(format!(
+            "a {} model has no scenes to claim",
+            draft.category.as_str()
+        )));
+    }
+    let mut claimed: Vec<Scene> = Vec::new();
+    for scene in draft.scenes.drain(..) {
+        if !scenes.contains(&scene) {
+            return Err(ProviderError::invalid(format!(
+                "the {} scene is not a scene of a {} model",
+                scene.as_str(),
+                draft.category.as_str()
+            )));
+        }
+        if !claimed.contains(&scene) {
+            claimed.push(scene);
+        }
+    }
+    draft.scenes = claimed.clone();
     if draft.sub_models.is_empty() {
         return Ok(());
     }
-    let scenes = Scene::of_category(draft.category);
     if scenes.is_empty() {
         return Err(ProviderError::invalid(format!(
             "a {} model has no scenes to route",
@@ -590,7 +622,6 @@ fn check_sub_models(draft: &mut ModelDraft) -> Result<(), ProviderError> {
             "a model configuration takes at most {MAX_SUB_MODELS} sub-models"
         )));
     }
-    let mut claimed: Vec<Scene> = Vec::new();
     for sub in draft.sub_models.iter_mut() {
         sub.model = sub.model.trim().to_string();
         if sub.model.is_empty() {
@@ -621,7 +652,7 @@ fn check_sub_models(draft: &mut ModelDraft) -> Result<(), ProviderError> {
             }
             if claimed.contains(&scene) {
                 return Err(ProviderError::invalid(format!(
-                    "the {} scene is claimed by more than one sub-model",
+                    "the {} scene is claimed more than once",
                     scene.as_str()
                 )));
             }
@@ -762,6 +793,7 @@ mod tests {
             model: id.to_string(),
             display_name: format!("Model {id}"),
             max_video_seconds: None,
+            scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
         }
@@ -876,6 +908,7 @@ mod tests {
             model: "filmer".to_string(),
             display_name: "Filmer".to_string(),
             max_video_seconds: None,
+            scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
             expected_revision: None,
@@ -944,6 +977,50 @@ mod tests {
     }
 
     #[test]
+    fn a_configurations_own_scenes_answer_beside_its_sub_models() {
+        let mut snapshot = configured();
+        let mut video = model("filmer", Capability::Video);
+        video.model = "happy-1.1-t2v".to_string();
+        video.scenes = vec![Scene::TextToVideo];
+        video.sub_models = vec![SubModel {
+            model: "happy-1.1-i2v".to_string(),
+            url: None,
+            scenes: vec![Scene::ImageToVideo, Scene::FirstLastFrame],
+        }];
+        snapshot.models.push(video);
+
+        // A scene the configuration claims goes to its own model, at its own
+        // address; a scene a sub-model claims goes the sub-model's way.
+        let own = resolve_in(
+            &snapshot,
+            "filmer",
+            Capability::Video,
+            Some(Scene::TextToVideo),
+        )
+        .unwrap();
+        assert_eq!(own.model, "happy-1.1-t2v");
+        assert_eq!(own.url, "https://provider.test/v1/chat/completions");
+        let sub = resolve_in(
+            &snapshot,
+            "filmer",
+            Capability::Video,
+            Some(Scene::ImageToVideo),
+        )
+        .unwrap();
+        assert_eq!(sub.model, "happy-1.1-i2v");
+
+        // What no claim covers is refused whichever side left it out.
+        let error = resolve_in(
+            &snapshot,
+            "filmer",
+            Capability::Video,
+            Some(Scene::ReferenceToVideo),
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "MODEL_SCENE_UNCONFIGURED");
+    }
+
+    #[test]
     fn a_configuration_level_resolve_keeps_its_own_model() {
         let resolved = resolve_in(&routed(), "filmer", Capability::Video, None).unwrap();
         assert_eq!(resolved.model, "filmer");
@@ -980,7 +1057,7 @@ mod tests {
             url: None,
             scenes: vec![Scene::ImageToVideo],
         }];
-        assert!(check_sub_models(&mut draft).is_err(), "a blank name");
+        assert!(check_scene_claims(&mut draft).is_err(), "a blank name");
 
         let mut draft = video_draft();
         draft.sub_models = vec![SubModel {
@@ -988,7 +1065,7 @@ mod tests {
             url: None,
             scenes: Vec::new(),
         }];
-        assert!(check_sub_models(&mut draft).is_err(), "no scene at all");
+        assert!(check_scene_claims(&mut draft).is_err(), "no scene at all");
 
         let mut draft = video_draft();
         draft.sub_models = vec![
@@ -1003,7 +1080,7 @@ mod tests {
                 scenes: vec![Scene::TextToVideo],
             },
         ];
-        let error = check_sub_models(&mut draft).unwrap_err();
+        let error = check_scene_claims(&mut draft).unwrap_err();
         assert!(error.to_string().contains("textToVideo"), "{error}");
 
         let mut draft = video_draft();
@@ -1013,7 +1090,7 @@ mod tests {
             scenes: vec![Scene::TextToImage],
         }];
         assert!(
-            check_sub_models(&mut draft).is_err(),
+            check_scene_claims(&mut draft).is_err(),
             "a scene of another category"
         );
 
@@ -1025,7 +1102,7 @@ mod tests {
             scenes: vec![Scene::TextToVideo],
         }];
         assert!(
-            check_sub_models(&mut draft).is_err(),
+            check_scene_claims(&mut draft).is_err(),
             "a capability with no scenes to route"
         );
 
@@ -1035,7 +1112,7 @@ mod tests {
             url: Some("  https://provider.test/v1/video/  ".to_string()),
             scenes: vec![Scene::ImageToVideo, Scene::ImageToVideo],
         }];
-        check_sub_models(&mut draft).unwrap();
+        check_scene_claims(&mut draft).unwrap();
         assert_eq!(draft.sub_models[0].model, "happy-i2v");
         assert_eq!(
             draft.sub_models[0].url.as_deref(),
@@ -1054,9 +1131,46 @@ mod tests {
             scenes: vec![Scene::TextToVideo],
         }];
         assert!(
-            check_sub_models(&mut draft).is_err(),
+            check_scene_claims(&mut draft).is_err(),
             "an undialable address"
         );
+    }
+
+    #[test]
+    fn a_configurations_own_scenes_have_to_be_shaped_and_stay_its_own() {
+        let mut draft = video_draft();
+        draft.scenes = vec![Scene::TextToImage];
+        assert!(
+            check_scene_claims(&mut draft).is_err(),
+            "a scene of another category"
+        );
+
+        let mut draft = video_draft();
+        draft.category = Capability::Text;
+        draft.scenes = vec![Scene::TextToVideo];
+        assert!(
+            check_scene_claims(&mut draft).is_err(),
+            "a capability with no scenes to claim"
+        );
+
+        let mut draft = video_draft();
+        draft.scenes = vec![Scene::TextToVideo, Scene::TextToVideo];
+        check_scene_claims(&mut draft).unwrap();
+        assert_eq!(
+            draft.scenes,
+            vec![Scene::TextToVideo],
+            "a scene named twice is one claim"
+        );
+
+        let mut draft = video_draft();
+        draft.scenes = vec![Scene::ImageToVideo];
+        draft.sub_models = vec![SubModel {
+            model: "happy-i2v".to_string(),
+            url: None,
+            scenes: vec![Scene::ImageToVideo],
+        }];
+        let error = check_scene_claims(&mut draft).unwrap_err();
+        assert!(error.to_string().contains("imageToVideo"), "{error}");
     }
 
     #[test]

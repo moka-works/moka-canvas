@@ -108,15 +108,15 @@ describe("problemMessage in Chinese", () => {
     ).toBe("a::b 生成的是 image，不是 text");
   });
 
-  it("says which scenario has no sub-model, in the reader's own words", () => {
+  it("says which scenario has no group, in the reader's own words", () => {
     expect(
       problemMessage(
         "MODEL_SCENE_UNCONFIGURED",
-        "the model filmer has no sub-model for the referenceToVideo scene",
+        "the model filmer has no group for the referenceToVideo scene",
         { reference: "filmer", capability: "video", scene: "referenceToVideo" },
       ),
     ).toBe(
-      "模型「filmer」没有为「参考图生视频」场景配置子模型，请到设置里补充后再试",
+      "模型「filmer」没有为「参考图生视频」场景配置分组，请到设置里补充后再试",
     );
   });
 
