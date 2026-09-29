@@ -627,6 +627,38 @@ test("auto subtitles read the sound on the cut, and a missing model is a place t
   const home = await clipRoom(page, "Text Transcribe");
   await textPage(page);
 
+  // The row reads whole: the language picker keeps to the width of its own
+  // words rather than stretching over the controls beside it, so the diarize
+  // label stands on one line and its box is checkbox-sized — the form-wide
+  // field rule once gave the box `width: 100%`, which starved the words
+  // beside it into a column of characters.
+  const rowShape = await page.evaluate(() => {
+    // Typed structurally: this suite's tsconfig carries no DOM lib.
+    type Sized = {
+      getBoundingClientRect(): { width: number };
+      textContent: string | null;
+    };
+    const Browser = globalThis as unknown as {
+      document: { querySelector(selector: string): Sized | null };
+      Range: new () => {
+        selectNodeContents(node: Sized): void;
+        getClientRects(): unknown[];
+      };
+    };
+    const words = Browser.document.querySelector(".clip-text-check span")!;
+    const range = new Browser.Range();
+    range.selectNodeContents(words);
+    const box = Browser.document.querySelector(".clip-text-check input")!;
+    return {
+      words: words.textContent,
+      wordsLines: range.getClientRects().length,
+      boxWidth: box.getBoundingClientRect().width,
+    };
+  });
+  expect(rowShape.words).toBe("Tell speakers apart");
+  expect(rowShape.wordsLines).toBe(1);
+  expect(rowShape.boxWidth).toBeLessThan(20);
+
   // Nothing on the cut is audible yet, so the row says what it would need
   // rather than asking a provider about a text clip.
   const go = page.locator(".clip-text-transcribe-go");
