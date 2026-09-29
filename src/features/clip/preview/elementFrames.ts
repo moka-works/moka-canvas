@@ -74,8 +74,16 @@ export function markFrame(): void {
 /**
  * The key a reader takes: the element it already holds, the file's own when it
  * is free, or the spare while another reader is in the middle of it.
+ *
+ * `beside` is a reader that does not take an element over — a still, or a run
+ * being prepared for later: it is never the next piece of a cut arriving, so a
+ * claim by anyone else, fresh or not, is reason enough for the spare.
  */
-function keyFor(assetId: AssetId, clipId: ClipId | null): string {
+function keyFor(
+  assetId: AssetId,
+  clipId: ClipId | null,
+  beside: boolean,
+): string {
   if (clipId !== null) {
     for (const [key, slot] of slots)
       if (slot.assetId === assetId && slot.busyClip === clipId) return key;
@@ -87,8 +95,7 @@ function keyFor(assetId: AssetId, clipId: ClipId | null): string {
     // apart. A reader asking beside a run that is still going, which is the
     // far side of a seam or a strip's own look at the file, is given the
     // spare instead.
-    const beside = clipId === null || own.claimFrame === frame;
-    if (beside) return `${assetId}:alt`;
+    if (beside || own.claimFrame === frame) return `${assetId}:alt`;
   }
   return assetId;
 }
@@ -176,8 +183,12 @@ function evictQuietest(assetId: AssetId): void {
 }
 
 /** The slot a reader's picture is read from, made or reclaimed from the pool. */
-function slotFor(assetId: AssetId, clipId: ClipId | null): Slot | null {
-  const key = keyFor(assetId, clipId);
+function slotFor(
+  assetId: AssetId,
+  clipId: ClipId | null,
+  beside = false,
+): Slot | null {
+  const key = keyFor(assetId, clipId, beside);
   let slot = slots.get(key);
   if (!slot) {
     evictQuietest(assetId);
@@ -204,7 +215,9 @@ export function elementFor(
   assetId: AssetId,
   materialMs: number,
 ): HTMLVideoElement | null {
-  const slot = slotFor(assetId, null);
+  // A still is never the next piece of a cut: it reads beside whatever the
+  // file is already being used for.
+  const slot = slotFor(assetId, null, true);
   if (!slot) return null;
   if (
     slot.askedMs === null ||
@@ -270,7 +283,10 @@ export function startPlayingElement(
     slot.askedMs = Math.max(0, materialMs);
   } else if (beginning || slot.askedMs === null) {
     slot.askedMs = Math.max(0, materialMs);
-    slot.ready = false;
+    // The picture it already holds stands while the seek lands: a run's start
+    // is a cut in time rather than a scrub, and the fallback drawing the frame
+    // before the one asked for is closer to the cut than drawing a loading
+    // place. A still path's own seek is the one that empties the slate.
     try {
       element.currentTime = slot.askedMs / 1_000;
     } catch {
@@ -287,7 +303,11 @@ export function startPlayingElement(
     });
   }
   watchFrames(slot);
-  if (element.readyState < HAVE_CURRENT_DATA) return null;
+  // A run's first ask can leave the element seeking — a cut is a jump in the
+  // file — and what it already holds is what a browser keeps showing until the
+  // seek lands: the frame before the one asked for is closer to the cut than a
+  // loading place. Only an element that has never had a picture is a wait.
+  if (!slot.ready && element.readyState < HAVE_CURRENT_DATA) return null;
   return element;
 }
 
@@ -298,11 +318,23 @@ export function startPlayingElement(
  * element stands on the run's first moment, so when the clock arrives the
  * first frame is already there rather than a source, a load and a seek away.
  * The element is not played — the clock decides when — and the position is
- * only good for a run that begins near it.
+ * only good for a run that begins near it. The clip prepared for is the claim
+ * the run will find, so it takes the very element that was made ready.
  */
-export function prepareElement(assetId: AssetId, materialMs: number): void {
-  const slot = slotFor(assetId, null);
+export function prepareElement(
+  assetId: AssetId,
+  clipId: ClipId,
+  materialMs: number,
+): void {
+  // A file read in three places at once leaves the third to the cut that
+  // reaches it, rather than an element being taken from a run in progress.
+  const key = keyFor(assetId, clipId, true);
+  const held = slots.get(key);
+  if (held && held.busyClip !== null && held.busyClip !== clipId) return;
+  const slot = slotFor(assetId, clipId, true);
   if (!slot) return;
+  slot.busyClip = clipId;
+  slot.claimFrame = frame;
   slot.primedAtMs = Math.max(0, materialMs);
   if (
     slot.askedMs === null ||
@@ -348,7 +380,7 @@ export interface ElementEngine {
     speed: number,
   ): HTMLVideoElement | null;
   /** Puts an element where a clip's run will start, without starting it. */
-  prepare(assetId: AssetId, materialMs: number): void;
+  prepare(assetId: AssetId, clipId: ClipId, materialMs: number): void;
   /** A frame is being composed: the claims of the last one are no longer fresh. */
   beginFrame(): void;
   /** Stops every playing element; the paused path repositions from here. */

@@ -8,6 +8,7 @@ import {
   isElementOnly,
   mp4IndexFor,
   resetTransientFailures,
+  streamFrom,
 } from "./decode";
 
 /**
@@ -37,6 +38,8 @@ let mode: "frames" | "silent" | "unsupported" = "frames";
 /** How many chunk decodes were asked for, and how many decoders were made. */
 let decodes = 0;
 let decoders = 0;
+/** The material moment the run has decoded up to, in milliseconds. */
+let headMs = 0;
 
 /** As much of a frame as the cache touches. */
 function frameAt(timestamp: number): VideoFrame {
@@ -78,12 +81,22 @@ class FakeDecoder {
   reset(): void {}
   decode(chunk: FakeChunk): void {
     decodes += 1;
+    // What the run has reached, in material milliseconds, for tests that read
+    // how far a lead let the pump work.
+    headMs = chunk.timestamp / 1_000;
     // A frame out for every chunk is a run that works; silence is a run that
     // produced nothing, which is the read that failed without saying so.
     if (mode === "frames") this.output(frameAt(chunk.timestamp));
   }
   async flush(): Promise<void> {}
   close(): void {}
+}
+
+/** Waits until what a test is watching has happened, or the clock runs out. */
+async function settle(ready: () => boolean, ms: number): Promise<void> {
+  const until = Date.now() + ms;
+  while (!ready() && Date.now() < until)
+    await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
 /** Serves the fixture's bytes by range, whatever URL is asked for. */
@@ -112,6 +125,7 @@ beforeEach(() => {
   mode = "frames";
   decodes = 0;
   decoders = 0;
+  headMs = 0;
   fetchMock.mockReset();
   fetchMock.mockImplementation(() =>
     Promise.resolve(
@@ -230,6 +244,40 @@ describe("the failures a busy preview meets", () => {
     await decodeFrameAt(assetId, 1_500);
     await decodeFrameAt(assetId, 500);
     expect(isElementOnly(assetId)).toBe(false);
+  });
+
+  it("works from the clock, and never further than its ceiling", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-clocked");
+    const stream = streamFrom(assetId, 0);
+    expect(stream).not.toBeNull();
+    // The picture asks for the very head of the file while the clock stands a
+    // second and a half in: the run works from the clock, so the frames under
+    // the playhead are decoded before they are asked about.
+    stream?.frameAt(0, 1_500);
+    // The run fills to whichever ceiling comes first: the lead's two seconds
+    // past the clock, or the queue's own thirty-two frames — which for this
+    // fixture, ten frames a second, is the queue's.
+    await settle(() => headMs >= 3_000 || (stream?.failed ?? true), 2_000);
+    // The floor the clock leaves behind: at least a second of frames past it.
+    expect(headMs).toBeGreaterThanOrEqual(2_500);
+    expect(headMs).toBeLessThanOrEqual(3_200);
+    stream?.close();
+  });
+
+  it("does not walk a run back when the picture is behind the clock", async () => {
+    serveFixture();
+    const assetId = notAnMp4("asset-clocked-back");
+    const stream = streamFrom(assetId, 0);
+    stream?.frameAt(0, 1_500);
+    await settle(() => headMs >= 3_000, 2_000);
+    const reached = headMs;
+    // A stale paint asks about an earlier moment than the clock: the run is
+    // not dragged back, and nothing more is decoded on its account.
+    stream?.frameAt(0, 1_000);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(headMs).toBe(reached);
+    stream?.close();
   });
 
   it("runs one decode however many paints ask for the same frame", async () => {

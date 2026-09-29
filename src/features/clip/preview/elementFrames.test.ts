@@ -187,7 +187,7 @@ describe("the elements a file is read from", () => {
   it("takes a prepared element up where it stands, without seeking again", () => {
     const engine = elementEngine();
     const asset = assetId("asset-prepared");
-    engine.prepare(asset, 2_000);
+    engine.prepare(asset, clipId("clip"), 2_000);
     const element = forAsset(asset)[0];
     loaded(element);
     expect(element.seeks).toEqual([2]);
@@ -199,10 +199,52 @@ describe("the elements a file is read from", () => {
     expect(element.seeks).toEqual([2]);
   });
 
+  it("prepares the next piece on a spare, and the cut takes it up untouched", () => {
+    const engine = elementEngine();
+    const asset = assetId("asset-ahead");
+    engine.beginFrame();
+    const playing = start(engine, asset, clipId("clip-1"), 0);
+    const element = forAsset(asset)[0];
+
+    // The clock runs on; the piece after this one is given its own element,
+    // loaded and standing on its first moment, without disturbing the run.
+    engine.beginFrame();
+    engine.prepare(asset, clipId("clip-2"), 5_000);
+    const spare = forAsset(asset)[1];
+    expect(spare).toBeDefined();
+    expect(spare).not.toBe(element);
+    expect(element.seeks).toEqual([0]);
+
+    // The cut: the next piece finds the very element that was made ready.
+    loaded(spare);
+    engine.beginFrame();
+    expect(engine.startPlaying(asset, clipId("clip-2"), 5_010, 1)).toBe(
+      spare.element,
+    );
+    expect(spare.seeks).toEqual([5]);
+    expect(playing).toBe(element.element);
+  });
+
+  it("draws the picture it holds while a run's first seek lands", () => {
+    const engine = elementEngine();
+    const asset = assetId("asset-seeking");
+    engine.prepare(asset, clipId("clip"), 2_000);
+    const element = forAsset(asset)[0];
+    loaded(element);
+
+    // The run begins far from where the element was prepared: it seeks, and
+    // the browser is still on the old picture — which is drawn rather than
+    // replaced by a loading place while the seek lands.
+    engine.beginFrame();
+    const playing = engine.startPlaying(asset, clipId("clip"), 5_000, 1);
+    expect(playing).toBe(element.element);
+    expect(element.seeks).toEqual([2, 5]);
+  });
+
   it("moves a prepared element when the run begins somewhere else", () => {
     const engine = elementEngine();
     const asset = assetId("asset-prepared-late");
-    engine.prepare(asset, 2_000);
+    engine.prepare(asset, clipId("clip"), 2_000);
     const element = forAsset(asset)[0];
     loaded(element);
 

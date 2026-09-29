@@ -53,7 +53,7 @@ const SAMPLE_MS = 100;
 /** How long after a cut the picture is given to be live: the plan's own window. */
 const CATCHUP_MS = 500;
 /** How far behind the clock the picture may still be once that window is out. */
-const CATCHUP_TOLERANCE_MS = 300;
+const CATCHUP_TOLERANCE_MS = 250;
 
 const VIDEO_ROW_Y =
   RULER_H + TRACK_HEIGHT.text + TRACK_HEIGHT.audio + TRACK_HEIGHT.video / 2;
@@ -178,10 +178,7 @@ async function focusRoom(page: Page) {
   await canvas.click({ position: { x: box.width - 20, y: VIDEO_ROW_Y } });
 }
 
-// Held back until the cut is given its own head start (package 05): against
-// today's cut, the run fails on the very reading it exists for — a loading
-// place standing while the clock runs past both cuts.
-test.fixme("both pieces show their picture as the clock crosses their cuts", async ({
+test("both pieces show their picture as the clock crosses their cuts", async ({
   page,
 }) => {
   test.setTimeout(90_000);

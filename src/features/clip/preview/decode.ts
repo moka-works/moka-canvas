@@ -410,17 +410,30 @@ export async function decodeFrameAt(
 /** How far ahead of the consumer the pump fetches, so the next second is in hand. */
 const STREAM_PREFETCH_MS = 2_000;
 /**
- * How far past the consumer's moment a run may decode before it waits.
+ * How far past the anchor a run may decode before it waits.
  *
  * A decoder handed a whole window bursts through it in a frame's time, and
- * frames arriving ahead of the picture are frames the paints in between will
- * need; the run is held to a short lead instead of racing to the window's end.
+ * frames arriving far ahead of the picture are frames held for a moment no
+ * paint has asked about; the run is held to a lead instead of racing to the
+ * window's end. The anchor is the clock's own projection, not the last paint,
+ * so a slow paint no longer slows the decode down with it.
  */
-const STREAM_LEAD_MS = 500;
+const STREAM_MAX_LEAD_MS = 2_000;
+/**
+ * The lead the run aims to hold past the picture.
+ *
+ * Not a gate — the pump only ever stops at the ceiling — but the reading the
+ * ceiling was chosen for: while a run is short of this it never waits on a
+ * consumer at all, which is what lets it make up the frames a picture that
+ * has fallen behind is owed.
+ */
+const STREAM_MIN_LEAD_MS = 1_000;
 /** The most frames a run keeps for the consumer; a ceiling the lead stays far under. */
 const STREAM_QUEUE_LIMIT = 32;
 /** How long a run waits for the consumer before it looks again. */
 const STREAM_WAIT_MS = 100;
+/** How long a run that is behind the floor waits: about a frame, not a pause. */
+const STREAM_HURRY_WAIT_MS = 16;
 
 interface QueuedFrame {
   ctsUs: number;
@@ -461,9 +474,12 @@ export interface FrameStream {
    * The frame showing a material moment, or null while one is on its way.
    *
    * The frame belongs to the stream: it is drawn with and not closed by the
-   * caller, and it stands until a newer one covers the moment.
+   * caller, and it stands until a newer one covers the moment. The clock's own
+   * reading of this clip's moment may be given beside it, which is where the
+   * run is anchored: the picture's asks decide which frame is wanted, and the
+   * clock decides how far ahead the run may work.
    */
-  frameAt(materialMs: number): DecodedPicture | null;
+  frameAt(materialMs: number, clockMaterialMs?: number): DecodedPicture | null;
   /** Whether the pump has given up; the still path takes the file from here. */
   readonly failed: boolean;
   /** Stops the pump and lets go of every frame it holds. */
@@ -491,6 +507,15 @@ class SequentialStream implements FrameStream {
    * covering its moment waiting rather than already let go of.
    */
   private lastTargetUs = 0;
+  /**
+   * The clock's own projection of this clip's moment, in microseconds.
+   *
+   * Written by whoever knows it — the room's clock, through the ask — and
+   * never behind the moment the picture last asked about, so the run is driven
+   * by the timeline rather than by the paints: a paint that falls a second
+   * behind no longer takes the decode a second behind with it.
+   */
+  private clockUs = 0;
   /** Woken when the consumer moves, which is the pump's room to make more. */
   private room: (() => void) | null = null;
   private closed = false;
@@ -500,6 +525,9 @@ class SequentialStream implements FrameStream {
     this.assetId = assetId;
     this.fromMs = fromMs;
     this.lastTargetUs = Math.round(fromMs * 1_000);
+    // A run made ahead of a cut is anchored at the moment it will start: the
+    // frames between there and the ceiling are what the cut is given.
+    this.clockUs = this.lastTargetUs;
   }
 
   get failed(): boolean {
@@ -511,12 +539,15 @@ class SequentialStream implements FrameStream {
     void this.open();
   }
 
-  frameAt(materialMs: number): DecodedPicture | null {
+  frameAt(materialMs: number, clockMaterialMs?: number): DecodedPicture | null {
     if (this.closed) return null;
     const targetUs = Math.round(materialMs * 1_000);
     // Where the picture stands is where the lead is measured from, so the
-    // moving moment reaches the pump through this one write.
+    // moving moment reaches the pump through this one write; the clock's own
+    // reading goes with it, and the pump works from whichever is further on.
     this.lastTargetUs = targetUs;
+    if (clockMaterialMs !== undefined)
+      this.clockUs = Math.round(clockMaterialMs * 1_000);
     // The covering frame is the last whose presentation time has arrived;
     // frames behind it are let go of, and those ahead keep waiting.
     let covered: QueuedFrame | null = null;
@@ -570,19 +601,20 @@ class SequentialStream implements FrameStream {
    *
    * The wait is what holds the run's lead: a paint at every frame moves the
    * moment and wakes it, and the check after each wait is what decides how
-   * much more there is room for. The short fallback exists so a consumer that
-   * has stopped asking — a stall, a paint dropped for a newer one — cannot
-   * leave the pump waiting on news that will not come while it holds frames
-   * the picture may already be owed.
+   * much more there is room for. The fallback exists so a consumer that has
+   * stopped asking — a stall, a paint dropped for a newer one — cannot leave
+   * the pump waiting on news that will not come while it holds frames the
+   * picture may already be owed, and a run held short of the floor, whose
+   * frames are owed now, looks again about once a frame rather than idling.
    */
-  private async waitForConsumer(): Promise<void> {
+  private async waitForConsumer(hurrying: boolean): Promise<void> {
     const moved = new Promise<void>((resolve) => {
       this.room = resolve;
     });
     await Promise.race([
       moved,
       new Promise<void>((resolve) => {
-        setTimeout(resolve, STREAM_WAIT_MS);
+        setTimeout(resolve, hurrying ? STREAM_HURRY_WAIT_MS : STREAM_WAIT_MS);
       }),
     ]);
     this.room = null;
@@ -681,15 +713,24 @@ class SequentialStream implements FrameStream {
   private async pump(): Promise<void> {
     while (!this.closed && this.decoder) {
       // Nothing is handed over while the run already holds more than the lead
-      // past the picture allows. Checking here, before each frame, is what
+      // past the anchor allows. Checking here, before each frame, is what
       // keeps a fast decoder from bursting through a window: the frames it
       // would make are the ones the next paints need, and a queue that raced
       // ahead of them would be holding only the window's tail.
+      //
+      // The anchor is the furthest of the picture's last ask and the clock's
+      // own projection — so the run works from the timeline, and a paint that
+      // is late does not take the run back in time with it.
+      const anchorUs = Math.max(this.lastTargetUs, this.clockUs);
       const next = this.nextMomentUs();
-      const ahead =
-        next !== null && next - this.lastTargetUs > STREAM_LEAD_MS * 1_000;
-      if (this.queue.length >= STREAM_QUEUE_LIMIT || ahead) {
-        await this.waitForConsumer();
+      const leadUs = next === null ? 0 : next - anchorUs;
+      const overCeiling = next !== null && leadUs > STREAM_MAX_LEAD_MS * 1_000;
+      const underFloor = next !== null && leadUs < STREAM_MIN_LEAD_MS * 1_000;
+      if (this.queue.length >= STREAM_QUEUE_LIMIT || overCeiling) {
+        // A full queue holds a run either behind the floor, whose frames are
+        // owed to a picture already past them, or ahead of it; only the first
+        // has a reason to look again quickly.
+        await this.waitForConsumer(underFloor);
         continue;
       }
       let chunk: EncodedVideoChunk | null;
