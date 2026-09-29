@@ -85,7 +85,7 @@ describe("a place with a picture", () => {
         .getByTestId("story-slot-main")
         .querySelector("img")
         ?.getAttribute("src"),
-    ).toBe("/api/v1/projects/current/assets/asset-one");
+    ).toBe("/api/v1/projects/current/assets/asset-one?w=768");
 
     fireEvent.click(screen.getByTestId("story-slot-main-again"));
     expect(onGenerate).toHaveBeenCalledTimes(1);

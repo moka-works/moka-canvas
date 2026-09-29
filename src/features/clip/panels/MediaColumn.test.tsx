@@ -22,6 +22,7 @@ function openCut(): MokaFile {
     moka,
     root: "/tmp/moka-media-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useClipStore.setState({
     activeTimelineId: timelineIds().timeline,
@@ -97,6 +98,7 @@ describe("the cut's own column", () => {
       moka,
       root: "/tmp/moka-media-test",
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     render(<MediaColumn />);
 

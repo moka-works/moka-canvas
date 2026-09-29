@@ -15,6 +15,7 @@ function openShelf(moka: MokaFile, props: AssetShelfProps = {}) {
     moka,
     root: "/tmp/moka-shelf-tray-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<AssetShelf {...props} />);
   return moka;

@@ -60,6 +60,7 @@ describe("which boards are open", () => {
       moka,
       root: "/tmp/p1",
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     useProjectStore.getState().switchCanvas(moka.canvas[0].id);
 
@@ -69,6 +70,7 @@ describe("which boards are open", () => {
       moka,
       root: "/tmp/p1",
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     expect(useProjectStore.getState().activeCanvasId).toBe(moka.canvas[0].id);
   });

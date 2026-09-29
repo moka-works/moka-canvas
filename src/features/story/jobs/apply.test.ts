@@ -20,6 +20,7 @@ function open(): void {
     moka: buildStoryMokaFile(),
     root: "/tmp/moka-story-apply-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 

@@ -65,6 +65,7 @@ function show(moka: MokaFile, assetId: string) {
     moka,
     root: "/tmp/moka-assets-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useAssetsStore.getState().select(assetId);
   render(<AssetsInspector />);
@@ -100,6 +101,7 @@ describe("what the right column says about a file", () => {
       moka,
       root: "/tmp/moka-assets-test",
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     render(<AssetsInspector />);
     expect(

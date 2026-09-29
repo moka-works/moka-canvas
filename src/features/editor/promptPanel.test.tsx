@@ -218,6 +218,7 @@ function route(url: string, method: string, body: unknown): Response {
       root: "/tmp/golden",
       moka: api.moka(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current/runs" && method === "GET") {

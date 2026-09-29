@@ -5,8 +5,8 @@ use super::dto::{
     FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
     ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
     PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, RevealRequest,
-    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, StartRunRequest,
-    StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
+    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
+    StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState};
@@ -36,6 +36,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use serde::Deserialize;
 use std::path::Path as FsPath;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -61,6 +62,7 @@ fn open_response(opened: OpenProject) -> OpenProjectResponse {
         root: opened.root.to_string_lossy().into_owned(),
         moka: opened.moka,
         self_check: opened.self_check,
+        self_check_verified: opened.self_check_verified,
     }
 }
 
@@ -96,10 +98,7 @@ fn project_not_open() -> Problem {
 }
 
 async fn current_root(state: &ApiState) -> Result<PathBuf, Problem> {
-    let current = state.store.current().await?;
-    current
-        .map(|opened| opened.root)
-        .ok_or_else(project_not_open)
+    state.store.project_root().await.map_err(Problem::from)
 }
 
 pub async fn public_config(State(state): State<ApiState>) -> Json<PublicConfigResponse> {
@@ -310,13 +309,19 @@ pub async fn current_project(
     State(state): State<ApiState>,
 ) -> Result<Json<OpenProjectResponse>, Problem> {
     let Some(opened) = state.store.current().await? else {
-        return Err(Problem::new(
-            StatusCode::CONFLICT,
-            "PROJECT_NOT_OPEN",
-            "No project is open",
-        ));
+        return Err(project_not_open());
     };
     Ok(Json(open_response(opened)))
+}
+
+/// The file check on its own, for a room that was entered before it finished.
+pub async fn current_self_check(
+    State(state): State<ApiState>,
+) -> Result<Json<SelfCheckResponse>, Problem> {
+    let Some((report, verified)) = state.store.self_check_status().await? else {
+        return Err(project_not_open());
+    };
+    Ok(Json(SelfCheckResponse { report, verified }))
 }
 
 pub async fn apply_commands(
@@ -673,12 +678,76 @@ fn parse_range_header(value: Option<&str>, total: u64) -> Result<Option<ByteRang
     Ok(Some(range))
 }
 
+/// What a caller asks of one asset beside the file itself.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetStreamQuery {
+    /// A width in pixels: the picture is answered at that size, drawn from the
+    /// project's own cache of drawings. Absent means the file itself.
+    pub w: Option<u32>,
+}
+
 pub async fn stream_asset(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    Query(query): Query<AssetStreamQuery>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
     let asset = state.store.asset_file(&id, None).await?;
+
+    // A picture asked for at a width is answered from the drawings the project
+    // keeps beside it; everything else, and anything that cannot be drawn, is
+    // the file itself. Decoding and resizing is CPU work, so it is done off the
+    // runtime's own threads.
+    if let (Some(width), Some(mime)) = (query.w, asset.entry.mime.as_deref()) {
+        if mime.starts_with("image/") {
+            let root = current_root(&state).await?;
+            let entry = asset.entry.clone();
+            let source = asset.path.clone();
+            let drawn = tokio::task::spawn_blocking(move || {
+                crate::assets::thumbs::thumb_for(&root, &entry, &source, width)
+            })
+            .await
+            .map_err(|error| {
+                Problem::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL",
+                    error.to_string(),
+                )
+            })?
+            .map_err(Problem::from)?;
+            // A drawing is served as the whole of what was asked for, one small
+            // body at a time; a range request for one gets the drawing.
+            let bytes = tokio::fs::read(&drawn).await.map_err(problem_from_io)?;
+            let mime = if std::path::Path::new(&drawn)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                == Some("jpg")
+            {
+                "image/jpeg"
+            } else {
+                asset
+                    .entry
+                    .mime
+                    .as_deref()
+                    .unwrap_or("application/octet-stream")
+            };
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_LENGTH, bytes.len().to_string())
+                .header(header::CONTENT_TYPE, mime)
+                .header(header::CACHE_CONTROL, "no-store")
+                .body(Body::from(bytes))
+                .map_err(|error| {
+                    Problem::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "INTERNAL",
+                        error.to_string(),
+                    )
+                });
+        }
+    }
+
     let mut file = tokio::fs::File::open(&asset.path)
         .await
         .map_err(problem_from_io)?;

@@ -43,6 +43,7 @@ function hydrate(document: MokaFile) {
     root: "/tmp/moka-panel-test",
     moka: document,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
 }
 

@@ -152,6 +152,85 @@ async fn current_project_is_a_problem_when_nothing_is_open() {
 }
 
 #[tokio::test]
+async fn self_check_status_follows_the_read_behind_the_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let projects_dir = temp.path().join("checked");
+    let created = create_project(&app, &projects_dir, "Checked").await;
+    let root = created["root"].as_str().unwrap().to_string();
+
+    // Nothing is filed yet, so there is nothing to read and the check is done
+    // before anyone can ask about it.
+    assert_eq!(created["selfCheckVerified"], true);
+
+    // A picture gives the read behind an open something to do.
+    let uploaded = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("still.png", &make_test_png()),
+            &[],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(uploaded.status(), StatusCode::CREATED);
+
+    let reopened = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/open",
+            json!({ "path": root }),
+        ))
+        .await
+        .unwrap();
+    let opened = body_json(reopened).await;
+    assert_eq!(opened["selfCheckVerified"], false);
+    assert_eq!(opened["selfCheck"]["ok"], true);
+
+    // The route answers with the check as it stands, and says when it is done.
+    let mut verified = false;
+    for _ in 0..200 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/projects/current/self-check")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body["report"]["ok"], true);
+        if body["verified"] == true {
+            verified = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(verified, "the file check never finished");
+}
+
+#[tokio::test]
+async fn self_check_status_is_a_problem_when_nothing_is_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/current/self-check")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(body_json(response).await["code"], "PROJECT_NOT_OPEN");
+}
+
+#[tokio::test]
 async fn create_open_and_recent_flow() {
     let temp = tempfile::tempdir().unwrap();
     let app = test_app(temp.path());
@@ -502,6 +581,122 @@ async fn canvas_settings_change_a_part_and_keep_the_rest() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let problem = body_json(response).await;
     assert_eq!(problem["code"], "VALIDATION_FAILED");
+}
+
+#[tokio::test]
+async fn a_picture_is_served_small_from_the_project_s_own_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let created = create_project(&app, &temp.path().join("projects"), "Thumbs").await;
+    let root = created["root"].as_str().unwrap().to_string();
+
+    let uploaded = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("lake.png", &make_test_png()),
+            &[],
+        ))
+        .await
+        .unwrap();
+    let asset_id = body_json(uploaded).await["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let uri = format!("/api/v1/projects/current/assets/{asset_id}");
+
+    // Asked for at a width, a picture is answered as a drawing of that size.
+    let small = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{uri}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(small.status(), StatusCode::OK);
+    assert_eq!(
+        small.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/jpeg"
+    );
+    let drawn = to_bytes(small.into_body(), usize::MAX).await.unwrap();
+    let picture = image::load_from_memory(&drawn).unwrap();
+    assert_eq!((picture.width(), picture.height()), (32, 32));
+
+    // It is kept beside the project, and asking again reads it rather than
+    // drawing it again.
+    let cache = std::path::Path::new(&root).join("cache/thumbs");
+    let kept: Vec<std::path::PathBuf> = std::fs::read_dir(&cache)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    let stamp = std::fs::metadata(&kept[0]).unwrap().modified().unwrap();
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{uri}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(&kept[0]).unwrap().modified().unwrap(),
+        stamp
+    );
+
+    // The width is read as the ceiling and the floor it is, and a picture is
+    // never made larger than it is: a request past either is answered with what
+    // was really drawn.
+    for (asked, drawn) in [("1", 32), ("100000", 64)] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("{uri}?w={asked}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), drawn);
+    }
+
+    // A width on something that is not a picture is ignored: the file is served
+    // as it always is.
+    let text = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("notes.txt", b"a line of words"),
+            &[],
+        ))
+        .await
+        .unwrap();
+    let text_id = body_json(text).await["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let served = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{text_id}?w=32"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(
+        served.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/plain"
+    );
 }
 
 #[tokio::test]

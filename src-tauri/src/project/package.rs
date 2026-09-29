@@ -104,6 +104,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
 enum Skip {
     /// Scratch space, holding whatever a half-finished write left behind.
     Scratch,
+    /// Drawings of the work's pictures, made to draw them small: they are
+    /// remade from the files themselves wherever the work arrives.
+    Cache,
     /// Where exports were asked to land: a reader's own copies of the work,
     /// which the work itself does not hold and a package has no business
     /// carrying — least of all the package that was exported there before.
@@ -141,6 +144,7 @@ impl Skip {
             Self::Secret => format!("**/{}", docs::SECRETS_DOC),
             Self::MasterKey => format!("**/{}", crypto::MASTER_KEY_FILE),
             Self::Corrupt => "**/*.corrupt.*".into(),
+            Self::Cache => "cache/**".into(),
             Self::Unreferenced => "assets no canvas points at".into(),
             Self::ApplicationDocument(document) => (*document).to_string(),
             Self::SystemJunk(name) => format!("**/{name}"),
@@ -154,6 +158,9 @@ fn skipped(relative: &str, scope: &PackageScope) -> Option<Skip> {
     }
     if relative == "output" || relative.starts_with("output/") {
         return Some(Skip::Output);
+    }
+    if relative == "cache" || relative.starts_with("cache/") {
+        return Some(Skip::Cache);
     }
     if relative.starts_with(JOB_RECORDS) {
         return Some(Skip::Job);
@@ -724,6 +731,20 @@ mod tests {
         ] {
             assert!(!ships(relative, &WORK), "{relative} must not be packaged");
         }
+    }
+
+    /// Drawings of the work's pictures are made for the lists that draw them
+    /// small, and are made again from the files wherever the work arrives.
+    #[test]
+    fn drawings_of_the_work_are_not_the_work() {
+        for relative in ["cache", "cache/thumbs/a1-320-01234567.jpg"] {
+            assert!(!ships(relative, &WORK), "{relative} must not be packaged");
+            assert!(!ships(relative, &BACKUP), "{relative} must not be packaged");
+        }
+        assert_eq!(
+            skipped("cache/thumbs/a1-320-01234567.jpg", &WORK),
+            Some(Skip::Cache)
+        );
     }
 
     /// Where exports were saved is a reader's own copy of the work, and a

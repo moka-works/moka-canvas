@@ -483,28 +483,19 @@ fn validate_media_node(
         ));
         return;
     };
+    // What the run has to know is whether the file under the node is the
+    // material the node was placed with, and the size answers that: a file that
+    // kept its recorded length but changed its bytes is what the project's own
+    // check reports behind the room, and a run does not read gigabytes of video
+    // to learn it a second time.
     let path = root.join(&entry.path);
     let reason = match std::fs::metadata(&path) {
         Err(_) => Some("missing on disk"),
         Ok(meta) if !meta.is_file() || meta.len() == 0 => Some("missing on disk"),
-        Ok(meta) => match (&entry.sha256, entry.bytes) {
-            (Some(expected), _) if entry.bytes.map(|b| b as u64 != meta.len()).unwrap_or(false) => {
-                let _ = expected;
-                Some("changed on disk")
-            }
-            (Some(expected), _) => match std::fs::read(&path) {
-                Ok(bytes) => {
-                    let actual = hex::encode(sha2::Sha256::digest(&bytes));
-                    if actual != *expected {
-                        Some("changed on disk")
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => Some("missing on disk"),
-            },
-            _ => None,
-        },
+        Ok(meta) if entry.bytes.map(|b| b as u64 != meta.len()).unwrap_or(false) => {
+            Some("changed on disk")
+        }
+        Ok(_) => None,
     };
     if let Some(reason) = reason {
         issues.push(issue(

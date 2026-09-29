@@ -101,6 +101,7 @@ function hydrate(moka?: MokaFile) {
     root: "/tmp/moka-test",
     moka: document,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   return document;
 }
@@ -236,6 +237,7 @@ function stubRunServer(
         root: "/tmp/moka-test",
         moka: useProjectStore.getState().moka,
         selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
       });
     }
     throw new Error(`Nothing was stubbed for ${method} ${path}`);

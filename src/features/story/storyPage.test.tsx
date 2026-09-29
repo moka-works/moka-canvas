@@ -31,6 +31,7 @@ function openRoom(moka: MokaFile) {
     moka,
     root: "/tmp/moka-story-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<StoryPage />);
 }
@@ -210,6 +211,7 @@ describe("the five steps", () => {
         root: "/tmp/moka-story-test",
         moka: useProjectStore.getState().moka,
         selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
       };
       if (url.endsWith("/read")) {
         payload = { ...short, readAt: "2026-01-02T00:00:00Z" };
@@ -295,6 +297,7 @@ describe("the five steps", () => {
         root: "/tmp/moka-story-test",
         moka: useProjectStore.getState().moka,
         selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
       };
       if (url.endsWith("/read")) {
         payload = { ...short, readAt: "2026-01-02T00:00:00Z" };
@@ -374,6 +377,7 @@ describe("the five steps", () => {
             root: "/tmp/moka-story-test",
             moka: useProjectStore.getState().moka,
             selfCheck: { ok: true, issues: [] },
+            selfCheckVerified: true,
           };
       return Promise.resolve(
         new Response(JSON.stringify(payload), {

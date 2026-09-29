@@ -598,13 +598,177 @@ async fn self_check_reports_missing_and_changed_files() {
         moka_canvas::domain::SelfCheckReason::Missing
     );
 
-    // Restore with different bytes: reported as changed.
-    std::fs::write(root.join(&entry.path), make_test_png_alt()).unwrap();
+    // Restore with a different length: a size the open reads, so the answer is
+    // there before the room draws.
+    let mut longer = make_test_png();
+    longer.extend_from_slice(b"\n");
+    std::fs::write(root.join(&entry.path), &longer).unwrap();
     let reopened = store.open_project(&root).await.unwrap();
+    // Nothing is left to read once the length disagrees: the issue is final.
+    assert!(reopened.self_check_verified);
     assert_eq!(
         reopened.self_check.issues[0].reason,
         moka_canvas::domain::SelfCheckReason::Changed
     );
+
+    // The rest of the file is put back, so what the read behind the open has to
+    // speak about is a change of content alone: the sizes agree and only the
+    // bytes say otherwise.
+    let mut edited_in_place = make_test_png();
+    let middle = edited_in_place.len() / 2;
+    edited_in_place[middle] ^= 0xff;
+    std::fs::write(root.join(&entry.path), &edited_in_place).unwrap();
+    let reopened = store.open_project(&root).await.unwrap();
+    assert!(
+        reopened.self_check.ok,
+        "a file that kept its length is not something the sizes can speak about"
+    );
+    let (report, verified) = wait_for_verification(&store).await;
+    assert!(verified);
+    assert_eq!(report.issues.len(), 1);
+    assert_eq!(
+        report.issues[0].reason,
+        moka_canvas::domain::SelfCheckReason::Changed
+    );
+    assert_eq!(report.issues[0].expected_path, entry.path);
+}
+
+/// Waits for the read behind an open to finish, so a test can speak about what
+/// it found. Bounded on purpose: a check that never lands is a failed test, not
+/// a hung suite.
+async fn wait_for_verification(
+    store: &Arc<FsProjectStore>,
+) -> (moka_canvas::domain::SelfCheckReport, bool) {
+    for _ in 0..200 {
+        let (report, verified) = store.self_check_status().await.unwrap().unwrap();
+        if verified {
+            return (report, verified);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("the file check never finished");
+}
+
+/// A reader who puts a missing file back stops being told it is missing.
+///
+/// The dialog that raises the issue is also where a reader puts the file back,
+/// so the report has to be able to come down: asking what is wrong again asks
+/// about the files as they are now, not as they were at the open.
+#[tokio::test]
+async fn a_file_put_back_stops_being_an_issue() {
+    let tmp = TempDir::new().unwrap();
+    let (store, root) = create_store(&tmp).await;
+    let png = make_test_png();
+    let staging = root.join("tmp").join("upload-returned.bin");
+    std::fs::write(&staging, &png).unwrap();
+    let entry = store
+        .add_asset(StagedAsset {
+            name: "returned.png".into(),
+            tmp_path: staging,
+            declared_mime: None,
+            category_hint: None,
+            provenance: None,
+        })
+        .await
+        .unwrap()
+        .entry;
+
+    std::fs::remove_file(root.join(&entry.path)).unwrap();
+    let reopened = store.open_project(&root).await.unwrap();
+    assert_eq!(reopened.self_check.issues.len(), 1);
+
+    std::fs::write(root.join(&entry.path), &png).unwrap();
+    let (report, verified) = store.self_check_status().await.unwrap().unwrap();
+    assert!(report.ok, "the file is back where the entry says it is");
+    assert!(report.issues.is_empty());
+    assert!(verified);
+}
+
+/// A finding about bytes stands until the entry speaks of other bytes.
+///
+/// A file edited in place at the same length is exactly what the read behind
+/// the open is for, and exactly what a stat can never see: asking again must
+/// not let that blindness take the finding back. Once the file is replaced
+/// through the store the entry describes other bytes, and what was found is
+/// about a file that is gone.
+#[tokio::test]
+async fn a_finding_about_bytes_stands_until_the_entry_moves_on() {
+    let tmp = TempDir::new().unwrap();
+    let (store, root) = create_store(&tmp).await;
+    let png = make_test_png();
+    let staging = root.join("tmp").join("upload-swapped.bin");
+    std::fs::write(&staging, &png).unwrap();
+    let entry = store
+        .add_asset(StagedAsset {
+            name: "swapped.png".into(),
+            tmp_path: staging,
+            declared_mime: None,
+            category_hint: None,
+            provenance: None,
+        })
+        .await
+        .unwrap()
+        .entry;
+
+    let mut edited = png.clone();
+    let middle = edited.len() / 2;
+    edited[middle] ^= 0xff;
+    std::fs::write(root.join(&entry.path), &edited).unwrap();
+    let reopened = store.open_project(&root).await.unwrap();
+    assert!(
+        reopened.self_check.ok,
+        "the length is the one the entry recorded, so the open has nothing to say"
+    );
+    let (report, _) = wait_for_verification(&store).await;
+    assert_eq!(report.issues.len(), 1);
+
+    // Asked again, the finding is still there although the stat it must look
+    // past says the file is fine.
+    let (again, _) = store.self_check_status().await.unwrap().unwrap();
+    assert_eq!(again.issues.len(), 1);
+    assert_eq!(
+        again.issues[0].reason,
+        moka_canvas::domain::SelfCheckReason::Changed
+    );
+
+    // Replaced through the store, the entry no longer describes the file the
+    // read complained about.
+    let mut other = image::RgbaImage::new(64, 64);
+    for pixel in other.pixels_mut() {
+        *pixel = image::Rgba([30, 60, 120, 255]);
+    }
+    let mut replacement = Vec::new();
+    image::DynamicImage::ImageRgba8(other)
+        .write_to(
+            &mut std::io::Cursor::new(&mut replacement),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    let staging2 = root.join("tmp").join("upload-swapped2.bin");
+    std::fs::write(&staging2, &replacement).unwrap();
+    let replaced = store
+        .replace_asset_bytes(
+            &entry.id,
+            StagedAsset {
+                name: "swapped.png".into(),
+                tmp_path: staging2,
+                declared_mime: None,
+                category_hint: None,
+                provenance: None,
+            },
+        )
+        .await
+        .unwrap()
+        .entry;
+    assert_ne!(replaced.sha256, entry.sha256, "the entry moved on");
+
+    let (report, verified) = store.self_check_status().await.unwrap().unwrap();
+    assert!(
+        report.ok,
+        "the bytes the entry speaks of are the bytes that are there"
+    );
+    assert!(report.issues.is_empty());
+    assert!(verified);
 }
 
 #[tokio::test]
@@ -1293,21 +1457,6 @@ fn make_test_png() -> Vec<u8> {
     let mut png = image::RgbaImage::new(64, 64);
     for pixel in png.pixels_mut() {
         *pixel = image::Rgba([200, 120, 60, 255]);
-    }
-    let mut bytes = Vec::new();
-    image::DynamicImage::ImageRgba8(png)
-        .write_to(
-            &mut std::io::Cursor::new(&mut bytes),
-            image::ImageFormat::Png,
-        )
-        .unwrap();
-    bytes
-}
-
-fn make_test_png_alt() -> Vec<u8> {
-    let mut png = image::RgbaImage::new(64, 64);
-    for pixel in png.pixels_mut() {
-        *pixel = image::Rgba([10, 220, 90, 255]);
     }
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgba8(png)

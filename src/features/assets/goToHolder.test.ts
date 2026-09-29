@@ -22,6 +22,7 @@ function openProject(moka: MokaFile) {
     moka,
     root: "/tmp/moka-assets-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   useAppStore.getState().setPhase("assets");
 }

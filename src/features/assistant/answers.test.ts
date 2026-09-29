@@ -43,6 +43,7 @@ function open(moka: MokaFile): CanvasDocument {
     root: "/tmp/moka-test",
     moka,
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   return moka.canvas[0];
 }

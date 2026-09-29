@@ -6,10 +6,14 @@ import type {
   SelfCheckReport,
   WorkflowNode,
 } from "../../../shared/domain";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import { i18n } from "../../../shared/i18n";
 
 export type MediaState = "ready" | "missing" | "changed" | "empty";
+
+/** How wide a card's material is drawn: the card is smaller, and its picture
+    is a preview — the inspector and the preview dialog show the file. */
+const CARD_THUMB_WIDTH = 768;
 
 export interface MediaCardInfo {
   state: MediaState;
@@ -143,9 +147,11 @@ export function mediaInfoForNode(
     url:
       node.kind === "video"
         ? posterId
-          ? assetUrl(posterId)
+          ? assetThumbUrl(posterId, CARD_THUMB_WIDTH)
           : undefined
-        : assetUrl(data.assetId),
+        : assetThumbUrl(data.assetId, CARD_THUMB_WIDTH),
+    // What a video card plays is the film, not a picture of it: the element
+    // gets the file itself.
     playable: node.kind === "video" ? assetUrl(data.assetId) : undefined,
     label: labelFor(entry),
     entry,

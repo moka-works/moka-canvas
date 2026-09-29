@@ -58,20 +58,21 @@ export default function App() {
     void useModelStore.getState().load();
   }, []);
 
-  // A room the reader is about to enter is fetched while they are still in the
-  // room before it — the launcher leads to the board, the board to the cutting
-  // room and the files room, and the cutting room to the story room — so the
-  // step between rooms stays a step rather than a wait.
+  // A room is fetched while the launcher is up: the launcher is where a session
+  // starts and where nothing is being read yet, and it leads to any of the four
+  // — so a room entered from a recent row finds its chunk already here rather
+  // than fetching it while the reader waits on the door.
+  // A room that could not be fetched now is fetched when it is entered, so a
+  // prefetch that fails is not a failure and has nothing to say.
   useEffect(() => {
-    if (phase === "launcher") {
-      void import("./features/editor/EditorPage");
-    }
-    if (phase === "editing") {
-      void import("./features/clip/ClipPage");
-      void import("./features/assets/AssetsPage");
-    }
-    if (phase === "clip") {
-      void import("./features/story/StoryPage");
+    if (phase !== "launcher") return;
+    for (const room of [
+      import("./features/editor/EditorPage"),
+      import("./features/clip/ClipPage"),
+      import("./features/assets/AssetsPage"),
+      import("./features/story/StoryPage"),
+    ]) {
+      room.catch(() => {});
     }
   }, [phase]);
 

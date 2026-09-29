@@ -105,3 +105,15 @@ export const assetsApi = {
 export function assetUrl(id: AssetId): string {
   return `/api/v1/projects/current/assets/${id}`;
 }
+
+/**
+ * The same file, drawn by the server at the width a list shows it.
+ *
+ * For the surfaces that draw a file small — a shelf row, a card, a reference
+ * thumbnail — rather than the ones that show it as itself. The server clamps
+ * the width and answers with the file itself when it cannot draw one, so a
+ * caller has nothing to check.
+ */
+export function assetThumbUrl(id: AssetId, width: number): string {
+  return `${assetUrl(id)}?w=${width}`;
+}

@@ -16,11 +16,15 @@ use crate::project::{
 };
 use crate::story::{StoryJobRecord, StoryJobStatus};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub struct FsProjectStore {
     config: Arc<AppConfig>,
     state: Arc<Mutex<Option<OpenState>>>,
+    /// Bumped on every open, so a file check started for one project can never
+    /// publish into the project opened after it.
+    opens: AtomicU64,
 }
 
 struct OpenState {
@@ -30,6 +34,31 @@ struct OpenState {
     revision: i32,
     /// Filesystem identity of canvas.moka used to detect external edits.
     file_stamp: Option<std::time::SystemTime>,
+    /// The latest check: what the sizes said at open, plus whatever the read
+    /// behind it has found since.
+    self_check: SelfCheckReport,
+    /// The digest each issue the read found was found against, so a file that
+    /// was replaced since does not keep an issue about the one that is gone.
+    verified_against: std::collections::BTreeMap<String, String>,
+    /// Whether that read has finished — true when there was nothing to read.
+    self_check_verified: bool,
+    /// Which open this state belongs to; the read carries the same number.
+    open_token: u64,
+}
+
+/// One file the read behind an open still has to look at.
+///
+/// Built for the entries a stat could not already speak about: a file that is
+/// there, is not empty, is the size the entry recorded, and carries the digest
+/// it was filed with. What is left to learn is whether those bytes are still
+/// the same bytes.
+struct VerifyJob {
+    asset_id: String,
+    name: String,
+    expected_path: String,
+    path: PathBuf,
+    sha256: String,
+    referencing_nodes: Vec<SelfCheckNodeRef>,
 }
 
 impl FsProjectStore {
@@ -37,6 +66,7 @@ impl FsProjectStore {
         Self {
             config,
             state: Arc::new(Mutex::new(None)),
+            opens: AtomicU64::new(0),
         }
     }
 
@@ -423,66 +453,225 @@ impl FsProjectStore {
         Ok((moka, stamp))
     }
 
-    fn self_check(root: &Path, moka: &MokaFile) -> SelfCheckReport {
+    /// What the sizes alone say about the project's files, and what is left to read.
+    ///
+    /// Answering from `metadata` is what keeps an open flat as a project grows:
+    /// every question this can answer — is the file there, is it a file, is it
+    /// empty, is it the length the entry recorded — is answered without opening
+    /// it. The one thing a size cannot see, a file edited in place at the same
+    /// length, is left to the jobs this returns, which are read behind the room
+    /// and reported when they land.
+    fn stat_check(root: &Path, moka: &MokaFile) -> (SelfCheckReport, Vec<VerifyJob>) {
         let mut issues = Vec::new();
+        let mut jobs = Vec::new();
         let references = moka.asset_references();
         for entry in moka.resources.all() {
             let resolved = Self::resolve_in_root(root, &entry.path).ok();
             let meta = resolved
                 .as_ref()
                 .and_then(|path| std::fs::metadata(path).ok());
-            let reason = match meta {
-                None => Some(SelfCheckReason::Missing),
-                Some(meta) if !meta.is_file() => Some(SelfCheckReason::Missing),
-                Some(meta) if meta.len() == 0 => Some(SelfCheckReason::Empty),
-                Some(meta) => match (&entry.sha256, entry.bytes) {
-                    (Some(expected), _) => {
-                        let size_hint_mismatch = entry
-                            .bytes
-                            .map(|bytes| bytes as u64 != meta.len())
-                            .unwrap_or(false);
-                        if size_hint_mismatch {
-                            Some(SelfCheckReason::Changed)
-                        } else {
-                            match sha256_of(resolved.as_ref().unwrap()) {
-                                Ok(actual) if &actual != expected => Some(SelfCheckReason::Changed),
-                                Err(_) => Some(SelfCheckReason::Missing),
-                                _ => None,
-                            }
-                        }
-                    }
-                    _ => None,
-                },
-            };
-            if let Some(reason) = reason {
-                let referencing_nodes = references
-                    .get(&entry.id)
-                    .cloned()
-                    .unwrap_or_default()
-                    .iter()
-                    .filter_map(|node_id| {
-                        moka.canvas.iter().find_map(|canvas| {
-                            canvas.node(node_id).map(|node| SelfCheckNodeRef {
-                                canvas_id: canvas.id.clone(),
-                                node_id: node.id.clone(),
-                                title: node.title.clone(),
-                            })
-                        })
-                    })
-                    .collect();
+            if let Some(reason) = Self::stat_reason(meta.as_ref(), entry) {
                 issues.push(SelfCheckIssue {
                     asset_id: entry.id.clone(),
                     name: entry.name.clone(),
                     expected_path: entry.path.clone(),
                     reason,
-                    referencing_nodes,
+                    referencing_nodes: Self::referencing_nodes(moka, &references, &entry.id),
+                });
+                continue;
+            }
+            if let (Some(path), Some(sha256)) = (resolved, entry.sha256.clone()) {
+                jobs.push(VerifyJob {
+                    asset_id: entry.id.clone(),
+                    name: entry.name.clone(),
+                    expected_path: entry.path.clone(),
+                    path,
+                    sha256,
+                    referencing_nodes: Self::referencing_nodes(moka, &references, &entry.id),
                 });
             }
         }
-        SelfCheckReport {
-            ok: issues.is_empty(),
-            issues,
+        (
+            SelfCheckReport {
+                ok: issues.is_empty(),
+                issues,
+            },
+            jobs,
+        )
+    }
+
+    /// Makes an opened document the one this store serves, and starts the read
+    /// behind it.
+    ///
+    /// Everything a caller is answered with is already known when this returns:
+    /// the sizes have been read and the document is in place. What is still
+    /// going on is the part nobody waits for.
+    fn publish(
+        &self,
+        root: PathBuf,
+        moka: MokaFile,
+        revision: i32,
+        stamp: Option<std::time::SystemTime>,
+    ) -> OpenProject {
+        let (report, jobs) = Self::stat_check(&root, &moka);
+        let verified = jobs.is_empty();
+        let token = self.opens.fetch_add(1, Ordering::Relaxed) + 1;
+        // Whatever was drawn of files this project no longer holds has nothing
+        // left to be asked for.
+        crate::assets::thumbs::prune(&root, &moka);
+        {
+            let mut guard = self.state.lock().expect("store poisoned");
+            *guard = Some(OpenState {
+                root: root.clone(),
+                moka: moka.clone(),
+                revision,
+                file_stamp: stamp,
+                self_check: report.clone(),
+                verified_against: std::collections::BTreeMap::new(),
+                self_check_verified: verified,
+                open_token: token,
+            });
         }
+        if !jobs.is_empty() {
+            Self::spawn_verify(Arc::clone(&self.state), token, jobs);
+        }
+        OpenProject {
+            root,
+            moka,
+            self_check: report,
+            self_check_verified: verified,
+        }
+    }
+
+    /// Reads the files the sizes could not speak about, behind the open room.
+    ///
+    /// On threads of the store's own rather than on the runtime's: this is
+    /// blocking work on somebody's disk, and a request that arrives meanwhile —
+    /// a save, an upload — has no business queueing behind a check nobody is
+    /// waiting for. A few threads, not one per file: the point is to leave the
+    /// machine room to work, not to finish first.
+    fn spawn_verify(state: Arc<Mutex<Option<OpenState>>>, token: u64, jobs: Vec<VerifyJob>) {
+        let threads = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(1)
+            .clamp(1, 4)
+            .min(jobs.len());
+        let remaining = Arc::new(AtomicUsize::new(jobs.len()));
+        let queue = Arc::new(jobs);
+        let next = Arc::new(AtomicUsize::new(0));
+        for _ in 0..threads {
+            let state = Arc::clone(&state);
+            let remaining = Arc::clone(&remaining);
+            let queue = Arc::clone(&queue);
+            let next = Arc::clone(&next);
+            std::thread::spawn(move || loop {
+                let at = next.fetch_add(1, Ordering::Relaxed);
+                let Some(job) = queue.get(at) else { break };
+                match sha256_of(&job.path) {
+                    // The file the entry spoke of is the file that is there.
+                    Ok(actual) if actual == job.sha256 => {}
+                    Ok(_) => publish_verified_issue(
+                        &state,
+                        token,
+                        job,
+                        verify_issue(job, SelfCheckReason::Changed),
+                    ),
+                    // A file that cannot be read now is reported the way the
+                    // open would have reported it: it is not there to the check.
+                    Err(_) => publish_verified_issue(
+                        &state,
+                        token,
+                        job,
+                        verify_issue(job, SelfCheckReason::Missing),
+                    ),
+                }
+                if remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
+                    finish_verification(&state, token);
+                }
+            });
+        }
+    }
+
+    /// What one entry's file says about itself, from its metadata alone.
+    fn stat_reason(
+        meta: Option<&std::fs::Metadata>,
+        entry: &crate::domain::ResourceEntry,
+    ) -> Option<SelfCheckReason> {
+        match meta {
+            None => Some(SelfCheckReason::Missing),
+            Some(meta) if !meta.is_file() => Some(SelfCheckReason::Missing),
+            Some(meta) if meta.len() == 0 => Some(SelfCheckReason::Empty),
+            Some(meta) => match entry.bytes {
+                Some(bytes) if bytes as u64 != meta.len() => Some(SelfCheckReason::Changed),
+                _ => None,
+            },
+        }
+    }
+
+    /// How much of a report still stands, asked again where that is cheap.
+    ///
+    /// A report is about the files as they were found, and a reader who puts a
+    /// missing file back — through the very dialog this report raised — has
+    /// made it wrong. So every issue is looked at again before a report is
+    /// handed out: one whose file passes a stat now is dropped, and one the
+    /// read found by content is kept only while the entry still carries the
+    /// digest it was found against — a file that was replaced since is not the
+    /// file that was complained about.
+    fn refresh_report(&self, state: &mut OpenState) {
+        if state.self_check.issues.is_empty() {
+            return;
+        }
+        let root = state.root.clone();
+        let moka = &state.moka;
+        let mut kept = Vec::with_capacity(state.self_check.issues.len());
+        for mut issue in std::mem::take(&mut state.self_check.issues) {
+            let Some(entry) = moka.resources.find(&issue.asset_id) else {
+                // The file is not the project's any more; nothing holds the
+                // issue up.
+                state.verified_against.remove(&issue.asset_id);
+                continue;
+            };
+            if let Some(against) = state.verified_against.get(&issue.asset_id) {
+                if entry.sha256.as_deref() == Some(against.as_str()) {
+                    kept.push(issue);
+                } else {
+                    state.verified_against.remove(&issue.asset_id);
+                }
+                continue;
+            }
+            let meta = Self::resolve_in_root(&root, &entry.path)
+                .ok()
+                .and_then(|path| std::fs::metadata(path).ok());
+            if let Some(reason) = Self::stat_reason(meta.as_ref(), entry) {
+                issue.reason = reason;
+                kept.push(issue);
+            }
+        }
+        state.self_check.issues = kept;
+        state.self_check.ok = state.self_check.issues.is_empty();
+    }
+
+    /// The nodes pointing at one asset, as a report names them.
+    fn referencing_nodes(
+        moka: &MokaFile,
+        references: &std::collections::BTreeMap<String, Vec<String>>,
+        asset_id: &str,
+    ) -> Vec<SelfCheckNodeRef> {
+        references
+            .get(asset_id)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|node_id| {
+                moka.canvas.iter().find_map(|canvas| {
+                    canvas.node(node_id).map(|node| SelfCheckNodeRef {
+                        canvas_id: canvas.id.clone(),
+                        node_id: node.id.clone(),
+                        title: node.title.clone(),
+                    })
+                })
+            })
+            .collect()
     }
 
     fn detect_external_edit(state: &OpenState) -> Result<(), ProjectError> {
@@ -566,11 +755,78 @@ impl FsProjectStore {
     }
 }
 
+/// One file of the read behind an open, as an issue.
+fn verify_issue(job: &VerifyJob, reason: SelfCheckReason) -> SelfCheckIssue {
+    SelfCheckIssue {
+        asset_id: job.asset_id.clone(),
+        name: job.name.clone(),
+        expected_path: job.expected_path.clone(),
+        reason,
+        referencing_nodes: job.referencing_nodes.clone(),
+    }
+}
+
+/// Writes one finding of the read behind an open into the state it belongs to.
+///
+/// A read that finishes after another project was opened publishes nothing: the
+/// report it was making is about a document nobody is being shown. A read whose
+/// file was replaced while it was going publishes nothing either: the entry has
+/// moved on to other bytes, and what was found is about a file that is gone.
+fn publish_verified_issue(
+    state: &Arc<Mutex<Option<OpenState>>>,
+    token: u64,
+    job: &VerifyJob,
+    issue: SelfCheckIssue,
+) {
+    let mut guard = state.lock().expect("store poisoned");
+    let Some(open) = guard.as_mut() else { return };
+    if open.open_token != token {
+        return;
+    }
+    let filed = open
+        .moka
+        .resources
+        .find(&job.asset_id)
+        .and_then(|entry| entry.sha256.clone());
+    if filed.as_deref() != Some(job.sha256.as_str()) {
+        return;
+    }
+    open.verified_against
+        .insert(job.asset_id.clone(), job.sha256.clone());
+    open.self_check.ok = false;
+    open.self_check.issues.push(issue);
+}
+
+/// Marks the read behind an open as done, wherever it ended.
+fn finish_verification(state: &Arc<Mutex<Option<OpenState>>>, token: u64) {
+    let mut guard = state.lock().expect("store poisoned");
+    if let Some(open) = guard.as_mut() {
+        if open.open_token == token {
+            open.self_check_verified = true;
+        }
+    }
+}
+
+/// A file's digest, read in windows rather than whole.
+///
+/// A project's files are videos and pictures of tens of megabytes each; reading
+/// one into memory to hash it would put the whole file on the heap to say
+/// sixteen bytes about the front of it.
 fn sha256_of(path: &Path) -> std::io::Result<String> {
     use sha2::Digest;
-    let bytes = std::fs::read(path)?;
+    use std::io::Read;
+
+    const WINDOW: usize = 1 << 20;
+    let mut file = std::io::BufReader::with_capacity(WINDOW, std::fs::File::open(path)?);
     let mut hasher = sha2::Sha256::new();
-    hasher.update(&bytes);
+    let mut buffer = vec![0u8; WINDOW];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -691,25 +947,11 @@ impl ProjectStore for FsProjectStore {
         };
         self.atomic_write(root, &moka)?;
         Self::clean_tmp(root);
-        let report = Self::self_check(root, &moka);
         let stamp = std::fs::metadata(Self::moka_path(root))
             .and_then(|m| m.modified())
             .ok();
         let revision = moka.metadata.revision;
-        {
-            let mut guard = self.state.lock().expect("store poisoned");
-            *guard = Some(OpenState {
-                root: root.to_path_buf(),
-                moka: moka.clone(),
-                revision,
-                file_stamp: stamp,
-            });
-        }
-        Ok(OpenProject {
-            root: root.to_path_buf(),
-            moka,
-            self_check: report,
-        })
+        Ok(self.publish(root.to_path_buf(), moka, revision, stamp))
     }
 
     async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError> {
@@ -733,33 +975,37 @@ impl ProjectStore for FsProjectStore {
         std::fs::create_dir_all(root.join("output"))?;
         Self::sweep_interrupted_runs(&root);
         Self::sweep_interrupted_story_jobs(&root);
-        let report = Self::self_check(&root, &moka);
         let revision = moka.metadata.revision;
-        {
-            let mut guard = self.state.lock().expect("store poisoned");
-            *guard = Some(OpenState {
-                root: root.clone(),
-                moka: moka.clone(),
-                revision,
-                file_stamp: stamp,
-            });
-        }
-        Ok(OpenProject {
-            root,
-            moka,
-            self_check: report,
-        })
+        Ok(self.publish(root, moka, revision, stamp))
     }
 
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError> {
-        let guard = self.state.lock().expect("store poisoned");
-        Ok(guard.as_ref().map(|state| OpenProject {
-            root: state.root.clone(),
-            moka: state.moka.clone(),
-            self_check: SelfCheckReport {
-                ok: true,
-                issues: Vec::new(),
-            },
+        let mut guard = self.state.lock().expect("store poisoned");
+        Ok(guard.as_mut().map(|state| {
+            // The report a reader was shown when the project opened, not a
+            // blank one: a reader who reads the document again is looking at
+            // the same files, and a check that has found something since is
+            // still what is true about them. What is no longer true is asked
+            // again here rather than handed out.
+            self.refresh_report(state);
+            OpenProject {
+                root: state.root.clone(),
+                moka: state.moka.clone(),
+                self_check: state.self_check.clone(),
+                self_check_verified: state.self_check_verified,
+            }
+        }))
+    }
+
+    async fn project_root(&self) -> Result<PathBuf, ProjectError> {
+        self.open_root()
+    }
+
+    async fn self_check_status(&self) -> Result<Option<(SelfCheckReport, bool)>, ProjectError> {
+        let mut guard = self.state.lock().expect("store poisoned");
+        Ok(guard.as_mut().map(|state| {
+            self.refresh_report(state);
+            (state.self_check.clone(), state.self_check_verified)
         }))
     }
 

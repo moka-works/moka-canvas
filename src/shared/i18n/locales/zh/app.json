@@ -73,7 +73,9 @@
     "restored": "已恢复",
     "replaceFailed": "无法替换素材",
     "back": "返回启动页",
-    "openWithMissing": "带着缺失素材打开"
+    "openWithMissing": "带着缺失素材打开",
+    "checkedLaterOne": "1 个文件在项目打开后被改动，使用它的节点已显示新内容。",
+    "checkedLaterMany": "{{count}} 个文件在项目打开后被改动，使用它们的节点已显示新内容。"
   },
   "homeMenu": {
     "button": "项目菜单",

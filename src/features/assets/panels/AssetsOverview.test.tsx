@@ -16,6 +16,7 @@ function openRoom(moka: MokaFile) {
     moka,
     root: "/tmp/moka-assets-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<AssetsOverview />);
   return moka;

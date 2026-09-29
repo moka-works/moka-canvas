@@ -73,7 +73,9 @@
     "restored": "Restored",
     "replaceFailed": "Could not replace the asset",
     "back": "Back to launcher",
-    "openWithMissing": "Open with missing assets"
+    "openWithMissing": "Open with missing assets",
+    "checkedLaterOne": "1 file changed on disk after the project was opened; the node using it shows the new material.",
+    "checkedLaterMany": "{{count}} files changed on disk after the project was opened; the nodes using them show the new material."
   },
   "homeMenu": {
     "button": "Projects menu",

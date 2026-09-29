@@ -34,6 +34,7 @@ function openRoom(moka: MokaFile) {
     moka,
     root: "/tmp/moka-idea-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   render(<StoryPage />);
 }

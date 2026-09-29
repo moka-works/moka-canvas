@@ -1,11 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { assetUrl } from "../../../api/assets";
+import { assetThumbUrl } from "../../../api/assets";
 import { currentTake, takeFile } from "../../../shared/domain/story";
 import type { StorySlot } from "../../../shared/domain/types";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
+
+/** How wide a place's picture is asked for: it fills the panel and is
+    enlarged — where the file itself is shown — in the lightbox. */
+const SLOT_THUMB_WIDTH = 768;
 
 /**
  * One place a drawing lives: a character's face, a character's four views, a
@@ -100,7 +104,10 @@ export function StorySlotView({
             style={{ aspectRatio: ratio }}
             type="button"
           >
-            <img alt={label} src={assetUrl(take.assetIds[0])} />
+            <img
+              alt={label}
+              src={assetThumbUrl(take.assetIds[0], SLOT_THUMB_WIDTH)}
+            />
           </button>
           {busy === true && (
             // A picture being made again over the one it will replace: the

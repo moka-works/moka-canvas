@@ -198,6 +198,7 @@ function route(url: string, init?: RequestInit): Response {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current/commands") {

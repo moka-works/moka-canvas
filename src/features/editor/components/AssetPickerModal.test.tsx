@@ -36,6 +36,7 @@ function openProject(moka: MokaFile) {
     moka,
     root: "/tmp/moka-picker-test",
     selfCheck: { ok: true, issues: [] },
+    selfCheckVerified: true,
   });
   return moka;
 }

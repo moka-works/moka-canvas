@@ -204,6 +204,7 @@ function route(url: string, method: string, body: unknown): Response {
       root: "/tmp/golden",
       moka: api.moka(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current") {
@@ -211,6 +212,7 @@ function route(url: string, method: string, body: unknown): Response {
       root: "/tmp/golden",
       moka: api.moka(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
   }
   if (url === "/api/v1/projects/current/commands") {
@@ -371,6 +373,7 @@ describe("runStore", () => {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     api.startResponse = () => ({ body: makeRun(), status: 201 });
     await useRunStore.getState().start(ids.canvasMain, [ids.operation]);
@@ -399,6 +402,7 @@ describe("runStore", () => {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     api.startResponse = () => ({ body: makeRun(), status: 201 });
     await useRunStore.getState().start(ids.canvasMain, [ids.operation]);
@@ -428,6 +432,7 @@ describe("runStore", () => {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     api.startResponse = () => ({ body: makeRun(), status: 201 });
     await useRunStore.getState().start(ids.canvasMain, [ids.operation]);
@@ -452,6 +457,7 @@ describe("runStore", () => {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     // Park a local edit in the pending queue without flushing.
     useProjectStore.setState({
@@ -884,6 +890,7 @@ describe("run UI", () => {
       root: "/tmp/golden",
       moka: buildGoldenMokaFile(),
       selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
     });
     api.startResponse = () => ({ body: makeRun(), status: 201 });
     await useRunStore.getState().start(ids.canvasMain, [ids.operation]);
