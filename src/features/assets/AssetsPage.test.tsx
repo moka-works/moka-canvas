@@ -74,6 +74,21 @@ describe("the files room", () => {
     expect(current?.textContent).toContain(i18n.t("app:homeMenu.assets"));
   });
 
+  it("stands the bar's export button grayed, since nothing leaves from here", () => {
+    openRoom();
+
+    // The button keeps its place in the bar's corner, which is where every
+    // page wears it, and says why it is grayed rather than opening a menu with
+    // nothing in it.
+    const button = screen.getByTestId("export-menu-button");
+    expect(button).toHaveProperty("disabled", true);
+    expect(button.getAttribute("title")).toBe(
+      i18n.t("editor:topBar.exportNothing"),
+    );
+    fireEvent.click(button);
+    expect(screen.queryByTestId("export-menu")).toBeNull();
+  });
+
   it("reads the file a row is clicked at, and puts it down when let go of", () => {
     const ids = goldenNodeIds();
     openRoom();

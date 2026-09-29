@@ -27,7 +27,11 @@ interface PageTopBarProps {
   onHome: () => void;
   /** The middle of the bar: what the page is made of. */
   tabs?: ReactNode;
-  /** The answers under the Export button, which differs by page. */
+  /**
+   * The answers under the Export button, which differs by page. A page with
+   * none — the files room — keeps the button standing in the corner every page
+   * wears one in, grayed, rather than opening a menu with nothing in it.
+   */
   exportItems?: ReactNode;
 }
 
@@ -43,7 +47,8 @@ interface PageTopBarProps {
  *
  * The middle and the menu are slots because that is what changes between the
  * canvases and the cutting room: the rest is one bar serving both pages, and a
- * reader stepping between them finds the same corner in the same place.
+ * reader stepping between them finds the same corner in the same place — even
+ * on a page that fills neither slot, like the files room.
  */
 export function PageTopBar({
   current,
@@ -57,6 +62,8 @@ export function PageTopBar({
   const saveError = useProjectStore((state) => state.saveError);
   const canUndo = useCanUndo();
   const canRedo = useHistoryStore((state) => state.redoStack.length > 0);
+  /** Whether this page has anything to put under the Export button. */
+  const hasExports = Boolean(exportItems);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement | null>(null);
 
@@ -131,15 +138,17 @@ export function PageTopBar({
       </button>
       <div className="export-menu" ref={exportRef}>
         <button
-          aria-expanded={exportOpen}
-          aria-haspopup="menu"
+          aria-expanded={hasExports ? exportOpen : undefined}
+          aria-haspopup={hasExports ? "menu" : undefined}
           data-testid="export-menu-button"
+          disabled={!hasExports}
           onClick={() => setExportOpen((seen) => !seen)}
+          title={hasExports ? undefined : t("editor:topBar.exportNothing")}
           type="button"
         >
           {t("editor:topBar.export")}
         </button>
-        {exportOpen && (
+        {hasExports && exportOpen && (
           <div
             aria-label={t("editor:topBar.export")}
             className="menu export-menu-pop"

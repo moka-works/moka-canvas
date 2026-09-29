@@ -86,6 +86,11 @@ test("a project's files are read whole in one room and placed from the rooms tha
   await page.goto("/");
   await createProject(page, join(home, "project"), "Files Room");
 
+  // Where the bar's last button ends on a board, to be looked for again in the
+  // room: the bar is one bar, and the corner it ends in is its own.
+  const boardCorner = await page.locator(".export-menu").boundingBox();
+  expect(boardCorner).not.toBeNull();
+
   // The room is one of the four a recent project offers on the launcher, so
   // that is the way in — and the board is never stood on on the way past it.
   await page.reload();
@@ -93,6 +98,22 @@ test("a project's files are read whole in one room and placed from the rooms tha
   await expect(page.getByTestId("assets-page")).toBeVisible({
     timeout: 10_000,
   });
+
+  // The bar stands the same here as it does over a board: the status and the
+  // tools keep the corner they keep on every page, and the Export button keeps
+  // its place in that corner too — grayed, since nothing leaves the project
+  // from the files room, rather than opening a menu with nothing in it.
+  const roomCorner = await page.locator(".export-menu").boundingBox();
+  expect(roomCorner).not.toBeNull();
+  expect(Math.round(roomCorner!.x + roomCorner!.width)).toBe(
+    Math.round(boardCorner!.x + boardCorner!.width),
+  );
+  const exportButton = page.getByTestId("export-menu-button");
+  await expect(exportButton).toBeDisabled();
+  await expect(exportButton).toHaveAttribute(
+    "title",
+    "Nothing to export from this page",
+  );
 
   // Nothing is chosen yet, so the stage reads the project: nothing in it.
   await expect(page.getByTestId("assets-overview-total")).toHaveText(

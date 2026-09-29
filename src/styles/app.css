@@ -923,10 +923,15 @@ h2 {
   white-space: nowrap;
 }
 
+/* The status and the tools after it stand in the bar's own corner whichever
+   page is under it: the strip in the middle is what usually takes the slack,
+   and on a page that carries no strip — the files room — this margin does, so
+   the corner does not move as a reader steps between the rooms. */
 .save-status {
   border-radius: 999px;
   flex: none;
   font-size: 12px;
+  margin-left: auto;
   padding: 4px 10px;
 }
 

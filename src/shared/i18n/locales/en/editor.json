@@ -152,6 +152,7 @@
     "redo": "Redo",
     "settings": "Settings",
     "export": "Export",
+    "exportNothing": "Nothing to export from this page",
     "exportProject": "Export project",
     "exportProjectHint": "Choose what leaves with the project, and where to",
     "exportImage": "Export as image",
