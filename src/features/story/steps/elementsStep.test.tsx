@@ -543,7 +543,7 @@ describe("a room opened again over what it has already read", () => {
         .getByTestId("story-slot-main")
         .querySelector("img")
         ?.getAttribute("src"),
-    ).toBe("/api/v1/projects/current/assets/asset-lover-main");
+    ).toBe("/api/v1/projects/current/assets/asset-lover-main?w=768");
     // Nothing was asked for a second time, and nothing was said again.
     expect(starts).toHaveLength(3);
     expect(useAppStore.getState().toasts).toHaveLength(toasts);
@@ -842,7 +842,7 @@ describe("the pictures of an element", () => {
       .getByTestId("story-slot-main")
       .querySelector("img");
     expect(shown?.getAttribute("src")).toBe(
-      "/api/v1/projects/current/assets/asset-ticket-main",
+      "/api/v1/projects/current/assets/asset-ticket-main?w=768",
     );
   });
 

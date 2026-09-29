@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import { assetUrl } from "../../../api/assets";
+import { assetThumbUrl } from "../../../api/assets";
 import { relativeTime } from "../relativeTime";
 import type { StoryTake } from "../../../shared/domain/types";
+
+/** How wide a take's tile is asked for: the tile is a few hundred
+    pixels wide and the file it draws from may be megabytes. */
+const PICK_THUMB_WIDTH = 320;
 
 /**
  * The drawings a place has been given, and which of them is being kept.
@@ -107,7 +111,10 @@ export function StoryPicks({
                   onClick={() => onChoose(file)}
                   type="button"
                 >
-                  <img alt={label} src={assetUrl(file)} />
+                  <img
+                    alt={label}
+                    src={assetThumbUrl(file, PICK_THUMB_WIDTH)}
+                  />
                   <span className="story-pick-foot">
                     {take.createdAt === undefined
                       ? t("story:panels.pickUndated")

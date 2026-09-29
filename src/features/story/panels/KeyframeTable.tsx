@@ -33,7 +33,7 @@ import type {
   StorySlot,
   StoryVoiceTake,
 } from "../../../shared/domain/types";
-import { assetUrl } from "../../../api/assets";
+import { assetThumbUrl, assetUrl } from "../../../api/assets";
 import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
 import { storyKeyframePromptParts } from "../../../shared/prompts";
@@ -58,6 +58,10 @@ import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { StoryLightbox } from "./StoryLightbox";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
+
+/** How wide the little references beside a frame's ask are asked for: they are
+    drawn 44 px square, and the lightbox shows the file itself. */
+const REF_THUMB_WIDTH = 128;
 import { moved, writeKeyframes } from "./writeBoard";
 
 /** The longest and shortest a shot may be, in seconds. */
@@ -661,7 +665,10 @@ function KeyframePromptCell({
               })}
               type="button"
             >
-              <img alt={element.name} src={assetUrl(assetId)} />
+              <img
+                alt={element.name}
+                src={assetThumbUrl(assetId, REF_THUMB_WIDTH)}
+              />
             </button>
           ))}
           {cast.beyond.map(({ element, assetId }, at) => (
@@ -678,7 +685,10 @@ function KeyframePromptCell({
               title={t("story:storyboard.notCarried", { name: element.name })}
               type="button"
             >
-              <img alt={element.name} src={assetUrl(assetId)} />
+              <img
+                alt={element.name}
+                src={assetThumbUrl(assetId, REF_THUMB_WIDTH)}
+              />
             </button>
           ))}
         </div>

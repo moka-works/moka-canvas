@@ -713,7 +713,7 @@ describe("writing an episode's board", () => {
           .getByTestId("story-kf-slot-0")
           .querySelector("img")
           ?.getAttribute("src"),
-      ).toBe("/api/v1/projects/current/assets/asset-frame-first"),
+      ).toBe("/api/v1/projects/current/assets/asset-frame-first?w=768"),
     );
 
     // The one still on its way shows a place being painted, not one drawn.

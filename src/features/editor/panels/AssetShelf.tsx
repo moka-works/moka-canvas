@@ -22,7 +22,7 @@ import {
   assetHolders,
 } from "../../../shared/domain";
 import { i18n } from "../../../shared/i18n";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl } from "../../../api";
 import { buildIssueIndex, formatBytes } from "../canvas/mediaCards";
 import {
   ASSET_DRAG_MIME,
@@ -135,13 +135,18 @@ function focusGeneratingNode(nodeId: NodeId) {
   useEditorStore.getState().announce(i18n.t("editor:shelf.selectedMaker"));
 }
 
+/** How wide a row's picture is asked for: the row draws it 30–44 px tall. */
+const ROW_THUMB_WIDTH = 320;
+
 /** The picture a row leads with, when the file has one to show. */
 function thumbOf(entry: ResourceEntry): string | null {
   if (entry.mime === "image/png" || entry.mime === "image/jpeg") {
-    return assetUrl(entry.id);
+    return assetThumbUrl(entry.id, ROW_THUMB_WIDTH);
   }
   const poster = entry.probe?.posterAssetId;
-  return entry.mime === "video/mp4" && poster ? assetUrl(poster) : null;
+  return entry.mime === "video/mp4" && poster
+    ? assetThumbUrl(poster, ROW_THUMB_WIDTH)
+    : null;
 }
 
 /** The kind a shelf opens on: pictures, or the first kind a face has. */
