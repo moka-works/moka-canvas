@@ -261,6 +261,7 @@ pub fn sources_with(root: &std::path::Path, assets: &[FakeAsset]) -> PlanSources
             PlanAsset {
                 path: root.join(asset.relative),
                 mime: asset.mime.to_string(),
+                category: None,
                 has_audio: asset.has_audio,
             },
         );

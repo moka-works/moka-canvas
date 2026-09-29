@@ -24,6 +24,7 @@
 import { nowIso } from "../../../shared/domain/ids";
 import type { DocumentCommand } from "../../../shared/domain/types";
 import {
+  keyframeAt,
   mergeActs,
   mergeChaptersAt,
   mergeElements,
@@ -110,8 +111,43 @@ function slotCommand(
   story: StoryDocument,
   target: StorySlotTarget,
   slot: StorySlot,
+  read?: { text: string; voice: string },
 ): DocumentCommand[] {
-  return [{ type: "setStorySlot", storyId: story.id, target, slot }];
+  return [
+    {
+      type: "setStorySlot",
+      storyId: story.id,
+      target,
+      slot,
+      ...(read === undefined ? {} : { read }),
+    },
+  ];
+}
+
+/**
+ * What a line was read as: the words the board holds for it, and the tone the
+ * ask carried.
+ *
+ * The words are read off the document rather than off the ask, because what a
+ * take is filed under is the line it fills, and a line edited and edited back
+ * is the same line. A take that was read before the line was rewritten is told
+ * from the line by comparing the two, which is what makes "the words have
+ * changed since this was read" something the card can say.
+ */
+function readOf(
+  story: StoryDocument,
+  item: StoryJobItem,
+  target: StorySlotTarget,
+): { text: string; voice: string } | undefined {
+  if (target.kind !== "lineVoice") return undefined;
+  const line = keyframeAt(story, target)?.dialogue.find(
+    (held) => held.id === target.lineId,
+  );
+  const voice = item.params.voice;
+  return {
+    text: line?.text.trim() ?? "",
+    voice: typeof voice === "string" ? voice : "",
+  };
 }
 
 /** The place in the story a job target names, in the commands' own words. */
@@ -148,6 +184,14 @@ function slotTargetOf(item: StoryJobItem): StorySlotTarget | undefined {
         kind: "actVoice",
         chapterId: item.target.chapterId,
         actId: item.target.actId,
+      };
+    case "lineVoice":
+      return {
+        kind: "lineVoice",
+        chapterId: item.target.chapterId,
+        actId: item.target.actId,
+        keyframeId: item.target.keyframeId,
+        lineId: item.target.lineId,
       };
     case "music":
       return {
@@ -482,6 +526,7 @@ function commandsFor(
       story,
       target,
       withTake(slot, takeOf(record, item, [assetId])),
+      readOf(story, item, target),
     );
   }
 

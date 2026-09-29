@@ -918,7 +918,12 @@ describe("the sound of an act", () => {
                     : {
                         ...keyframe,
                         dialogue: [
-                          { speaker: "周", text: "下一班还来。", tone: "" },
+                          {
+                            id: "line-2",
+                            speaker: "周",
+                            text: "下一班还来。",
+                            tone: "",
+                          },
                         ],
                       },
                 ),

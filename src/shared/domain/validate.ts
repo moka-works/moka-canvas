@@ -415,6 +415,18 @@ function storySlots(
           },
           slot: keyframe.video,
         });
+        for (const take of keyframe.voices ?? []) {
+          places.push({
+            target: {
+              kind: "lineVoice",
+              chapterId: chapter.id,
+              actId: act.id,
+              keyframeId: keyframe.id,
+              lineId: take.lineId,
+            },
+            slot: take.slot,
+          });
+        }
       }
     }
   }

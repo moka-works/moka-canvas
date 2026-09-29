@@ -24,6 +24,7 @@ export const PAINTER = "painter";
 export const STORYTELLER = "storyteller";
 export const VIDEOGRAPHER = "videographer";
 export const SPEAKER = "speaker";
+export const READER = "reader";
 export const MUSICIAN = "musician";
 
 /**
@@ -101,6 +102,17 @@ function wav(seconds: number): Buffer {
   header.write("data", 36);
   header.writeUInt32LE(dataSize, 40);
   return Buffer.concat([header, Buffer.alloc(dataSize, 128)]);
+}
+
+/**
+ * The stand-in's part in making a voice: a known length, so a test can say
+ * where a line lands on a timeline and how fast it had to be read to get
+ * there. A voice named "long" reads for four seconds; every other voice reads
+ * for one, which is what a telling whose characters were never given voices
+ * gets.
+ */
+export function spokenSeconds(voice: unknown): number {
+  return voice === "long" ? 4 : 1;
 }
 
 /** What the stand-in was asked for, holding nothing a credential could be in. */
@@ -272,7 +284,7 @@ function jsonAnswer(prompt: string): string | undefined {
               angle: "overTheShoulder",
               content: "`Traveller` turns.",
               durationMs: 2_000,
-              dialogue: [],
+              dialogue: [{ speaker: "Traveller", text: "Then we walk." }],
             },
           ],
         },
@@ -411,9 +423,14 @@ export async function startMockProvider(): Promise<MockProvider> {
         return send(400, { error: { message: "the request was not JSON" } });
       }
     }
+    // What was asked, whichever of the three shapes the ask arrived in: words
+    // of their own, a conversation's last message, or the words a voice reads
+    // — which is what a speech ask carries them in.
     const prompt = multipart
       ? partOf(raw, "prompt")
-      : String(body.prompt ?? "") || lastMessage(body);
+      : String(body.prompt ?? "") ||
+        lastMessage(body) ||
+        String(body.input ?? "");
     calls.push({
       path,
       model: multipart ? "" : String(body.model ?? ""),
@@ -451,9 +468,10 @@ export async function startMockProvider(): Promise<MockProvider> {
       return send(200, { id: SHOT_JOB, status: "queued" });
     }
     // A voice or a score: the answer is the sound itself, not an answer about
-    // where the sound is.
+    // where the sound is. How long it reads for is the voice's own business,
+    // so a test can tell one character's reading from another's.
     if (path === "/v1/audio/speech") {
-      const bytes = wav(1);
+      const bytes = wav(spokenSeconds(body.voice));
       response.writeHead(200, {
         "Content-Type": "audio/wav",
         "Content-Length": String(bytes.length),

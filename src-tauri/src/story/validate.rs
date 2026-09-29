@@ -16,9 +16,10 @@ use crate::domain::{Capability, MokaFile, ResourceRegistry, ValidationIssue};
 /// The longest an item id may be, and the characters it may be made of.
 ///
 /// The id is the client's to choose and is echoed back on every answer, so it
-/// is bounded like one: long enough for a path through a story, plain enough
+/// is bounded like one: long enough for a path through a story — a line of
+/// dialogue is a place too, and its path names four of them — and plain enough
 /// that nothing has to escape it.
-const MAX_ITEM_ID: usize = 120;
+const MAX_ITEM_ID: usize = 200;
 
 fn issue(code: &str, message: impl Into<String>) -> ValidationIssue {
     ValidationIssue {

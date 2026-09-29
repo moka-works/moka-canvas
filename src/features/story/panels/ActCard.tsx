@@ -5,12 +5,10 @@ import {
   actCast,
   actPlannedMs,
   currentTake,
-  findResource,
-  formatDuration,
   type StoryGuess,
+  voiceHoldsLine,
 } from "../../../shared/domain";
 import type {
-  MokaFile,
   StoryAct,
   StoryActPatch,
   StoryActSound,
@@ -26,14 +24,19 @@ import {
   actClipPieces,
   planActMusic,
   planActVideos,
-  planActVoice,
   planKeyframeArt,
+  planLineVoiceAsks,
   videoCeiling,
 } from "../jobs/plan";
-import { useStoryRun, type ActRun } from "../stores/storyJobStore";
+import {
+  useStoryRun,
+  useStoryWavesRun,
+  type ActRun,
+} from "../stores/storyJobStore";
 import { KeyframeTable } from "./KeyframeTable";
 import { RefPicker } from "./RefPicker";
 import { StoryLightbox } from "./StoryLightbox";
+import { secondsOf } from "./takes";
 import { useField } from "./useField";
 import { moved, writeActs } from "./writeBoard";
 
@@ -66,6 +69,7 @@ export function ActCard({
   guesses,
   busyKeyframes,
   busyClips,
+  busyLines,
   videoBusy,
   voiceBusy,
   musicBusy,
@@ -86,14 +90,17 @@ export function ActCard({
   busyClips: Set<string>;
   /** Whether this act's own clip is being made just now. */
   videoBusy: boolean;
-  /** Whether this act's lines, or its score, are being made just now. */
+  /** Whether any of this act's lines, or its score, are being made just now. */
   voiceBusy: boolean;
   musicBusy: boolean;
+  /** The lines of this act being read just now, by the line's own name. */
+  busyLines: Set<string>;
   /** The batches working in this act just now, each with its own clock. */
   runs: ActRun[];
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
+  const runWaves = useStoryWavesRun();
   const moka = useProjectStore((state) => state.moka);
   const [playing, setPlaying] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -190,6 +197,19 @@ export function ActCard({
     void run(story.id, "actVideo", items);
   };
 
+  // The lines the act's button would ask for: the ones with nothing read for
+  // them yet, and the ones whose words have changed since they were read. A
+  // line being read just now is not one of them, since asking again would pay
+  // for it twice; the old act-wide reading is not one either, and stays where
+  // it is until the lines beside it are read one by one.
+  const needing = act.keyframes.flatMap((keyframe) =>
+    keyframe.dialogue.filter(
+      (line) =>
+        line.text.trim() !== "" &&
+        !voiceHoldsLine(keyframe, line) &&
+        !busyLines.has(line.id),
+    ),
+  );
   const spoken = act.keyframes
     .flatMap((keyframe) => keyframe.dialogue)
     .filter((line) => line.text.trim() !== "").length;
@@ -199,8 +219,15 @@ export function ActCard({
     (act.sound.ambience ?? "").trim() !== "";
 
   const speakAct = () => {
-    const items = planActVoice(story, chapterId, act.id);
-    void run(story.id, "voice", items);
+    // Only the lines short of a reading are asked for, so what is sent is
+    // what the button counted.
+    const waves = planLineVoiceAsks(
+      story,
+      chapterId,
+      act.id,
+      needing.map((line) => line.id),
+    );
+    void runWaves(story.id, "voice", waves);
   };
 
   const scoreAct = () => {
@@ -376,6 +403,7 @@ export function ActCard({
         act={act}
         busyClips={busyClips}
         busyKeyframes={busyKeyframes}
+        busyLines={busyLines}
         chapterId={chapterId}
         guesses={guesses}
         story={story}
@@ -489,19 +517,35 @@ export function ActCard({
       <div className="story-sound-row" data-testid={`story-act-sound-${index}`}>
         <span className="story-field-label">{t("story:voice.rowLabel")}</span>
         <span className="story-sound-slot">
-          {voice === undefined ? (
+          {needing.length > 0 && (
             <button
               data-testid={`story-act-voice-go-${index}`}
-              disabled={spoken === 0 || voiceBusy}
+              disabled={voiceBusy}
               onClick={speakAct}
-              title={spoken === 0 ? t("story:voice.noLines") : undefined}
               type="button"
             >
               {voiceBusy
                 ? t("story:panels.drawing")
-                : t("story:voice.speak", { count: spoken })}
+                : t("story:voice.speak", { count: needing.length })}
             </button>
-          ) : (
+          )}
+          {needing.length === 0 && spoken > 0 && (
+            <span
+              className="story-hint"
+              data-testid={`story-act-voice-count-${index}`}
+            >
+              {t("story:voice.allRead", { count: spoken })}
+            </span>
+          )}
+          {spoken === 0 && (
+            <span className="story-hint">{t("story:voice.noLines")}</span>
+          )}
+          {/*
+            A reading of the whole act, made before every line had a voice of
+            its own. Kept and playable — it is what the act sounds like until
+            its lines are read one by one — and said to be what it is.
+          */}
+          {voice !== undefined && (
             <>
               <audio
                 controls
@@ -513,16 +557,9 @@ export function ActCard({
                 {t("story:voice.take", {
                   seconds: secondsOf(moka, voice.assetIds[0]),
                 })}
+                {" · "}
+                {t("story:voice.legacyNote")}
               </span>
-              <button
-                className="link"
-                data-testid={`story-act-voice-again-${index}`}
-                disabled={voiceBusy}
-                onClick={speakAct}
-                type="button"
-              >
-                {t("story:voice.again")}
-              </button>
             </>
           )}
         </span>
@@ -600,13 +637,6 @@ const SOUND_FIELDS: Array<{ key: keyof StoryActSound }> = [
   { key: "sfx" },
   { key: "ambience" },
 ];
-
-/** How long a sound file runs, as the shelf reads it back. */
-function secondsOf(moka: MokaFile | null, assetId: string): string {
-  const entry = moka === null ? undefined : findResource(moka, assetId);
-  const durationMs = entry?.probe?.durationMs;
-  return durationMs === undefined ? "—" : formatDuration(durationMs);
-}
 
 /**
  * One act's field, as the reader leaves it.

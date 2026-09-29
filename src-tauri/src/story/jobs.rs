@@ -283,6 +283,13 @@ pub enum StoryTarget {
         act_id: String,
     },
     #[serde(rename_all = "camelCase")]
+    LineVoice {
+        chapter_id: String,
+        act_id: String,
+        keyframe_id: String,
+        line_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
     Music {
         chapter_id: String,
         act_id: String,
@@ -302,6 +309,7 @@ impl StoryTarget {
             StoryTarget::ActVideo { .. } => StoryJobKind::ActVideo,
             StoryTarget::KeyframeVideo { .. } => StoryJobKind::KeyframeVideo,
             StoryTarget::Voice { .. } => StoryJobKind::Voice,
+            StoryTarget::LineVoice { .. } => StoryJobKind::Voice,
             StoryTarget::Music { .. } => StoryJobKind::Music,
         }
     }

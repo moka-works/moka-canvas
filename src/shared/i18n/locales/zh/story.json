@@ -45,7 +45,7 @@
   },
   "remove": {
     "title": "删除「{{name}}」？",
-    "body": "{{chapters}} 章 · {{acts}} 幕 · {{pictures}} 张图 · {{videos}} 段视频将不再被这个故事引用。",
+    "body": "{{chapters}} 章 · {{acts}} 幕 · {{pictures}} 张图 · {{videos}} 段视频 · {{voices}} 段配音将不再被这个故事引用。",
     "keeps": "素材库里的文件会留下；装配出来的时间线也会留下，可以在剪辑室继续用。",
     "confirm": "删除",
     "cancel": "取消"
@@ -308,7 +308,25 @@
     "removeTitle": "删除 {{name}}？",
     "removeBody": "{{name}} 会离开这份卡司。分镜里引用到它的地方会留下一个空位。",
     "removeNote": "素材库里的东西不会被删：画过的图仍在文件里。",
-    "removeConfirm": "删除"
+    "removeConfirm": "删除",
+    "narratorTip": "旁白：不属于角色的台词用它，也是所有角色的兜底",
+    "voiceModel": "声音",
+    "voiceModelNone": "按旁白、本机选择或部署默认",
+    "voiceTone": "音色",
+    "voiceRate": "语速",
+    "voicePitch": "音高",
+    "voiceManner": "念法",
+    "voiceMannerTip": "这个角色想怎么念",
+    "voiceTry": "试听",
+    "voiceTryBusy": "正在试听…",
+    "voiceTryFailed": "试听没有回来",
+    "voiceUnset": "未定声音",
+    "voiceSet": "已定",
+    "voiceOrphan": "本机没有这个模型",
+    "voiceOrphanNote": "本机没有这个模型，念的时候按下一层回退",
+    "voiceLines": "这个角色在故事里说 {{count}} 句",
+    "voiceNoLines": "还没有台词",
+    "voiceNamed": "{{named}}/{{total}} 个角色定了声音"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片。",
@@ -396,6 +414,8 @@
     "lines": "{{count}} 句",
     "noDialogue": "这一格没有台词。",
     "speaker": "说话人",
+    "speakerRole": "角色",
+    "speakerName": "说话人名字",
     "line": "台词",
     "tone": "语气",
     "offScreen": "画外音",
@@ -435,13 +455,14 @@
     "withSubtitles": "把台词写成字幕轨",
     "noLines": "这个故事还没有台词。",
     "subtitlesNote": "字幕按计划时长落位；实际片段长短不同时，字幕仍跟着台词走。",
-    "againNote": "选项改了要重新装配才生效。",
     "nothingToAssemble": "还没有生成任何视频，先把各幕的片段做出来。",
     "assemble": "装配成片",
     "reassemble": "重新装配",
     "noVideo": "{{place}} 还没有视频",
     "assetMissing": "{{place}} 的素材不在项目里了，重新生成一次",
     "noDuration": "{{place}} 的素材没有测出时长，按计划时长拼入",
+    "lineOverrun": "{{place}} 有一句念得比它那一格长 {{over}} 秒",
+    "lineUnmeasured": "{{place}} 有一句量不出长度，按所在格的长度摆放",
     "warnings": "还有 {{count}} 条",
     "goFill": "去补",
     "assembled": "装好了：{{count}} 段片段，共 {{seconds}} 秒。",
@@ -465,7 +486,14 @@
     "clipFrameLine": "第 {{chapter}} 集 · 幕 {{act}} · 第 {{shot}} 格",
     "notFilmed": "未生成",
     "line": "{{speaker}}：{{text}}",
-    "ownSoundNote": "片段本身也带声音，两处会同时响；到剪辑室里把其中一处的音量调低即可。"
+    "ownSoundNote": "片段本身也带声音，两处会同时响；到剪辑室里把其中一处的音量调低即可。",
+    "lineVoice": "第 {{number}} 句",
+    "filmFresh": "成片与故事一致。",
+    "filmBehind": "成片落后于故事了，导出会先重新装配。",
+    "exportFresh": "导出成片（先装配）",
+    "filmCarries": "会带上 {{voices}} 句配音、{{music}} 段音乐，字幕{{subtitles}}。",
+    "subtitlesOn": "开着",
+    "subtitlesOff": "关着"
   },
   "import": {
     "name": "名字",
@@ -492,7 +520,8 @@
       "empty": "还没有生成任何片段，暂无可导入。",
       "done": "已把 {{count}} 个片段导入「{{name}}」。",
       "name": "{{name}} · 剪辑"
-    }
+    },
+    "voiceLine": "第 {{at}} 句"
   },
   "voice": {
     "rowLabel": "声音",
@@ -502,6 +531,19 @@
     "noSound": "先在分镜表里写下这一幕的声音。",
     "take": "{{seconds}}",
     "again": "换一段",
-    "instructions": "按{{genre}}的演法、{{style}}的调子念——平稳、不赶，也不要比台词本身更用力。"
+    "instructions": "按{{genre}}的演法、{{style}}的调子念——平稳、不赶，也不要比台词本身更用力。",
+    "sample": "这是一句试听的话，听一听这个声音合不合适。",
+    "unspent": "未念",
+    "spent": "已念 {{seconds}}",
+    "spentIn": "已念 {{seconds}} · {{voice}}",
+    "stale": "词句改过了，录音还是旧的",
+    "lineAsk": "念这一句",
+    "saveFirst": "先把改动写下来再念",
+    "allRead": "{{count}} 句都念过了",
+    "legacyNote": "整幕一次念的旧版",
+    "audioFallback": "这里的音频模型是没给自己的模型的角色、以及旁白的兜底；每个角色的声音在第三步「剧情元素」里定。",
+    "fitsSped": "比这一格长 {{over}} 秒 · 按 {{speed}} 倍速念",
+    "fitsOverrun": "比这一格长 {{over}} 秒 · 按最快念完，末尾 {{spill}} 秒压到下一格上",
+    "fitsUnmeasured": "没量出长度 · 按这一格的长度原速放"
   }
 }

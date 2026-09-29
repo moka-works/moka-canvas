@@ -21,6 +21,8 @@ import { useSavePathStore } from "../../editor/launcher/savePathStore";
 import { useStoryExportStore } from "../stores/storyExportStore";
 import { useStoryStore } from "../stores/storyStore";
 
+const T0 = "2026-01-01T00:00:00.000Z";
+
 /** What the render the test started answers with, as it is polled. */
 let renders: Array<{
   id: string;
@@ -121,6 +123,24 @@ function serving(): void {
 /** The fixture's telling, which has one filmed act and one empty episode. */
 function filmed(): MokaFile {
   return buildStoryMokaFile();
+}
+
+/** A recording on the shelf, measured as the test says. */
+function voice(id: string, durationMs: number) {
+  return {
+    id,
+    name: `${id}.mp3`,
+    path: `assets/voice/${id}.mp3`,
+    mime: "audio/mpeg",
+    createdAt: T0,
+    updatedAt: T0,
+    probe: {
+      mime: "audio/mpeg",
+      bytes: 2_048,
+      sha256: "1".repeat(64),
+      durationMs,
+    },
+  };
 }
 
 /**
@@ -483,5 +503,129 @@ describe("the film of a telling", () => {
     const link = screen.getByTestId("story-film-reassemble");
     expect(link).toHaveProperty("disabled", true);
     expect(link.getAttribute("title")).toContain("No clip has been filmed");
+  });
+});
+
+describe("a film that has fallen behind the telling", () => {
+  it("says so, and assembles before rendering rather than after", async () => {
+    openAtEdit(filmed());
+    // Nothing has been assembled at all, so the film is behind by definition —
+    // and the export is the press that fixes it rather than one that refuses.
+    expect(screen.getByTestId("story-film-freshness").textContent).toContain(
+      "behind the telling",
+    );
+    const button = screen.getByTestId("story-film-export");
+    expect(button.textContent).toContain("assemble first");
+    // The card reads the machine before it offers anything, and this machine
+    // can render: the one thing standing between the reader and a film is the
+    // assembly the export itself makes.
+    await waitFor(() => expect(button).toHaveProperty("disabled", false));
+
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(useSavePathStore.getState().pending).not.toBeNull(),
+    );
+    useSavePathStore.getState().reply("/tmp/moka-edit-test/films/the film.mp4");
+    await waitFor(() => expect(asked).toHaveLength(1));
+    // What was rendered is the timeline the export itself laid down, which is
+    // the telling as it stands rather than a film of an older one.
+    expect(story().edit.timelineId).toBeDefined();
+    expect(asked[0]).toBe(story().edit.timelineId);
+    expect(
+      timelines()
+        .find((held) => held.id === asked[0])
+        ?.clips.some((clip) => clip.kind === "video"),
+    ).toBe(true);
+  });
+
+  it("says what it carries, and stays fresh once it is assembled", async () => {
+    const moka = filmed();
+    moka.resources.voice = [
+      voice("asset-said", 1_200),
+      voice("asset-said-again", 2_400),
+    ];
+    const frame = moka.stories![0].chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.voices = [
+      {
+        lineId: "line-1",
+        text: "车已经停运了。",
+        voice: "",
+        slot: { takes: [{ assetIds: ["asset-said"], createdAt: T0 }] },
+      },
+    ];
+    openAtEdit(moka);
+
+    // What the film will carry, counted before it is made.
+    expect(screen.getByTestId("story-film-carries").textContent).toContain(
+      "1 readings",
+    );
+    expect(screen.getByTestId("story-film-carries").textContent).toContain(
+      "subtitles on",
+    );
+
+    fireEvent.click(screen.getByTestId("story-film-reassemble"));
+    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByTestId("story-film-freshness").textContent).toContain(
+        "the telling as it stands",
+      ),
+    );
+
+    // The telling moves on — a line re-read — and the film is behind again.
+    act(() => {
+      useProjectStore.getState().applyLocal([
+        {
+          type: "setStorySlot",
+          storyId: story().id,
+          target: {
+            kind: "lineVoice",
+            chapterId: "chapter-first",
+            actId: "act-1",
+            keyframeId: "frame-1",
+            lineId: "line-1",
+          },
+          slot: {
+            takes: [
+              {
+                assetIds: ["asset-said-again"],
+                createdAt: "2026-01-02T00:00:00Z",
+              },
+            ],
+          },
+        },
+      ]);
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("story-film-freshness").textContent).toContain(
+        "behind the telling",
+      ),
+    );
+  });
+
+  it("says an assembly that cannot be made rather than rendering the older film", async () => {
+    openAtEdit(filmed());
+    // The material leaves the project: the telling can no longer be laid down,
+    // and a render of what is on the timeline would be a film of a telling
+    // that is not there any more.
+    const held = story();
+    held.chapters[0]!.acts[0]!.video = {
+      takes: [{ assetIds: ["asset-gone"], createdAt: T0 }],
+    };
+
+    const button = screen.getByTestId("story-film-export");
+    await waitFor(() => expect(button).toHaveProperty("disabled", false));
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(useSavePathStore.getState().pending).not.toBeNull(),
+    );
+    useSavePathStore.getState().reply("/tmp/moka-edit-test/films/the film.mp4");
+    // The assembly is refused with what is wrong, and nothing is rendered: no
+    // film is better than the wrong one.
+    await waitFor(() =>
+      expect(screen.getByTestId("story-film-error").textContent).toContain(
+        "No clip has been filmed",
+      ),
+    );
+    expect(asked).toHaveLength(0);
   });
 });

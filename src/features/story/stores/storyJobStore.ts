@@ -182,7 +182,19 @@ interface StoryJobState {
     storyId: string,
     kind: StoryJobKind,
     items: StoryJobItemDraft[],
+    /** The model to ask of; undefined is the room's own pick, as before. */
+    model?: string | null,
   ) => Promise<StoryJobRecord | null>;
+  /**
+   * Asks one wave of pieces after another, each wave settled before the next
+   * is sent: a telling's lines may be read by several models, and a batch
+   * carries one model, so what is one ask to a reader is several to the room.
+   */
+  startWaves: (
+    storyId: string,
+    kind: StoryJobKind,
+    waves: Array<{ model: string | null; items: StoryJobItemDraft[] }>,
+  ) => Promise<void>;
   cancel: (id: string) => Promise<void>;
   /** Fetches one batch and reads it in, which is what a poll does. */
   adopt: (id: string) => Promise<void>;
@@ -503,7 +515,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       }
     },
 
-    async start(storyId, kind, items) {
+    async start(storyId, kind, items, model) {
       // A place asked for twice at once is paid for twice: the second ask is
       // planned against a document the first has not finished saving, so it
       // carries the same description and the same reference as the first. The
@@ -527,12 +539,13 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         // Read here rather than where a batch is planned: every ask is made
         // with the model the room is set to now, which is what the pickers in
         // the steps stand for — a retry after the picker was changed is asked
-        // of the model the reader changed it to.
+        // of the model the reader changed it to. A caller naming a model asks
+        // of that one instead, which is what a character's own voice does.
         const record = await storyApi.start(
           storyId,
           kind,
           items,
-          storyAskModel(kind),
+          model === undefined ? storyAskModel(kind) : model,
         );
         // A batch started for the story the room is showing: the list it is
         // put at the head of is that story's, whichever one it was.
@@ -554,6 +567,19 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         return null;
       } finally {
         for (const key of asking) handingOver.delete(key);
+      }
+    },
+
+    async startWaves(storyId, kind, waves) {
+      // One wave at a time, and the next only once the one before it has
+      // settled: the batches share a room, and a wave that failed is not a
+      // reason to lose the waves that have not been sent — what did not come
+      // back is on its record, and the badge beside the step says so.
+      for (const wave of waves) {
+        if (wave.items.length === 0) continue;
+        const record = await get().start(storyId, kind, wave.items, wave.model);
+        if (record === null) return;
+        await awaitSettled(record.id);
       }
     },
 
@@ -584,6 +610,28 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     },
   };
 });
+
+/**
+ * Waits out one batch, whichever way it ends.
+ *
+ * The room's own poll goes on looking the batch up all the same; this is the
+ * asker's own wait, so that the wave after this one is not planned against a
+ * story the answers have not been read into yet.
+ */
+async function awaitSettled(id: string): Promise<void> {
+  for (;;) {
+    try {
+      await useStoryJobStore.getState().adopt(id);
+    } catch {
+      // A batch that cannot be looked up cannot be waited on: the room's own
+      // poll goes on asking, and what came back is read into the story then.
+      return;
+    }
+    const held = useStoryJobStore.getState().jobs.find((job) => job.id === id);
+    if (held === undefined || !isRunning(held.status)) return;
+    await new Promise((settle) => setTimeout(settle, POLL_MS));
+  }
+}
 
 /**
  * Asks again for the pieces of a batch that failed, planned from the story as
@@ -807,6 +855,7 @@ function inAct(target: StoryTarget, chapterId: string, actId: string): boolean {
       target.kind === "keyframeVideo" ||
       target.kind === "actVideo" ||
       target.kind === "voice" ||
+      target.kind === "lineVoice" ||
       target.kind === "music") &&
     target.chapterId === chapterId &&
     target.actId === actId
@@ -919,5 +968,25 @@ export function useStoryRun(): (
       return;
     }
     await start(storyId, kind, items);
+  };
+}
+
+/**
+ * The same, for work that is several asks: a telling's lines read in the
+ * voices of whoever speaks them, one model's worth of them at a time.
+ */
+export function useStoryWavesRun(): (
+  storyId: string,
+  kind: StoryJobKind,
+  waves: Array<{ model: string | null; items: StoryJobItemDraft[] }>,
+) => Promise<void> {
+  const startWaves = useStoryJobStore((state) => state.startWaves);
+  return async (storyId, kind, waves) => {
+    const promised = waves.filter((wave) => wave.items.length > 0);
+    if (promised.length === 0) {
+      toast("info", i18n.t("story:jobs.nothingToAsk"));
+      return;
+    }
+    await startWaves(storyId, kind, promised);
   };
 }

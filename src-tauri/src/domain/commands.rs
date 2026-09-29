@@ -1316,6 +1316,7 @@ fn apply_one(
         | DocumentCommand::SetStoryChapters { .. }
         | DocumentCommand::SetStoryElements { .. }
         | DocumentCommand::UpdateStoryElement { .. }
+        | DocumentCommand::UpdateStoryNarrator { .. }
         | DocumentCommand::SetStoryActs { .. }
         | DocumentCommand::UpdateStoryAct { .. }
         | DocumentCommand::UpdateStoryKeyframe { .. }

@@ -1138,6 +1138,7 @@ mod tests {
                 PlanAsset {
                     path: root.path().join("assets/videos/gone.mp4"),
                     mime: "video/mp4".to_string(),
+                    category: Some("videos".to_string()),
                     has_audio: true,
                 },
             )]),

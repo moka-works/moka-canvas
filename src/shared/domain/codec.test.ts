@@ -56,6 +56,21 @@ describe("moka codec", () => {
     expect(normalize(decoded)).toEqual(normalize(golden));
   });
 
+  it("carries what a telling was assembled from, and reads one that never said", () => {
+    // A document written before the digest existed carries none, and is read
+    // as the telling it is rather than refused.
+    const old = buildStoryMokaFile();
+    expect(old.stories![0]!.edit.assembledDigest).toBeUndefined();
+    const read = decodeMokaFile(encodeMokaFile(old));
+    expect(read.stories![0]!.edit.assembledDigest).toBeUndefined();
+
+    const withDigest = buildStoryMokaFile();
+    const story = withDigest.stories![0]!;
+    story.edit = { ...story.edit, assembledDigest: "0f3a91cd" };
+    const back = decodeMokaFile(encodeMokaFile(withDigest));
+    expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
+  });
+
   it("is byte-canonical on re-save", () => {
     const golden = buildGoldenMokaFile();
     const first = encodeMokaFile(golden);
@@ -211,6 +226,89 @@ describe("moka codec", () => {
     expect(
       decodeMokaFile(encodeMokaFile(beyond)).stories![0].maxReferenceImages,
     ).toBe(REFERENCE_IMAGES_MAX);
+  });
+
+  it("gives a line of a telling written before lines had names one as it is read", () => {
+    const moka = buildStoryMokaFile();
+    const raw = deserialize(
+      Buffer.from(encodeMokaFile(moka)).subarray(4),
+    ) as Record<string, unknown>;
+    const storyDoc = (raw.stories as Record<string, unknown>[])[0];
+    const chapters = storyDoc.chapters as Record<string, unknown>[];
+    const acts = chapters[0].acts as Record<string, unknown>[];
+    const frames = acts[0].keyframes as Record<string, unknown>[];
+    const dialogue = frames[0].dialogue as Record<string, unknown>[];
+    for (const line of dialogue) delete line.id;
+    const bson = serialize(raw);
+    const bytes = new Uint8Array(4 + bson.length);
+    bytes.set(MOKA_MAGIC, 0);
+    bytes.set(bson, 4);
+
+    const read = decodeMokaFile(bytes);
+    const lines = read.stories![0].chapters[0].acts[0].keyframes[0].dialogue;
+    expect(lines[0]?.id).toBeTruthy();
+    // The name is written out with the document, so the read after it — and
+    // every ask made against it — knows the same line by the same name.
+    const again = decodeMokaFile(encodeMokaFile(read));
+    expect(
+      again.stories![0].chapters[0].acts[0].keyframes[0].dialogue[0]?.id,
+    ).toBe(lines[0]?.id);
+  });
+
+  it("round-trips the voice of the cast and of the narrator", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements[0].voice = {
+      model: "voice-model",
+      voice: "longxiaochun",
+      rate: 1.2,
+      instructions: "低沉、慢",
+    };
+    moka.stories![0].narrator = { model: "", voice: "旁白的音色", pitch: 0.9 };
+
+    const read = decodeMokaFile(encodeMokaFile(moka));
+    expect(read.stories![0].elements[0].voice).toEqual({
+      model: "voice-model",
+      voice: "longxiaochun",
+      rate: 1.2,
+      instructions: "低沉、慢",
+    });
+    expect(read.stories![0].narrator).toEqual({
+      model: "",
+      voice: "旁白的音色",
+      pitch: 0.9,
+    });
+    // The other characters never said anything about a voice, and none is
+    // written for them: a voice holding nothing is not a voice.
+    expect("voice" in read.stories![0].elements[1]).toBe(false);
+  });
+
+  it("reads a telling stored before voices existed as having none", () => {
+    const moka = buildStoryMokaFile();
+    const raw = deserialize(
+      Buffer.from(encodeMokaFile(moka)).subarray(4),
+    ) as Record<string, unknown>;
+    const story = (raw.stories as Record<string, unknown>[])[0];
+    delete story.narrator;
+    for (const element of story.elements as Record<string, unknown>[]) {
+      delete element.voice;
+    }
+    const bson = serialize(raw);
+    const bytes = new Uint8Array(4 + bson.length);
+    bytes.set(MOKA_MAGIC, 0);
+    bytes.set(bson, 4);
+
+    const read = decodeMokaFile(bytes);
+    expect(read.stories![0].narrator).toBeUndefined();
+    expect(read.stories![0].elements[0].voice).toBeUndefined();
+    // And nothing is written about a voice that was never given one.
+    const again = deserialize(
+      Buffer.from(encodeMokaFile(read)).subarray(4),
+    ) as Record<string, unknown>;
+    const rewritten = (again.stories as Record<string, unknown>[])[0];
+    expect("narrator" in rewritten).toBe(false);
+    for (const element of rewritten.elements as Record<string, unknown>[]) {
+      expect("voice" in element).toBe(false);
+    }
   });
 
   it("reads the steps a document settled one place at a time as settled steps", () => {

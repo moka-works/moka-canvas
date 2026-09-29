@@ -9,7 +9,12 @@ import type {
   ResourceEntry,
   StoryChapter,
 } from "../../shared/domain";
-import { assemblyCommands, assemblySummary, planAssembly } from "./assembly";
+import {
+  assemblyCommands,
+  assemblyDigest,
+  assemblySummary,
+  planAssembly,
+} from "./assembly";
 
 const ids = storyIds();
 const T0 = "2026-01-01T00:00:00.000Z";
@@ -54,8 +59,12 @@ function actFor(
     act.keyframes = act.keyframes.map((keyframe, at) => ({
       ...keyframe,
       dialogue: [
-        { speaker: "Keeper", text: `Line ${at * 2 + 1}.` },
-        { speaker: "", text: `Line ${at * 2 + 2}.` },
+        {
+          id: `line-${at * 2 + 1}`,
+          speaker: "Keeper",
+          text: `Line ${at * 2 + 1}.`,
+        },
+        { id: `line-${at * 2 + 2}`, speaker: "", text: `Line ${at * 2 + 2}.` },
       ],
     }));
   }
@@ -286,13 +295,19 @@ describe("the captions of an assembly", () => {
     // Three lines over two shots of one act: the first shot says two of them.
     const act = held.chapters[0]!.acts[0]!;
     act.keyframes[0]!.dialogue = [
-      { speaker: "Keeper", text: "It stopped running years ago." },
-      { speaker: "", text: "The doors stay shut." },
+      {
+        id: "line-a",
+        speaker: "Keeper",
+        text: "It stopped running years ago.",
+      },
+      { id: "line-b", speaker: "", text: "The doors stay shut." },
     ];
-    act.keyframes[1]!.dialogue = [{ speaker: "Keeper", text: "Not tonight." }];
+    act.keyframes[1]!.dialogue = [
+      { id: "line-c", speaker: "Keeper", text: "Not tonight." },
+    ];
     // And one line in the episode that follows, whose clip starts at 5s.
     held.chapters[1]!.acts[0]!.keyframes[0]!.dialogue = [
-      { speaker: "", text: "The carriage is empty." },
+      { id: "line-d", speaker: "", text: "The carriage is empty." },
     ];
     const plan = planAssembly(held, moka);
     const { commands, clipByAct } = assemblyCommands(held, moka, plan, {
@@ -327,7 +342,9 @@ describe("the captions of an assembly", () => {
   it("writes no words at all when the reader asked for none", () => {
     const moka = filmed();
     const act = story(moka).chapters[0]!.acts[0]!;
-    act.keyframes[0]!.dialogue = [{ speaker: "Keeper", text: "Nothing." }];
+    act.keyframes[0]!.dialogue = [
+      { id: "line-a", speaker: "Keeper", text: "Nothing." },
+    ];
     const plan = planAssembly(story(moka), moka);
     const { commands } = assemblyCommands(story(moka), moka, plan, {
       withSubtitles: false,
@@ -337,6 +354,70 @@ describe("the captions of an assembly", () => {
     expect(command.timeline.clips.every((clip) => clip.kind === "video")).toBe(
       true,
     );
+  });
+});
+
+describe("the digest of an assembly", () => {
+  /** The digest of the telling as it stands, laid on the timeline it holds. */
+  function digestOf(
+    moka: MokaFile,
+    options: { withSubtitles?: boolean; timelineId?: string } = {},
+  ): string {
+    const held = story(moka);
+    return assemblyDigest(held, moka, planAssembly(held, moka), {
+      withSubtitles: options.withSubtitles ?? true,
+      timelineId: options.timelineId ?? "cut-1",
+    });
+  }
+
+  it("reads the same for the same telling, whatever the reader did to the cut", () => {
+    const moka = filmed({ secondAct: true });
+    const first = digestOf(moka);
+    expect(first).toMatch(/^[0-9a-f]{8}$/);
+    expect(digestOf(moka)).toBe(first);
+
+    // What the reader arranges in the cutting room is theirs: the digest says
+    // what this telling would lay down, not what the timeline holds.
+    const cut = moka.timelines?.[0];
+    if (cut !== undefined && cut.clips.length > 0) {
+      moka.timelines = [
+        {
+          ...cut,
+          clips: [...cut.clips, { ...cut.clips[0]!, id: "clip-by-hand" }],
+        },
+      ];
+    }
+    expect(digestOf(moka)).toBe(first);
+  });
+
+  it("moves when the film would, whichever way the telling moved", () => {
+    const moka = filmed({ secondAct: true });
+    const held = story(moka);
+    const first = digestOf(moka);
+
+    // The words of a line, which are written on the film as captions.
+    held.chapters[0]!.acts[0]!.keyframes[0]!.dialogue = [
+      { id: "line-a", speaker: "Keeper", text: "Another line entirely." },
+    ];
+    const spoken = digestOf(moka);
+    expect(spoken).not.toBe(first);
+
+    // The material a clip is made of.
+    moka.resources.videos.push(video("asset-other-take", 5_000));
+    held.chapters[0]!.acts[0]!.video = {
+      takes: [{ assetIds: ["asset-other-take"], createdAt: T0 }],
+    };
+    const refilmed = digestOf(moka);
+    expect(refilmed).not.toBe(spoken);
+
+    // How the film is framed.
+    held.brief = { ...held.brief, aspect: "9:16" };
+    expect(digestOf(moka)).not.toBe(refilmed);
+
+    // Whether the words are written on it at all, and which timeline it is on.
+    const framed = digestOf(moka);
+    expect(digestOf(moka, { withSubtitles: false })).not.toBe(framed);
+    expect(digestOf(moka, { timelineId: "cut-2" })).not.toBe(framed);
   });
 });
 
@@ -395,6 +476,147 @@ function sounded(): MokaFile {
   };
   return moka;
 }
+
+describe("a telling whose lines are read one by one", () => {
+  /** The same telling, with the two lines of its first shot read aloud. */
+  function voiced(): MokaFile {
+    const moka = filmed({ secondAct: true });
+    moka.resources.voice = [
+      sound("said-a", 900),
+      sound("said-b", 1_100),
+      sound("said-c", 1_200),
+    ];
+    const frame = story(moka).chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.dialogue = [
+      {
+        id: "line-a",
+        speaker: "Keeper",
+        text: "It stopped running years ago.",
+      },
+      { id: "line-b", speaker: "", text: "The doors stay shut." },
+    ];
+    frame.voices = [
+      {
+        lineId: "line-a",
+        text: "It stopped running years ago.",
+        voice: "Reader",
+        slot: { takes: [{ assetIds: ["said-a"], createdAt: T0 }] },
+      },
+      {
+        lineId: "line-b",
+        text: "The doors stay shut.",
+        voice: "",
+        slot: { takes: [{ assetIds: ["said-b"], createdAt: T0 }] },
+      },
+    ];
+    return moka;
+  }
+
+  it("lays each reading under its own shot, at the speed it takes to fit", () => {
+    const moka = voiced();
+    const held = story(moka);
+    const plan = planAssembly(held, moka);
+    const { commands, clipByAct } = assemblyCommands(held, moka, plan, {
+      withSubtitles: true,
+    });
+    const command = commands[0];
+    if (command?.type !== "addTimeline") throw new Error("a timeline is added");
+    const audio = command.timeline.clips.filter(
+      (clip) => clip.kind === "audio",
+    );
+    // The first shot runs two seconds and says two lines, a second each: the
+    // second is sped up to be done in its own second.
+    expect(
+      audio.map((clip) => [
+        clip.assetId,
+        clip.startMs,
+        clip.durationMs,
+        clip.speed,
+        clip.outPointMs,
+      ]),
+    ).toEqual([
+      ["said-a", 0, 900, 1, 900],
+      ["said-b", 1_000, 1_000, 1.1, 1_100],
+    ]);
+    for (const clip of audio) {
+      expect(Math.round(clip.durationMs * clip.speed)).toBe(
+        clip.outPointMs - clip.inPointMs,
+      );
+    }
+    // One row carries the telling's lines, and the act's own reading is not on
+    // it: an act whose lines have voices does not also sound as a whole.
+    expect(new Set(audio.map((clip) => clip.trackId)).size).toBe(1);
+    // Each reading is filed under the shot it is said in, which is what a
+    // re-assembly knows it laid down.
+    const readings = new Set(audio.map((clip) => clip.id));
+    expect(
+      clipByAct
+        .filter((entry) => readings.has(entry.clipId))
+        .map((entry) => entry.keyframeId),
+    ).toEqual([ids.frameFirst, ids.frameFirst]);
+    // The words on screen sit where their readings do: a caption begins with
+    // the voice over it and lasts at least as long.
+    const captions = command.timeline.clips.filter(
+      (clip) => clip.kind === "text",
+    );
+    expect(captions.map((clip) => [clip.startMs, clip.durationMs])).toEqual([
+      [0, 1_000],
+      [1_000, 1_000],
+    ]);
+    expect(captions[0]?.text?.content).toBe(
+      "Keeper: It stopped running years ago.",
+    );
+  });
+
+  it("reads the lines inside their own shots when the telling is shot by shot", () => {
+    const moka = voiced();
+    const held = story(moka);
+    held.shotGranularity = "keyframe";
+    held.chapters[0]!.acts[0]!.keyframes[0]!.video = {
+      takes: [{ assetIds: [ids.actVideo], createdAt: T0 }],
+    };
+    const plan = planAssembly(held, moka);
+    const { commands } = assemblyCommands(held, moka, plan, {
+      withSubtitles: false,
+    });
+    const command = commands[0];
+    if (command?.type !== "addTimeline") throw new Error("a timeline is added");
+    const audio = command.timeline.clips.filter(
+      (clip) => clip.kind === "audio",
+    );
+    // The shot's own clip runs five seconds, so both lines have room: the
+    // window is the picture's, not the board's plan for it.
+    expect(
+      audio.map((clip) => [clip.startMs, clip.durationMs, clip.speed]),
+    ).toEqual([
+      [0, 900, 1],
+      [2_500, 1_100, 1],
+    ]);
+  });
+
+  it("keeps the act's older reading out of the cut once its lines have voices", () => {
+    const moka = voiced();
+    moka.resources.voice.push(sound("asset-act-voice", 4_000));
+    const act = story(moka).chapters[0]!.acts[0]!;
+    act.voice = {
+      takes: [{ assetIds: ["asset-act-voice"], createdAt: T0 }],
+    };
+    const plan = planAssembly(story(moka), moka);
+    const { commands } = assemblyCommands(story(moka), moka, plan, {
+      withSubtitles: false,
+    });
+    const command = commands[0];
+    if (command?.type !== "addTimeline") throw new Error("a timeline is added");
+    expect(
+      command.timeline.clips.some((clip) => clip.assetId === "asset-act-voice"),
+    ).toBe(false);
+    // The lines are still read: what is in force is which reading of the act
+    // sounds, not whether it sounds at all.
+    expect(
+      command.timeline.clips.filter((clip) => clip.kind === "audio"),
+    ).toHaveLength(2);
+  });
+});
 
 describe("a telling that has been voiced and scored", () => {
   it("brings two rows of its own, and lays the sound where the act begins", () => {

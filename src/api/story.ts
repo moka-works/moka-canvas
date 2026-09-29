@@ -51,6 +51,14 @@ export type StoryTarget =
     }
   /** One act's lines read aloud, in a single voice for the whole act. */
   | { kind: "voice"; chapterId: string; actId: string }
+  /** One line of dialogue read on its own, in the voice its speaker has. */
+  | {
+      kind: "lineVoice";
+      chapterId: string;
+      actId: string;
+      keyframeId: string;
+      lineId: string;
+    }
   /** One act's music and sound, under the words and the pictures. */
   | { kind: "music"; chapterId: string; actId: string };
 

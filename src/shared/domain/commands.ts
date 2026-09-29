@@ -41,6 +41,13 @@ import {
   TIMELINE_WIDTH_MAX,
   TIMELINE_WIDTH_MIN,
   TIMELINE_SCHEMA_VERSION,
+  VOICE_INSTRUCTIONS_MAX,
+  VOICE_MODEL_MAX,
+  VOICE_NAME_MAX,
+  VOICE_PITCH_MAX,
+  VOICE_PITCH_MIN,
+  VOICE_RATE_MAX,
+  VOICE_RATE_MIN,
   ZOOM_MAX,
   ZOOM_MIN,
 } from "./constants";
@@ -65,6 +72,7 @@ import type {
   StoryKeyframe,
   StorySlot,
   StorySlotTarget,
+  StoryVoiceProfile,
   TimelineClip,
   TimelineDocument,
   TimelineId,
@@ -100,7 +108,7 @@ import {
   transitionsOfSeams,
 } from "./timeline";
 import { emptyStorySlot } from "./factories";
-import { STORY_STEPS } from "./story";
+import { STORY_STEPS, storyVoiceTake, voiceTakeOf } from "./story";
 import { findNode, validateBounds, validateEdgeCandidate } from "./validate";
 import { i18n } from "../i18n";
 
@@ -2132,8 +2140,8 @@ function applyOne(
       const held = new Map(
         story.elements.map((element) => [element.id, element]),
       );
-      // The drawings stay with the element they were made for; what a new
-      // reading brings is its words.
+      // The drawings and the voice stay with the element they were made for;
+      // what a new reading brings is its words.
       const elements: StoryElement[] = command.elements.map((element) => {
         const before = held.get(element.id);
         if (!before) return element;
@@ -2142,6 +2150,11 @@ function applyOne(
           main: before.main,
           ...(before.turnaround !== undefined
             ? { turnaround: before.turnaround }
+            : {}),
+          // The voice is one of the reader's answers about a character, so a
+          // re-listing that says nothing of it leaves the voice standing.
+          ...(element.voice === undefined && before.voice !== undefined
+            ? { voice: before.voice }
             : {}),
         };
       });
@@ -2199,17 +2212,39 @@ function applyOne(
             i18n.t("errors:command.storyChapterNotFound"),
           );
       }
+      if (command.patch.voice !== undefined && command.patch.voice !== null)
+        checkVoiceProfile(command.patch.voice);
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
       ) as (keyof typeof command.patch)[]) {
-        (previous as Record<string, unknown>)[key] = element[key];
+        // An optional field the element does not hold is written back as an
+        // explicit clearing, so that undoing the first voice left on a
+        // character takes it off again rather than leaving it standing.
+        (previous as Record<string, unknown>)[key] = element[key] ?? null;
       }
       const next: StoryDocument = {
         ...story,
-        elements: story.elements.map((held) =>
-          held.id === command.elementId ? { ...held, ...command.patch } : held,
-        ),
+        elements: story.elements.map((held) => {
+          if (held.id !== command.elementId) return held;
+          // Field by field rather than a spread, because a voice may be taken
+          // away rather than set: a voice taken away is taken off the element
+          // rather than left holding nothing, since the two say different
+          // things about a character.
+          const merged: StoryElement = { ...held };
+          if (command.patch.name !== undefined)
+            merged.name = command.patch.name;
+          if (command.patch.kind !== undefined)
+            merged.kind = command.patch.kind;
+          if (command.patch.description !== undefined)
+            merged.description = command.patch.description;
+          if (command.patch.chapterIds !== undefined)
+            merged.chapterIds = command.patch.chapterIds;
+          if (command.patch.voice === null) delete merged.voice;
+          else if (command.patch.voice !== undefined)
+            merged.voice = command.patch.voice;
+          return merged;
+        }),
       };
       return {
         next: replaceStory(moka, next),
@@ -2219,6 +2254,27 @@ function applyOne(
             storyId: command.storyId,
             elementId: command.elementId,
             patch: previous,
+          },
+        ],
+      };
+    }
+
+    case "updateStoryNarrator": {
+      const story = storyOf(moka, command.storyId);
+      if (command.narrator !== null) checkVoiceProfile(command.narrator);
+      const previous = story.narrator ?? null;
+      const next: StoryDocument = { ...story };
+      // A telling left without a voice of its own leaves the field off rather
+      // than holding nothing: what it says then is that nobody has said.
+      if (command.narrator === null) delete next.narrator;
+      else next.narrator = command.narrator;
+      return {
+        next: replaceStory(moka, next),
+        inverse: [
+          {
+            type: "updateStoryNarrator",
+            storyId: command.storyId,
+            narrator: previous,
           },
         ],
       };
@@ -2389,14 +2445,31 @@ function applyOne(
       const story = storyOf(moka, command.storyId);
       const previous = slotOf(story, command.target);
       const slot = checkStorySlot(command.slot);
+      if (command.read !== undefined) checkVoiceRead(command.read);
+      // What the entry said before this write, so that the undo of replacing
+      // one reading with another brings the old words and their tone back.
+      const before =
+        command.target.kind === "lineVoice"
+          ? storyVoiceTake(story, command.target)
+          : undefined;
+      const read =
+        command.target.kind === "lineVoice"
+          ? (command.read ?? {
+              text: before?.text ?? "",
+              voice: before?.voice ?? "",
+            })
+          : undefined;
       return {
-        next: replaceStory(moka, withSlot(story, command.target, slot)),
+        next: replaceStory(moka, withSlot(story, command.target, slot, read)),
         inverse: [
           {
             type: "setStorySlot",
             storyId: command.storyId,
             target: command.target,
             slot: previous,
+            ...(before === undefined
+              ? {}
+              : { read: { text: before.text, voice: before.voice } }),
           },
         ],
       };
@@ -2415,6 +2488,16 @@ function applyOne(
         throw new CommandError(
           "TIMELINE_NOT_FOUND",
           i18n.t("errors:command.timelineNotFound"),
+        );
+      // A digest is what the room writes down about an assembly it made: a
+      // document carrying anything else is not one this pipeline wrote.
+      if (
+        typeof command.patch.assembledDigest === "string" &&
+        !/^[0-9a-f]{8}$/.test(command.patch.assembledDigest)
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyDigestShape"),
         );
       const previous: typeof command.patch = {};
       const edit = { ...story.edit };
@@ -2545,6 +2628,13 @@ function slotOf(story: StoryDocument, target: StorySlotTarget): StorySlot {
         actOf(chapterOf(story, target.chapterId), target.actId),
         target.keyframeId,
       ).art;
+    case "lineVoice": {
+      const keyframe = keyframeOf(
+        actOf(chapterOf(story, target.chapterId), target.actId),
+        target.keyframeId,
+      );
+      return voiceTakeOf(keyframe, target.lineId)?.slot ?? emptyStorySlot();
+    }
     case "keyframeVideo":
       return keyframeOf(
         actOf(chapterOf(story, target.chapterId), target.actId),
@@ -2572,6 +2662,7 @@ function withSlot(
   story: StoryDocument,
   target: StorySlotTarget,
   slot: StorySlot,
+  read?: { text: string; voice: string },
 ): StoryDocument {
   const write = (chapters: StoryChapter[]): StoryDocument => ({
     ...story,
@@ -2664,7 +2755,73 @@ function withSlot(
           };
         }),
       );
+    case "lineVoice":
+      return write(
+        story.chapters.map((chapter) => {
+          if (chapter.id !== target.chapterId) return chapter;
+          return {
+            ...chapter,
+            acts: chapter.acts.map((act) => {
+              if (act.id !== target.actId) return act;
+              return {
+                ...act,
+                keyframes: act.keyframes.map((keyframe) =>
+                  keyframe.id === target.keyframeId
+                    ? withVoiceTake(keyframe, target.lineId, slot, read)
+                    : keyframe,
+                ),
+              };
+            }),
+          };
+        }),
+      );
   }
+}
+
+/**
+ * One line's take kept on its shot, whole.
+ *
+ * A slot that has come to hold nothing takes the whole entry with it: the two
+ * would say different things about a line nobody has read yet, and the undo of
+ * the first reading has to put the document back the way it was — without the
+ * entry, not with an empty one. What the line was read as is kept beside the
+ * takes, so the card can say the words the recording holds even after the
+ * line beside them was rewritten.
+ */
+function withVoiceTake(
+  keyframe: StoryKeyframe,
+  lineId: string,
+  slot: StorySlot,
+  read?: { text: string; voice: string },
+): StoryKeyframe {
+  const held = keyframe.voices ?? [];
+  const before = voiceTakeOf(keyframe, lineId);
+  const rest = held.filter((take) => take.lineId !== lineId);
+  if (slot.takes.length === 0) {
+    if (before === undefined) return keyframe;
+    const without: StoryKeyframe = { ...keyframe };
+    if (rest.length === 0) delete without.voices;
+    else without.voices = rest;
+    return without;
+  }
+  // The takes stand in the order their lines do on the board, so two rooms
+  // holding the same reading write the same document; a take whose line has
+  // left the shot is not on the board to be ordered by, and comes last.
+  const order = new Map(keyframe.dialogue.map((line, at) => [line.id, at]));
+  const voices = [
+    ...rest,
+    {
+      lineId,
+      text: read?.text ?? before?.text ?? "",
+      voice: read?.voice ?? before?.voice ?? "",
+      slot,
+    },
+  ].sort(
+    (one, other) =>
+      (order.get(one.lineId) ?? Number.MAX_SAFE_INTEGER) -
+      (order.get(other.lineId) ?? Number.MAX_SAFE_INTEGER),
+  );
+  return { ...keyframe, voices };
 }
 
 /**
@@ -2733,6 +2890,60 @@ function checkActSound(sound: StoryAct["sound"]) {
     );
 }
 
+/**
+ * The voice a character or a narrator is given: a model and a tone named
+ * within reason, and a pace and pitch the providers all accept.
+ */
+function checkVoiceProfile(voice: StoryVoiceProfile) {
+  if (
+    voice.model.length > VOICE_MODEL_MAX ||
+    voice.voice.length > VOICE_NAME_MAX ||
+    (voice.instructions?.length ?? 0) > VOICE_INSTRUCTIONS_MAX
+  )
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyVoiceTooLong"),
+    );
+  if (
+    voice.rate !== undefined &&
+    (!Number.isFinite(voice.rate) ||
+      voice.rate < VOICE_RATE_MIN ||
+      voice.rate > VOICE_RATE_MAX)
+  )
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyVoiceRate"),
+    );
+  if (
+    voice.pitch !== undefined &&
+    (!Number.isFinite(voice.pitch) ||
+      voice.pitch < VOICE_PITCH_MIN ||
+      voice.pitch > VOICE_PITCH_MAX)
+  )
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyVoicePitch"),
+    );
+}
+
+/**
+ * What a line was read as, held to the bounds the line itself is: the words a
+ * recording holds are as long as the words a shot may be written with, and the
+ * tone is a name like any other.
+ */
+function checkVoiceRead(read: { text: string; voice: string }) {
+  if (read.text.length > MAX_DIALOGUE_LINE_LENGTH)
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyDialogueTooLong"),
+    );
+  if (read.voice.length > VOICE_NAME_MAX)
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyVoiceTooLong"),
+    );
+}
+
 /** What may be said in one shot: a few lines, each of them with words in it. */
 function checkDialogue(lines: StoryKeyframe["dialogue"]) {
   if (lines.length > MAX_DIALOGUE_LINES_PER_KEYFRAME)
@@ -2740,12 +2951,21 @@ function checkDialogue(lines: StoryKeyframe["dialogue"]) {
       "VALIDATION_FAILED",
       i18n.t("errors:command.storyDialogueTooLong"),
     );
+  const seen = new Set<string>();
   for (const line of lines) {
     if (line.text.trim().length === 0)
       throw new CommandError(
         "VALIDATION_FAILED",
         i18n.t("errors:command.storyDialogueEmpty"),
       );
+    // A line is what the things kept for it are filed under, so two lines
+    // sharing a name would be two lines with one take between them.
+    if (line.id.trim().length === 0 || seen.has(line.id))
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:command.storyDialogueUnnamed"),
+      );
+    seen.add(line.id);
     if (
       line.text.length > MAX_DIALOGUE_LINE_LENGTH ||
       line.speaker.length === 0

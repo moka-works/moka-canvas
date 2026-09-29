@@ -56,6 +56,7 @@ export function RemoveStoryDialog({
             acts: cost.acts,
             pictures: cost.pictures,
             videos: cost.videos,
+            voices: cost.voices,
           })}
         </p>
         <p className="dialog-note">{t("story:remove.keeps")}</p>

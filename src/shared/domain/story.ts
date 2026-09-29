@@ -16,6 +16,7 @@ import {
   createKeyframe,
   emptyStorySlot,
 } from "./factories";
+import { newId } from "./ids";
 import type {
   AssetId,
   StoryAct,
@@ -33,6 +34,8 @@ import type {
   StorySlotTarget,
   StoryShotSize,
   StoryTake,
+  StoryVoiceProfile,
+  StoryVoiceTake,
 } from "./types";
 
 // -----------------------------------------------------------------------------
@@ -676,7 +679,13 @@ function mergeKeyframes(
 ): StoryKeyframe[] {
   return proposed.map((draft, index) => {
     const held = existing[index];
-    const dialogue: StoryDialogueLine[] = draft.dialogue.map((line) => ({
+    // A line is paired with the one that stood in its place, the same way a
+    // shot is: the words may be rewritten without the take that read them
+    // being forgotten, and a line added in the middle is the only one that
+    // arrives unnamed. The recorded words are what says the take is out of
+    // date afterwards, not the name.
+    const dialogue: StoryDialogueLine[] = draft.dialogue.map((line, at) => ({
+      id: held?.dialogue[at]?.id ?? newId(),
       ...(line.characterId !== undefined
         ? { characterId: line.characterId }
         : {}),
@@ -793,6 +802,118 @@ export function elementOf(
   return story.elements.find((element) => element.id === id);
 }
 
+/** Whether the reader has said anything at all about a voice. */
+export function voiceNamed(voice: StoryVoiceProfile | undefined): boolean {
+  return (
+    voice !== undefined &&
+    (voice.model !== "" ||
+      voice.voice !== "" ||
+      voice.rate !== undefined ||
+      voice.pitch !== undefined ||
+      (voice.instructions ?? "") !== "")
+  );
+}
+
+/**
+ * The voice a character's lines are read in, resolved layer by layer.
+ *
+ * The character's own voice comes first, field by field rather than whole;
+ * then the telling's narrator; then, through `ask`, what this machine reads
+ * its lines in when the story says nothing. What is still empty is the
+ * provider's own default tone, and an empty model means whoever the
+ * deployment's speech default names — the chain the room shows on the cards
+ * is this one, so a card and the ask it stands for cannot disagree.
+ */
+export function voiceFor(
+  story: StoryDocument,
+  characterId: string | undefined,
+  ask: { model?: string } = {},
+): StoryVoiceProfile {
+  const own =
+    characterId === undefined
+      ? undefined
+      : elementOf(story, characterId)?.voice;
+  const layers = [own, story.narrator];
+  const pick = <K extends keyof StoryVoiceProfile>(
+    field: K,
+  ): StoryVoiceProfile[K] | undefined => {
+    for (const layer of layers) {
+      const held = layer?.[field];
+      if (held !== undefined && held !== "") return held;
+    }
+    return undefined;
+  };
+  const voice: StoryVoiceProfile = {
+    model: pick("model") ?? ask.model ?? "",
+    voice: pick("voice") ?? "",
+  };
+  const rate = pick("rate");
+  const pitch = pick("pitch");
+  const instructions = pick("instructions");
+  if (rate !== undefined) voice.rate = rate;
+  if (pitch !== undefined) voice.pitch = pitch;
+  if (instructions !== undefined) voice.instructions = instructions;
+  return voice;
+}
+
+/** How many lines of the whole telling a character is given to say. */
+export function lineCountFor(story: StoryDocument, elementId: string): number {
+  let count = 0;
+  for (const chapter of story.chapters)
+    for (const act of chapter.acts)
+      for (const keyframe of act.keyframes)
+        for (const line of keyframe.dialogue)
+          if (line.characterId === elementId) count += 1;
+  return count;
+}
+
+/** The take a shot keeps of one line read aloud, by the line's own name. */
+export function voiceTakeOf(
+  keyframe: StoryKeyframe,
+  lineId: string,
+): StoryVoiceTake | undefined {
+  return keyframe.voices?.find((take) => take.lineId === lineId);
+}
+
+/**
+ * Whether the board holds a reading of this line, of the words it has now.
+ *
+ * A line read before it was rewritten is not read as it stands: what the take
+ * holds is the older words, and saying so is what lets a reader notice rather
+ * than wonder why the voice does not match the line.
+ */
+export function voiceHoldsLine(
+  keyframe: StoryKeyframe,
+  line: StoryDialogueLine,
+): boolean {
+  const take = voiceTakeOf(keyframe, line.id);
+  return take !== undefined && take.text === line.text.trim();
+}
+
+/** The take a line-voice target names, if the story still holds the shot. */
+export function storyVoiceTake(
+  story: StoryDocument,
+  target: Extract<StorySlotTarget, { kind: "lineVoice" }>,
+): StoryVoiceTake | undefined {
+  const keyframe = keyframeAt(story, target);
+  if (keyframe === undefined) return undefined;
+  return voiceTakeOf(keyframe, target.lineId);
+}
+
+/** The first line of the telling a character is given, words and all. */
+export function firstLineOf(
+  story: StoryDocument,
+  elementId: string,
+): StoryDialogueLine | undefined {
+  for (const chapter of story.chapters)
+    for (const act of chapter.acts)
+      for (const keyframe of act.keyframes)
+        for (const line of keyframe.dialogue)
+          if (line.characterId === elementId && line.text.trim() !== "")
+            return line;
+  return undefined;
+}
+
 /**
  * The act's cast, as the story holds it: the elements that are still there,
  * and the ids of the references that are not.
@@ -886,6 +1007,8 @@ export function targetKey(target: StorySlotTarget): string {
       return `actVideo:${target.chapterId}:${target.actId}`;
     case "actVoice":
       return `actVoice:${target.chapterId}:${target.actId}`;
+    case "lineVoice":
+      return `lineVoice:${target.chapterId}:${target.actId}:${target.keyframeId}:${target.lineId}`;
     case "actMusic":
       return `actMusic:${target.chapterId}:${target.actId}`;
     case "keyframeVideo":
@@ -940,6 +1063,14 @@ export function slotAt(
       const act = actAt(story, target.chapterId, target.actId);
       if (act === undefined) return undefined;
       return act.voice ?? emptyStorySlot();
+    }
+    case "lineVoice": {
+      // The line's take is read off the shot, not off the line: a line edited
+      // or taken out of the board leaves its take where it was, so that what
+      // was said is not lost by what was said afterwards.
+      const keyframe = keyframeAt(story, target);
+      if (keyframe === undefined) return undefined;
+      return voiceTakeOf(keyframe, target.lineId)?.slot ?? emptyStorySlot();
     }
     case "actMusic": {
       const act = actAt(story, target.chapterId, target.actId);
@@ -1069,6 +1200,7 @@ export function storyDeleteCost(story: StoryDocument): {
   acts: number;
   pictures: number;
   videos: number;
+  voices: number;
 } {
   let acts = 0;
   let pictures = story.elements.reduce(
@@ -1077,17 +1209,22 @@ export function storyDeleteCost(story: StoryDocument): {
     0,
   );
   let videos = 0;
+  let voices = 0;
   for (const chapter of story.chapters) {
     for (const act of chapter.acts) {
       acts += 1;
       videos += act.video.takes.length;
+      voices += act.voice?.takes.length ?? 0;
       for (const keyframe of act.keyframes) {
         pictures += keyframe.art.takes.length;
         videos += keyframe.video.takes.length;
+        for (const take of keyframe.voices ?? []) {
+          voices += take.slot.takes.length;
+        }
       }
     }
   }
-  return { chapters: story.chapters.length, acts, pictures, videos };
+  return { chapters: story.chapters.length, acts, pictures, videos, voices };
 }
 
 /**

@@ -15,6 +15,7 @@
 
 import { CommandError } from "../../shared/domain/commands";
 import { MAX_CLIPS_PER_TIMELINE } from "../../shared/domain/constants";
+import { fnv1a } from "../../shared/domain/digest";
 import {
   createClipFromAsset,
   createTextClip,
@@ -28,6 +29,7 @@ import {
   currentTake,
   takeFile,
   timelineSizeForAspect,
+  voiceTakeOf,
 } from "../../shared/domain/story";
 import type {
   AssetId,
@@ -44,6 +46,7 @@ import type {
   TimelineTrack,
 } from "../../shared/domain/types";
 import { i18n } from "../../shared/i18n";
+import { planDubbing, spokenLines, type DubCue } from "./dubbing";
 
 /** How a finished cut is framed, whichever telling it came from. */
 const ASSEMBLY_FPS = 30;
@@ -131,13 +134,16 @@ function lengthOf(resource: ResourceEntry, plannedMs: number): number {
 }
 
 /**
- * The sound of each act: the voice-over and the score, where they begin.
+ * The score of each act, and the older whole-act readings still in use.
  *
- * Sound is cued to the act rather than to the shot: an act's lines were asked
- * for as one piece, so it goes down at the act's own beginning and runs as long
- * as it runs, whatever the shots under it are doing. An act whose first shot
- * never made it has nowhere to put the voice — a voice over nothing would be a
- * piece of the telling the film has not got to yet — so it is left out.
+ * A telling's lines are read one by one and cued to their own shots (see
+ * {@link planDubbing}); what is left for the act itself is the score, and the
+ * reading of the whole act made before its lines had voices of their own — a
+ * take an act still holds but no line does. The two never both sound: once any
+ * line of the act has been read, the lines are what the act says. An act whose
+ * first shot never made it has nowhere to put its sound — a voice over nothing
+ * would be a piece of the telling the film has not got to yet — so it is left
+ * out.
  */
 function soundCues(
   story: StoryDocument,
@@ -163,6 +169,7 @@ function soundCues(
       const startMs = starts.get(act.id);
       if (startMs === undefined) continue;
       for (const kind of ["voice", "music"] as const) {
+        if (kind === "voice" && readPerLine(act)) continue;
         const take = currentTake(
           (kind === "voice" ? act.voice : act.music) ?? emptyStorySlot(),
         );
@@ -172,6 +179,15 @@ function soundCues(
     }
   }
   return cues;
+}
+
+/** Whether an act's lines are read one by one, which is how a telling sounds now. */
+function readPerLine(act: StoryAct): boolean {
+  return act.keyframes.some((keyframe) =>
+    spokenLines(keyframe).some(
+      (line) => voiceTakeOf(keyframe, line.id) !== undefined,
+    ),
+  );
 }
 
 /**
@@ -190,7 +206,7 @@ function soundRows(
   added: TimelineTrack[];
 } {
   const voiced = story.chapters.some((chapter) =>
-    chapter.acts.some((act) => act.voice !== undefined),
+    chapter.acts.some((act) => act.voice !== undefined || readPerLine(act)),
   );
   const scored = story.chapters.some((chapter) =>
     chapter.acts.some((act) => act.music !== undefined),
@@ -504,8 +520,44 @@ function layDown(
     });
   }
 
-  // The voice and the score, cued to the act they belong to rather than to the
-  // shots under them: the whole act's lines were asked for as one piece.
+  // The lines, each cued inside the shot it is said in: a telling is read one
+  // line at a time, so what lies over a shot is what that shot says. A line
+  // that runs past its window is laid as far as it goes rather than cut: the
+  // reader is told, and the words are theirs to shorten.
+  const dubbing = planDubbing(
+    story,
+    plan.units,
+    (assetId) => findResource(moka, assetId)?.probe?.durationMs,
+  );
+  if (options.rows.voice !== undefined) {
+    for (const cue of dubbing.cues) {
+      const resource = findResource(moka, cue.assetId);
+      if (resource === undefined) continue;
+      const clip = createClipFromAsset(
+        resource,
+        options.rows.voice,
+        cue.startMs,
+      );
+      clips.push({
+        ...clip,
+        kind: "audio",
+        durationMs: cue.durationMs,
+        inPointMs: 0,
+        // What is played: the file's own length, or — unmeasured — as much of
+        // it as the window holds.
+        outPointMs: cue.materialMs ?? cue.durationMs,
+        speed: cue.speed,
+      });
+      clipByAct.push({
+        actId: cue.actId,
+        keyframeId: cue.keyframeId,
+        clipId: clip.id,
+      });
+    }
+  }
+
+  // The score, and the older whole-act readings of tellings that have not been
+  // read line by line: cued to the act, since the whole of it is what they are.
   for (const cue of soundCues(story, plan)) {
     const trackId =
       cue.kind === "voice" ? options.rows.voice : options.rows.music;
@@ -524,7 +576,7 @@ function layDown(
   }
 
   if (options.withSubtitles && textTrack !== undefined) {
-    for (const line of captions(story, plan, textTrack.id)) {
+    for (const line of captions(story, plan, dubbing.cues, textTrack.id)) {
       clips.push(line.clip);
       clipByAct.push({
         actId: line.actId,
@@ -542,23 +594,28 @@ function layDown(
  * Every line of the telling, as a caption inside the shot it is said in.
  *
  * A caption sits where its shot does, and several lines of one shot share the
- * length that shot was planned to run for. The plan is deliberate: a clip that
- * came back longer than it was asked for must not drag the last line of a shot
- * into the mouth of the next one.
+ * length that shot was planned to run for. A line that has been read aloud sits
+ * where its reading does and lasts as long as it does — the words on screen and
+ * the words in the ear are the same words — and one too long for its share of
+ * the shot keeps it to the end of what was said rather than vanishing under the
+ * voice. The plan is deliberate: a clip that came back longer than it was asked
+ * for must not drag the last line of a shot into the mouth of the next one.
  */
 function captions(
   story: StoryDocument,
   plan: AssemblyPlan,
+  cues: DubCue[],
   trackId: string,
 ): Array<{ actId: string; clip: TimelineClip }> {
   const lines: Array<{ actId: string; clip: TimelineClip }> = [];
+  const cued = new Map(cues.map((cue) => [cue.lineId, cue]));
   for (const chapter of story.chapters) {
     for (const act of chapter.acts) {
-      const starts = shotStarts(story, act, plan);
+      const starts = shotWindows(story, act, plan.units);
       for (const keyframe of act.keyframes) {
-        const start = starts.get(keyframe.id);
+        const window = starts.get(keyframe.id);
         const told = keyframe.dialogue;
-        if (start === undefined || told.length === 0) continue;
+        if (window === undefined || told.length === 0) continue;
         const share = Math.round(keyframe.durationMs / told.length);
         told.forEach((line, at) => {
           const words =
@@ -568,9 +625,18 @@ function captions(
                   speaker: line.speaker,
                   text: line.text,
                 });
+          const held = cued.get(line.id);
+          const startMs = held?.startMs ?? window.startMs + share * at;
+          const endMs =
+            held === undefined
+              ? window.startMs + share * (at + 1)
+              : Math.max(
+                  held.startMs + held.durationMs,
+                  window.startMs + share * (at + 1),
+                );
           lines.push({
             actId: act.id,
-            clip: createTextClip(words, trackId, start + share * at, share),
+            clip: createTextClip(words, trackId, startMs, endMs - startMs),
           });
         });
       }
@@ -580,34 +646,45 @@ function captions(
 }
 
 /**
- * Where each shot of an act begins on the timeline.
+ * Where each shot of an act lands on the timeline, and how long it holds it.
  *
  * A shot made by act has its own place; a shot made by keyframe begins where
  * its own clip does. A shot the plan left out is not in the answers, and its
  * words are not placed either — a caption with no picture under it is worse
  * than a missing one.
  */
-function shotStarts(
+export function shotWindows(
   story: StoryDocument,
   act: StoryAct,
-  plan: AssemblyPlan,
-): Map<string, number> {
-  const starts = new Map<string, number>();
+  units: AssemblyUnit[],
+): Map<string, { startMs: number; durationMs: number }> {
+  const windows = new Map<string, { startMs: number; durationMs: number }>();
   const perShot = story.shotGranularity === "keyframe";
-  const actUnit = plan.units.find(
+  const actUnit = units.find(
     (unit) => unit.actId === act.id && unit.keyframeId === undefined,
   );
   let planned = 0;
   for (const keyframe of act.keyframes) {
     if (perShot) {
-      const unit = plan.units.find((held) => held.keyframeId === keyframe.id);
-      if (unit !== undefined) starts.set(keyframe.id, unit.startMs);
+      const unit = units.find((held) => held.keyframeId === keyframe.id);
+      if (unit !== undefined) {
+        windows.set(keyframe.id, {
+          startMs: unit.startMs,
+          durationMs: unit.durationMs,
+        });
+      }
     } else if (actUnit !== undefined) {
-      starts.set(keyframe.id, actUnit.startMs + planned);
+      // An act filmed in one piece is cut where its board says its shots end:
+      // the window a line is read in is the shot's own, whether or not the
+      // material came back exactly as long as it was asked for.
+      windows.set(keyframe.id, {
+        startMs: actUnit.startMs + planned,
+        durationMs: keyframe.durationMs,
+      });
     }
     planned += keyframe.durationMs;
   }
-  return starts;
+  return windows;
 }
 
 /**
@@ -631,4 +708,84 @@ export function assemblySummary(
       seconds: (plan.totalPlannedMs / 1000).toFixed(1),
     },
   );
+}
+
+/**
+ * What an assembly would lay down, counted: the readings and the score.
+ *
+ * The card says what a film will carry before it is made, and the numbers come
+ * from the same plan the assembly itself is made of, so a line added since the
+ * last assembly is counted before anybody presses anything.
+ */
+export function assemblyCarries(
+  story: StoryDocument,
+  moka: MokaFile,
+  plan: AssemblyPlan,
+): { voices: number; music: number } {
+  const dubbing = planDubbing(
+    story,
+    plan.units,
+    (assetId) => findResource(moka, assetId)?.probe?.durationMs,
+  );
+  return {
+    voices: dubbing.cues.length,
+    music: soundCues(story, plan).filter((cue) => cue.kind === "music").length,
+  };
+}
+
+/**
+ * What an assembly would lay down, as one short reading of it.
+ *
+ * Every clip the plan would write is written out in the order it lands — the
+ * pictures, the readings, the score, the words — and the whole of it is hashed:
+ * two assemblies with the same digest would put the same film on the timeline.
+ * What a reader does to that timeline afterwards is theirs and is not in here,
+ * so the digest can say whether the film is behind the telling without saying
+ * anything about the cutting room.
+ */
+export function assemblyDigest(
+  story: StoryDocument,
+  moka: MokaFile,
+  plan: AssemblyPlan,
+  options: { withSubtitles: boolean; timelineId?: string },
+): string {
+  const size = timelineSizeForAspect(story.brief.aspect);
+  const rows = [
+    "assembly:v1",
+    `timeline:${options.timelineId ?? "new"}`,
+    `frame:${size.width}x${size.height}@${ASSEMBLY_FPS}`,
+    `subtitles:${options.withSubtitles ? "on" : "off"}`,
+  ];
+  for (const unit of plan.units) {
+    rows.push(
+      `unit:${unit.actId}:${unit.keyframeId ?? ""}:${unit.startMs}:${unit.durationMs}:${unit.assetId}`,
+    );
+  }
+  // The readings, which are the plan's own arithmetic read a second time: the
+  // same windows, the same speeds, the same files, said as text.
+  const dubbing = planDubbing(
+    story,
+    plan.units,
+    (assetId) => findResource(moka, assetId)?.probe?.durationMs,
+  );
+  for (const cue of dubbing.cues) {
+    rows.push(
+      `voice:${cue.actId}:${cue.keyframeId}:${cue.lineId}:${cue.startMs}:${cue.durationMs}:${cue.speed}:${cue.assetId}`,
+    );
+  }
+  for (const cue of soundCues(story, plan)) {
+    rows.push(
+      `${cue.kind}:${cue.actId}::${cue.startMs}:${cue.take.assetIds[0]}`,
+    );
+  }
+  if (options.withSubtitles) {
+    // The words are the captions' own; the row only needs where each of them
+    // begins and how long it holds, which is what the captions decide.
+    for (const line of captions(story, plan, dubbing.cues, "digest")) {
+      rows.push(
+        `caption:${line.actId}:${line.clip.startMs}:${line.clip.durationMs}:${line.clip.text?.content ?? ""}`,
+      );
+    }
+  }
+  return fnv1a(rows.join("\n"));
 }

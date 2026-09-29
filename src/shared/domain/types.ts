@@ -677,10 +677,16 @@ export type StoryFilmRole = (typeof STORY_FILM_ROLES)[number];
 /**
  * A line of dialogue.
  *
+ * A line is known by a name of its own because things are kept for one line at
+ * a time: the take a line was read aloud in, whether it is being read just
+ * now, and whether the words have been edited since. Position would not do —
+ * a line inserted above would move every take below it onto the wrong words.
+ *
  * The speaker's name is kept beside the reference, so a line still reads after
  * its character has been taken out of the story.
  */
 export interface StoryDialogueLine {
+  id: string;
   characterId?: string;
   speaker: string;
   text: string;
@@ -705,6 +711,13 @@ export interface StoryKeyframe {
   art: StorySlot;
   /** This shot's own clip, when the story is boarded a shot at a time. */
   video: StorySlot;
+  /**
+   * The lines of this shot read aloud, each in its own speaker's voice. A
+   * line that was read then edited keeps its take — it is what was said, and
+   * the card says so — and a line taken out of the shot leaves its take an
+   * orphan, which the assembly no longer lays down.
+   */
+  voices?: StoryVoiceTake[];
 }
 
 /** What an act sounds like. */
@@ -753,6 +766,28 @@ export interface StoryChapter {
   acts: StoryAct[];
 }
 
+/**
+ * The voice one character — or the telling itself — is read in.
+ *
+ * A field left empty is handed to the next voice behind it: the character's own
+ * settings stand over the telling's, which stand over what the machine is set
+ * to, so naming only a voice on a character still says what is wanted of them.
+ * The model is a configuration id on this machine, kept the way a card's ask
+ * keeps the one it was asked of: a model this machine has not got is not a
+ * reason to lose the voice, only to say so and read with what is behind it.
+ */
+export interface StoryVoiceProfile {
+  /** A speech model configuration id; empty hands the choice to the next voice. */
+  model: string;
+  /** The voice the provider knows — `longxiaochun`, `alloy`; empty for its default. */
+  voice: string;
+  /** How fast and how high, where this voice is not the machine's own. */
+  rate?: number;
+  pitch?: number;
+  /** How this one reads, on top of the telling's own direction. */
+  instructions?: string;
+}
+
 /** Something the story is made of: a character, a place, a thing. */
 export interface StoryElement {
   id: string;
@@ -764,6 +799,8 @@ export interface StoryElement {
   main: StorySlot;
   /** The full-length turn-around view, which only a character is drawn with. */
   turnaround?: StorySlot;
+  /** The voice this one speaks in; only a character is read aloud. */
+  voice?: StoryVoiceProfile;
 }
 
 export const STORY_SHOT_GRANULARITIES = ["act", "keyframe"] as const;
@@ -781,6 +818,16 @@ export interface StoryEdit {
    * story's to take away.
    */
   clipByAct?: Array<{ actId: string; keyframeId?: string; clipId: ClipId }>;
+  /**
+   * What the timeline was laid down from, as one short reading of it.
+   *
+   * The telling changes after it is assembled — a line re-read, a shot refilmed
+   * — and what is on the timeline is then behind it. This is how the room
+   * notices: the film card plans the assembly the telling would make now and
+   * compares. A document written before this existed carries none, which reads
+   * as "behind", and the next assembly writes it.
+   */
+  assembledDigest?: string;
 }
 
 export interface StoryDocument {
@@ -809,6 +856,11 @@ export interface StoryDocument {
    * settled one is open, and nothing else opens it.
    */
   confirmedSteps: StoryStep[];
+  /**
+   * The telling's own voice: the one a line is read in when its speaker is not
+   * a character of the cast, and what every character's own voice stands over.
+   */
+  narrator?: StoryVoiceProfile;
   edit: StoryEdit;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
@@ -837,8 +889,34 @@ export type StorySlotTarget =
     }
   /** The act's lines read aloud — one clip for the whole act, not one a shot. */
   | { kind: "actVoice"; chapterId: string; actId: string }
+  /** One line of dialogue read on its own, in the voice its speaker has. */
+  | {
+      kind: "lineVoice";
+      chapterId: string;
+      actId: string;
+      keyframeId: string;
+      lineId: string;
+    }
   /** The music and sound under an act, asked for as one piece. */
   | { kind: "actMusic"; chapterId: string; actId: string };
+
+/**
+ * One line of dialogue read aloud, and what it says.
+ *
+ * Kept per line rather than per act because every character speaks in their
+ * own voice: the words as they were read — which is how a line edited since
+ * is told from one that has not been — and the tone it was read in, so the
+ * card can say whose voice it is without reading the voice chain again.
+ */
+export interface StoryVoiceTake {
+  /** The line it reads, by the line's own name. */
+  lineId: string;
+  /** The words the ask carried, which the line's current words are read against. */
+  text: string;
+  /** The tone it was read in; empty is the model's own default. */
+  voice: string;
+  slot: StorySlot;
+}
 
 /**
  * Something pointing at a file, told apart by what letting the file go would
@@ -891,6 +969,8 @@ export interface StoryElementPatch {
   description?: string;
   /** The chapters it was noticed in, whole; a chapter the story has not got is refused. */
   chapterIds?: string[];
+  /** The voice it speaks in, whole; a null takes it away. */
+  voice?: StoryVoiceProfile | null;
 }
 
 /**
@@ -949,6 +1029,7 @@ export interface StoryEditPatch {
     keyframeId?: string;
     clipId: ClipId;
   }> | null;
+  assembledDigest?: string | null;
 }
 
 export interface NodePatch {
@@ -1271,6 +1352,17 @@ export type DocumentCommand =
       patch: StoryElementPatch;
     }
   /**
+   * The telling's own voice, whole, or nothing where it had one.
+   *
+   * Kept on the telling rather than on the cast because it belongs to nobody:
+   * a line whose speaker is not a character of the story is read in this one.
+   */
+  | {
+      type: "updateStoryNarrator";
+      storyId: string;
+      narrator: StoryVoiceProfile | null;
+    }
+  /**
    * One episode's board, whole.
    *
    * An act arriving with a known id keeps its frames, its clip, and the
@@ -1311,6 +1403,12 @@ export type DocumentCommand =
       storyId: string;
       target: StorySlotTarget;
       slot: StorySlot;
+      /**
+       * What a line was read as, for a `lineVoice` target: the words the ask
+       * carried, and the tone it was read in. Left off for every other place,
+       * which keeps a drawing — no words of its own to keep.
+       */
+      read?: { text: string; voice: string };
     }
   /** What the story was assembled into, whole. */
   | { type: "setStoryEdit"; storyId: string; patch: StoryEditPatch };

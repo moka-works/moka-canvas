@@ -10,27 +10,36 @@ import {
   STORY_CAMERA_MOVES,
   STORY_FILM_ROLES,
   STORY_SHOT_SIZES,
+  actCast,
   createKeyframe,
   currentTake,
   keyframeAt,
+  newId,
   slotWithoutTake,
   slotWithCurrent,
   storyMentions,
+  voiceTakeOf,
   type StoryGuess,
 } from "../../../shared/domain";
 import type {
   StoryAct,
   StoryDialogueLine,
   StoryDocument,
+  StoryElement,
   StoryFilmRole,
+  MokaFile,
   StoryKeyframe,
   StoryKeyframePatch,
   StorySlot,
+  StoryVoiceTake,
 } from "../../../shared/domain/types";
 import { assetUrl } from "../../../api/assets";
+import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
 import { storyKeyframePromptParts } from "../../../shared/prompts";
 import { execute } from "../../editor/commands/execute";
+import { planAssembly } from "../assembly";
+import { planDubbing, type DubCue } from "../dubbing";
 import {
   drawnFrames,
   filmRoleOf,
@@ -39,7 +48,10 @@ import {
   planKeyframeVideos,
   settledRoleFrames,
 } from "../jobs/plan";
-import { useStoryRun } from "../stores/storyJobStore";
+import { useProjectStore } from "../../editor/stores/projectStore";
+import { planLineVoiceAsks } from "../jobs/plan";
+import { useStoryRun, useStoryWavesRun } from "../stores/storyJobStore";
+import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
@@ -72,6 +84,7 @@ export function KeyframeTable({
   guesses,
   busyKeyframes,
   busyClips,
+  busyLines,
 }: {
   story: StoryDocument;
   chapterId: string;
@@ -82,6 +95,8 @@ export function KeyframeTable({
   busyKeyframes: Set<string>;
   /** The shots being filmed just now, by the place's own name. */
   busyClips: Set<string>;
+  /** The lines being read just now, by the line's own name. */
+  busyLines: Set<string>;
 }) {
   const { t } = useTranslation();
   const [dialogueAt, setDialogueAt] = useState<string | null>(null);
@@ -122,6 +137,7 @@ export function KeyframeTable({
             <KeyframeRow
               act={act}
               busy={busyKeyframes.has(keyframe.id)}
+              busyLines={busyLines}
               clipBusy={busyClips.has(keyframe.id)}
               chapterId={chapterId}
               dialogueOpen={dialogueAt === keyframe.id}
@@ -230,6 +246,7 @@ function KeyframeRow({
   roleLocked,
   rolePairable,
   busy,
+  busyLines,
   clipBusy,
   dialogueOpen,
   onDialogue,
@@ -246,6 +263,8 @@ function KeyframeRow({
   /** Whether pairing with the frame after it is still on offer. */
   rolePairable: boolean;
   busy: boolean;
+  /** The lines of this act being read just now, by the line's own name. */
+  busyLines: Set<string>;
   /** Whether this shot's own clip is being made just now. */
   clipBusy: boolean;
   dialogueOpen: boolean;
@@ -535,11 +554,17 @@ function KeyframeRow({
         <tr className="story-dialogue-row">
           <td colSpan={perShot ? 10 : 9}>
             <DialogueEditor
+              act={act}
+              busyLines={busyLines}
+              chapterId={chapterId}
+              characters={actCast(story, act).characters}
+              keyframe={keyframe}
               lines={keyframe.dialogue}
               onDone={(dialogue) => {
                 onDialogue();
                 write({ dialogue });
               }}
+              story={story}
             />
           </td>
         </tr>
@@ -732,81 +757,320 @@ function Cell({
  * closed, so editing four lines of a shot is one step of the history rather
  * than one per keystroke.
  */
+/**
+ * Who says a line: a character of this act, or somebody the cast has not got.
+ *
+ * A line's picture and its voice are both found by the character, so the act's
+ * cast is a list to pick from rather than a name to type — and a name typed
+ * anyway is read against the cast as it is typed, so a line written before its
+ * character had a card still finds one. Choosing the off-screen option keeps
+ * whatever name is written there: a line nobody in the cast says is read in
+ * the telling's own voice.
+ */
+function SpeakerField({
+  characters,
+  index,
+  line,
+  onWrite,
+}: {
+  /** The act's characters, still in the story. */
+  characters: StoryElement[];
+  index: number;
+  line: StoryDialogueLine;
+  onWrite: (patch: Partial<StoryDialogueLine>) => void;
+}) {
+  const { t } = useTranslation();
+  const chosen = characters.find((element) => element.id === line.characterId);
+
+  return (
+    <>
+      <select
+        aria-label={t("story:storyboard.speakerRole")}
+        className="story-line-role"
+        data-testid={`story-line-role-${index}`}
+        onChange={(event) => {
+          const element = characters.find(
+            (held) => held.id === event.target.value,
+          );
+          onWrite(
+            element === undefined
+              ? { characterId: undefined }
+              : { characterId: element.id, speaker: element.name },
+          );
+        }}
+        value={chosen?.id ?? ""}
+      >
+        <option value="">{t("story:storyboard.offScreen")}</option>
+        {characters.map((element) => (
+          <option key={element.id} value={element.id}>
+            {element.name}
+          </option>
+        ))}
+      </select>
+      <input
+        aria-label={t("story:storyboard.speakerName")}
+        data-testid={`story-line-speaker-${index}`}
+        maxLength={40}
+        onChange={(event) => {
+          const name = event.target.value;
+          const matched = characters.find((held) => held.name === name.trim());
+          onWrite({ speaker: name, characterId: matched?.id });
+        }}
+        placeholder={t("story:storyboard.offScreen")}
+        value={line.speaker}
+      />
+    </>
+  );
+}
+
+/**
+ * What has become of one line's reading, and the way to make another.
+ *
+ * A line read before it was rewritten says so rather than passing the older
+ * words off as the ones standing here, and a line with a take is playable
+ * where it lies: what was said is worth hearing before asking again. The ask
+ * is the line's own, and the button is held while the editor's words are
+ * unwritten — a reading is planned from the document, and a draft is not one.
+ */
+function LineVoiceRow({
+  index,
+  take,
+  sentence,
+  cue,
+  busy,
+  dirty,
+  moka,
+  onAsk,
+}: {
+  index: number;
+  take: StoryVoiceTake | undefined;
+  /** The line as the document holds it, which the take is read against. */
+  sentence: StoryDialogueLine;
+  /** How this line's reading will lie under its shot, where it is planned. */
+  cue: DubCue | undefined;
+  busy: boolean;
+  /** Whether the editor's words are not the document's yet. */
+  dirty: boolean;
+  moka: MokaFile | null;
+  onAsk: () => void;
+}) {
+  const { t } = useTranslation();
+  const assetId = take?.slot.takes.at(-1)?.assetIds[0];
+  const stale = take !== undefined && take.text !== sentence.text.trim();
+  return (
+    <div className="story-line-voice" data-testid={`story-line-voice-${index}`}>
+      <span
+        className="story-hint"
+        data-testid={`story-line-voice-state-${index}`}
+      >
+        {take === undefined
+          ? t("story:voice.unspent")
+          : stale
+            ? t("story:voice.stale")
+            : take.voice === ""
+              ? t("story:voice.spent", {
+                  seconds:
+                    assetId === undefined ? "—" : secondsOf(moka, assetId),
+                })
+              : t("story:voice.spentIn", {
+                  seconds:
+                    assetId === undefined ? "—" : secondsOf(moka, assetId),
+                  voice: take.voice,
+                })}
+      </span>
+      {assetId !== undefined && (
+        <audio
+          controls
+          data-testid={`story-line-voice-take-${index}`}
+          preload="metadata"
+          src={assetUrl(assetId)}
+        />
+      )}
+      {/* What the reading costs where it will lie, so that the reader can
+          shorten the words or lengthen the shot before paying for a cut. */}
+      {cue !== undefined && cue.fit !== "natural" && (
+        <span
+          className="story-hint"
+          data-testid={`story-line-voice-fit-${index}`}
+        >
+          {fitsLine(cue)}
+        </span>
+      )}
+      <button
+        className="link"
+        data-testid={`story-line-voice-go-${index}`}
+        disabled={busy || dirty}
+        onClick={onAsk}
+        title={dirty ? t("story:voice.saveFirst") : undefined}
+        type="button"
+      >
+        {busy
+          ? t("story:panels.drawing")
+          : take === undefined
+            ? t("story:voice.lineAsk")
+            : t("story:voice.again")}
+      </button>
+    </div>
+  );
+}
+
+/** How a reading lies in its shot, in the reader's language. */
+function fitsLine(cue: DubCue): string {
+  if (cue.fit === "unmeasured") return i18n.t("story:voice.fitsUnmeasured");
+  const over = (((cue.materialMs ?? 0) - cue.windowMs) / 1000).toFixed(1);
+  if (cue.fit === "sped") {
+    return i18n.t("story:voice.fitsSped", {
+      over,
+      speed: cue.speed.toFixed(2),
+    });
+  }
+  return i18n.t("story:voice.fitsOverrun", {
+    over,
+    spill: ((cue.durationMs - cue.windowMs) / 1000).toFixed(1),
+  });
+}
+
+/**
+ * One line as an edit leaves it.
+ *
+ * A field the edit clears is taken off the line rather than left holding
+ * nothing: a line with no character is a line nobody in the cast says, which
+ * is what the document should say about it.
+ */
+function editedLine(
+  line: StoryDialogueLine,
+  patch: Partial<StoryDialogueLine>,
+): StoryDialogueLine {
+  const next = { ...line, ...patch };
+  return {
+    id: next.id,
+    speaker: next.speaker,
+    text: next.text,
+    ...(next.characterId !== undefined
+      ? { characterId: next.characterId }
+      : {}),
+    ...(next.tone !== undefined ? { tone: next.tone } : {}),
+  };
+}
+
 function DialogueEditor({
+  story,
+  chapterId,
+  act,
+  keyframe,
+  busyLines,
   lines,
+  characters,
   onDone,
 }: {
+  story: StoryDocument;
+  chapterId: string;
+  act: StoryAct;
+  keyframe: StoryKeyframe;
+  /** The lines of this act being read just now, by the line's own name. */
+  busyLines: Set<string>;
   lines: StoryDialogueLine[];
+  /** The act's characters, still in the story: who a line may be given to. */
+  characters: StoryElement[];
   onDone: (lines: StoryDialogueLine[]) => void;
 }) {
   const { t } = useTranslation();
+  const runWaves = useStoryWavesRun();
+  const moka = useProjectStore((state) => state.moka);
   const [draft, setDraft] = useState(lines);
+  // Where the readings that exist will lie under their shots, planned from the
+  // telling as it stands: a line about to be read is told what it will cost.
+  const cues =
+    moka === null
+      ? undefined
+      : new Map(
+          planDubbing(
+            story,
+            planAssembly(story, moka).units,
+            (assetId) => findResource(moka, assetId)?.probe?.durationMs,
+          ).cues.map((cue) => [cue.lineId, cue]),
+        );
+  const write = (at: number, patch: Partial<StoryDialogueLine>) =>
+    setDraft(
+      draft.map((held, index) =>
+        index === at ? editedLine(held, patch) : held,
+      ),
+    );
+  /** Reads one line on its own, in the voice its speaker is given. */
+  const ask = (lineId: string) =>
+    void runWaves(
+      story.id,
+      "voice",
+      planLineVoiceAsks(story, chapterId, act.id, [lineId]),
+    );
 
   return (
     <div className="story-dialogue" data-testid="story-dialogue">
       {draft.length === 0 && (
         <p className="story-hint">{t("story:storyboard.noDialogue")}</p>
       )}
-      {draft.map((line, index) => (
-        <div className="story-dialogue-line" key={index}>
-          <input
-            aria-label={t("story:storyboard.speaker")}
-            data-testid={`story-line-speaker-${index}`}
-            maxLength={40}
-            onChange={(event) =>
-              setDraft(
-                draft.map((held, at) =>
-                  at === index
-                    ? { ...held, speaker: event.target.value }
-                    : held,
-                ),
-              )
-            }
-            placeholder={t("story:storyboard.offScreen")}
-            value={line.speaker}
-          />
-          <input
-            aria-label={t("story:storyboard.line")}
-            data-testid={`story-line-text-${index}`}
-            maxLength={500}
-            onChange={(event) =>
-              setDraft(
-                draft.map((held, at) =>
-                  at === index ? { ...held, text: event.target.value } : held,
-                ),
-              )
-            }
-            value={line.text}
-          />
-          <input
-            aria-label={t("story:storyboard.tone")}
-            data-testid={`story-line-tone-${index}`}
-            maxLength={60}
-            onChange={(event) =>
-              setDraft(
-                draft.map((held, at) =>
-                  at === index ? { ...held, tone: event.target.value } : held,
-                ),
-              )
-            }
-            value={line.tone ?? ""}
-          />
-          <button
-            aria-label={t("story:storyboard.removeLine")}
-            className="link"
-            data-testid={`story-line-remove-${index}`}
-            onClick={() => setDraft(draft.filter((_held, at) => at !== index))}
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
-      ))}
+      {draft.map((line, index) => {
+        // What the document holds of this line, which is what a take belongs
+        // to: a line added in the open editor is not in the story yet, and has
+        // nothing read for it to show.
+        const saved = keyframe.dialogue.find((held) => held.id === line.id);
+        return (
+          <div className="story-dialogue-line" key={line.id}>
+            <div className="story-dialogue-fields">
+              <SpeakerField
+                characters={characters}
+                index={index}
+                line={line}
+                onWrite={(patch) => write(index, patch)}
+              />
+              <input
+                aria-label={t("story:storyboard.line")}
+                data-testid={`story-line-text-${index}`}
+                maxLength={500}
+                onChange={(event) => write(index, { text: event.target.value })}
+                value={line.text}
+              />
+              <input
+                aria-label={t("story:storyboard.tone")}
+                data-testid={`story-line-tone-${index}`}
+                maxLength={60}
+                onChange={(event) => write(index, { tone: event.target.value })}
+                value={line.tone ?? ""}
+              />
+              <button
+                aria-label={t("story:storyboard.removeLine")}
+                className="link"
+                data-testid={`story-line-remove-${index}`}
+                onClick={() =>
+                  setDraft(draft.filter((_held, at) => at !== index))
+                }
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
+            {saved !== undefined && (
+              <LineVoiceRow
+                busy={busyLines.has(line.id)}
+                cue={cues?.get(line.id)}
+                dirty={line.text.trim() !== saved.text.trim()}
+                index={index}
+                moka={moka}
+                onAsk={() => ask(line.id)}
+                sentence={saved}
+                take={voiceTakeOf(keyframe, line.id)}
+              />
+            )}
+          </div>
+        );
+      })}
       <div className="story-step-actions">
         <button
           className="link"
           data-testid="story-line-add"
-          onClick={() => setDraft([...draft, { speaker: "", text: "" }])}
+          onClick={() =>
+            setDraft([...draft, { id: newId(), speaker: "", text: "" }])
+          }
           type="button"
         >
           {t("story:storyboard.addLine")}

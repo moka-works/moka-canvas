@@ -2,19 +2,19 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { StoryDocument } from "../../../shared/domain/types";
+import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
-import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
-import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
+import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
-import { saveEverything } from "../stores/storyJobStore";
 import {
-  assemblyCommands,
   assemblySummary,
   planAssembly,
   type AssemblyPlan,
   type AssemblyWarning,
 } from "../assembly";
+import { AssembleTrouble, assembleStory } from "../assembleStory";
+import { planDubbing, type DubWarning } from "../dubbing";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { FilmCard } from "../panels/FilmCard";
@@ -43,6 +43,21 @@ export function EditStep({ story }: { story: StoryDocument }) {
     moka === null
       ? { units: [], warnings: [], totalPlannedMs: 0 }
       : planAssembly(story, moka);
+  // How the lines lie inside their shots — what is too long for its window, and
+  // what nobody measured — is worth saying before the cut is rendered rather
+  // than discovered in the finished film.
+  const dubbing =
+    moka === null
+      ? undefined
+      : planDubbing(
+          story,
+          plan.units,
+          (assetId) => findResource(moka, assetId)?.probe?.durationMs,
+        );
+  const warnings: Array<AssemblyWarning | DubWarning> = [
+    ...plan.warnings,
+    ...(dubbing?.warnings ?? []),
+  ];
   const timeline = (moka?.timelines ?? []).find(
     (held) => held.id === story.edit.timelineId,
   );
@@ -79,60 +94,12 @@ export function EditStep({ story }: { story: StoryDocument }) {
     setBusy(true);
     setAsking(false);
     try {
-      // The server holds the document the clips are laid down in, and the
-      // material they are made of is filed there rather than here: what is
-      // still in this window goes out first, and only then is the document read
-      // back — reading it first would throw the waiting work away.
-      const sayBlocked = () => {
-        const blocked = saveTrouble();
-        useAppStore
-          .getState()
-          .pushToast("error", blocked.message, undefined, blocked.detail);
-      };
-      if (!(await saveEverything())) {
-        sayBlocked();
-        return;
-      }
-      // A change made between the save settling and the read keeps the
-      // document: a plan drawn on one a step behind would lay the clips out
-      // twice, so nothing is assembled until the reader asks again.
-      if (!(await useProjectStore.getState().reload())) {
-        sayBlocked();
-        return;
-      }
-      const held = useProjectStore.getState().moka;
-      const current =
-        held === null
-          ? undefined
-          : (held.stories ?? []).find((each) => each.id === story.id);
-      if (held === null || current === undefined) return;
-      const fresh = planAssembly(current, held);
-      const { commands, clipByAct } = assemblyCommands(current, held, fresh, {
-        withSubtitles,
-        ...(current.edit.timelineId === undefined
-          ? {}
-          : { timelineId: current.edit.timelineId }),
-      });
-      const added = commands.find((command) => command.type === "addTimeline");
-      const timelineId =
-        added?.type === "addTimeline"
-          ? added.timeline.id
-          : current.edit.timelineId;
-      if (timelineId === undefined) return;
-      execute(i18n.t("story:history.assemble"), [
-        ...commands,
-        {
-          type: "setStoryEdit",
-          storyId: current.id,
-          patch: { timelineId, clipByAct },
-        },
-      ]);
-      const seconds = (fresh.totalPlannedMs / 1000).toFixed(1);
+      const made = await assembleStory(story.id, { withSubtitles });
       useAppStore.getState().pushToast(
         "success",
         i18n.t("story:edit.assembled", {
-          count: fresh.units.length,
-          seconds,
+          count: made.units,
+          seconds: made.seconds,
         }),
       );
     } catch (problem) {
@@ -141,6 +108,8 @@ export function EditStep({ story }: { story: StoryDocument }) {
         .pushToast(
           "error",
           problem instanceof Error ? problem.message : String(problem),
+          undefined,
+          problem instanceof AssembleTrouble ? problem.detail : undefined,
         );
     } finally {
       setBusy(false);
@@ -180,8 +149,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
             {t("story:edit.withSubtitles")}
           </label>
           <p className="story-hint">
-            {spoken ? t("story:edit.subtitlesNote") : t("story:edit.noLines")}{" "}
-            {t("story:edit.againNote")}
+            {spoken ? t("story:edit.subtitlesNote") : t("story:edit.noLines")}
           </p>
 
           {sounded && (
@@ -191,13 +159,13 @@ export function EditStep({ story }: { story: StoryDocument }) {
             </p>
           )}
 
-          {plan.warnings.length > 0 && (
+          {warnings.length > 0 && (
             <div
               className="story-warnings"
               data-testid="story-assembly-warnings"
             >
               <ul>
-                {plan.warnings.slice(0, WARNINGS_SHOWN).map((warning, at) => (
+                {warnings.slice(0, WARNINGS_SHOWN).map((warning, at) => (
                   <li key={at}>
                     <span>{warningLine(warning)}</span>
                     <button
@@ -210,7 +178,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
                     </button>
                   </li>
                 ))}
-                {plan.warnings.length > WARNINGS_SHOWN && (
+                {warnings.length > WARNINGS_SHOWN && (
                   <li className="story-hint">
                     {t("story:edit.warnings", {
                       count: plan.warnings.length - WARNINGS_SHOWN,
@@ -230,6 +198,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
           onAssembleAgain={pressAssemble}
           story={story}
           timeline={timeline}
+          withSubtitles={withSubtitles}
         />
 
         <section className="story-film-clips" data-testid="story-clips">
@@ -294,7 +263,13 @@ function shotNumber(story: StoryDocument, keyframeId: string): number {
 }
 
 /** One warning, in the reader's language. */
-function warningLine(warning: AssemblyWarning): string {
+function warningLine(warning: AssemblyWarning | DubWarning): string {
+  if (warning.kind === "lineOverrun") {
+    return i18n.t("story:edit.lineOverrun", {
+      place: warning.place,
+      over: ((warning.overMs ?? 0) / 1000).toFixed(1),
+    });
+  }
   return i18n.t(`story:edit.${warning.kind}`, { place: warning.place });
 }
 

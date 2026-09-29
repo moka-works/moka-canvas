@@ -130,9 +130,10 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
     });
 
     // The sound of the act, asked for as two pieces of the whole act: the lines
-    // read aloud, and the music and sound under them.
+    // read aloud in the voice of whoever says them, and the music and sound
+    // under them.
     await firstAct.getByTestId("story-act-voice-go-0").click();
-    await expect(firstAct.getByTestId("story-act-voice-0")).toBeVisible({
+    await expect(firstAct.getByTestId("story-act-voice-count-0")).toBeVisible({
       timeout: 60_000,
     });
     await firstAct.getByTestId("story-act-music-go-0").click();
@@ -171,24 +172,37 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
       .toContain("Rain at Night");
     const timeline = await persistedTimeline(page);
     expect(timeline.isTheStories).toBe(true);
-    // The clip of each act in telling order, the voice and the score under the
-    // first of them, then the words said in it — laid down from zero, the
-    // lengths coming from the material the stand-in handed back.
+    // The clip of each act in telling order, the two lines read aloud inside
+    // the shots they are said in, the score under the act, then the words said
+    // in it — laid down from zero, the lengths coming from the material the
+    // stand-in handed back.
     expect(timeline.clips.map((clip) => clip.kind)).toEqual([
       "video",
       "video",
       "audio",
       "audio",
+      "audio",
+      "text",
       "text",
     ]);
     expect(timeline.clips[0]?.startMs).toBe(0);
     expect(timeline.clips[0]?.durationMs).toBe(1_000);
     expect(timeline.clips[1]?.startMs).toBe(1_000);
     expect(timeline.clips[1]?.durationMs).toBe(1_000);
+    // One reading a line: the first shot's second lies at the head of the act,
+    // and the second shot's — whose shot opens three seconds into the act —
+    // where that shot opens. The score runs under the whole act.
     expect(timeline.clips[2]?.startMs).toBe(0);
     expect(timeline.clips[2]?.durationMs).toBe(1_000);
-    expect(timeline.clips[3]?.startMs).toBe(0);
+    expect(timeline.clips[3]?.startMs).toBe(3_000);
+    expect(timeline.clips[3]?.durationMs).toBe(1_000);
     expect(timeline.clips[4]?.startMs).toBe(0);
+    // A caption begins with the voice over it and lasts at least as long as
+    // the words do.
+    expect(timeline.clips[5]?.startMs).toBe(0);
+    expect(timeline.clips[5]?.durationMs).toBe(3_000);
+    expect(timeline.clips[6]?.startMs).toBe(3_000);
+    expect(timeline.clips[6]?.durationMs).toBe(2_000);
 
     // The e2e harness points MOKA_FFMPEG at a path that is never there, so
     // this is every machine at once: the film card reads once what the

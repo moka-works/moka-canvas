@@ -29,12 +29,7 @@ import {
 import type { StoryChapterDraft, StoryElementDraft } from "../story";
 import { elementKey, mergeElementDrafts } from "../story";
 import type { ActDraft, KeyframeDraft, StoryGuess } from "../story";
-import type {
-  StoryActSound,
-  StoryDialogueLine,
-  StoryElement,
-  StoryElementKind,
-} from "../types";
+import type { StoryActSound, StoryElement, StoryElementKind } from "../types";
 import { matchCameraAngle, matchCameraMove, matchShotSize } from "./aliases";
 import type { ParseResult } from "./json";
 
@@ -616,10 +611,10 @@ function readDialogue(
   actAt: number,
   at: number,
   warnings: string[],
-): StoryDialogueLine[] {
+): KeyframeDraft["dialogue"] {
   if (!Array.isArray(value)) return [];
   const characters = elements.filter((element) => element.kind === "character");
-  const lines: StoryDialogueLine[] = [];
+  const lines: KeyframeDraft["dialogue"] = [];
   for (const entry of value) {
     if (!isObject(entry)) continue;
     const said = words(entry.text);

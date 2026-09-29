@@ -33,13 +33,14 @@ import {
   type MokaFile,
   type NodeId,
   type StoryAct,
+  type StoryDialogueLine,
   type StoryDocument,
   type StoryKeyframe,
   type Viewport,
   type WorkflowEdge,
   type WorkflowNode,
 } from "../../shared/domain";
-import { currentTake, takeFile } from "../../shared/domain/story";
+import { currentTake, takeFile, voiceTakeOf } from "../../shared/domain/story";
 import { i18n } from "../../shared/i18n";
 import type { InputRole } from "../../api/generate";
 import type { StoryJobItemDraft } from "../../api/story";
@@ -54,6 +55,7 @@ import {
   planElementArt,
   planKeyframeArt,
   planKeyframeVideos,
+  planLineVoices,
   planOutline,
   planStoryboard,
   spokenLine,
@@ -126,7 +128,13 @@ export function canvasImportCounts(story: StoryDocument): CanvasImportCounts {
   for (const chapter of story.chapters) {
     for (const act of chapter.acts) {
       if (currentTake(act.video) !== undefined) clips += 1;
-      if (currentTake(act.voice ?? emptyStorySlot()) !== undefined) sounds += 1;
+      // An act's lines read one by one are a card each, and only when none of
+      // them has been read is the older reading of the whole act what the
+      // board holds — the same rule the assembly sounds the act by.
+      const spoken = readLines(act);
+      if (spoken.length > 0) sounds += spoken.length;
+      else if (currentTake(act.voice ?? emptyStorySlot()) !== undefined)
+        sounds += 1;
       if (currentTake(act.music ?? emptyStorySlot()) !== undefined) sounds += 1;
       for (const keyframe of act.keyframes) {
         if (currentTake(keyframe.art) !== undefined) pictures += 1;
@@ -485,6 +493,7 @@ function actSoundBand(
   // pieces is one card a piece, in the order the pieces play, since that is how
   // the board makes the film again: one ask after another.
   const clipAsks = planActVideos(story, chapterId, [act.id]);
+  const spoken = readLines(act);
   const pieces: Array<{
     kind: "audio" | "video";
     assetId: AssetId | undefined;
@@ -498,13 +507,31 @@ function actSoundBand(
       ask: clipAsks[at],
       title: `${place} · ${i18n.t("story:import.clip")}`,
     })),
-    {
-      kind: "audio",
-      assetId: takeFile(currentTake(act.voice ?? emptyStorySlot())),
-      ask: planActVoice(story, chapterId, act.id)[0],
-      title: `${place} · ${i18n.t("story:import.voice")}`,
-      category: "voice",
-    },
+    // The lines read aloud, one card a line: each was asked for on its own, so
+    // each is a card of its own carrying its own ask — a board of a telling
+    // read in the voices of its characters says which line is which.
+    ...spoken.map((reading) => ({
+      kind: "audio" as const,
+      assetId: reading.assetId,
+      ask: planLineVoices(story, chapterId, act.id, [reading.line.id])[0],
+      title: `${place} · ${i18n.t("story:import.voiceLine", {
+        at: reading.at,
+      })}${reading.line.speaker.trim() === "" ? "" : ` · ${reading.line.speaker.trim()}`}`,
+      category: "voice" as const,
+    })),
+    // A reading of the whole act, made before its lines had voices of their
+    // own, is one card and said to be what it is.
+    ...(spoken.length > 0
+      ? []
+      : [
+          {
+            kind: "audio" as const,
+            assetId: takeFile(currentTake(act.voice ?? emptyStorySlot())),
+            ask: planActVoice(story, chapterId, act.id)[0],
+            title: `${place} · ${i18n.t("story:import.voice")}`,
+            category: "voice" as const,
+          },
+        ]),
     {
       kind: "audio",
       assetId: takeFile(currentTake(act.music ?? emptyStorySlot())),
@@ -532,6 +559,37 @@ function actSoundBand(
     wire(sheet, actCard, card, "prompt");
     wireAsk(sheet, piece.ask, card);
   }
+}
+
+/**
+ * The lines of an act that have been read aloud, one reading each.
+ *
+ * A line with no take is not a card: the board holds what the telling made,
+ * and a line nobody has read made nothing. The number a reading carries is its
+ * place among the act's said lines rather than among the readings, so a card
+ * for the third line stays the third line when the ones before it are read.
+ */
+function readLines(
+  act: StoryAct,
+): Array<{ line: StoryDialogueLine; assetId: AssetId; at: number }> {
+  const readings: Array<{
+    line: StoryDialogueLine;
+    assetId: AssetId;
+    at: number;
+  }> = [];
+  let said = 0;
+  for (const keyframe of act.keyframes) {
+    for (const line of keyframe.dialogue) {
+      if (line.text.trim() === "") continue;
+      said += 1;
+      const assetId = takeFile(
+        currentTake(voiceTakeOf(keyframe, line.id)?.slot ?? emptyStorySlot()),
+      );
+      if (assetId === undefined) continue;
+      readings.push({ line, assetId, at: said });
+    }
+  }
+  return readings;
 }
 
 /** The telling itself: the premise, and every episode's acts and shots under it. */

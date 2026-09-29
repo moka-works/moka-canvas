@@ -6418,6 +6418,100 @@ body.is-dragging-split {
   color: var(--muted);
 }
 
+/* The voice block: who reads a character's lines and how, laid under the
+   words it is about, on a card that speaks or on the narrator's own strip. */
+
+.story-voice {
+  border-top: 1px solid var(--stroke);
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.story-voice-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.story-voice-model {
+  flex: 1;
+  max-width: 220px;
+  min-width: 160px;
+}
+
+.story-voice-model select {
+  max-width: 100%;
+}
+
+.story-voice-tone {
+  flex: 1;
+  min-width: 140px;
+}
+
+.story-voice-number {
+  flex: none;
+  width: 88px;
+}
+
+.story-voice-manner {
+  flex: 1;
+  min-width: 160px;
+}
+
+.story-voice-row input {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.story-voice-row input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.story-voice-tryout {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.story-voice-tryout audio {
+  height: 30px;
+  max-width: 220px;
+}
+
+.story-voice-narrator {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.story-voice-narrator .story-voice {
+  border-top: none;
+  padding-top: 0;
+}
+
+.story-voice-summary {
+  margin: 0;
+}
+
+.story-voice-summary .link:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
 .story-element-actions {
   align-items: center;
   display: flex;
@@ -7279,6 +7373,11 @@ button > .story-spin {
 }
 
 .story-dialogue-line {
+  display: grid;
+  gap: 4px;
+}
+
+.story-dialogue-fields {
   align-items: center;
   display: grid;
   gap: 6px;
@@ -7300,6 +7399,21 @@ button > .story-spin {
 
 .story-dialogue-line button:hover:not(:disabled) {
   color: var(--coral);
+}
+
+/* What has become of one line's reading, under the line it reads. */
+
+.story-line-voice {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 126px;
+}
+
+.story-line-voice audio {
+  height: 26px;
+  max-width: 200px;
 }
 
 .story-kf-clip {

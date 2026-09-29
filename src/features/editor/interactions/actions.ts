@@ -1255,6 +1255,16 @@ function placeName(story: StoryDocument, target: StorySlotTarget): string {
       );
       return shot === "" ? what : `${shot} · ${what}`;
     }
+    case "lineVoice": {
+      // Which shot, and which of its lines: a reading is one line's own, and
+      // a shelf label saying only the shot would be several files' label.
+      const shot = keyframeAt(story, target)?.title ?? "";
+      const at = (keyframeAt(story, target)?.dialogue ?? []).findIndex(
+        (line) => line.id === target.lineId,
+      );
+      const what = i18n.t("story:edit.lineVoice", { number: at + 1 });
+      return shot === "" ? what : `${shot} · ${what}`;
+    }
     case "actVideo":
     case "actVoice":
     case "actMusic": {
