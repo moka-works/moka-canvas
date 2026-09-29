@@ -62,12 +62,18 @@ export default function App() {
   // starts and where nothing is being read yet, and it leads to any of the four
   // — so a room entered from a recent row finds its chunk already here rather
   // than fetching it while the reader waits on the door.
+  // A room that could not be fetched now is fetched when it is entered, so a
+  // prefetch that fails is not a failure and has nothing to say.
   useEffect(() => {
     if (phase !== "launcher") return;
-    void import("./features/editor/EditorPage");
-    void import("./features/clip/ClipPage");
-    void import("./features/assets/AssetsPage");
-    void import("./features/story/StoryPage");
+    for (const room of [
+      import("./features/editor/EditorPage"),
+      import("./features/clip/ClipPage"),
+      import("./features/assets/AssetsPage"),
+      import("./features/story/StoryPage"),
+    ]) {
+      room.catch(() => {});
+    }
   }, [phase]);
 
   return (
