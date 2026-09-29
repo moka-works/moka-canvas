@@ -67,9 +67,9 @@ function isRunning(status: StoryJobRecord["status"]): boolean {
  * A look answers with the newest records and every answer still owed one: a
  * batch that settled and was read into the story drops out of it once enough
  * newer ones have been asked for, and the room lets it go with the look that
- * dropped it. Held on to instead, it goes on saying what no look will say
- * again — a step's badge counting a failure the story has long had the pieces
- * of — until a reload starts the list over.
+ * dropped it. Held on to instead, the room goes on reading a list the server
+ * has stopped carrying — a record whose answer the story has long held — until
+ * a reload starts the list over.
  *
  * What the look did not carry is kept while it can still be owed: a batch
  * still out, or one whose answer no room has read. A look that raced the ask
@@ -228,6 +228,29 @@ interface BatchRead {
 }
 
 let readIn = new Map<string, BatchRead>();
+
+/**
+ * The batches this room has watched be made, by the id of the record.
+ *
+ * A step's red badge counts the pieces that did not come back, and counts them
+ * over these: a batch the room asked for itself, or one it took in still out.
+ * A failure that came home before the room was looking — an ending from while
+ * the app was closed, or a record the list has carried since some other day —
+ * is not the room's news, and a number standing over the step until the
+ * project is opened again says nothing a reader can act on.
+ *
+ * Held in memory and started over when the room takes up a story, so a project
+ * opened again counts what is happening now rather than everything that ever
+ * went wrong.
+ */
+let watched = new Set<string>();
+
+/** Takes these records in as ones the room is watching, while they are out. */
+function watching(records: StoryJobRecord[]): void {
+  for (const record of records) {
+    if (isRunning(record.status)) watched.add(record.id);
+  }
+}
 
 /**
  * The places a batch being handed over is asking for, named by story and place.
@@ -456,6 +479,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     try {
       const read = await storyApi.list(storyId);
       lookTrouble = null;
+      watching(read);
       set({
         jobs: carriedOver(
           get().jobs,
@@ -499,11 +523,17 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         return;
       }
       // What was read in for another story says nothing about this one, and a
-      // room reopened reads the whole story's batches again by design.
-      if (get().storyId !== storyId) readIn = new Map<string, BatchRead>();
+      // room reopened reads the whole story's batches again by design — the
+      // batches it was watching with them, since the count of pieces that did
+      // not come back is the room's own and starts from this reading.
+      if (get().storyId !== storyId) {
+        readIn = new Map<string, BatchRead>();
+        watched = new Set<string>();
+      }
       set({ storyId });
       try {
         const read = await storyApi.list(storyId);
+        watching(read);
         set({ jobs: read, error: null });
         await readAnswers(read);
         if (read.some((record) => isRunning(record.status))) startPolling();
@@ -547,6 +577,9 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
           items,
           model === undefined ? storyAskModel(kind) : model,
         );
+        // Watched from the asking whatever the record comes back as: a batch
+        // the room asked for is the room's own news.
+        watched.add(record.id);
         // A batch started for the story the room is showing: the list it is
         // put at the head of is that story's, whichever one it was.
         set({ storyId, jobs: [record, ...get().jobs], starting: false });
@@ -598,6 +631,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     reset() {
       stopPolling();
       readIn = new Map<string, BatchRead>();
+      watched = new Set<string>();
       handingOver = new Set<string>();
       lookTrouble = null;
       set({
@@ -775,8 +809,22 @@ function forStep(
 }
 
 /**
- * The pieces of a step that failed, which is what its red badge counts, and
- * what each of them said.
+ * What a step's badge stands on: the pieces it is short of, which batch says
+ * so, and the reasons under the count.
+ */
+export interface StepFailure {
+  failed: number;
+  jobId: string;
+  reasons: string[];
+}
+
+/**
+ * The pieces of a step that failed among the batches it is handed, and what
+ * each of them said.
+ *
+ * The badge is this reading taken over the batches the room has watched
+ * ({@link watchedStepFailure}); what a batch from before the room was looking
+ * says is history, and history is not a count that stands over the step.
  *
  * The reasons travel with the count because the bubble over the badge is the
  * only place a step says why it is red: a reader who has to open the batch to
@@ -792,7 +840,7 @@ export function stepFailure(
   jobs: StoryJobRecord[],
   storyId: string | null,
   step: StoryStep,
-): { failed: number; jobId: string; reasons: string[] } | null {
+): StepFailure | null {
   const answered = new Set<string>();
   for (const job of forStep(jobs, storyId, step)) {
     const failed = job.items.filter(
@@ -927,13 +975,32 @@ export function useStoryJobs(storyId: string | null): StoryJobRecord[] {
   return jobs.filter((job) => job.storyId === storyId);
 }
 
-/** The failures standing on one step, for the badge and the retry wording. */
+/**
+ * The failures standing on one step, for the badge and the retry wording.
+ *
+ * Counted over the batches the room has watched and not over everything the
+ * server holds: a step stays marked for a failure the room saw come home, and
+ * a project opened again starts the count over.
+ */
+export function watchedStepFailure(
+  jobs: StoryJobRecord[],
+  storyId: string | null,
+  step: StoryStep,
+): StepFailure | null {
+  return stepFailure(
+    jobs.filter((job) => watched.has(job.id)),
+    storyId,
+    step,
+  );
+}
+
+/** The same, for the step the room is showing: the badge's own reading. */
 export function useStoryStepFailure(
   storyId: string | null,
   step: StoryStep,
-): { failed: number; jobId: string; reasons: string[] } | null {
+): StepFailure | null {
   const jobs = useStoryJobs(storyId);
-  return stepFailure(jobs, storyId, step);
+  return watchedStepFailure(jobs, storyId, step);
 }
 
 /** Whether the place this key names is being made just now. */

@@ -15,6 +15,7 @@ import {
   stepFailure,
   targetRunning,
   useStoryJobStore,
+  watchedStepFailure,
 } from "./storyJobStore";
 
 const ids = storyIds();
@@ -1177,5 +1178,104 @@ describe("what the room reads off a list of batches", () => {
     expect(targetRunning([answered()], ids.story, key)).toBe(false);
     // Nor is another story's batch.
     expect(targetRunning([job()], "story-elsewhere", key)).toBe(false);
+  });
+});
+
+describe("what a step's badge counts", () => {
+  /** The same record, come home with its one piece short. */
+  function short(record: StoryJobRecord): StoryJobRecord {
+    return {
+      ...record,
+      status: "failed",
+      items: [
+        { ...record.items[0], status: "failed", error: "the provider refused" },
+      ],
+    };
+  }
+
+  const badge = () =>
+    watchedStepFailure(
+      useStoryJobStore.getState().jobs,
+      ids.story,
+      "storyboard",
+    );
+
+  it("counts a batch the room watched come home short", async () => {
+    // The batch is out when the room opens — which is what puts the room
+    // watching it — and the look that comes back says it ended a piece short.
+    const out = job();
+    serving({ "/api/v1/projects/current/story/jobs": [out] });
+    await useStoryJobStore.getState().load(ids.story);
+
+    serving({ "/api/v1/projects/current/story/jobs": [short(out)] });
+    await vi.advanceTimersByTimeAsync(1600);
+
+    expect(badge()).toEqual({
+      failed: 1,
+      jobId: "job-1",
+      reasons: ["the provider refused"],
+    });
+  });
+
+  it("counts nothing for a failure that came home before the room was looking", async () => {
+    // A batch that ended while the app was closed, or days ago: whatever the
+    // list carries, the room was not there, and what the count stands for is
+    // the room's own news.
+    const held = short(job());
+    serving({ "/api/v1/projects/current/story/jobs": [held] });
+    await useStoryJobStore.getState().load(ids.story);
+
+    expect(useStoryJobStore.getState().jobs).toHaveLength(1);
+    // The record is still held: the room reads what happened, and asking
+    // again for the piece is planned from the list.
+    expect(
+      stepFailure(useStoryJobStore.getState().jobs, ids.story, "storyboard"),
+    ).toEqual({ failed: 1, jobId: "job-1", reasons: ["the provider refused"] });
+    // The badge is not the list.
+    expect(badge()).toBeNull();
+  });
+
+  it("starts the count over when the room takes up the story again", async () => {
+    const out = job();
+    serving({ "/api/v1/projects/current/story/jobs": [out] });
+    await useStoryJobStore.getState().load(ids.story);
+    serving({ "/api/v1/projects/current/story/jobs": [short(out)] });
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(badge()).not.toBeNull();
+
+    // The project is put down and opened again: the record is read as one
+    // whose answer the story has had for a while, and the count begins from
+    // what is happening now, which is nothing.
+    useStoryJobStore.getState().reset();
+    serving({
+      "/api/v1/projects/current/story/jobs": [
+        { ...short(out), readAt: "2026-01-02T00:00:00Z" },
+      ],
+    });
+    await useStoryJobStore.getState().load(ids.story);
+
+    expect(badge()).toBeNull();
+  });
+
+  it("stops counting a piece a batch this room asked for answered", async () => {
+    const out = job();
+    serving({ "/api/v1/projects/current/story/jobs": [out] });
+    await useStoryJobStore.getState().load(ids.story);
+    serving({ "/api/v1/projects/current/story/jobs": [short(out)] });
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(badge()).not.toBeNull();
+
+    // The reader asks again, and this time the piece comes home: the count is
+    // of pieces the story is short of, and it has this one.
+    serving({
+      "/api/v1/projects/current/story/jobs": {
+        ...answered(),
+        id: "job-2",
+        createdAt: "2026-01-03T00:00:00Z",
+      },
+    });
+    await useStoryJobStore.getState().start(ids.story, "keyframeArt", []);
+
+    expect(badge()).toBeNull();
   });
 });
