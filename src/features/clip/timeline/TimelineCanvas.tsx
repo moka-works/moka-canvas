@@ -41,6 +41,7 @@ import {
   type TrimDraft,
 } from "../interactions/gestures";
 import { snapContext } from "../interactions/snapping";
+import { editCue } from "../interactions/textActions";
 import {
   SEAM_TOO_SHORT_MESSAGE,
   clampSeamMs,
@@ -66,6 +67,7 @@ import {
   type TrackRow,
 } from "./geometry";
 import { renderTimeline } from "./render";
+import { CueEditor } from "./CueEditor";
 import { frameAligned } from "./timecode";
 import { useTimelineDecor } from "./decor";
 
@@ -184,6 +186,7 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
   } | null>(null);
   const pxPerSec = useClipStore((state) => state.view.pxPerSec);
   const playheadMs = useClipStore((state) => state.playheadMs);
+  const cueEditor = useClipStore((state) => state.cueEditor);
   const decor = useTimelineDecor();
   const spacerWidth = contentWidth(timeline, playheadMs, pxPerSec);
   const spacerHeight = contentHeight(timeline);
@@ -896,6 +899,21 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     showHover(null);
   };
 
+  /**
+   * A double click opens the cue editor over the words it landed on.
+   *
+   * Only a text block takes a double click: a picture or a sound has no words
+   * to write in place, and everything else on the cut already answers the
+   * pointer on its first press.
+   */
+  const onDoubleClick = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const local = localPoint(event);
+    if (!local) return;
+    const hit = hitAt(local.x, local.y);
+    if (hit?.kind !== "clip" || hit.clip.kind !== "text") return;
+    editCue(hit.clip);
+  };
+
   /** A right-click opens the cut's own menu, over whichever piece it landed on. */
   const onContextMenu = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     event.preventDefault();
@@ -1060,6 +1078,7 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
       <canvas
         className={canvasClass}
         onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick}
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -1070,6 +1089,7 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
         onPointerUp={onPointerUp}
         ref={canvasRef}
       />
+      {cueEditor && <CueEditor session={cueEditor} timeline={timeline} />}
       {menu && (
         <TimelineMenu
           onClose={() => setMenu(null)}

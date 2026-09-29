@@ -50,6 +50,7 @@
       "backSecond": "后退一秒",
       "backToHead": "回到开头",
       "clearSelection": "清除选择",
+      "editSubtitle": "编辑字幕",
       "forwardFrame": "前进一帧",
       "forwardSecond": "前进一秒",
       "playPause": "播放/暂停",
@@ -67,7 +68,9 @@
       "delete": "Delete",
       "down": "↓",
       "end": "End",
+      "enter": "Enter",
       "escape": "Escape",
+      "f2": "F2",
       "home": "Home",
       "left": "←",
       "minus": "-",
@@ -399,6 +402,10 @@
     "tooShortToSplit": "片段太短，无法在播放头处分割。",
     "trackLocked": "该轨道已锁定。",
     "videoOnVideoTrack": "视频或图片应放在视频轨道上。"
+  },
+  "cues": {
+    "editor": "字幕文字",
+    "placeholder": "输入字幕文字"
   },
   "subtitles": {
     "clipLimit": "时间线最多容纳 {{max}} 个片段——请先删除 {{extra}} 个。",

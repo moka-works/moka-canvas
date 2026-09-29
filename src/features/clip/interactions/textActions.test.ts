@@ -15,6 +15,7 @@ import { useAppStore } from "../../editor/stores/appStore";
 import { useHistoryStore, isBoundary } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useClipStore } from "../stores/clipStore";
+import { setTrackFlag } from "./clipActions";
 import { TEXT_STYLE_PRESETS } from "../textStyles";
 import { frameAligned } from "../timeline/timecode";
 import {
@@ -24,6 +25,7 @@ import {
   clampStrokeWidth,
   clampTextContent,
   cueSummary,
+  editCue,
   importSrt,
   landTranscribedCues,
   legalStyle,
@@ -47,6 +49,7 @@ beforeEach(() => {
     playheadMs: 0,
     adjustDraft: null,
     textDraft: null,
+    cueEditor: null,
   });
 });
 
@@ -68,6 +71,7 @@ function open(moka: MokaFile, timelineId: string, playheadMs = 0): void {
     playheadMs,
     adjustDraft: null,
     textDraft: null,
+    cueEditor: null,
   });
 }
 
@@ -489,6 +493,52 @@ describe("addTextClipAtPlayhead", () => {
     expect(textTracks[1].name).toBe("Text 2");
     expect(clip?.trackId).toBe(textTracks[1].id);
     expect(entryCount()).toBe(1);
+  });
+});
+
+describe("editCue", () => {
+  /** A cue already on the cut, written the way a reader would write one. */
+  function landCue(): TimelineClip {
+    const clip = addTextClipAtPlayhead("A line", style);
+    if (!clip) throw new Error("the cue did not land");
+    return clip;
+  }
+
+  it("opens the editor over a cue and takes the playhead to its head", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 1_010);
+    const clip = landCue();
+    // The playhead travels away first, so coming back is a change.
+    useClipStore.getState().setPlayhead(3_000);
+    editCue(clip);
+
+    const state = useClipStore.getState();
+    expect(state.cueEditor).toEqual({
+      kind: "clip",
+      clipId: clip.id,
+      seed: "A line",
+    });
+    expect(state.selection.clipIds).toEqual([clip.id]);
+    expect(state.playheadMs).toBe(clip.startMs);
+  });
+
+  it("leaves the playhead where it stands when it is already on the cue", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 1_010);
+    const clip = landCue();
+    useClipStore.getState().setPlayhead(1_500);
+    editCue(clip);
+    expect(useClipStore.getState().playheadMs).toBe(1_500);
+    expect(useClipStore.getState().cueEditor?.clipId).toBe(clip.id);
+  });
+
+  it("refuses a cue on a locked row, the way every edit there is refused", () => {
+    open(buildTimelineMokaFile(), ids.timeline, 1_010);
+    const clip = landCue();
+    setTrackFlag(cut(), clip.trackId, "locked", true);
+    editCue(clip);
+    expect(useClipStore.getState().cueEditor).toBeNull();
+    expect(useAppStore.getState().toasts.at(-1)?.message).toBe(
+      "That track is locked.",
+    );
   });
 });
 

@@ -324,6 +324,76 @@ test("typing in the inspector commits once, and one undo puts the words back", a
   forgetHome(home);
 });
 
+/** The middle of the text row, which is the top row under the ruler's 28px. */
+const TEXT_ROW_Y = 46;
+
+test("a cue is rewritten where it stands on the timeline, and one undo puts the words back", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text In Place");
+  await textPage(page);
+  await addText(page, "First cut line", 6);
+  const [clip] = await drawnSpans(page, 1);
+
+  // The cue is doubled where it draws, not where the panel lists it.
+  await page.locator(".clip-tl-canvas").dblclick({
+    position: { x: 60, y: TEXT_ROW_Y },
+  });
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("First cut line");
+
+  await editor.fill("Rewritten where it stands");
+  await editor.press("Enter");
+  await expect(editor).toHaveCount(0);
+
+  // The words are the document's now: the cue list reads them back, and the
+  // block has not moved.
+  await expect(cueRows(page).first()).toContainText(
+    "Rewritten where it stands",
+  );
+  expect(await spans(page)).toEqual([clip]);
+
+  // One session, one step of history.
+  await page.keyboard.press("Control+z");
+  await expect(cueRows(page).first()).toContainText("First cut line");
+
+  forgetHome(home);
+});
+
+test("Enter opens the chosen cue in place, and Escape lets it go unwritten", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text In Place Escape");
+  await textPage(page);
+  await addText(page, "A line kept as it is", 6);
+  const [clip] = await drawnSpans(page, 1);
+
+  // The cue is chosen by its own block, which is what the key is about.
+  await page
+    .locator(".clip-tl-canvas")
+    .click({ position: { x: 60, y: TEXT_ROW_Y } });
+  await expect.poll(() => selectedIds(page)).toEqual([clip.id]);
+
+  await page.keyboard.press("Enter");
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("A line kept as it is");
+
+  await editor.fill("Words nobody kept");
+  await editor.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await expect(cueRows(page).first()).toContainText("A line kept as it is");
+
+  // Nothing was written, so the one step of history is still the landing:
+  // one undo takes the whole cue away, and no step was spent on the session.
+  await page.keyboard.press("Control+z");
+  await expect(cueRows(page)).toHaveCount(0);
+  await expect.poll(async () => (await spans(page)).length).toBe(0);
+
+  forgetHome(home);
+});
+
 test("Import .srt lands every cue in one step, and a row jumps to its time", async ({
   page,
 }) => {

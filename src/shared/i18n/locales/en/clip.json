@@ -50,6 +50,7 @@
       "backSecond": "Back one second",
       "backToHead": "Back to the head",
       "clearSelection": "Clear the selection",
+      "editSubtitle": "Edit a subtitle",
       "forwardFrame": "Forward one frame",
       "forwardSecond": "Forward one second",
       "playPause": "Play / pause",
@@ -67,7 +68,9 @@
       "delete": "Delete",
       "down": "↓",
       "end": "End",
+      "enter": "Enter",
       "escape": "Escape",
+      "f2": "F2",
       "home": "Home",
       "left": "←",
       "minus": "-",
@@ -399,6 +402,10 @@
     "tooShortToSplit": "Too short to split at the playhead.",
     "trackLocked": "That track is locked.",
     "videoOnVideoTrack": "A video or an image goes on a video track."
+  },
+  "cues": {
+    "editor": "Subtitle text",
+    "placeholder": "Type the words"
   },
   "subtitles": {
     "clipLimit": "The timeline holds at most {{max}} clips — delete {{extra}} first.",

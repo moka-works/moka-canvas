@@ -189,6 +189,44 @@ export function addTextClipAtPlayhead(
 }
 
 // ---------------------------------------------------------------------------
+// A cue edited where it stands
+// ---------------------------------------------------------------------------
+
+/**
+ * Opens the in-place editor over a cue already on the cut.
+ *
+ * The clip is chosen and the playhead taken to its head when it stands
+ * anywhere else — the words are about to be written against this moment, and
+ * a preview of another place would answer the keyboard with the wrong picture.
+ * The view is nudged so the cue is on screen before the editor opens over it.
+ * A locked row is refused the way every other edit on it is refused.
+ */
+export function editCue(clip: TimelineClip): void {
+  if (!isTextClip(clip)) return;
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const track = timeline.tracks.find((row) => row.id === clip.trackId);
+  if (track?.locked) {
+    toast("error", i18n.t("clip:actions.trackLocked"));
+    return;
+  }
+  const store = useClipStore.getState();
+  store.select({ clipIds: [clip.id], transitionId: null });
+  if (
+    store.playheadMs < clip.startMs ||
+    store.playheadMs >= clip.startMs + clip.durationMs
+  ) {
+    store.setPlayhead(clip.startMs);
+  }
+  store.revealMs(clip.startMs);
+  store.setCueEditor({
+    kind: "clip",
+    clipId: clip.id,
+    seed: clip.text.content,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // A subtitle file
 // ---------------------------------------------------------------------------
 

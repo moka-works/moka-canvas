@@ -11,8 +11,10 @@ import {
   duplicateSelection,
   nearestClipEdgeMs,
   selectAll,
+  selectedClips,
   splitSelectionAtPlayhead,
 } from "./clipActions";
+import { editCue } from "./textActions";
 
 /** One line of the room's shortcuts list: the keys that work and what they do. */
 export interface ClipShortcutRow {
@@ -75,6 +77,10 @@ export const CLIP_SHORTCUT_GROUPS: ClipShortcutGroup[] = [
       {
         label: "clip:shortcuts.label.clearSelection",
         chords: ["clip:shortcuts.chord.escape"],
+      },
+      {
+        label: "clip:shortcuts.label.editSubtitle",
+        chords: ["clip:shortcuts.chord.enter", "clip:shortcuts.chord.f2"],
       },
     ],
   },
@@ -205,6 +211,22 @@ export function useClipShortcuts(options: ClipShortcutOptions = {}) {
       }
       if (event.key === "Escape") {
         clearSelection();
+        return;
+      }
+      if (event.key === "Enter" || event.key === "F2") {
+        // Enter belongs to a button that has the focus before it belongs to a
+        // cue, and a field never reaches here at all.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.tagName === "BUTTON"
+        )
+          return;
+        const timeline = activeTimeline();
+        if (!timeline) return;
+        const chosen = selectedClips(timeline, state.selection);
+        if (chosen.length !== 1 || chosen[0].kind !== "text") return;
+        event.preventDefault();
+        editCue(chosen[0]);
         return;
       }
       if (event.key === "?") {
