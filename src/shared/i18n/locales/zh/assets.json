@@ -1,10 +1,10 @@
 {
   "page": {
     "title": "素材",
-    "empty": "从列表里选一个文件。",
+    "empty": "从列表里选一个文件",
     "historyBoundary": "素材房",
-    "saveConflict": "项目在别处被改动，请重新打开后再继续。",
-    "saveFailed": "项目未能保存。"
+    "saveConflict": "项目在别处被改动，请重新打开后再继续",
+    "saveFailed": "项目未能保存"
   },
   "view": {
     "label": "显示的文件",
@@ -12,9 +12,9 @@
     "unused": "未使用"
   },
   "shelf": {
-    "empty": "项目里还没有{{kind}}文件。",
+    "empty": "项目里还没有{{kind}}文件",
     "emptyBoard": "本画布还没有用到{{kind}}文件。可以从项目添加，或直接导入。",
-    "emptyUnused": "没有闲置文件——每个文件都被用着。",
+    "emptyUnused": "没有闲置文件——每个文件都被用着",
     "unplaced": "已导入 · 未放置"
   },
   "overview": {
@@ -51,6 +51,6 @@
   },
   "inspector": {
     "label": "文件",
-    "empty": "文件是什么、有哪些记录，都从这里读。"
+    "empty": "文件是什么、有哪些记录，都从这里读"
   }
 }

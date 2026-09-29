@@ -202,7 +202,7 @@ test("a picture dropped on the audio row is refused, and the room says why", asy
   await dropAssetOnTimeline(page, assetId, { x: DROP_X, y: AUDIO_ROW_Y });
 
   await expect(page.locator(".toast")).toContainText(
-    "A video or an image goes on a video track.",
+    "A video or an image goes on a video track",
   );
   await expect(timeline(page)).toHaveAttribute("data-clip-count", "0");
 

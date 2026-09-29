@@ -1,9 +1,9 @@
 {
   "panel": {
     "title": "助理",
-    "noCanvas": "没有打开的画布。",
-    "emptyFresh": "新会话，还没有说过任何话。",
-    "emptyNone": "这张画布上还没有问过任何问题。",
+    "noCanvas": "没有打开的画布",
+    "emptyFresh": "新会话，还没有说过任何话",
+    "emptyNone": "这张画布上还没有问过任何问题",
     "fromAssets": "从素材添加…",
     "fromAssetsTip": "把素材架上的文件放到画布上，便于提问"
   },
@@ -15,7 +15,7 @@
   "line": {
     "about": "问及的内容",
     "gone": "{{title}} — 已移除",
-    "goneTip": "此卡片已不在画布上。",
+    "goneTip": "此卡片已不在画布上",
     "showOnCanvas": "在画布中显示",
     "showInAssets": "在素材中显示",
     "askCardAgain": "让卡片重新生成",
@@ -48,7 +48,7 @@
     "conversationMany": "个会话"
   },
   "about": {
-    "none": "尚未关联任何内容 — 请选择一张卡片，或用 @ 提及一张。",
+    "none": "尚未关联任何内容 — 请选择一张卡片，或用 @ 提及一张",
     "some": "关于 {{summary}}"
   },
   "intent": {
@@ -76,14 +76,14 @@
   },
   "ask": {
     "modes": "提问类型",
-    "refusal": "还没有配置{{capability}}模型。",
+    "refusal": "还没有配置{{capability}}模型",
     "configure": "配置模型",
     "field": "就这张画布提问",
     "send": "发送：{{intent}}",
     "stop": "停止",
-    "leftOutOne": "{{count}} 张卡片超出单次提问的容量，未能一并发送。",
-    "leftOutMany": "{{count}} 张卡片超出单次提问的容量，未能一并发送。",
-    "questionBack": "问题已放回输入框，尚未发送。",
+    "leftOutOne": "{{count}} 张卡片超出单次提问的容量，未能一并发送",
+    "leftOutMany": "{{count}} 张卡片超出单次提问的容量，未能一并发送",
+    "questionBack": "问题已放回输入框，尚未发送",
     "cardGone": "一张已不存在的卡片"
   },
   "model": {
@@ -95,9 +95,9 @@
     "title": "随本次提问发送更早的消息",
     "label": "发送多少条更早的消息",
     "choiceTip": "随问题一起发送此会话最近的 {{count}} 条消息",
-    "noteOff": "本次提问不会带上之前的任何内容。",
-    "noteEmpty": "还没有可随问题一起发送的内容。",
-    "noteSome": "本次会话中约 {{count}} 个字符会随提问一起发送。"
+    "noteOff": "本次提问不会带上之前的任何内容",
+    "noteEmpty": "还没有可随问题一起发送的内容",
+    "noteSome": "本次会话中约 {{count}} 个字符会随提问一起发送"
   },
   "made": {
     "nothing": "未产出内容",
@@ -116,17 +116,17 @@
     "clipboardRefused": "剪贴板没有接受内容"
   },
   "failure": {
-    "noAnswer": "回答没有到达。",
-    "stoppedEarly": "尚未收到任何内容就已停止。"
+    "noAnswer": "回答没有到达",
+    "stoppedEarly": "尚未收到任何内容就已停止"
   },
   "store": {
     "linesLetGoOne": "为保持会话可读，已舍弃 1 条旧消息。撤销可将其恢复。",
     "linesLetGoMany": "为保持会话可读，已舍弃 {{count}} 条旧消息。撤销可将它们恢复。",
     "stoppedStays": "已停止。卡片仍在画布上，可以再次提问。",
-    "cardEmpty": "卡片没有返回任何内容。",
-    "cardRefused": "画布无法接受这张卡片。",
+    "cardEmpty": "卡片没有返回任何内容",
+    "cardRefused": "画布无法接受这张卡片",
     "stoppedKept": "已停止。已经到达的内容已保留。",
-    "cardGone": "该回答所指的卡片已不在画布上。",
+    "cardGone": "该回答所指的卡片已不在画布上",
     "removeConfirm": "删除“{{title}}”及其 {{count}} {{lines}}？",
     "removeAllConfirm": "删除全部 {{count}} {{conversations}} 及其 {{lines}} {{linesWord}}？",
     "retryConfirm": "让“{{title}}”重新生成？卡片已在画布上，因此只为生成付费。"

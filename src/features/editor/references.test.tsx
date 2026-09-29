@@ -203,7 +203,7 @@ describe("what is wired in", () => {
 
   it("says so when nothing is", () => {
     render(<Bar canvas={sheet(SHEET.nodes)} />);
-    expect(bar().textContent).toContain("Nothing is wired into this node yet.");
+    expect(bar().textContent).toContain("Nothing is wired into this node yet");
     expect(screen.queryByRole("listitem")).toBeNull();
   });
 
@@ -332,7 +332,7 @@ describe("what is pointed at by hand", () => {
 
   it("offers to list what is already wired in rather than starting from nothing", () => {
     render(<Bar inputMode="manual" />);
-    expect(bar().textContent).toContain("Nothing is listed yet.");
+    expect(bar().textContent).toContain("Nothing is listed yet");
     fireEvent.click(
       screen.getByRole("button", { name: "List what is wired in" }),
     );

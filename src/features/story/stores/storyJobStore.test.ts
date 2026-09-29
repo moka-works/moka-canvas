@@ -543,7 +543,7 @@ describe("a batch coming back", () => {
       .getState()
       .toasts.map((toast) => `${toast.kind}: ${toast.message}`);
     expect(messages).toEqual([
-      "success: 1 answers were written into the story.",
+      "success: 1 answers were written into the story",
       "error: 1 of 2 pieces did not come back: the provider refused it",
     ]);
     expect(useAppStore.getState().toasts.at(-1)?.choice?.label).toContain(

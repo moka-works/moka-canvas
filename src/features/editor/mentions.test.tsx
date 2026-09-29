@@ -361,7 +361,7 @@ describe("the prompt field", () => {
       typeText("@zzz");
     });
     expect(offer().textContent).toContain(
-      "Nothing on this canvas answers to that.",
+      "Nothing on this canvas answers to that",
     );
   });
 

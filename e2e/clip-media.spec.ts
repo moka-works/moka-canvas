@@ -189,9 +189,7 @@ test("the search narrows the face and says so when nothing says it", async ({
 
   await asked.fill("zzz");
   await expect(page.getByTestId("shelf-no-match")).toBeVisible();
-  await expect(
-    page.getByText("Nothing on this shelf says that."),
-  ).toBeVisible();
+  await expect(page.getByText("Nothing on this shelf says that")).toBeVisible();
 
   await asked.fill("");
   await expect(rowFor(page, "one.png")).toBeVisible();

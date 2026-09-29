@@ -26,12 +26,12 @@
     "trackVideo": "视频 {{n}}"
   },
   "page": {
-    "emptyHint": "创建一条时间线开始剪辑。",
+    "emptyHint": "创建一条时间线开始剪辑",
     "emptyTitle": "还没有时间线",
     "historyBoundary": "剪辑室",
     "newTimeline": "新建时间线",
-    "saveConflict": "版本冲突使保存被阻止——回到画布处理后再试。",
-    "saveFailed": "保存失败——回到画布重试。"
+    "saveConflict": "版本冲突使保存被阻止——回到画布处理后再试",
+    "saveFailed": "保存失败——回到画布重试"
   },
   "topBar": {
     "exportVideo": "导出视频…"
@@ -172,15 +172,15 @@
     "text": "文字"
   },
   "mediaLenses": {
-    "cut": "此剪辑还没有素材——导入文件，或从项目中添加。"
+    "cut": "此剪辑还没有素材——导入文件，或从项目中添加"
   },
   "filters": {
     "cool": "冷色",
     "fade": "褪色",
     "mono": "黑白",
     "none": "无",
-    "selectHint": "选择片段来应用观感。",
-    "toggleHint": "再次按下片段已应用的观感即可取消。",
+    "selectHint": "选择片段来应用观感",
+    "toggleHint": "再次按下片段已应用的观感即可取消",
     "vivid": "鲜艳",
     "warm": "暖色"
   },
@@ -188,14 +188,14 @@
     "brightness": "亮度",
     "contrast": "对比度",
     "saturation": "饱和度",
-    "selectHint": "选择片段进行调整。"
+    "selectHint": "选择片段进行调整"
   },
   "textPanel": {
-    "clipGone": "用来识别的片段已被删除，字幕没有落轨。",
+    "clipGone": "用来识别的片段已被删除，字幕没有落轨",
     "diarize": "说话人分离",
     "exportSrt": "导出 .srt",
-    "fileTooLarge": "该字幕文件超过 2MB。",
-    "heardNothing": "没有听到可识别的人声。",
+    "fileTooLarge": "该字幕文件超过 2MB",
+    "heardNothing": "没有听到可识别的人声",
     "importSrt": "导入 .srt",
     "importSubtitles": "导入字幕",
     "language": "语种",
@@ -205,10 +205,10 @@
     "languageKo": "韩语",
     "languageYue": "粤语",
     "languageZh": "中文",
-    "noAsrModel": "还没有可用的语音识别模型。",
-    "noClips": "还没有文字片段。",
-    "noSourceClip": "没有可识别的片段——请选择一个音频或视频片段，或把播放头移到它上面。",
-    "noTimeline": "还没有时间线。",
+    "noAsrModel": "还没有可用的语音识别模型",
+    "noClips": "还没有文字片段",
+    "noSourceClip": "没有可识别的片段——请选择一个音频或视频片段，或把播放头移到它上面",
+    "noTimeline": "还没有时间线",
     "openSettings": "配置模型",
     "preset": "预设",
     "saveSrtTitle": "保存字幕",
@@ -216,14 +216,14 @@
     "srtSaved": "字幕已保存到 {{path}}",
     "subtitles": "字幕",
     "transcribe": "自动字幕",
-    "transcribeNoTask": "识别任务没有开始。",
-    "transcribeTimeout": "识别等待超时——请稍后重试。",
-    "transcribed": "已生成 {{cues}} 条字幕。",
-    "transcribedWithSkipped": "已生成 {{cues}} 条字幕（{{skipped}} 条因过短被跳过）。",
+    "transcribeNoTask": "识别任务没有开始",
+    "transcribeTimeout": "识别等待超时——请稍后重试",
+    "transcribed": "已生成 {{cues}} 条字幕",
+    "transcribedWithSkipped": "已生成 {{cues}} 条字幕（{{skipped}} 条因过短被跳过）",
     "transcribing": "识别中…",
     "transcribingLand": "正在落轨…",
     "transcribingSubmit": "上传并提交…",
-    "windowChanged": "片段在识别期间被修剪过，字幕没有落轨——请重新识别。",
+    "windowChanged": "片段在识别期间被修剪过，字幕没有落轨——请重新识别",
     "noAsrModelReason": "还不能转写：{{reason}}"
   },
   "textPresets": {
@@ -233,29 +233,29 @@
     "title": "标题"
   },
   "timelineArea": {
-    "emptyHint": "把素材拖到轨道上开始剪辑。",
+    "emptyHint": "把素材拖到轨道上开始剪辑",
     "emptyTitle": "这里还没有内容",
     "label": "时间线"
   },
   "preview": {
     "approximateBadge": "近似预览",
-    "cannotBeRead": "无法读取 {{name}}。",
-    "elementFramesOut": "此文件无法在这里逐帧解码，画面来自定位后的视频元素，可能相差一两帧。",
-    "empty": "没有可预览的时间线。",
+    "cannotBeRead": "无法读取 {{name}}",
+    "elementFramesOut": "此文件无法在这里逐帧解码，画面来自定位后的视频元素，可能相差一两帧",
+    "empty": "没有可预览的时间线",
     "filePlaceholder": "某个文件",
     "label": "预览",
     "loading": "加载中",
-    "noColourFilters": "此画布无法应用颜色滤镜，因此不显示调色与预设观感。",
-    "noWebCodecs": "此浏览器没有 WebCodecs，画面来自定位后的视频元素，可能相差一两帧。",
-    "silent": "播放没有声音：音频无法启动。"
+    "noColourFilters": "此画布无法应用颜色滤镜，因此不显示调色与预设观感",
+    "noWebCodecs": "此浏览器没有 WebCodecs，画面来自定位后的视频元素，可能相差一两帧",
+    "silent": "播放没有声音：音频无法启动"
   },
   "exportDialog": {
     "close": "关闭",
     "done": "完成",
     "looking": "正在查找渲染器…",
-    "noAss": "没有带 libass 的 ffmpeg，无法烧录文字。",
-    "notAvailable": "这台机器上还没有可用的渲染器。",
-    "nothingToRender": "这条时间线没有可渲染的内容。",
+    "noAss": "没有带 libass 的 ffmpeg，无法烧录文字",
+    "notAvailable": "这台机器上还没有可用的渲染器",
+    "nothingToRender": "这条时间线没有可渲染的内容",
     "progress": "导出进度",
     "reveal": "在文件夹中显示",
     "saveTitle": "保存视频",
@@ -265,7 +265,7 @@
     "unknown": "未知"
   },
   "inspector": {
-    "empty": "选择片段、文件或接缝。",
+    "empty": "选择片段、文件或接缝",
     "label": "检查器"
   },
   "clipFields": {
@@ -286,11 +286,11 @@
     "out": "出点",
     "soundSection": "声音",
     "speedLabel": "速度 ×",
-    "speedLocked": "静帧按自身时长播放，没有可改变的速度。",
+    "speedLocked": "静帧按自身时长播放，没有可改变的速度",
     "speedSection": "速度",
     "start": "开始",
     "textSection": "文字",
-    "tooFastToast": "片段太短，无法以该速度播放。",
+    "tooFastToast": "片段太短，无法以该速度播放",
     "volumeLabel": "音量"
   },
   "textFields": {
@@ -316,7 +316,7 @@
     "positionCenterAria": "居中位置",
     "positionTopAria": "顶部位置",
     "right": "右",
-    "selectOneTextClip": "选择一个文字片段来编辑其文字。",
+    "selectOneTextClip": "选择一个文字片段来编辑其文字",
     "size": "字号",
     "smaller": "缩小{{name}}",
     "stroke": "描边",
@@ -350,7 +350,7 @@
     "frameRate": "帧率",
     "length": "长度",
     "name": "名称",
-    "selectHint": "选择片段来编辑其播放方式。",
+    "selectHint": "选择片段来编辑其播放方式",
     "title": "时间线",
     "tracks": "轨道"
   },
@@ -387,30 +387,30 @@
     "unmuteTrack": "取消静音 {{name}}"
   },
   "actions": {
-    "added": "已添加 {{name}}。",
-    "audioOnAudioTrack": "音频文件应放在音频轨道上。",
-    "durationUnknown": "时长未知——片段按 4 秒放置；请修剪到合适长度。",
-    "playheadNotOverClip": "播放头不在所选片段上。",
-    "seamTooShort": "这些片段太短，无法添加转场。",
-    "textClipsOnTextPage": "文字片段在文字页面创建。",
-    "tooShortToSplit": "片段太短，无法在播放头处分割。",
-    "trackLocked": "该轨道已锁定。",
-    "videoOnVideoTrack": "视频或图片应放在视频轨道上。",
-    "addedInOrder": "已依次添加 {{count}} 个文件。"
+    "added": "已添加 {{name}}",
+    "audioOnAudioTrack": "音频文件应放在音频轨道上",
+    "durationUnknown": "时长未知——片段按 4 秒放置；请修剪到合适长度",
+    "playheadNotOverClip": "播放头不在所选片段上",
+    "seamTooShort": "这些片段太短，无法添加转场",
+    "textClipsOnTextPage": "文字片段在文字页面创建",
+    "tooShortToSplit": "片段太短，无法在播放头处分割",
+    "trackLocked": "该轨道已锁定",
+    "videoOnVideoTrack": "视频或图片应放在视频轨道上",
+    "addedInOrder": "已依次添加 {{count}} 个文件"
   },
   "cues": {
     "editor": "字幕文字",
-    "noRoom": "这里放不下新的字幕。",
+    "noRoom": "这里放不下新的字幕",
     "placeholder": "输入字幕文字"
   },
   "subtitles": {
-    "clipLimit": "时间线最多容纳 {{max}} 个片段——请先删除 {{extra}} 个。",
-    "imported": "已导入 {{cues}} 条字幕。",
-    "importedWithSkipped": "已导入 {{cues}} 条字幕（{{skipped}} 条因过短被跳过）。",
-    "noCuesFound": "文件中没有找到字幕。",
-    "noCuesLongEnough": "没有足够长的字幕条目可以导入。",
-    "overlapClip": "字幕与 {{name}} 上已有的片段重叠。",
-    "overlapEachOther": "字幕在 {{timecode}} 处相互重叠。"
+    "clipLimit": "时间线最多容纳 {{max}} 个片段——请先删除 {{extra}} 个",
+    "imported": "已导入 {{cues}} 条字幕",
+    "importedWithSkipped": "已导入 {{cues}} 条字幕（{{skipped}} 条因过短被跳过）",
+    "noCuesFound": "文件中没有找到字幕",
+    "noCuesLongEnough": "没有足够长的字幕条目可以导入",
+    "overlapClip": "字幕与 {{name}} 上已有的片段重叠",
+    "overlapEachOther": "字幕在 {{timecode}} 处相互重叠"
   },
   "history": {
     "addClip": "添加片段",

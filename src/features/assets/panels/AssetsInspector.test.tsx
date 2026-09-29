@@ -104,7 +104,7 @@ describe("what the right column says about a file", () => {
     render(<AssetsInspector />);
     expect(
       screen.getByText(
-        "What a file is, and what was said about it, is read here.",
+        "What a file is, and what was said about it, is read here",
       ),
     ).toBeTruthy();
 

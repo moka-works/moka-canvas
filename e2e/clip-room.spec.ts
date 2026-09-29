@@ -48,7 +48,7 @@ test("a project without timelines opens onto the first-run question", async ({
 
   await expect(page.getByText("No timelines yet")).toBeVisible();
   await expect(
-    page.getByText("Create a timeline to start cutting."),
+    page.getByText("Create a timeline to start cutting"),
   ).toBeVisible();
   await expect(strip(page).getByRole("tab")).toHaveCount(0);
 
