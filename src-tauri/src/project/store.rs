@@ -37,6 +37,9 @@ struct OpenState {
     /// The latest check: what the sizes said at open, plus whatever the read
     /// behind it has found since.
     self_check: SelfCheckReport,
+    /// The digest each issue the read found was found against, so a file that
+    /// was replaced since does not keep an issue about the one that is gone.
+    verified_against: std::collections::BTreeMap<String, String>,
     /// Whether that read has finished — true when there was nothing to read.
     self_check_verified: bool,
     /// Which open this state belongs to; the read carries the same number.
@@ -467,16 +470,7 @@ impl FsProjectStore {
             let meta = resolved
                 .as_ref()
                 .and_then(|path| std::fs::metadata(path).ok());
-            let reason = match meta {
-                None => Some(SelfCheckReason::Missing),
-                Some(meta) if !meta.is_file() => Some(SelfCheckReason::Missing),
-                Some(meta) if meta.len() == 0 => Some(SelfCheckReason::Empty),
-                Some(meta) => match entry.bytes {
-                    Some(bytes) if bytes as u64 != meta.len() => Some(SelfCheckReason::Changed),
-                    _ => None,
-                },
-            };
-            if let Some(reason) = reason {
+            if let Some(reason) = Self::stat_reason(meta.as_ref(), entry) {
                 issues.push(SelfCheckIssue {
                     asset_id: entry.id.clone(),
                     name: entry.name.clone(),
@@ -533,6 +527,7 @@ impl FsProjectStore {
                 revision,
                 file_stamp: stamp,
                 self_check: report.clone(),
+                verified_against: std::collections::BTreeMap::new(),
                 self_check_verified: verified,
                 open_token: token,
             });
@@ -578,6 +573,7 @@ impl FsProjectStore {
                     Ok(_) => publish_verified_issue(
                         &state,
                         token,
+                        job,
                         verify_issue(job, SelfCheckReason::Changed),
                     ),
                     // A file that cannot be read now is reported the way the
@@ -585,6 +581,7 @@ impl FsProjectStore {
                     Err(_) => publish_verified_issue(
                         &state,
                         token,
+                        job,
                         verify_issue(job, SelfCheckReason::Missing),
                     ),
                 }
@@ -593,6 +590,65 @@ impl FsProjectStore {
                 }
             });
         }
+    }
+
+    /// What one entry's file says about itself, from its metadata alone.
+    fn stat_reason(
+        meta: Option<&std::fs::Metadata>,
+        entry: &crate::domain::ResourceEntry,
+    ) -> Option<SelfCheckReason> {
+        match meta {
+            None => Some(SelfCheckReason::Missing),
+            Some(meta) if !meta.is_file() => Some(SelfCheckReason::Missing),
+            Some(meta) if meta.len() == 0 => Some(SelfCheckReason::Empty),
+            Some(meta) => match entry.bytes {
+                Some(bytes) if bytes as u64 != meta.len() => Some(SelfCheckReason::Changed),
+                _ => None,
+            },
+        }
+    }
+
+    /// How much of a report still stands, asked again where that is cheap.
+    ///
+    /// A report is about the files as they were found, and a reader who puts a
+    /// missing file back — through the very dialog this report raised — has
+    /// made it wrong. So every issue is looked at again before a report is
+    /// handed out: one whose file passes a stat now is dropped, and one the
+    /// read found by content is kept only while the entry still carries the
+    /// digest it was found against — a file that was replaced since is not the
+    /// file that was complained about.
+    fn refresh_report(&self, state: &mut OpenState) {
+        if state.self_check.issues.is_empty() {
+            return;
+        }
+        let root = state.root.clone();
+        let moka = &state.moka;
+        let mut kept = Vec::with_capacity(state.self_check.issues.len());
+        for mut issue in std::mem::take(&mut state.self_check.issues) {
+            let Some(entry) = moka.resources.find(&issue.asset_id) else {
+                // The file is not the project's any more; nothing holds the
+                // issue up.
+                state.verified_against.remove(&issue.asset_id);
+                continue;
+            };
+            if let Some(against) = state.verified_against.get(&issue.asset_id) {
+                if entry.sha256.as_deref() == Some(against.as_str()) {
+                    kept.push(issue);
+                } else {
+                    state.verified_against.remove(&issue.asset_id);
+                }
+                continue;
+            }
+            let meta = Self::resolve_in_root(&root, &entry.path)
+                .ok()
+                .and_then(|path| std::fs::metadata(path).ok());
+            if let Some(reason) = Self::stat_reason(meta.as_ref(), entry) {
+                issue.reason = reason;
+                kept.push(issue);
+            }
+        }
+        state.self_check.issues = kept;
+        state.self_check.ok = state.self_check.issues.is_empty();
     }
 
     /// The nodes pointing at one asset, as a report names them.
@@ -713,10 +769,13 @@ fn verify_issue(job: &VerifyJob, reason: SelfCheckReason) -> SelfCheckIssue {
 /// Writes one finding of the read behind an open into the state it belongs to.
 ///
 /// A read that finishes after another project was opened publishes nothing: the
-/// report it was making is about a document nobody is being shown.
+/// report it was making is about a document nobody is being shown. A read whose
+/// file was replaced while it was going publishes nothing either: the entry has
+/// moved on to other bytes, and what was found is about a file that is gone.
 fn publish_verified_issue(
     state: &Arc<Mutex<Option<OpenState>>>,
     token: u64,
+    job: &VerifyJob,
     issue: SelfCheckIssue,
 ) {
     let mut guard = state.lock().expect("store poisoned");
@@ -724,6 +783,16 @@ fn publish_verified_issue(
     if open.open_token != token {
         return;
     }
+    let filed = open
+        .moka
+        .resources
+        .find(&job.asset_id)
+        .and_then(|entry| entry.sha256.clone());
+    if filed.as_deref() != Some(job.sha256.as_str()) {
+        return;
+    }
+    open.verified_against
+        .insert(job.asset_id.clone(), job.sha256.clone());
     open.self_check.ok = false;
     open.self_check.issues.push(issue);
 }
@@ -911,16 +980,20 @@ impl ProjectStore for FsProjectStore {
     }
 
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError> {
-        let guard = self.state.lock().expect("store poisoned");
-        Ok(guard.as_ref().map(|state| OpenProject {
-            root: state.root.clone(),
-            moka: state.moka.clone(),
+        let mut guard = self.state.lock().expect("store poisoned");
+        Ok(guard.as_mut().map(|state| {
             // The report a reader was shown when the project opened, not a
             // blank one: a reader who reads the document again is looking at
             // the same files, and a check that has found something since is
-            // still what is true about them.
-            self_check: state.self_check.clone(),
-            self_check_verified: state.self_check_verified,
+            // still what is true about them. What is no longer true is asked
+            // again here rather than handed out.
+            self.refresh_report(state);
+            OpenProject {
+                root: state.root.clone(),
+                moka: state.moka.clone(),
+                self_check: state.self_check.clone(),
+                self_check_verified: state.self_check_verified,
+            }
         }))
     }
 
@@ -929,10 +1002,11 @@ impl ProjectStore for FsProjectStore {
     }
 
     async fn self_check_status(&self) -> Result<Option<(SelfCheckReport, bool)>, ProjectError> {
-        let guard = self.state.lock().expect("store poisoned");
-        Ok(guard
-            .as_ref()
-            .map(|state| (state.self_check.clone(), state.self_check_verified)))
+        let mut guard = self.state.lock().expect("store poisoned");
+        Ok(guard.as_mut().map(|state| {
+            self.refresh_report(state);
+            (state.self_check.clone(), state.self_check_verified)
+        }))
     }
 
     async fn apply_commands(
