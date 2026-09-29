@@ -152,17 +152,23 @@ async fn a_models_scenario_rows_travel_through_the_wire_and_are_validated() {
     body["category"] = json!("video");
     body["protocol"] = json!("openaiVideos");
     body["url"] = json!("https://provider.test/v1/videos");
+    body["scenes"] = json!(["textToVideo"]);
     body["subModels"] = json!([
-        { "model": "happy-t2v", "scenes": ["textToVideo"] },
+        { "model": "happy-t2v", "scenes": ["imageToVideo"] },
         {
             "model": "happy-i2v",
             "url": "https://provider.test/v1/video/images",
-            "scenes": ["imageToVideo", "firstLastFrame"]
+            "scenes": ["firstLastFrame"]
         }
     ]);
 
     let view = put_model(&harness.app, body).await;
     let stored = &view["models"][0];
+    assert_eq!(
+        stored["scenes"],
+        json!(["textToVideo"]),
+        "the scenarios the configuration's own model answers"
+    );
     assert_eq!(stored["subModels"][0]["model"], "happy-t2v");
     assert_eq!(
         stored["subModels"][0].get("url"),
@@ -174,8 +180,8 @@ async fn a_models_scenario_rows_travel_through_the_wire_and_are_validated() {
         "https://provider.test/v1/video/images"
     );
 
-    // One scenario is answered by one row, so a second row claiming it is
-    // refused where it is configured.
+    // One scenario is answered by one claim, whether it is the configuration's
+    // own or a row's, so a second claim is refused where it is configured.
     let mut clashing = model_body("filmer", None);
     clashing["category"] = json!("video");
     clashing["protocol"] = json!("openaiVideos");
@@ -187,6 +193,20 @@ async fn a_models_scenario_rows_travel_through_the_wire_and_are_validated() {
     let (status, problem) = send(
         &harness.app,
         json_request("PUT", "/api/v1/models", clashing),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "VALIDATION_FAILED");
+
+    let mut overlapping = model_body("filmer", None);
+    overlapping["category"] = json!("video");
+    overlapping["protocol"] = json!("openaiVideos");
+    overlapping["url"] = json!("https://provider.test/v1/videos");
+    overlapping["scenes"] = json!(["imageToVideo"]);
+    overlapping["subModels"] = json!([{ "model": "a", "scenes": ["imageToVideo"] }]);
+    let (status, problem) = send(
+        &harness.app,
+        json_request("PUT", "/api/v1/models", overlapping),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");

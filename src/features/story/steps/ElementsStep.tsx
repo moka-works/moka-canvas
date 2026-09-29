@@ -8,6 +8,7 @@ import {
   currentTake,
   elementDescribed,
   targetKey,
+  voiceNamed,
   type StoryDocument,
   type StoryElement,
   type StoryElementKind,
@@ -21,8 +22,14 @@ import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ElementCard } from "../panels/ElementCard";
+import { VoiceFields } from "../panels/VoiceFields";
 import { readElementsAnswer } from "../jobs/apply";
-import { planElementArt, planElements, storyReadChars } from "../jobs/plan";
+import {
+  planElementArt,
+  planElements,
+  resolveVoice,
+  storyReadChars,
+} from "../jobs/plan";
 import {
   jobProgress,
   kindRunning,
@@ -201,6 +208,24 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           <StoryImportButton story={story} target="canvas" />
         </div>
         <StoryModelPicks places={["text", "image"]} />
+
+        <div className="story-voice-narrator">
+          <span className="story-hint" data-testid="story-voice-narrator-tip">
+            {t("story:elements.narratorTip")}
+          </span>
+          <VoiceFields
+            fallbackVoice={resolveVoice(story, undefined)}
+            onWrite={(narrator) =>
+              execute(i18n.t("story:history.elements"), [
+                { type: "updateStoryNarrator", storyId: story.id, narrator },
+              ])
+            }
+            story={story}
+            testId="story-voice-narrator"
+            voice={story.narrator}
+          />
+        </div>
+        <VoiceSummary story={story} />
 
         {warnings.length > 0 && (
           <div
@@ -431,6 +456,47 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * How much of the cast has a voice, and the way to the next one that has not.
+ *
+ * A telling may hold a hundred characters, so the count is the one glance
+ * that says whether any of them still needs a voice, and the press is the
+ * walk to the first of them rather than a scroll through the cards.
+ */
+function VoiceSummary({ story }: { story: StoryDocument }) {
+  const { t } = useTranslation();
+  const characters = story.elements.filter(
+    (element) => element.kind === "character",
+  );
+  const named = characters.filter((element) =>
+    voiceNamed(element.voice),
+  ).length;
+  const first = characters.find((element) => !voiceNamed(element.voice));
+
+  return (
+    <p className="story-voice-summary">
+      <button
+        className="link"
+        data-testid="story-voice-summary"
+        disabled={first === undefined}
+        onClick={() => {
+          if (first === undefined) return;
+          const escaped = first.name.replace(/["\\]/g, "\\$&");
+          document
+            .querySelector(`[data-testid="story-voice-${escaped}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+        type="button"
+      >
+        {t("story:elements.voiceNamed", {
+          named,
+          total: characters.length,
+        })}
+      </button>
+    </p>
   );
 }
 

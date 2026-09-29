@@ -25,6 +25,7 @@ import {
   STORY_SHOT_SIZES,
 } from "./types";
 import { reconcilePorts } from "./factories";
+import { newId } from "./ids";
 import { STORY_STEPS, type StoryStep } from "./story";
 import type {
   AssistantFailure,
@@ -53,6 +54,8 @@ import type {
   StoryKeyframe,
   StorySlot,
   StoryTake,
+  StoryVoiceProfile,
+  StoryVoiceTake,
   TextClipStyle,
   TimelineClip,
   TimelineDocument,
@@ -412,6 +415,7 @@ function encodeStorySlot(slot: StorySlot): Record<string, unknown> {
 
 function encodeStoryDialogue(line: StoryDialogueLine): Record<string, unknown> {
   const doc: Record<string, unknown> = {
+    id: line.id,
     speaker: line.speaker,
     text: line.text,
   };
@@ -437,6 +441,14 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
   // board whose frames are all references keeps the shape it came in with.
   if (keyframe.filmRole !== undefined && keyframe.filmRole !== "reference") {
     doc.filmRole = keyframe.filmRole;
+  }
+  if (keyframe.voices !== undefined && keyframe.voices.length > 0) {
+    doc.voices = keyframe.voices.map((take) => ({
+      lineId: take.lineId,
+      text: take.text,
+      voice: take.voice,
+      slot: encodeStorySlot(take.slot),
+    }));
   }
   return doc;
 }
@@ -476,6 +488,28 @@ function encodeStoryChapter(chapter: StoryChapter): Record<string, unknown> {
   };
 }
 
+/**
+ * One voice as the document carries it.
+ *
+ * Both words are written even when one is empty — an empty voice is a voice
+ * handed to the next one, and leaving it off would say the profile was never
+ * there — while a number nobody set is left off rather than written as
+ * nothing.
+ */
+function encodeStoryVoiceProfile(
+  profile: StoryVoiceProfile,
+): Record<string, unknown> {
+  const doc: Record<string, unknown> = {
+    model: profile.model,
+    voice: profile.voice,
+  };
+  if (profile.rate !== undefined) doc.rate = profile.rate;
+  if (profile.pitch !== undefined) doc.pitch = profile.pitch;
+  if (profile.instructions !== undefined)
+    doc.instructions = profile.instructions;
+  return doc;
+}
+
 function encodeStoryElement(element: StoryElement): Record<string, unknown> {
   const doc: Record<string, unknown> = {
     id: element.id,
@@ -487,6 +521,8 @@ function encodeStoryElement(element: StoryElement): Record<string, unknown> {
   };
   if (element.turnaround !== undefined)
     doc.turnaround = encodeStorySlot(element.turnaround);
+  if (element.voice !== undefined)
+    doc.voice = encodeStoryVoiceProfile(element.voice);
   return doc;
 }
 
@@ -516,11 +552,13 @@ function encodeStoryEdit(edit: StoryEdit): Record<string, unknown> {
         ? { keyframeId: entry.keyframeId }
         : {}),
     }));
+  if (edit.assembledDigest !== undefined)
+    doc.assembledDigest = edit.assembledDigest;
   return doc;
 }
 
 function encodeStory(story: StoryDocument): Record<string, unknown> {
-  return {
+  const doc: Record<string, unknown> = {
     id: story.id,
     name: story.name,
     schemaVersion: story.schemaVersion,
@@ -534,6 +572,9 @@ function encodeStory(story: StoryDocument): Record<string, unknown> {
     createdAt: story.createdAt,
     updatedAt: story.updatedAt,
   };
+  if (story.narrator !== undefined)
+    doc.narrator = encodeStoryVoiceProfile(story.narrator);
+  return doc;
 }
 
 function encodeProbe(
@@ -1249,6 +1290,10 @@ function decodeStorySlot(value: unknown): StorySlot {
 function decodeStoryDialogue(value: unknown): StoryDialogueLine {
   const doc = asRecord(value, "keyframes[].dialogue[]");
   const line: StoryDialogueLine = {
+    // A line written before lines had names is given one as it is read: the
+    // document is saved whole, so the name lands on disk with the next save
+    // and every read after that sees the same one.
+    id: doc.id === undefined ? newId() : asString(doc.id, "dialogue[].id"),
     speaker: asString(doc.speaker, "dialogue[].speaker"),
     text: asString(doc.text, "dialogue[].text"),
   };
@@ -1287,7 +1332,34 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
       "reference",
     );
   }
+  const voices = decodeStoryVoices(doc.voices);
+  if (voices !== undefined) keyframe.voices = voices;
   return keyframe;
+}
+
+/**
+ * The lines of a shot read aloud, as a document carries them.
+ *
+ * A line's take is kept by the line's own name, so a telling written before
+ * lines had names has no takes to read: one that names nothing would be a
+ * take no line could ever be told apart by.
+ */
+function decodeStoryVoices(value: unknown): StoryVoiceTake[] | undefined {
+  if (value === undefined) return undefined;
+  const takes = asArray(value, "keyframes[].voices").flatMap((entry) => {
+    const doc = asRecord(entry, "keyframes[].voices[]");
+    const lineId = optionalString(doc.lineId);
+    if (lineId === undefined || lineId === "") return [];
+    return [
+      {
+        lineId,
+        text: asString(doc.text, "voices[].text"),
+        voice: optionalString(doc.voice) ?? "",
+        slot: decodeStorySlot(doc.slot),
+      },
+    ];
+  });
+  return takes.length === 0 ? undefined : takes;
 }
 
 function decodeStoryAct(value: unknown): StoryAct {
@@ -1349,7 +1421,35 @@ function decodeStoryElement(value: unknown): StoryElement {
   };
   if (doc.turnaround !== undefined)
     element.turnaround = decodeStorySlot(doc.turnaround);
+  if (doc.voice !== undefined)
+    element.voice = decodeStoryVoiceProfile(doc.voice, "elements[].voice");
   return element;
+}
+
+/**
+ * One voice, as a document carries it.
+ *
+ * The two words that say who reads and in what voice are read as written — a
+ * voice left out is handed to the next one, which is a different answer from a
+ * voice holding nothing — while the two numbers are read only when they are
+ * numbers: a pace nobody could measure is not a pace to read at.
+ */
+function decodeStoryVoiceProfile(
+  value: unknown,
+  where: string,
+): StoryVoiceProfile {
+  const doc = asRecord(value, where);
+  const profile: StoryVoiceProfile = {
+    model: optionalString(doc.model) ?? "",
+    voice: optionalString(doc.voice) ?? "",
+  };
+  if (typeof doc.rate === "number" && Number.isFinite(doc.rate))
+    profile.rate = doc.rate;
+  if (typeof doc.pitch === "number" && Number.isFinite(doc.pitch))
+    profile.pitch = doc.pitch;
+  const instructions = optionalString(doc.instructions);
+  if (instructions !== undefined) profile.instructions = instructions;
+  return profile;
 }
 
 function decodeStoryBrief(value: unknown): StoryBrief {
@@ -1390,6 +1490,8 @@ function decodeStoryEdit(value: unknown): StoryEdit {
       return held;
     });
   }
+  if (doc.assembledDigest !== undefined)
+    edit.assembledDigest = optionalString(doc.assembledDigest);
   return edit;
 }
 
@@ -1473,7 +1575,7 @@ function decodeStory(value: unknown): StoryDocument {
       `Story schema version ${schemaVersion} is not supported (expected ${STORY_SCHEMA_VERSION} or earlier)`,
     );
   }
-  return {
+  const story: StoryDocument = {
     id: asString(doc.id, "stories[].id"),
     name: asString(doc.name, "stories[].name"),
     schemaVersion,
@@ -1495,6 +1597,12 @@ function decodeStory(value: unknown): StoryDocument {
     createdAt: asString(doc.createdAt, "stories[].createdAt"),
     updatedAt: asString(doc.updatedAt, "stories[].updatedAt"),
   };
+  if (doc.narrator !== undefined)
+    story.narrator = decodeStoryVoiceProfile(
+      doc.narrator,
+      "stories[].narrator",
+    );
+  return story;
 }
 
 /**

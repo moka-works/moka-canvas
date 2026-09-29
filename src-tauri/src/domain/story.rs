@@ -28,6 +28,15 @@ pub const REFERENCE_IMAGES_DEFAULT: u32 = 3;
 pub const REFERENCE_IMAGES_MAX: u32 = 9;
 pub const MAX_DIALOGUE_LINES_PER_KEYFRAME: usize = 12;
 pub const MAX_DIALOGUE_LINE_LENGTH: usize = 500;
+/// What a voice named in a story may be called, and what it may say of itself.
+pub const VOICE_MODEL_MAX: usize = 120;
+pub const VOICE_NAME_MAX: usize = 120;
+pub const VOICE_INSTRUCTIONS_MAX: usize = 500;
+/// The pace and pitch a character may claim, the bounds the preferences hold to.
+pub const VOICE_RATE_MIN: f64 = 0.5;
+pub const VOICE_RATE_MAX: f64 = 2.0;
+pub const VOICE_PITCH_MIN: f64 = 0.5;
+pub const VOICE_PITCH_MAX: f64 = 2.0;
 pub const MIN_KEYFRAME_MS: i64 = 400;
 pub const MAX_KEYFRAME_MS: i64 = 60_000;
 pub const MIN_TOTAL_DURATION_MS: i64 = 30_000;
@@ -309,12 +318,65 @@ pub struct StorySlot {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryDialogueLine {
+    /// The line's own name, which is what a take of it read aloud is filed
+    /// under. Written before lines had names, so a document may leave it off:
+    /// the client gives such a line one as it reads, and the field is written
+    /// only once there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character_id: Option<String>,
     pub speaker: String,
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tone: Option<String>,
+}
+
+/// One line of dialogue read aloud, and what it says.
+///
+/// Kept per line rather than per act because every character speaks in their
+/// own voice: the words as they were read — which is how a line edited since
+/// is told from one that has not been — and the tone it was read in, so the
+/// card can say whose voice it is without reading the voice chain again.
+/// What a line of dialogue was read as, for the card that shows it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryVoiceRead {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub voice: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryVoiceTake {
+    #[serde(default)]
+    pub line_id: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub voice: String,
+    pub slot: StorySlot,
+}
+
+/// The voice a character or a narrator speaks in: which model reads it, in
+/// which tone, and how. Every field left empty falls through to the next layer
+/// of the chain the client resolves — the story's narrator, the machine's own
+/// speech pick, and then the deployment's default.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryVoiceProfile {
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub voice: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -343,6 +405,9 @@ pub struct StoryKeyframe {
     pub duration_ms: i64,
     pub art: StorySlot,
     pub video: StorySlot,
+    /// The lines of this shot read aloud, each in its own speaker's voice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voices: Option<Vec<StoryVoiceTake>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -398,6 +463,9 @@ pub struct StoryElement {
     pub main: StorySlot,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turnaround: Option<StorySlot>,
+    /// The voice this character speaks in, when the reader has given it one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<StoryVoiceProfile>,
 }
 
 /// One clip this story's assembly laid down.
@@ -417,6 +485,11 @@ pub struct StoryEdit {
     pub timeline_id: Option<TimelineId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip_by_act: Option<Vec<StoryEditClip>>,
+    /// What the timeline was laid down from, as one short reading of it. A
+    /// document written before this existed carries none, which the room reads
+    /// as "the film is behind the telling".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembled_digest: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -441,6 +514,10 @@ pub struct StoryDocument {
     pub confirmed_steps: Vec<StoryStep>,
     #[serde(default)]
     pub edit: StoryEdit,
+    /// The voice lines that belong to no character are read in, and the one
+    /// every character without a voice of its own falls back to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub narrator: Option<StoryVoiceProfile>,
     pub created_at: IsoTimestamp,
     pub updated_at: IsoTimestamp,
 }
@@ -486,6 +563,13 @@ pub enum StorySlotTarget {
     #[serde(rename_all = "camelCase")]
     ActVoice { chapter_id: String, act_id: String },
     #[serde(rename_all = "camelCase")]
+    LineVoice {
+        chapter_id: String,
+        act_id: String,
+        keyframe_id: String,
+        line_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
     ActMusic { chapter_id: String, act_id: String },
 }
 
@@ -497,6 +581,10 @@ pub enum StoryElementView {
 }
 
 /// The fields a caller may move on an element, for `updateStoryElement`.
+///
+/// `voice` is double-layered the way an act's `scene_id` is: left off leaves
+/// the voice where it was, and a null takes it away, since a character with no
+/// voice named and a character whose voice was cleared are the same character.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryElementPatch {
@@ -508,6 +596,12 @@ pub struct StoryElementPatch {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapter_ids: Option<Vec<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub voice: Option<Option<StoryVoiceProfile>>,
 }
 
 /// The fields a caller may move on an act, for `updateStoryAct`.
@@ -578,6 +672,12 @@ pub struct StoryEditPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub clip_by_act: Option<Option<Vec<StoryEditClip>>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub assembled_digest: Option<Option<String>>,
 }
 
 impl StoryDocument {
@@ -614,6 +714,9 @@ impl StoryDocument {
                 for keyframe in &act.keyframes {
                     slot(&keyframe.art);
                     slot(&keyframe.video);
+                    for take in keyframe.voices.iter().flatten() {
+                        slot(&take.slot);
+                    }
                 }
             }
         }
@@ -679,7 +782,46 @@ impl StoryDocument {
                 .act(chapter_id, act_id)
                 .map(|act| act.music.clone().unwrap_or_default())
                 .ok_or_else(story_target_invalid),
+            // The line's take is read off the shot, not off the line: a line
+            // edited or taken out of the board leaves its take where it was,
+            // so that what was said is not lost by what was said afterwards.
+            StorySlotTarget::LineVoice {
+                chapter_id,
+                act_id,
+                keyframe_id,
+                line_id,
+            } => self
+                .keyframe(chapter_id, act_id, keyframe_id)
+                .map(|keyframe| {
+                    keyframe
+                        .voices
+                        .iter()
+                        .flatten()
+                        .find(|take| &take.line_id == line_id)
+                        .map(|take| take.slot.clone())
+                        .unwrap_or_default()
+                })
+                .ok_or_else(story_target_invalid),
         }
+    }
+
+    /// The take a line-voice target names, with the words it was read as.
+    fn voice_take(&self, target: &StorySlotTarget) -> Option<StoryVoiceTake> {
+        let StorySlotTarget::LineVoice {
+            chapter_id,
+            act_id,
+            keyframe_id,
+            line_id,
+        } = target
+        else {
+            return None;
+        };
+        self.keyframe(chapter_id, act_id, keyframe_id)?
+            .voices
+            .iter()
+            .flatten()
+            .find(|take| &take.line_id == line_id)
+            .cloned()
     }
 
     fn keyframe(
@@ -695,7 +837,12 @@ impl StoryDocument {
     }
 
     /// This story with a slot written where the target names it.
-    fn with_slot(&self, target: &StorySlotTarget, slot: StorySlot) -> StoryDocument {
+    fn with_slot(
+        &self,
+        target: &StorySlotTarget,
+        slot: StorySlot,
+        read: Option<StoryVoiceRead>,
+    ) -> StoryDocument {
         let mut next = self.clone();
         match target {
             StorySlotTarget::Element { element_id, view } => {
@@ -787,6 +934,28 @@ impl StoryDocument {
                     }
                 }
             }
+            StorySlotTarget::LineVoice {
+                chapter_id,
+                act_id,
+                keyframe_id,
+                line_id,
+            } => {
+                for chapter in next.chapters.iter_mut() {
+                    if &chapter.id != chapter_id {
+                        continue;
+                    }
+                    for act in chapter.acts.iter_mut() {
+                        if &act.id != act_id {
+                            continue;
+                        }
+                        for keyframe in act.keyframes.iter_mut() {
+                            if &keyframe.id == keyframe_id {
+                                with_voice_take(keyframe, line_id, slot.clone(), read.clone());
+                            }
+                        }
+                    }
+                }
+            }
         }
         next
     }
@@ -802,6 +971,65 @@ fn story_target_invalid() -> CommandError {
 /// about a place a reader has not asked about yet, and the undo of the first
 /// take ever made for an act has to put the document back the way it was —
 /// which is without the slot, not with an empty one.
+/// One line's take kept on its shot, whole.
+///
+/// A slot that has come to hold nothing takes the whole entry with it: the two
+/// would say different things about a line nobody has read yet, and the undo of
+/// the first reading has to put the document back the way it was — without the
+/// entry, not with an empty one. What the line was read as is kept beside the
+/// takes, so the card can say the words the recording holds even after the line
+/// beside them was rewritten. The entries stand in the order their lines do on
+/// the board, so that two rooms holding the same reading write the same
+/// document; a take whose line has left the shot is not on the board to be
+/// ordered by, and comes last.
+fn with_voice_take(
+    keyframe: &mut StoryKeyframe,
+    line_id: &str,
+    slot: StorySlot,
+    read: Option<StoryVoiceRead>,
+) {
+    let order: BTreeMap<&str, usize> = keyframe
+        .dialogue
+        .iter()
+        .enumerate()
+        .map(|(at, line)| (line.id.as_deref().unwrap_or(""), at))
+        .collect();
+    let held = keyframe.voices.take().unwrap_or_default();
+    let before = held.iter().find(|take| take.line_id == line_id).cloned();
+    let rest: Vec<StoryVoiceTake> = held
+        .into_iter()
+        .filter(|take| take.line_id != line_id)
+        .collect();
+    if slot.takes.is_empty() {
+        keyframe.voices = if rest.is_empty() { None } else { Some(rest) };
+        return;
+    }
+    let text = read
+        .as_ref()
+        .map(|read| read.text.clone())
+        .or_else(|| before.as_ref().map(|take| take.text.clone()))
+        .unwrap_or_default();
+    let voice = read
+        .as_ref()
+        .map(|read| read.voice.clone())
+        .or_else(|| before.as_ref().map(|take| take.voice.clone()))
+        .unwrap_or_default();
+    let mut voices = rest;
+    voices.push(StoryVoiceTake {
+        line_id: line_id.to_string(),
+        text,
+        voice,
+        slot,
+    });
+    voices.sort_by_key(|take| {
+        order
+            .get(take.line_id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
+    keyframe.voices = Some(voices);
+}
+
 fn kept_sound_slot(slot: StorySlot) -> Option<StorySlot> {
     if slot.takes.is_empty() {
         None
@@ -1049,6 +1277,59 @@ fn check_slot(slot: StorySlot) -> StorySlot {
     StorySlot { takes }
 }
 
+/// The voice a character or a narrator is given: a model and a tone named
+/// within reason, and a pace and pitch the providers all accept.
+fn check_voice(voice: &StoryVoiceProfile) -> Result<(), CommandError> {
+    if voice.model.chars().count() > VOICE_MODEL_MAX
+        || voice.voice.chars().count() > VOICE_NAME_MAX
+        || voice
+            .instructions
+            .as_ref()
+            .is_some_and(|instructions| instructions.chars().count() > VOICE_INSTRUCTIONS_MAX)
+    {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "The voice's model, tone, or manner is too long",
+        ));
+    }
+    if let Some(rate) = voice.rate {
+        if !(VOICE_RATE_MIN..=VOICE_RATE_MAX).contains(&rate) {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "The voice's pace is out of range",
+            ));
+        }
+    }
+    if let Some(pitch) = voice.pitch {
+        if !(VOICE_PITCH_MIN..=VOICE_PITCH_MAX).contains(&pitch) {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "The voice's pitch is out of range",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// What a line was read as, held to the bounds the line itself is: the words a
+/// recording holds are as long as the words a shot may be written with, and the
+/// tone is a name like any other.
+fn check_voice_read(read: &StoryVoiceRead) -> Result<(), CommandError> {
+    if read.text.chars().count() > MAX_DIALOGUE_LINE_LENGTH {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "Dialogue is too long for one shot",
+        ));
+    }
+    if read.voice.chars().count() > VOICE_NAME_MAX {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "The voice's model, tone, or manner is too long",
+        ));
+    }
+    Ok(())
+}
+
 fn check_dialogue(lines: &[StoryDialogueLine]) -> Result<(), CommandError> {
     if lines.len() > MAX_DIALOGUE_LINES_PER_KEYFRAME {
         return Err(CommandError::new(
@@ -1056,12 +1337,25 @@ fn check_dialogue(lines: &[StoryDialogueLine]) -> Result<(), CommandError> {
             "Dialogue is too long for one shot",
         ));
     }
+    // A patch comes from a client that has read the document, so every line it
+    // carries has a name: two lines sharing one would be two lines with one
+    // take of it read aloud between them.
+    let mut seen: Vec<&str> = Vec::with_capacity(lines.len());
     for line in lines {
         if line.text.trim().is_empty() || line.speaker.is_empty() {
             return Err(CommandError::new(
                 "VALIDATION_FAILED",
                 "A dialogue line has no words in it",
             ));
+        }
+        match line.id.as_deref() {
+            Some(id) if !id.trim().is_empty() && !seen.contains(&id) => seen.push(id),
+            _ => {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "A dialogue line has no name of its own",
+                ))
+            }
         }
         if line.text.chars().count() > MAX_DIALOGUE_LINE_LENGTH {
             return Err(CommandError::new(
@@ -1288,14 +1582,17 @@ pub fn apply_story_command(
                 .iter()
                 .map(|element| (element.id.as_str(), element))
                 .collect();
-            // The drawings stay with the element they were made for; what a
-            // new reading brings is its words.
+            // The drawings and the voice stay with the element they were made
+            // for; what a new reading brings is its words, and the voice is
+            // one of the reader's answers, so a re-listing that says nothing
+            // of it leaves the voice standing.
             let merged: Vec<StoryElement> = elements
                 .iter()
                 .map(|element| match held.get(element.id.as_str()) {
                     Some(before) => StoryElement {
                         main: before.main.clone(),
                         turnaround: before.turnaround.clone(),
+                        voice: element.voice.clone().or_else(|| before.voice.clone()),
                         ..element.clone()
                     },
                     None => element.clone(),
@@ -1351,6 +1648,9 @@ pub fn apply_story_command(
                     ));
                 }
             }
+            if let Some(Some(voice)) = &patch.voice {
+                check_voice(voice)?;
+            }
             let previous = StoryElementPatch {
                 name: patch.name.as_ref().map(|_| element.name.clone()),
                 kind: patch.kind.map(|_| element.kind),
@@ -1362,6 +1662,10 @@ pub fn apply_story_command(
                     .chapter_ids
                     .as_ref()
                     .map(|_| element.chapter_ids.clone()),
+                // A voice the element did not hold is written back as an
+                // explicit clearing, so that undoing the first voice left on a
+                // character takes it off again rather than leaving it standing.
+                voice: patch.voice.as_ref().map(|_| element.voice.clone()),
             };
             let mut next = story.clone();
             for held in next.elements.iter_mut() {
@@ -1380,6 +1684,9 @@ pub fn apply_story_command(
                 if let Some(chapter_ids) = &patch.chapter_ids {
                     held.chapter_ids = chapter_ids.clone();
                 }
+                if let Some(voice) = &patch.voice {
+                    held.voice = voice.clone();
+                }
             }
             Ok((
                 replace_story(moka, next),
@@ -1387,6 +1694,25 @@ pub fn apply_story_command(
                     story_id: story_id.clone(),
                     element_id: element_id.clone(),
                     patch: previous,
+                }],
+            ))
+        }
+        DocumentCommand::UpdateStoryNarrator { story_id, narrator } => {
+            let story = story_of(moka, story_id)?;
+            if let Some(narrator) = narrator {
+                check_voice(narrator)?;
+            }
+            let previous = story.narrator.clone();
+            let mut next = story.clone();
+            // A telling left without a voice of its own leaves the field off
+            // rather than holding nothing: what it says then is that nobody
+            // has said.
+            next.narrator = narrator.clone();
+            Ok((
+                replace_story(moka, next),
+                vec![DocumentCommand::UpdateStoryNarrator {
+                    story_id: story_id.clone(),
+                    narrator: previous,
                 }],
             ))
         }
@@ -1621,16 +1947,34 @@ pub fn apply_story_command(
             story_id,
             target,
             slot,
+            read,
         } => {
             let story = story_of(moka, story_id)?;
             let previous = story.slot(target)?;
-            let next = story.with_slot(target, check_slot(slot.clone()));
+            if let Some(read) = read {
+                check_voice_read(read)?;
+            }
+            // What the entry said before this write, so that the undo of
+            // replacing one reading with another brings the old words and
+            // their tone back.
+            let before = story.voice_take(target);
+            let said = read.clone().or_else(|| {
+                before.as_ref().map(|take| StoryVoiceRead {
+                    text: take.text.clone(),
+                    voice: take.voice.clone(),
+                })
+            });
+            let next = story.with_slot(target, check_slot(slot.clone()), said);
             Ok((
                 replace_story(moka, next),
                 vec![DocumentCommand::SetStorySlot {
                     story_id: story_id.clone(),
                     target: target.clone(),
                     slot: previous,
+                    read: before.map(|take| StoryVoiceRead {
+                        text: take.text,
+                        voice: take.voice,
+                    }),
                 }],
             ))
         }
@@ -1687,6 +2031,10 @@ pub fn apply_story_command(
                     .clip_by_act
                     .as_ref()
                     .map(|_| story.edit.clip_by_act.clone()),
+                assembled_digest: patch
+                    .assembled_digest
+                    .as_ref()
+                    .map(|_| story.edit.assembled_digest.clone()),
             };
             let mut edit = story.edit.clone();
             if let Some(timeline_id) = &patch.timeline_id {
@@ -1694,6 +2042,21 @@ pub fn apply_story_command(
             }
             if let Some(clips) = &patch.clip_by_act {
                 edit.clip_by_act = clips.clone();
+            }
+            if let Some(digest) = &patch.assembled_digest {
+                if let Some(digest) = digest {
+                    let shaped = digest.len() == 8
+                        && digest
+                            .chars()
+                            .all(|at| at.is_ascii_digit() || ('a'..='f').contains(&at));
+                    if !shaped {
+                        return Err(CommandError::new(
+                            "VALIDATION_FAILED",
+                            "An assembly's digest is eight hexadecimal digits",
+                        ));
+                    }
+                }
+                edit.assembled_digest = digest.clone();
             }
             let mut next = story.clone();
             next.edit = edit;

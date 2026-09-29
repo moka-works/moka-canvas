@@ -17,7 +17,7 @@ import {
   rememberedView,
   useClipStore,
 } from "./clipStore";
-import { msAt } from "../timeline/geometry";
+import { msAt, xAt } from "../timeline/geometry";
 
 /** A project of its own name holding the given number of timelines. */
 function project(id: string, timelines: number): MokaFile {
@@ -51,6 +51,8 @@ beforeEach(() => {
     face: "cut",
     selection: { clipIds: [], transitionId: null },
     adjustDraft: null,
+    textDraft: null,
+    cueEditor: null,
     mediaSelection: null,
     newTimelineOpen: false,
     view: { pxPerSec: 60, scrollLeftPx: 0 },
@@ -163,6 +165,48 @@ describe("what the cutting room is looking at", () => {
     store().selectMedia(null);
     expect(store().mediaSelection).toBeNull();
     expect(store().selection.clipIds).toEqual(["clip-a"]);
+  });
+
+  it("opens the in-place cue editor and lets it go, draft and all", () => {
+    const session = { kind: "clip" as const, clipId: "clip-a", seed: "One" };
+    store().setCueEditor(session);
+    expect(store().cueEditor).toEqual(session);
+
+    // The words a session was drafting belong to it: closing the session
+    // hands the preview back to the document.
+    store().setTextDraft({
+      clipIds: ["clip-a"],
+      text: { content: "One more", style: defaultTextStyle() },
+    });
+    store().setCueEditor(null);
+    expect(store().cueEditor).toBeNull();
+    expect(store().textDraft).toBeNull();
+  });
+
+  it("keeps a cue session from travelling to the next timeline", () => {
+    const moka = project("p1", 2);
+    open(moka);
+    store().setCueEditor({ kind: "clip", clipId: "clip-a", seed: "One" });
+    store().setActiveTimeline(moka.timelines![1].id);
+    expect(store().cueEditor).toBeNull();
+  });
+
+  it("brings a moment into view only when it stands outside it", () => {
+    const moka = project("p1", 1);
+    open(moka);
+    store().setActiveTimeline(moka.timelines![0].id);
+    store().setViewportPx(800);
+
+    // A moment on screen leaves the view where the reader left it.
+    store().setView({ scrollLeftPx: 0 });
+    store().revealMs(2_000);
+    expect(store().view.scrollLeftPx).toBe(0);
+
+    // One past the edge lands a fifteenth of the pane in, with room ahead.
+    store().revealMs(20_000);
+    expect(store().view.scrollLeftPx).toBe(1_080);
+    const state = store();
+    expect(xAt(20_000, state.view)).toBeCloseTo(120, 6);
   });
 });
 

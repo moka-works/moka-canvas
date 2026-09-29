@@ -5,6 +5,7 @@ import {
   MAX_TIMELINE_TEXT_CONTENT,
   MIN_CLIP_DURATION_MS,
   createTextClip,
+  defaultTextStyle,
   newId,
   nowIso,
   type ClipPatch,
@@ -14,6 +15,7 @@ import {
   type TimelineClip,
   type TimelineDocument,
   type TimelineTrack,
+  type TrackId,
 } from "../../../shared/domain";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
@@ -183,6 +185,203 @@ export function addTextClipAtPlayhead(
   );
   commands.push({ type: "addClips", timelineId: timeline.id, clips: [clip] });
   const done = execute(i18n.t("clip:history.addTextClip"), commands);
+  if (!done) return null;
+  useClipStore.getState().select({ clipIds: [clip.id], transitionId: null });
+  return clip;
+}
+
+// ---------------------------------------------------------------------------
+// A cue edited where it stands
+// ---------------------------------------------------------------------------
+
+/**
+ * Opens the in-place editor over a cue already on the cut.
+ *
+ * The clip is chosen and the playhead taken to its head when it stands
+ * anywhere else — the words are about to be written against this moment, and
+ * a preview of another place would answer the keyboard with the wrong picture.
+ * The view is nudged so the cue is on screen before the editor opens over it.
+ * A locked row is refused the way every other edit on it is refused.
+ */
+export function editCue(clip: TimelineClip): void {
+  if (!isTextClip(clip)) return;
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const track = timeline.tracks.find((row) => row.id === clip.trackId);
+  if (track?.locked) {
+    toast("error", i18n.t("clip:actions.trackLocked"));
+    return;
+  }
+  const store = useClipStore.getState();
+  store.select({ clipIds: [clip.id], transitionId: null });
+  if (
+    store.playheadMs < clip.startMs ||
+    store.playheadMs >= clip.startMs + clip.durationMs
+  ) {
+    store.setPlayhead(clip.startMs);
+  }
+  store.revealMs(clip.startMs);
+  store.setCueEditor({
+    kind: "clip",
+    clipId: clip.id,
+    seed: clip.text.content,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A cue written where there is none yet
+// ---------------------------------------------------------------------------
+
+/** Why a new cue cannot land where it was asked to, in the room's own terms. */
+export type CueWindowRefusal = "locked" | "full" | "noRoom";
+
+export type CueWindowPlan =
+  | {
+      ok: true;
+      startMs: number;
+      /** How long the cue may run: the default, cut to the gap it lands in. */
+      durationMs: number;
+      /** The look it lands with: its row's nearest words, or the default. */
+      style: TextClipStyle;
+    }
+  | { ok: false; reason: CueWindowRefusal };
+
+/**
+ * The window a new cue would take at a moment on a text row, or why it cannot.
+ *
+ * The moment goes on the frame clock and lands inside the gap it was pointed
+ * at: the default length, or the room up to the next cue — the start stepping
+ * back from a neighbour too close to end a whole cue before. A gap where even
+ * the shortest cue does not fit is a refusal with its own words, as are a
+ * locked row and a cut already at its ceiling.
+ */
+export function cueWindowAt(
+  timeline: TimelineDocument,
+  trackId: TrackId,
+  atMs: number,
+): CueWindowPlan {
+  const track = timeline.tracks.find((row) => row.id === trackId);
+  if (!track || track.kind !== "text") return { ok: false, reason: "noRoom" };
+  if (track.locked) return { ok: false, reason: "locked" };
+  if (timeline.clips.length >= MAX_CLIPS_PER_TIMELINE)
+    return { ok: false, reason: "full" };
+  const fps = timeline.settings.fps;
+  const wanted = Math.max(0, frameAligned(atMs, fps));
+  const onTrack = timeline.clips.filter((clip) => clip.trackId === trackId);
+  const gapStart = onTrack
+    .map((clip) => clip.startMs + clip.durationMs)
+    .filter((end) => end <= wanted)
+    .reduce((highest, end) => Math.max(highest, end), 0);
+  const ahead = onTrack
+    .map((clip) => clip.startMs)
+    .filter((start) => start >= wanted)
+    .reduce<number | null>(
+      (nearest, start) => (nearest === null ? start : Math.min(nearest, start)),
+      null,
+    );
+  const gapEnd = ahead ?? Number.POSITIVE_INFINITY;
+  const startMs = Math.min(
+    Math.max(wanted, gapStart),
+    Math.max(gapStart, gapEnd - MIN_CLIP_DURATION_MS),
+  );
+  const durationMs = Math.min(DEFAULT_TEXT_CLIP_MS, gapEnd - startMs);
+  if (durationMs < MIN_CLIP_DURATION_MS) return { ok: false, reason: "noRoom" };
+  return {
+    ok: true,
+    startMs,
+    durationMs,
+    style: cueStyleAt(timeline, trackId, startMs),
+  };
+}
+
+/**
+ * The look a new cue takes: its row's nearest words, or the plain default.
+ *
+ * A cue added beside written ones continues their look — the row is what the
+ * reader is working on, and restyling every addition by hand would be the
+ * room's failure, not their job. The words before the moment win, and a row
+ * written only ahead of it gives the first of those.
+ */
+export function cueStyleAt(
+  timeline: TimelineDocument,
+  trackId: TrackId,
+  atMs: number,
+): TextClipStyle {
+  const words = timeline.clips.filter(
+    (clip) => clip.trackId === trackId && clip.kind === "text" && clip.text,
+  );
+  if (words.length === 0) return defaultTextStyle();
+  const before = words
+    .filter((clip) => clip.startMs <= atMs)
+    .sort((a, b) => b.startMs - a.startMs)[0];
+  const chosen = before ?? [...words].sort((a, b) => a.startMs - b.startMs)[0];
+  return { ...chosen.text!.style };
+}
+
+/** What the room says when a new cue is refused. */
+function cueRefusal(reason: CueWindowRefusal): string {
+  if (reason === "locked") return i18n.t("clip:actions.trackLocked");
+  if (reason === "full")
+    return i18n.t("clip:subtitles.clipLimit", {
+      max: MAX_CLIPS_PER_TIMELINE,
+      extra: 1,
+    });
+  return i18n.t("clip:cues.noRoom");
+}
+
+/**
+ * Opens the in-place editor where a new cue would land on a text row.
+ *
+ * The window is the plan's; the playhead is taken to it when it stands
+ * anywhere else, exactly as editing an existing cue does, and the frame is
+ * brought into view before the editor opens over it.
+ */
+export function newCueAt(trackId: TrackId, atMs: number): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const plan = cueWindowAt(timeline, trackId, atMs);
+  if (!plan.ok) {
+    toast("error", cueRefusal(plan.reason));
+    return;
+  }
+  const store = useClipStore.getState();
+  store.revealMs(plan.startMs);
+  if (
+    store.playheadMs < plan.startMs ||
+    store.playheadMs >= plan.startMs + plan.durationMs
+  ) {
+    store.setPlayhead(plan.startMs);
+  }
+  store.setCueEditor({
+    kind: "new",
+    trackId,
+    startMs: plan.startMs,
+    durationMs: plan.durationMs,
+    style: plan.style,
+  });
+}
+
+/**
+ * Lands a whole new cue: one command, one step of history, chosen after.
+ *
+ * Empty words are a cue nobody wrote: nothing lands and null is the answer,
+ * which is also what a refused command answers with.
+ */
+export function addTextClipAt(
+  trackId: TrackId,
+  startMs: number,
+  durationMs: number,
+  style: TextClipStyle,
+  content: string,
+): TimelineClip | null {
+  const timeline = activeTimeline();
+  if (!timeline) return null;
+  const words = clampTextContent(content);
+  if (words.length === 0) return null;
+  const clip = styledTextClip(words, trackId, startMs, durationMs, style);
+  const done = execute(i18n.t("clip:history.addTextClip"), [
+    { type: "addClips", timelineId: timeline.id, clips: [clip] },
+  ]);
   if (!done) return null;
   useClipStore.getState().select({ clipIds: [clip.id], transitionId: null });
   return clip;

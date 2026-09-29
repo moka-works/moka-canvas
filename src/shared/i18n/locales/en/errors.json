@@ -103,7 +103,12 @@
     "storyShotDurationOutOfRange": "Shot duration is out of range",
     "storyDialogueTooLong": "Dialogue is too long for one shot",
     "storyDialogueEmpty": "A dialogue line has no words in it",
-    "storySoundInvalid": "Sound must carry its music and effects as text"
+    "storyDialogueUnnamed": "A dialogue line has no name of its own",
+    "storySoundInvalid": "Sound must carry its music and effects as text",
+    "storyVoiceTooLong": "The voice's model, tone, or manner is too long",
+    "storyVoiceRate": "The voice's pace is out of range",
+    "storyVoicePitch": "The voice's pitch is out of range",
+    "storyDigestShape": "An assembly's digest is eight hexadecimal digits"
   },
   "timeline": {
     "clipAssetMissing": "Clip's asset is not in the project",

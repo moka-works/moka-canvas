@@ -17,7 +17,8 @@ export interface ApiKeyView {
  *
  * A provider that names a different model — or serves it at a different
  * address — per scenario is configured this way; a scenario is answered by at
- * most one sub-model, so which one answers is never a guess.
+ * most one sub-model, so which one answers is never a guess. The scenarios the
+ * configuration's own model answers are its `scenes`.
  */
 export interface SubModel {
   /** The model name the provider knows for these scenarios. */
@@ -53,6 +54,12 @@ export interface ModelView {
    * in pieces is cut to this length.
    */
   maxVideoSeconds?: number | null;
+  /**
+   * The scenarios this configuration's own model answers, where the deployment
+   * routes them. Empty claims nothing: with no sub-models either, the model
+   * answers every request.
+   */
+  scenes?: ModelScene[];
   /** Per-scenario models, where the configuration routes them. */
   subModels?: SubModel[];
   enabled: boolean;
@@ -155,6 +162,11 @@ export interface ModelDraft {
   displayName: string;
   /** A video model's own clip ceiling; null or omitted means none is kept. */
   maxVideoSeconds?: number | null;
+  /**
+   * The scenarios the configuration's own model answers; omitted claims
+   * nothing, which beside no sub-models leaves it answering everything.
+   */
+  scenes?: ModelScene[];
   /** Per-scenario models; omitted leaves the one model answering everything. */
   subModels?: SubModel[];
   enabled: boolean;

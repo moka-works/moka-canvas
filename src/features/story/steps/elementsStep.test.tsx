@@ -48,6 +48,12 @@ let pictures: Record<string, string[]> = {};
 let deleted: string[] = [];
 /** Whether the shelf refuses every removal, as one still in use is refused. */
 let shelfRefuses = false;
+/** What each voice try-out asked for, in the order it asked. */
+let speechAsks: Array<{
+  model?: string;
+  prompt?: string;
+  params?: Record<string, unknown>;
+}> = [];
 
 /**
  * The server under the test: the project as it stands, the batches the room
@@ -132,6 +138,27 @@ function serving(): void {
         return json({
           revision: useProjectStore.getState().moka?.metadata.revision ?? 1,
           updatedAt: "2026-01-05T00:00:00Z",
+        });
+      }
+      if (url.includes("/api/v1/generate/speech")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          model?: string;
+          prompt?: string;
+          params?: Record<string, unknown>;
+        };
+        speechAsks.push(body);
+        // A try-out writes nothing into the project, so the answer carries the
+        // sound itself rather than naming a file on the shelf.
+        return json({
+          status: "succeeded",
+          outputs: [
+            {
+              kind: "speech",
+              mime: "audio/mpeg",
+              bytes: 6,
+              data: btoa("moka!!"),
+            },
+          ],
         });
       }
       if (url.includes("/api/v1/projects/current")) {
@@ -283,6 +310,7 @@ beforeEach(() => {
   pictures = {};
   deleted = [];
   shelfRefuses = false;
+  speechAsks = [];
   useModelStore.setState({ view: null });
   serving();
   localStorage.clear();
@@ -1190,5 +1218,254 @@ describe("a cast too long to show at once", () => {
       SHELF_PAGE + 5,
     );
     expect(screen.queryByTestId("story-elements-shown")).toBeNull();
+  });
+});
+
+describe("the voice of a character", () => {
+  /** The speech model a deployment that reads lines aloud keeps. */
+  const reader = {
+    id: "reader-1",
+    category: "speech" as const,
+    protocol: "openaiSpeech",
+    url: "https://api.example.com/v1/audio/speech",
+    model: "tts-1",
+    displayName: "Reader One",
+    enabled: true,
+    apiKey: { set: true, masked: "sk-…abcd" },
+  };
+
+  beforeEach(() => {
+    useModelStore.setState({
+      view: {
+        version: 1,
+        revision: 3,
+        models: [reader],
+        defaults: {
+          text: null,
+          image: null,
+          speech: "reader-1",
+          music: null,
+          video: null,
+          asr: null,
+        },
+        preferences: {
+          systemPrompt: "",
+          reasoningEffort: "auto",
+          image: { size: "1:1", quality: "auto", background: "auto", count: 1 },
+          video: {
+            seconds: 6,
+            resolution: "720",
+            generateAudio: true,
+            watermark: false,
+            mode: "auto",
+            ratio: "",
+          },
+          speech: {
+            voice: "alloy",
+            format: "mp3",
+            speed: 1,
+            instructions: "",
+            sampleRate: 22050,
+            volume: 50,
+            rate: 1,
+            pitch: 1,
+          },
+          music: { format: "mp3", watermark: false },
+          story: { splitChars: 12_000, readChars: 8_000 },
+        },
+        secretStorage: "unset",
+      },
+    });
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:voice"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("writes the tone a reader types as one step of the history", async () => {
+    openAtElements(buildStoryMokaFile());
+    const before = useHistoryStore.getState().undoStack.length;
+    const tone = screen.getByTestId("story-voice-林-tone") as HTMLInputElement;
+    fireEvent.change(tone, { target: { value: "longxiaochun" } });
+    fireEvent.blur(tone);
+    await waitFor(() => {
+      expect(element("林")?.voice?.voice).toBe("longxiaochun");
+    });
+    expect(useHistoryStore.getState().undoStack).toHaveLength(before + 1);
+    expect(tone.value).toBe("longxiaochun");
+
+    act(() => {
+      undo();
+    });
+    expect(element("林")?.voice).toBeUndefined();
+  });
+
+  it("takes the voice off the element when the last thing said of it is cleared", async () => {
+    openAtElements(buildStoryMokaFile());
+    const tone = screen.getByTestId("story-voice-林-tone") as HTMLInputElement;
+    fireEvent.change(tone, { target: { value: "longxiaochun" } });
+    fireEvent.blur(tone);
+    await waitFor(() => {
+      expect(element("林")?.voice).toBeDefined();
+    });
+
+    fireEvent.change(tone, { target: { value: "" } });
+    fireEvent.blur(tone);
+    // Not a voice holding an empty tone: no voice at all, which is the answer
+    // the next layer of the chain takes over from.
+    await waitFor(() => {
+      expect(element("林")?.voice).toBeUndefined();
+    });
+  });
+
+  it("lets the room's own voice model be picked for a character", async () => {
+    openAtElements(buildStoryMokaFile());
+    const picker = within(screen.getByTestId("story-voice-林-model")).getByRole(
+      "combobox",
+    );
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "The narrator, this machine, or the deployment's default",
+      "Reader One",
+    ]);
+
+    fireEvent.change(picker, { target: { value: "reader-1" } });
+    await waitFor(() => {
+      expect(element("林")?.voice?.model).toBe("reader-1");
+    });
+  });
+
+  it("counts the lines of a character, and how much of the cast has a voice", async () => {
+    openAtElements(buildStoryMokaFile());
+    expect(screen.getByTestId("story-voice-林-lines").textContent).toBe(
+      "Lines this character says in the story: 1",
+    );
+    expect(screen.getByTestId("story-voice-周-lines").textContent).toBe(
+      "No lines yet",
+    );
+    expect(screen.getByTestId("story-voice-summary").textContent).toBe(
+      "0/2 characters have a voice",
+    );
+    expect(screen.getByTestId("story-voice-林-state").textContent).toBe(
+      "No voice yet",
+    );
+
+    const tone = screen.getByTestId("story-voice-林-tone") as HTMLInputElement;
+    fireEvent.change(tone, { target: { value: "longxiaochun" } });
+    fireEvent.blur(tone);
+    await waitFor(() => {
+      expect(screen.getByTestId("story-voice-summary").textContent).toBe(
+        "1/2 characters have a voice",
+      );
+    });
+    expect(screen.getByTestId("story-voice-林-state").textContent).toBe(
+      "Voice set",
+    );
+  });
+
+  it("speaks only for the characters, and writes the voice of a reader's own", async () => {
+    openAtElements(buildStoryMokaFile());
+    // A place and a thing are drawn, not read aloud, so they have no voice.
+    expect(screen.queryByTestId("story-voice-末班车车厢")).toBeNull();
+    expect(screen.queryByTestId("story-voice-旧车票")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-add"));
+    fireEvent.change(screen.getByTestId("add-element-kind"), {
+      target: { value: "character" },
+    });
+    fireEvent.change(screen.getByTestId("add-element-name"), {
+      target: { value: "旅人" },
+    });
+    fireEvent.change(screen.getByTestId("add-element-description"), {
+      target: { value: "背着旧包。" },
+    });
+    fireEvent.click(screen.getByTestId("add-element-confirm"));
+
+    const tone = (await screen.findByTestId(
+      "story-voice-旅人-tone",
+    )) as HTMLInputElement;
+    expect(screen.getByTestId("story-voice-旅人-state").textContent).toBe(
+      "No voice yet",
+    );
+    fireEvent.change(tone, { target: { value: "longxiaochun" } });
+    fireEvent.blur(tone);
+    await waitFor(() => {
+      expect(element("旅人")?.voice?.voice).toBe("longxiaochun");
+    });
+  });
+
+  it("states the narrator's voice on a strip of its own", async () => {
+    openAtElements(buildStoryMokaFile());
+    const tone = screen.getByTestId(
+      "story-voice-narrator-tone",
+    ) as HTMLInputElement;
+    fireEvent.change(tone, { target: { value: "旁白的音色" } });
+    fireEvent.blur(tone);
+    await waitFor(() => {
+      expect(story().narrator?.voice).toBe("旁白的音色");
+    });
+
+    act(() => {
+      undo();
+    });
+    expect(story().narrator).toBeUndefined();
+  });
+
+  it("hears a character read a real line, filing nothing on the shelf", async () => {
+    const moka = buildStoryMokaFile();
+    const held = moka.resources.voice.length;
+    openAtElements(moka);
+
+    fireEvent.click(screen.getByTestId("story-voice-林-try"));
+    await waitFor(() => {
+      expect(speechAsks).toHaveLength(1);
+    });
+    // The hero's own first line, with the tone it is said in, read in the
+    // voice the chain resolves rather than a sample sentence.
+    expect(speechAsks[0]?.prompt).toBe("车已经停运了。");
+    expect(speechAsks[0]?.params?.voice).toBe("alloy");
+    expect(String(speechAsks[0]?.params?.instructions)).toContain("平静");
+
+    const player = await screen.findByTestId("story-voice-林-try-player");
+    expect(player.getAttribute("src")).toBe("blob:voice");
+    // Nothing was filed: a try-out is heard, not kept.
+    expect(story().elements[0]?.voice).toBeUndefined();
+    expect(useProjectStore.getState().moka?.resources.voice).toHaveLength(held);
+    expect(deleted).toEqual([]);
+  });
+
+  it("will not hear a voice whose model this machine no longer has", async () => {
+    const moka = buildStoryMokaFile();
+    // A voice written while the model still stood, on a machine that has since
+    // lost it: the setting is still in force, so the card says so rather than
+    // quietly forgetting it.
+    moka.stories![0]!.elements[0] = {
+      ...moka.stories![0]!.elements[0]!,
+      voice: { model: "reader-gone", voice: "longxiaochun" },
+    };
+    openAtElements(moka);
+
+    const picker = within(screen.getByTestId("story-voice-林-model")).getByRole(
+      "combobox",
+    );
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toContain("reader-gone (unavailable)");
+
+    const button = screen.getByTestId(
+      "story-voice-林-try",
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("title")).toBe(
+      "This machine does not have that model; lines fall back to the next layer",
+    );
+    expect(screen.getByTestId("story-voice-林-state").textContent).toBe(
+      "This machine does not have that model",
+    );
   });
 });

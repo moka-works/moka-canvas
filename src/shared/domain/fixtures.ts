@@ -948,6 +948,8 @@ export function storyIds() {
     sceneMain: "asset-scene-main",
     frameArt: "asset-frame-art",
     actVideo: "asset-act-video",
+    /** The line the first shot of the first act is made of. */
+    lineFirst: "line-1",
   };
 }
 
@@ -1070,6 +1072,7 @@ export function buildStoryMokaFile(): MokaFile {
                   content: "雨中的站台，`林`立在灯下。",
                   dialogue: [
                     {
+                      id: ids.lineFirst,
                       characterId: ids.hero,
                       speaker: "林",
                       text: "车已经停运了。",

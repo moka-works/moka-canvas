@@ -176,8 +176,15 @@ pub struct ModelConfig {
     /// absent means the app's own ceiling stands in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_video_seconds: Option<u32>,
-    /// Per-scenario models, where the deployment needs them. Empty means the
-    /// one model above answers every request, whatever scenario it is.
+    /// The scenarios the model above answers, where the deployment splits its
+    /// work by scenario. Empty claims nothing, which with no sub-models either
+    /// leaves the model above answering every request — the way every
+    /// configuration worked before scenes could be claimed — and beside
+    /// sub-models leaves it answering only the requests that name no scenario.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes: Vec<Scene>,
+    /// Per-scenario models, where the deployment needs them. Empty means no
+    /// scenario routes anywhere but to the model above.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sub_models: Vec<SubModel>,
     #[serde(default = "default_true")]
@@ -197,6 +204,8 @@ pub struct ModelDraft {
     pub display_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_video_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes: Vec<Scene>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sub_models: Vec<SubModel>,
     #[serde(default = "default_true")]
@@ -587,6 +596,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             display_name: "GPT-4o".to_string(),
             max_video_seconds: None,
+            scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
         };
@@ -600,20 +610,39 @@ mod tests {
             !json.contains("subModels"),
             "a configuration that routes nothing writes nothing about scenes: {json}"
         );
+        assert!(
+            !json.contains("\"scenes\""),
+            "a configuration that claims nothing writes nothing about scenes: {json}"
+        );
     }
 
     #[test]
-    fn sub_models_are_read_from_a_document_that_carries_them() {
-        // A configuration written before sub-models existed parses without
-        // them, and one that carries them parses with everything spelled out.
+    fn scenes_and_sub_models_are_read_from_a_document_that_carries_them() {
+        // A configuration written before scenes could be claimed parses
+        // without them, and one that carries them parses with everything
+        // spelled out.
         let legacy = r#"{
             "id": "filmer", "category": "video", "protocol": "openaiVideos",
             "url": "https://provider.test/v1/videos", "model": "filmer",
             "displayName": "Filmer"
         }"#;
         let config: ModelConfig = serde_json::from_str(legacy).unwrap();
+        assert!(config.scenes.is_empty());
         assert!(config.sub_models.is_empty());
         assert!(config.enabled, "enabled still defaults to true");
+
+        let own = r#"{
+            "id": "filmer", "category": "video", "protocol": "openaiVideos",
+            "url": "https://provider.test/v1/videos", "model": "happy-t2v",
+            "displayName": "Filmer",
+            "scenes": ["textToVideo", "imageToVideo"]
+        }"#;
+        let config: ModelConfig = serde_json::from_str(own).unwrap();
+        assert_eq!(
+            config.scenes,
+            vec![Scene::TextToVideo, Scene::ImageToVideo],
+            "the scenarios the configuration's own model answers"
+        );
 
         let routed = r#"{
             "id": "filmer", "category": "video", "protocol": "openaiVideos",

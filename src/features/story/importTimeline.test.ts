@@ -224,4 +224,67 @@ describe("the cut a telling hands over", () => {
       expect((problem as Error).message).toContain("400");
     }
   });
+
+  it("lays each line's reading inside the shot it is said in", () => {
+    const moka = told();
+    const story = moka.stories![0];
+    const act = story.chapters[0]!.acts[0]!;
+    // The act is one shot of its own, and the two lines are said in it: the
+    // shot runs a second on the timeline and each line gets half of it.
+    const shot = act.keyframes[0]!;
+    shot.durationMs = 1_000;
+    shot.dialogue = [
+      {
+        id: "line-a",
+        speaker: "Keeper",
+        text: "It stopped running years ago.",
+      },
+      { id: "line-b", speaker: "", text: "The doors stay shut." },
+    ];
+    shot.voices = [
+      {
+        lineId: "line-a",
+        text: "It stopped running years ago.",
+        voice: "reader-1",
+        slot: {
+          takes: [{ assetIds: ["said-a"], createdAt: T0 }],
+        },
+      },
+      {
+        lineId: "line-b",
+        text: "The doors stay shut.",
+        voice: "reader-2",
+        slot: {
+          takes: [{ assetIds: ["said-b"], createdAt: T0 }],
+        },
+      },
+    ];
+    // The older reading of the whole act is still on file, and is not what the
+    // act sounds like any more; the score under it still is.
+    moka.resources.voice.push(sound("said-a", 600), sound("said-b", 900));
+    const timeline = addedTimeline(
+      moka,
+      importTimelineCommands(story, moka, "初剪").commands,
+    );
+
+    const readings = timeline.clips
+      .filter((clip) => clip.kind === "audio" && clip.assetId !== "asset-music")
+      .sort((one, other) => one.startMs - other.startMs);
+    expect(
+      readings.map((clip) => [clip.assetId, clip.startMs, clip.durationMs]),
+    ).toEqual([
+      ["said-a", 0, 500],
+      ["said-b", 500, 667],
+    ]);
+    // The first fits its half second by being read a little faster; the second
+    // is longer than its own half even at the fastest a voice may be read, and
+    // runs on — what is heard is one thing, and where the pictures are another.
+    expect(readings[0]?.speed).toBeCloseTo(1.2, 5);
+    expect(readings[1]?.speed).toBeCloseTo(1.35, 2);
+    expect(Math.round(readings[1]!.durationMs * readings[1]!.speed)).toBe(900);
+    expect(readings.some((clip) => clip.assetId === "asset-voice")).toBe(false);
+    // Their captions are not written: a cut of the reader's own is theirs to
+    // arrange, and this import has never carried the words.
+    expect(timeline.clips.some((clip) => clip.kind === "text")).toBe(false);
+  });
 });

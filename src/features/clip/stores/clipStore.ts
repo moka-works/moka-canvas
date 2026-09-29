@@ -5,8 +5,10 @@ import type {
   ClipId,
   MokaFile,
   TextClipData,
+  TextClipStyle,
   TimelineDocument,
   TimelineId,
+  TrackId,
   TransitionId,
 } from "../../../shared/domain";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -19,6 +21,7 @@ import {
   contentMs,
   cutEndMs,
   viewAfterZoom,
+  xAt,
   zoomAnchorMs,
   type TimelineView,
 } from "../timeline/geometry";
@@ -168,6 +171,11 @@ export interface ClipSelection {
   transitionId: TransitionId | null;
 }
 
+/** How much of the pane stays around a revealed moment before the view moves. */
+const REVEAL_MARGIN_PX = 24;
+/** Where a revealed moment lands: the same sixth of the pane the clock pages to. */
+const REVEAL_AT = 0.15;
+
 /**
  * A grade a reader is dragging, before it is a change to the cut.
  *
@@ -198,6 +206,34 @@ export interface TextDraft {
   clipIds: ClipId[];
   text: TextClipData;
 }
+
+/**
+ * The cue a reader is writing in place on the timeline, or null when none is.
+ *
+ * A session is a reading rather than a fact about a cut, like the drafts
+ * beside it: while it stands the words live in the editor — and, for a cue
+ * the document holds, in the text draft the preview reads — and no command is
+ * sent until the commit point. The seed is the clip's own words when the
+ * session opened; a clip whose words have drifted from it since was changed
+ * from under the session, which then closes rather than overwrite the change.
+ */
+export type CueEditorSession =
+  | {
+      kind: "clip";
+      /** The cue being rewritten. */
+      clipId: ClipId;
+      /** The words the session opened on. */
+      seed: string;
+    }
+  | {
+      /** A cue not written yet: the editor is the only place it exists. */
+      kind: "new";
+      trackId: TrackId;
+      startMs: number;
+      durationMs: number;
+      /** The look it lands with: the row's nearest words, or the default. */
+      style: TextClipStyle;
+    };
 
 /**
  * How finely the preview composes: its own size, or a fraction of it.
@@ -287,6 +323,14 @@ interface ClipState {
    */
   textDraft: TextDraft | null;
   /**
+   * The cue being written in place on the timeline, or null when none is.
+   *
+   * Held here for the same reason the drafts are: the canvas draws under it,
+   * the shortcuts and the menus open it, and a session outliving the cut it
+   * was opened on is dropped by the store rather than left floating.
+   */
+  cueEditor: CueEditorSession | null;
+  /**
    * The file chosen on the media shelf, which the inspector reads as material.
    *
    * Kept apart from the timeline's own choice: the two columns each hold their
@@ -337,6 +381,10 @@ interface ClipState {
   setAdjustDraft: (draft: AdjustDraft | null) => void;
   /** Writes the words being edited; null lets the document's own text show again. */
   setTextDraft: (draft: TextDraft | null) => void;
+  /** Opens the in-place cue editor, or closes it with null. */
+  setCueEditor: (session: CueEditorSession | null) => void;
+  /** Brings a moment into view, moving the view only when it stands outside it. */
+  revealMs: (ms: number) => void;
   selectMedia: (id: AssetId | null) => void;
   setNewTimelineOpen: (open: boolean) => void;
   setView: (patch: Partial<TimelineView>) => void;
@@ -431,6 +479,7 @@ export const useClipStore = create<ClipState>()((set, get) => {
     selection: { clipIds: [], transitionId: null },
     adjustDraft: null,
     textDraft: null,
+    cueEditor: null,
     mediaSelection: null,
     newTimelineOpen: false,
     view: { pxPerSec: DEFAULT_PX_PER_SEC, scrollLeftPx: 0 },
@@ -461,6 +510,10 @@ export const useClipStore = create<ClipState>()((set, get) => {
             scrollLeftPx: 0,
           },
           playheadMs: remembered?.playheadMs ?? 0,
+          // A draft and a session both stand for clips of the timeline being
+          // left, so neither travels to the next one.
+          textDraft: null,
+          cueEditor: null,
         });
       } else {
         set({ activeTimelineId: id });
@@ -510,6 +563,31 @@ export const useClipStore = create<ClipState>()((set, get) => {
           draft === null || draft.clipIds.length === 0
             ? null
             : { clipIds: [...draft.clipIds], text: draft.text },
+      });
+    },
+
+    setCueEditor(session) {
+      // Closing a session lets go of the words it was drafting too: the
+      // preview goes back to reading the document the moment the editor does.
+      set(
+        session === null
+          ? { cueEditor: null, textDraft: null }
+          : { cueEditor: session },
+      );
+    },
+
+    revealMs(ms) {
+      const state = get();
+      if (state.viewportPx <= 0) return;
+      const x = xAt(ms, state.view);
+      if (x >= REVEAL_MARGIN_PX && x <= state.viewportPx - REVEAL_MARGIN_PX) {
+        return;
+      }
+      state.setView({
+        scrollLeftPx: Math.max(
+          0,
+          (ms / 1_000) * state.view.pxPerSec - state.viewportPx * REVEAL_AT,
+        ),
       });
     },
 

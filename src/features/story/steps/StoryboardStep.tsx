@@ -239,6 +239,9 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           />
           <ReferenceLimitField story={story} />
         </div>
+        <p className="story-hint" data-testid="story-board-audio-fallback">
+          {t("story:voice.audioFallback")}
+        </p>
 
         <div className="story-step-bar">
           <span
@@ -434,6 +437,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                     act={act}
                     busyKeyframes={busy.frames}
                     busyClips={busy.clips}
+                    busyLines={busy.lines}
                     chapterId={chapter.id}
                     guesses={marks.get(act.id) ?? []}
                     index={at}
@@ -615,22 +619,36 @@ function busyIn(
 ): {
   frames: Set<string>;
   clips: Set<string>;
+  lines: Set<string>;
   video: boolean;
   voice: boolean;
   music: boolean;
 } {
   const frames = new Set<string>();
   const clips = new Set<string>();
+  const lines = new Set<string>();
   const video = keys.has(
     targetKey({ kind: "actVideo", chapterId, actId: act.id }),
-  );
-  const voice = keys.has(
-    targetKey({ kind: "actVoice", chapterId, actId: act.id }),
   );
   const music = keys.has(
     targetKey({ kind: "actMusic", chapterId, actId: act.id }),
   );
   for (const keyframe of act.keyframes) {
+    for (const line of keyframe.dialogue) {
+      if (
+        keys.has(
+          targetKey({
+            kind: "lineVoice",
+            chapterId,
+            actId: act.id,
+            keyframeId: keyframe.id,
+            lineId: line.id,
+          }),
+        )
+      ) {
+        lines.add(line.id);
+      }
+    }
     if (
       keys.has(
         targetKey({
@@ -656,5 +674,10 @@ function busyIn(
       clips.add(keyframe.id);
     }
   }
-  return { frames, clips, video, voice, music };
+  // The act's voice row is at work while any of its lines is being read, and
+  // while its old whole-act reading is being made: the two sit on one row.
+  const voice =
+    lines.size > 0 ||
+    keys.has(targetKey({ kind: "actVoice", chapterId, actId: act.id }));
+  return { frames, clips, lines, video, voice, music };
 }

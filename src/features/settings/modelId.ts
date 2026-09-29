@@ -5,9 +5,9 @@ import { MAX_MODEL_ID_LENGTH } from "../../shared/domain";
  *
  * A model configuration's id is the reference a node keeps, so it outlives the
  * form that made it and shows up in project files, logs, and the message that
- * says a model is gone. Nobody should have to invent one: the display name
- * already carries the meaning, and a random tail is what keeps two models both
- * called "Writer" apart. The result stays something a person can read.
+ * says a model is gone. Nobody has to think about one: the display name
+ * carries the meaning, the form never shows the id, and the random tail is
+ * what keeps two models both called "Writer" apart.
  */
 
 /** The random tail's length. 36^6 is far more room than a model list needs. */
@@ -26,21 +26,18 @@ const FALLBACK_STEM = "model";
 const STEM_LENGTH = MAX_MODEL_ID_LENGTH - SUFFIX_LENGTH - 1;
 
 /**
- * The readable part of an identifier: lowercased, whitespace collapsed to a
- * single underscore, hyphens kept because that is how the identifiers already
- * in the wild are written (`gpt-4o-mini`, `writer-copy`), and every other
- * symbol dropped. Runs of separators left behind by a dropped symbol collapse
- * into one, so "Writer - the best" does not become `writer_-_the_best`.
+ * The readable part of an identifier: lowercased, with every run of spaces and
+ * symbols turned into a single hyphen and the hyphens at either end trimmed. A
+ * name written with hyphens already (`gpt-4o-mini`) keeps them, since that is
+ * how the identifiers in the wild are written, and a symbol between two words
+ * leaves the one hyphen that separates them rather than a gap.
  */
 export function identifierStem(displayName: string): string {
   const stem = displayName
     .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]/g, "")
-    .replace(/[_-]{2,}/g, "_")
-    .replace(/^[_-]+|[_-]+$/g, "");
-  return stem.slice(0, STEM_LENGTH).replace(/[_-]+$/g, "");
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return stem.slice(0, STEM_LENGTH).replace(/-+$/, "");
 }
 
 /** A random tail, drawn from the platform's own source rather than Math.random. */
@@ -57,26 +54,28 @@ export function identifierSuffix(): string {
 export function suggestedModelId(displayName: string): string {
   const stem = identifierStem(displayName);
   const head = stem === "" ? FALLBACK_STEM : stem;
-  return `${head}_${identifierSuffix()}`;
+  return `${head}-${identifierSuffix()}`;
 }
 
 /**
- * A suggested identifier that no stored model is using yet.
+ * A suggested identifier that no stored model is using yet, or null where
+ * every draw was taken.
  *
  * A collision needs the same name and the same six characters, so one draw is
- * what happens in practice; the retries are here so that the rare case ends in
- * an identifier rather than in a form that refuses to save. Giving up returns
- * the last candidate, which the duplicate warning then reports — inventing a
- * second scheme for an event that has not happened would only hide it.
+ * what happens in practice; the retries are here because what a taken name
+ * would cost is not a warning but a write: an identifier a stored
+ * configuration holds names that configuration, and the server replaces what
+ * an identifier names. Null is therefore the answer to a name every draw
+ * lands on — the caller says so rather than saves over somebody.
  */
 export function uniqueModelId(
   displayName: string,
   taken: (id: string) => boolean,
   attempts = 8,
-): string {
-  let candidate = suggestedModelId(displayName);
-  for (let attempt = 1; attempt < attempts && taken(candidate); attempt += 1) {
-    candidate = suggestedModelId(displayName);
+): string | null {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const candidate = suggestedModelId(displayName);
+    if (!taken(candidate)) return candidate;
   }
-  return candidate;
+  return null;
 }

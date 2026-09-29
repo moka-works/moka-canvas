@@ -103,7 +103,12 @@
     "storyShotDurationOutOfRange": "单格时长超出允许范围",
     "storyDialogueTooLong": "台词超出了单格能容纳的长度",
     "storyDialogueEmpty": "有台词没有内容",
-    "storySoundInvalid": "音乐音效必须用文本写明"
+    "storyDialogueUnnamed": "有一句台词没有名字",
+    "storySoundInvalid": "音乐音效必须用文本写明",
+    "storyVoiceTooLong": "声音的模型、音色或念法过长",
+    "storyVoiceRate": "语速超出允许范围",
+    "storyVoicePitch": "音高超出允许范围",
+    "storyDigestShape": "装配摘要应是 8 位十六进制"
   },
   "timeline": {
     "clipAssetMissing": "片段引用的资源不在项目中",

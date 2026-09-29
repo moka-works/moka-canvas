@@ -324,6 +324,150 @@ test("typing in the inspector commits once, and one undo puts the words back", a
   forgetHome(home);
 });
 
+/** The middle of the text row, which is the top row under the ruler's 28px. */
+const TEXT_ROW_Y = 46;
+
+test("a cue is rewritten where it stands on the timeline, and one undo puts the words back", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text In Place");
+  await textPage(page);
+  await addText(page, "First cut line", 6);
+  const [clip] = await drawnSpans(page, 1);
+
+  // The cue is doubled where it draws, not where the panel lists it.
+  await page.locator(".clip-tl-canvas").dblclick({
+    position: { x: 60, y: TEXT_ROW_Y },
+  });
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("First cut line");
+
+  await editor.fill("Rewritten where it stands");
+  await editor.press("Enter");
+  await expect(editor).toHaveCount(0);
+
+  // The words are the document's now: the cue list reads them back, and the
+  // block has not moved.
+  await expect(cueRows(page).first()).toContainText(
+    "Rewritten where it stands",
+  );
+  expect(await spans(page)).toEqual([clip]);
+
+  // One session, one step of history.
+  await page.keyboard.press("Control+z");
+  await expect(cueRows(page).first()).toContainText("First cut line");
+
+  forgetHome(home);
+});
+
+test("Enter opens the chosen cue in place, and Escape lets it go unwritten", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text In Place Escape");
+  await textPage(page);
+  await addText(page, "A line kept as it is", 6);
+  const [clip] = await drawnSpans(page, 1);
+
+  // The cue is chosen by its own block, which is what the key is about.
+  await page
+    .locator(".clip-tl-canvas")
+    .click({ position: { x: 60, y: TEXT_ROW_Y } });
+  await expect.poll(() => selectedIds(page)).toEqual([clip.id]);
+
+  await page.keyboard.press("Enter");
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("A line kept as it is");
+
+  await editor.fill("Words nobody kept");
+  await editor.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await expect(cueRows(page).first()).toContainText("A line kept as it is");
+
+  // Nothing was written, so the one step of history is still the landing:
+  // one undo takes the whole cue away, and no step was spent on the session.
+  await page.keyboard.press("Control+z");
+  await expect(cueRows(page)).toHaveCount(0);
+  await expect.poll(async () => (await spans(page)).length).toBe(0);
+
+  forgetHome(home);
+});
+
+test("a blank stretch of the text row takes a new cue, and one undo takes it away", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text Write In Place");
+  await textPage(page);
+
+  // The right-click on the same blank offers the writing by name.
+  await page
+    .locator(".clip-tl-canvas")
+    .click({ button: "right", position: { x: 400, y: TEXT_ROW_Y } });
+  const addHere = page.getByRole("menuitem", { name: "Add subtitle here" });
+  await expect(addHere).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(addHere).toHaveCount(0);
+
+  // Nowhere to land: the row is blank, and the double click says where a cue
+  // would go — 120px at the default zoom is the 2s mark on the frame clock.
+  await page.locator(".clip-tl-canvas").dblclick({
+    position: { x: 120, y: TEXT_ROW_Y },
+  });
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue("");
+
+  await editor.fill("Written on the spot");
+  await editor.press("Enter");
+  await expect(editor).toHaveCount(0);
+
+  const [clip] = await drawnSpans(page, 1);
+  expect(clip.startMs).toBe(2_000);
+  expect(clip.durationMs).toBe(2_000);
+  await expect(cueRows(page)).toHaveCount(1);
+  await expect(cueRows(page).first()).toContainText("Written on the spot");
+
+  // The cue's own right-click offers to rewrite the same words in place.
+  await page
+    .locator(".clip-tl-canvas")
+    .click({ button: "right", position: { x: 180, y: TEXT_ROW_Y } });
+  const editHere = page.getByRole("menuitem", { name: "Edit subtitle" });
+  await expect(editHere).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editHere).toHaveCount(0);
+
+  // One gesture, one step of history: a single undo takes the cue away.
+  await page.keyboard.press("Control+z");
+  await expect(cueRows(page)).toHaveCount(0);
+  await expect.poll(async () => (await spans(page)).length).toBe(0);
+
+  forgetHome(home);
+});
+
+test("the words of a new cue are let go with Escape, and nothing is written", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text Write In Place Escape");
+  await textPage(page);
+
+  await page.locator(".clip-tl-canvas").dblclick({
+    position: { x: 120, y: TEXT_ROW_Y },
+  });
+  const editor = page.locator(".clip-tl-cue-input");
+  await expect(editor).toBeVisible();
+  await editor.fill("Words nobody kept");
+  await editor.press("Escape");
+  await expect(editor).toHaveCount(0);
+
+  // The session was let go before any command could be built: the row is as
+  // blank as it was, and there is no step of history to take back.
+  await expect(cueRows(page)).toHaveCount(0);
+  await expect.poll(async () => (await spans(page)).length).toBe(0);
+
+  forgetHome(home);
+});
+
 test("Import .srt lands every cue in one step, and a row jumps to its time", async ({
   page,
 }) => {

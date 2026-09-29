@@ -69,6 +69,7 @@ fn draft(id: &str, category: Capability) -> ModelDraft {
         model: format!("model-{id}"),
         display_name: format!("Model {id}"),
         max_video_seconds: None,
+        scenes: Vec::new(),
         sub_models: Vec::new(),
         enabled: true,
         expected_revision: None,

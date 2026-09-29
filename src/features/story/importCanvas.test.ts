@@ -287,3 +287,128 @@ describe("the board a telling makes", () => {
     );
   });
 });
+
+/** A recording on the shelf, as the project measured it. */
+function voice(id: string, durationMs: number) {
+  return {
+    id,
+    name: `${id}.mp3`,
+    path: `assets/voice/${id}.mp3`,
+    mime: "audio/mpeg",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    probe: {
+      mime: "audio/mpeg",
+      bytes: 2_048,
+      sha256: "1".repeat(64),
+      durationMs,
+    },
+  };
+}
+
+/**
+ * The fixture's telling with both lines of its first shot read aloud, each in
+ * its own voice and at its own length.
+ */
+function read(): { moka: MokaFile; story: StoryDocument } {
+  const { moka, story } = fixture();
+  moka.resources.voice = [voice("said-one", 900), voice("said-two", 1_100)];
+  const frame = story.chapters[0]!.acts[0]!.keyframes[0]!;
+  frame.dialogue = [
+    {
+      id: ids.lineFirst,
+      characterId: ids.hero,
+      speaker: "林",
+      text: "车已经停运了。",
+      tone: "平静",
+    },
+    { id: "line-2", speaker: "", text: "门也不开了。" },
+  ];
+  frame.voices = [
+    {
+      lineId: ids.lineFirst,
+      text: "车已经停运了。",
+      voice: "reader-1",
+      slot: {
+        takes: [
+          {
+            assetIds: ["said-one"],
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    },
+    {
+      lineId: "line-2",
+      text: "门也不开了。",
+      voice: "reader-2",
+      slot: {
+        takes: [
+          {
+            assetIds: ["said-two"],
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    },
+  ];
+  return { moka, story };
+}
+
+describe("a telling whose lines are read one by one", () => {
+  it("is a card a line, each carrying the ask that read it", () => {
+    const { moka, story } = read();
+    const canvas = planStoryCanvas(story, moka, "雨夜列车");
+    const act = card(canvas, "1.1 第 1 幕 空站台");
+    const first = card(canvas, "1.1 · Line 1 · 林");
+    const second = card(canvas, "1.1 · Line 2");
+    const asked = (node: WorkflowNode) =>
+      (node.data as {
+        assetId?: string;
+        audioCategory?: string;
+        generation?: { prompt: string; params: Record<string, unknown> };
+      }) ?? {};
+
+    // The file of each reading, named rather than copied, and filed as a voice.
+    expect(asked(first).assetId).toBe("said-one");
+    expect(asked(second).assetId).toBe("said-two");
+    expect(asked(first).audioCategory).toBe("voice");
+    // The ask each card carries is the one line it read, and the tone that
+    // line is said in rides in the instructions rather than in the words.
+    expect(asked(first).generation?.prompt).toContain("车已经停运了。");
+    expect(asked(first).generation?.prompt).not.toContain("门也不开了。");
+    expect(String(asked(first).generation?.params.instructions)).toContain(
+      "平静",
+    );
+    expect(asked(second).generation?.prompt).toContain("门也不开了。");
+    // Both cards are the act's own, wired the way every card of the board is.
+    expect(joined(canvas, act, first, "prompt")).toBe(true);
+    expect(joined(canvas, act, second, "prompt")).toBe(true);
+    // And the whole act's reading is not a card: what the act sounds like is
+    // its lines, so a card for the older reading would be a lie.
+    expect(canvas.nodes.some((node) => node.title === "1.1 · voice-over")).toBe(
+      false,
+    );
+  });
+
+  it("counts a reading a card, and keeps the older whole-act reading when it is all there is", () => {
+    const { story } = read();
+    expect(canvasImportCounts(story).sounds).toBe(2);
+
+    // The same act with no line read: the older reading of the whole act is
+    // what the board holds, and it is one card exactly as it always was.
+    const whole = fixture();
+    whole.moka.resources.voice = [voice("said-whole", 4_000)];
+    const act = whole.story.chapters[0]!.acts[0]!;
+    act.voice = {
+      takes: [{ assetIds: ["said-whole"], createdAt: "2026-01-01T00:00:00Z" }],
+    };
+    const canvas = planStoryCanvas(whole.story, whole.moka, "雨夜列车");
+    expect(canvasImportCounts(whole.story).sounds).toBe(1);
+    const carded = card(canvas, "1.1 · voice-over");
+    expect((carded.data as { assetId?: string }).assetId).toBe("said-whole");
+    expect(
+      (carded.data as { generation?: { prompt: string } }).generation?.prompt,
+    ).toContain("车已经停运了。");
+  });
+});

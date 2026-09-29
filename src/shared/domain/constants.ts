@@ -436,6 +436,15 @@ export const ASPECT_LABELS: Record<string, string> = {
 /** How many lines one shot may be spoken with. */
 export const MAX_DIALOGUE_LINES_PER_KEYFRAME = 12;
 export const MAX_DIALOGUE_LINE_LENGTH = 500;
+/** What a voice named in a story may be called, and what it may say of itself. */
+export const VOICE_MODEL_MAX = 120;
+export const VOICE_NAME_MAX = 120;
+export const VOICE_INSTRUCTIONS_MAX = 500;
+/** The pace and pitch a character may claim, the bounds the preferences hold to. */
+export const VOICE_RATE_MIN = 0.5;
+export const VOICE_RATE_MAX = 2;
+export const VOICE_PITCH_MIN = 0.5;
+export const VOICE_PITCH_MAX = 2;
 /** The running time a story starts from: two minutes, one short telling. */
 export const DEFAULT_STORY_DURATION_MS = 120_000;
 /** The frame a story starts from, which most screens are watched on. */

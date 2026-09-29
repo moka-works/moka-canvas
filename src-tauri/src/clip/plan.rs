@@ -11,6 +11,7 @@
 //! laid over one another in the order the document holds them, and the words
 //! burned in last by the subtitle renderer.
 
+use super::fonts::FONTS_DIR;
 use super::locate::{ClipCapabilities, ASS_MISSING_REASON};
 use super::{named_asset, PlanAsset, PlanInput, PlanSources};
 use crate::domain::{
@@ -374,7 +375,11 @@ offset={offset}[{merged}]",
     }
     let ass = words_wanted.then(|| super::ass::build_ass(timeline));
     if ass.is_some() {
-        lines.push(format!("[{accum}]ass=subs.ass[vout]"));
+        // The faces the script names travel in the scratch directory beside
+        // it, and the filter is told where: a renderer left to the machine's
+        // own font set draws boxes instead of words on machines that are
+        // missing them.
+        lines.push(format!("[{accum}]ass=subs.ass:fontsdir={FONTS_DIR}[vout]"));
     }
 
     // -- the sound -----------------------------------------------------------
@@ -1066,7 +1071,11 @@ mod tests {
         let plan = ok(&world, &timeline, &fixtures::caps(&["fade"], true));
         let ass = plan.ass.expect("the words are written down");
         assert!(ass.contains("Hello\\Nfrom the cut"), "{ass}");
-        assert!(plan.graph.contains("ass=subs.ass[vout]"), "{}", plan.graph);
+        assert!(
+            plan.graph.contains("ass=subs.ass:fontsdir=fonts[vout]"),
+            "{}",
+            plan.graph
+        );
         assert!(!plan.graph.contains("Hello"));
     }
 
@@ -1129,6 +1138,7 @@ mod tests {
                 PlanAsset {
                     path: root.path().join("assets/videos/gone.mp4"),
                     mime: "video/mp4".to_string(),
+                    category: Some("videos".to_string()),
                     has_audio: true,
                 },
             )]),
@@ -1369,7 +1379,7 @@ mod tests {
 [v2][v3]xfade=transition=fade:duration=0.5:offset=1.5[v4];\n\
 [v4]setpts=PTS+0/TB[v5];\n\
 [v1][v5]overlay=eof_action=pass[v6];\n\
-[v6]ass=subs.ass[vout]\n"
+[v6]ass=subs.ass:fontsdir=fonts[vout]\n"
         );
     }
 }

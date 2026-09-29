@@ -33,10 +33,13 @@ import {
   chapterWaves,
   chunkWaves,
   currentTake,
+  elementComplete,
   elementOf,
   formatDuration,
   ideaReady,
+  firstLineOf,
   keyframeCount,
+  lineCountFor,
   mergeActs,
   mergeChapters,
   mergeChaptersAt,
@@ -51,6 +54,7 @@ import {
   stripStoryMentions,
   targetKey,
   timelineSizeForAspect,
+  voiceFor,
   withTake,
   type ActDraft,
   type StoryChapterDraft,
@@ -69,7 +73,9 @@ import type {
   StoryChapter,
   StoryDocument,
   StoryElement,
+  StoryKeyframe,
   StorySlot,
+  StoryVoiceProfile,
 } from "./types";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -634,6 +640,53 @@ describe("mergeActs", () => {
     expect(merged[0].keyframes[0].video.takes).toHaveLength(1);
     expect(merged[0].keyframes[0].content).toBe("新画面");
     expect(merged[0].keyframes[0].dialogue[0].characterId).toBe("element-hero");
+  });
+
+  it("gives a line written over one that stood there a name of its own, and keeps the first one's", () => {
+    const held = createActFor("chapter-1");
+    const frame = createKeyframe(0);
+    frame.dialogue = [
+      { id: "line-first", speaker: "林", text: "走吧" },
+      { id: "line-second", speaker: "周", text: "再等等。" },
+    ];
+    held.keyframes = [frame];
+
+    const merged = mergeActs(
+      [held],
+      [
+        {
+          title: "新标题",
+          summary: "新内容",
+          characters: ["element-hero"],
+          props: [],
+          sound: { music: "", sfx: "" },
+          keyframes: [
+            {
+              shotSize: "close",
+              cameraMove: "static",
+              angle: "low",
+              content: "新画面",
+              durationMs: 1_500,
+              dialogue: [
+                // The same line, rewritten: the name is kept, and the words it
+                // was read in are what will say it is out of date.
+                { speaker: "林", text: "走吧，天亮了。" },
+                // The one that stood second is now third, and the new line in
+                // its place is the one that arrives unnamed: a line is paired
+                // with the one that stood in its place, as a shot is.
+                { speaker: "林", text: "听见了。" },
+                { speaker: "周", text: "再等等。" },
+              ],
+            },
+          ],
+        },
+      ],
+    );
+
+    const lines = merged[0].keyframes[0].dialogue;
+    expect(lines[0]?.id).toBe("line-first");
+    expect(lines[0]?.text).toBe("走吧，天亮了。");
+    expect(new Set(lines.map((line) => line.id)).size).toBe(3);
   });
 
   it("lets an act that is no longer boarded go, with its frames", () => {
@@ -1287,13 +1340,15 @@ describe("the board commands", () => {
       patch: {
         shotSize: "extremeWide",
         durationMs: 1_200,
-        dialogue: [{ speaker: "周", text: "车还会来。" }],
+        dialogue: [{ id: "line-second", speaker: "周", text: "车还会来。" }],
       },
     });
     const frame = storyOfFile(next).chapters[0].acts[0].keyframes[1];
     expect(frame.shotSize).toBe("extremeWide");
     expect(frame.durationMs).toBe(1_200);
-    expect(frame.dialogue).toEqual([{ speaker: "周", text: "车还会来。" }]);
+    expect(frame.dialogue).toEqual([
+      { id: "line-second", speaker: "周", text: "车还会来。" },
+    ]);
     expect(frame.content).toBe("`周`转过身来。");
 
     expect(
@@ -1306,6 +1361,33 @@ describe("the board commands", () => {
           keyframeId: ids.frameSecond,
           patch: { durationMs: 10 },
         }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
+  it("refuses a line with no name of its own, or two sharing one", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const writing = (dialogue: StoryKeyframe["dialogue"]) => () =>
+      apply(moka, {
+        type: "updateStoryKeyframe",
+        storyId: ids.story,
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameSecond,
+        patch: { dialogue },
+      });
+    // A line is what the things kept for it are filed under: a patch naming
+    // none, or naming one twice, is refused rather than written.
+    expect(
+      codeOf(writing([{ id: "", speaker: "周", text: "车还会来。" }])),
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(
+        writing([
+          { id: "same", speaker: "周", text: "车还会来。" },
+          { id: "same", speaker: "周", text: "车不会来了。" },
+        ]),
       ),
     ).toBe("VALIDATION_FAILED");
   });
@@ -1326,6 +1408,194 @@ describe("the board commands", () => {
     // The shot beside it was never named, and no word is carried for it: the
     // plain use is what a frame with nothing said about it means.
     expect(frames[1].filmRole).toBeUndefined();
+  });
+});
+
+describe("the voice a character speaks in", () => {
+  it("resolves the voice layer by layer, field by field", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    // The hero has a model of their own and no tone; the telling's narrator
+    // has a tone. The two fill what the other leaves empty.
+    const story: StoryDocument = {
+      ...storyOfFile(moka),
+      narrator: { model: "", voice: "旁白的音色" },
+      elements: storyOfFile(moka).elements.map((element) =>
+        element.id === ids.hero
+          ? { ...element, voice: { model: "voice-model", voice: "" } }
+          : element,
+      ),
+    };
+
+    expect(voiceFor(story, ids.hero)).toEqual({
+      model: "voice-model",
+      voice: "旁白的音色",
+    });
+    // The partner says nothing about a voice, so the narrator speaks for them,
+    // and a line that belongs to nobody leans on it too.
+    expect(voiceFor(story, ids.partner)).toEqual({
+      model: "",
+      voice: "旁白的音色",
+    });
+    expect(voiceFor(story, undefined)).toEqual({
+      model: "",
+      voice: "旁白的音色",
+    });
+    // What no layer names is the deployment's default; the machine's own pick
+    // is the last layer the room knows about before it.
+    expect(voiceFor(story, ids.partner, { model: "machine-pick" })).toEqual({
+      model: "machine-pick",
+      voice: "旁白的音色",
+    });
+    // A line whose character is no longer in the story reads in the narrator's
+    // voice rather than in nobody's.
+    expect(voiceFor(story, "gone")).toEqual({
+      model: "",
+      voice: "旁白的音色",
+    });
+  });
+
+  it("leaves the step's own measure where it was: a voice is optional", () => {
+    const hero = storyOfFile(buildStoryMokaFile()).elements[0]!;
+    const before = elementComplete(hero);
+    expect(
+      elementComplete({ ...hero, voice: { model: "", voice: "longxiaochun" } }),
+    ).toBe(before);
+  });
+
+  it("counts the lines a character is given, and hands over their first", () => {
+    const story = storyOfFile(buildStoryMokaFile());
+    const ids = storyIds();
+    expect(lineCountFor(story, ids.hero)).toBe(1);
+    expect(lineCountFor(story, ids.partner)).toBe(0);
+    expect(firstLineOf(story, ids.hero)).toEqual({
+      id: ids.lineFirst,
+      characterId: ids.hero,
+      speaker: "林",
+      text: "车已经停运了。",
+      tone: "平静",
+    });
+    expect(firstLineOf(story, ids.partner)).toBeUndefined();
+  });
+
+  it("gives a character a voice, takes it away, and survives the round trip", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const next = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.hero,
+      patch: {
+        voice: {
+          model: "voice-model",
+          voice: "longxiaochun",
+          rate: 1.2,
+          instructions: "低沉、慢",
+        },
+      },
+    });
+    const hero = storyOfFile(next).elements.find(
+      (element) => element.id === ids.hero,
+    );
+    expect(hero?.voice).toEqual({
+      model: "voice-model",
+      voice: "longxiaochun",
+      rate: 1.2,
+      instructions: "低沉、慢",
+    });
+    // The other characters keep theirs: a voice is written on one card.
+    expect(storyOfFile(next).elements[1]?.voice).toBeUndefined();
+
+    // And it is taken off the element rather than left holding an empty voice.
+    const cleared = expectRoundTrip(next, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.hero,
+      patch: { voice: null },
+    });
+    expect(
+      storyOfFile(cleared).elements.find((element) => element.id === ids.hero)
+        ?.voice,
+    ).toBeUndefined();
+  });
+
+  it("refuses a voice outside the bounds the providers accept", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const writing = (voice: StoryVoiceProfile) => () =>
+      apply(moka, {
+        type: "updateStoryElement",
+        storyId: ids.story,
+        elementId: ids.hero,
+        patch: { voice },
+      });
+    expect(codeOf(writing({ model: "", voice: "", rate: 3 }))).toBe(
+      "VALIDATION_FAILED",
+    );
+    expect(codeOf(writing({ model: "", voice: "", pitch: 0.1 }))).toBe(
+      "VALIDATION_FAILED",
+    );
+    expect(codeOf(writing({ model: "m".repeat(200), voice: "" }))).toBe(
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("writes the narrator's voice and takes it away again", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const next = expectRoundTrip(moka, {
+      type: "updateStoryNarrator",
+      storyId: ids.story,
+      narrator: { model: "", voice: "旁白的音色" },
+    });
+    expect(storyOfFile(next).narrator).toEqual({
+      model: "",
+      voice: "旁白的音色",
+    });
+
+    const cleared = expectRoundTrip(next, {
+      type: "updateStoryNarrator",
+      storyId: ids.story,
+      narrator: null,
+    });
+    expect(storyOfFile(cleared).narrator).toBeUndefined();
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateStoryNarrator",
+          storyId: ids.story,
+          narrator: { model: "", voice: "", pitch: 9 },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
+  it("keeps a voice through a cast listed again without it", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const voiced = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.hero,
+      patch: { voice: { model: "", voice: "longxiaochun" } },
+    });
+    // A reading brings words. The voice is one of the reader's answers about
+    // the character, so a listing that says nothing of it leaves it standing.
+    const relisted = expectRoundTrip(voiced, {
+      type: "setStoryElements",
+      storyId: ids.story,
+      elements: storyOfFile(voiced).elements.map((element) => {
+        if (element.id !== ids.hero) return element;
+        const words: StoryElement = { ...element, description: "新的描述。" };
+        delete words.voice;
+        return words;
+      }),
+    });
+    const hero = storyOfFile(relisted).elements.find(
+      (element) => element.id === ids.hero,
+    );
+    expect(hero?.description).toBe("新的描述。");
+    expect(hero?.voice).toEqual({ model: "", voice: "longxiaochun" });
   });
 });
 

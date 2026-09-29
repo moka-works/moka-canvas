@@ -20,6 +20,7 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import {
+  MAX_ITEMS_PER_STORY_JOB,
   MAX_VIDEO_SECONDS,
   STORY_READ_CHARS_DEFAULT,
   STORY_SPLIT_CHARS_DEFAULT,
@@ -32,6 +33,7 @@ import {
 import {
   actAt,
   actPlannedMs,
+  chunkWaves,
   currentTake,
   elementOf,
   keyframeAt,
@@ -39,6 +41,7 @@ import {
   stripStoryMentions,
   takeFile,
   targetKey,
+  voiceFor,
 } from "../../../shared/domain/story";
 import type { SourceChunk } from "../../../shared/domain/storySource";
 import type { StoryElement } from "../../../shared/domain";
@@ -49,12 +52,14 @@ import type {
   StoryDocument,
   StoryFilmRole,
   StoryKeyframe,
+  StoryVoiceProfile,
 } from "../../../shared/domain/types";
 import {
   storyActMusicPrompt,
   storyActVideoPrompt,
   storyActVoicePrompt,
   storyElementMainPrompt,
+  storyLineVoicePrompt,
   storyElementTurnaroundPrompt,
   storyElementsPrompt,
   storyKeyframePrompt,
@@ -67,7 +72,11 @@ import {
   type StoryLook,
 } from "../../../shared/prompts";
 import { i18n } from "../../../shared/i18n";
-import { effectiveDefaultId, useModelStore } from "../../settings/modelStore";
+import {
+  effectiveDefaultId,
+  modelOptionsFor,
+  useModelStore,
+} from "../../settings/modelStore";
 import { storyAskModel } from "../stores/storyModels";
 
 /**
@@ -118,6 +127,14 @@ export function jobKey(target: StoryTarget): string {
         kind: "actVoice",
         chapterId: target.chapterId,
         actId: target.actId,
+      });
+    case "lineVoice":
+      return targetKey({
+        kind: "lineVoice",
+        chapterId: target.chapterId,
+        actId: target.actId,
+        keyframeId: target.keyframeId,
+        lineId: target.lineId,
       });
     case "music":
       return targetKey({
@@ -807,12 +824,100 @@ export function planKeyframeVideos(
 // The sound of an act
 // -----------------------------------------------------------------------------
 
+/** One wave of line asks: the pieces asked of one model, in board order. */
+export interface LineVoiceWave {
+  /** The model every piece in this wave is asked of; null is the deployment's. */
+  model: string | null;
+  items: StoryJobItemDraft[];
+}
+
+/**
+ * Every line of an act read aloud, in the voice its speaker is given.
+ *
+ * One ask a line, because a telling's characters do not share a voice: each
+ * line resolves through the voice chain and is asked of the model that came
+ * out of it, so a batch carries one model and the lines of different models
+ * travel as different waves, one after another. A line with no words in it is
+ * not read, and telling the same model twice in a wave is telling it once.
+ */
+export function planLineVoiceAsks(
+  story: StoryDocument,
+  chapterId: string,
+  actId: string,
+  only?: string[],
+): LineVoiceWave[] {
+  const act = actAt(story, chapterId, actId);
+  if (act === undefined) return [];
+  // Keyed by the model the line is read of; the empty string stands for the
+  // deployment's own default, which is what the batch is started without.
+  const waves = new Map<string, StoryJobItemDraft[]>();
+  for (const keyframe of act.keyframes) {
+    for (const line of keyframe.dialogue) {
+      const text = line.text.trim();
+      if (text === "") continue;
+      if (only !== undefined && !only.includes(line.id)) continue;
+      const target: StoryTarget = {
+        kind: "lineVoice",
+        chapterId,
+        actId,
+        keyframeId: keyframe.id,
+        lineId: line.id,
+      };
+      const voice = resolveVoice(story, line.characterId);
+      const tone = (line.tone ?? "").trim();
+      const held = waves.get(voice.model) ?? [];
+      held.push({
+        id: jobKey(target),
+        target,
+        capability: "speech",
+        prompt: storyLineVoicePrompt({
+          ...lookOf(story),
+          genre: story.brief.genre,
+          act: act.title,
+          text,
+          ...(tone === "" ? {} : { tone }),
+        }),
+        inputs: [],
+        params: voiceParamsFor(story, voice, {
+          act: act.summary,
+          ...(tone === "" ? {} : { tone }),
+        }),
+      });
+      waves.set(voice.model, held);
+    }
+  }
+  // One wave keeps a batch under the pieces a batch may carry: a telling may
+  // hold more lines than that, and asking for them all at once is asking for
+  // a batch the server would refuse whole.
+  return [...waves].flatMap(([model, items]) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model: model === "" ? null : model,
+      items: wave,
+    })),
+  );
+}
+
+/** The same, flat: every line of the act, whoever it ends up being asked of. */
+export function planLineVoices(
+  story: StoryDocument,
+  chapterId: string,
+  actId: string,
+  only?: string[],
+): StoryJobItemDraft[] {
+  return planLineVoiceAsks(story, chapterId, actId, only).flatMap(
+    (wave) => wave.items,
+  );
+}
+
 /**
  * An act's lines read aloud, as one piece in one voice.
  *
  * One ask for the whole act rather than one a line, because a voice that
  * changed halfway through an act is not a voice: the lines of every shot are
- * flattened in board order, and a line with no words in it is not read.
+ * flattened in board order, and a line with no words in it is not read. Kept
+ * for the tellings voiced before each character had a voice: a take already
+ * filed under the old ask is replayed and retried through it, and nothing new
+ * is asked for that way.
  */
 export function planActVoice(
   story: StoryDocument,
@@ -901,21 +1006,77 @@ export function spokenLine(line: StoryDialogueLine): string {
 }
 
 /**
- * What a read-aloud ask is carried with: the machine's own voice, and the
- * acting direction the telling gives it.
+ * What a read-aloud ask is carried with, for one voice.
  *
- * The direction rides in `instructions` because that is the parameter a
- * speech model reads as how to say something; a protocol that has never heard
- * of it drops it rather than failing, which is the gateway's standing rule.
+ * The voice's own fields press over this machine's speech settings field by
+ * field, so a character with a tone of its own keeps the machine's format and
+ * pace; an empty tone is the provider's default and nothing is sent for it.
+ * The acting direction rides in `instructions` because that is the parameter
+ * a speech model reads as how to say something; a protocol that has never
+ * heard of it drops it rather than failing, which is the gateway's standing
+ * rule. The try-out and every ask it stands for are assembled here, so what a
+ * reader hears is what the telling will say.
  */
-function voiceParams(story: StoryDocument): Record<string, unknown> {
-  return {
-    ...audioParams(),
-    instructions: i18n.t("story:voice.instructions", {
+export function voiceParamsFor(
+  story: StoryDocument,
+  voice: StoryVoiceProfile,
+  extra: { act?: string; tone?: string } = {},
+): Record<string, unknown> {
+  const tone = (extra.tone ?? "").trim();
+  const instructions = [
+    i18n.t("story:voice.instructions", {
       genre: story.brief.genre,
       style: story.brief.style,
     }),
+    (extra.act ?? "").trim(),
+    tone === "" ? "" : `（${tone}）`,
+    (voice.instructions ?? "").trim(),
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+  return {
+    ...audioParams(),
+    ...(voice.voice !== "" ? { voice: voice.voice } : {}),
+    ...(voice.rate !== undefined ? { rate: voice.rate } : {}),
+    ...(voice.pitch !== undefined ? { pitch: voice.pitch } : {}),
+    instructions,
   };
+}
+
+/** The same, for a reader who has named no voice: the machine speaks alone. */
+function voiceParams(story: StoryDocument): Record<string, unknown> {
+  return voiceParamsFor(story, { model: "", voice: "" });
+}
+
+/** The speech model a reference names, while this machine still has it. */
+function speechModelOnMachine(reference: string | null): string | null {
+  if (reference === null || reference === "") return null;
+  return modelOptionsFor(useModelStore.getState().view, "speech").some(
+    (option) => option.reference === reference,
+  )
+    ? reference
+    : null;
+}
+
+/**
+ * The voice a character's lines are read in, as this machine can read it.
+ *
+ * The document's own layers resolve first (the character, then the narrator);
+ * a model the telling names but this machine no longer has is passed over
+ * rather than sent to be refused, so a story keeps being read aloud after a
+ * model was deleted or switched off — the same falling through the picker's
+ * empty choice means. What no layer names is the deployment's own default.
+ */
+export function resolveVoice(
+  story: StoryDocument,
+  characterId: string | undefined,
+): StoryVoiceProfile {
+  const asked = speechModelOnMachine(storyAskModel("voice"));
+  const voice = voiceFor(story, characterId, { model: asked ?? "" });
+  if (voice.model !== "" && speechModelOnMachine(voice.model) === null) {
+    return { ...voice, model: asked ?? "" };
+  }
+  return voice;
 }
 
 /** The format and pace this machine's speech settings ask for. */
@@ -970,6 +1131,10 @@ export function itemsForTargets(
         ]);
       case "voice":
         return planActVoice(story, target.chapterId, target.actId);
+      case "lineVoice":
+        return planLineVoices(story, target.chapterId, target.actId, [
+          target.lineId,
+        ]);
       case "music":
         return planActMusic(story, target.chapterId, target.actId);
     }

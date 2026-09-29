@@ -17,13 +17,14 @@ import type {
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { planElementArt } from "../jobs/plan";
+import { planElementArt, resolveVoice } from "../jobs/plan";
 import { useStoryRun } from "../stores/storyJobStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
+import { VoiceFields } from "./VoiceFields";
 
 /** A place with nothing in it, for a slot a character has not been given yet. */
 const EMPTY_SLOT: StorySlot = { takes: [] };
@@ -168,6 +169,17 @@ export function ElementCard({
         rows={4}
         value={description.value}
       />
+
+      {character && (
+        <VoiceFields
+          characterId={element.id}
+          fallbackVoice={resolveVoice(story, element.id)}
+          onWrite={(voice) => write(story, element, { voice })}
+          story={story}
+          testId={`story-voice-${element.name}`}
+          voice={element.voice}
+        />
+      )}
 
       <div className="story-element-actions">
         <span className="story-hint">{t("story:elements.rewriteText")}</span>

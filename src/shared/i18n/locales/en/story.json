@@ -45,7 +45,7 @@
   },
   "remove": {
     "title": "Delete “{{name}}”?",
-    "body": "{{chapters}} chapters, {{acts}} acts, {{pictures}} pictures, and {{videos}} clips will no longer be referred to by this story.",
+    "body": "{{chapters}} chapters, {{acts}} acts, {{pictures}} pictures, {{videos}} clips, and {{voices}} voices will no longer be referred to by this story.",
     "keeps": "The files stay in the shelf, and the timeline it assembled stays in the cutting room.",
     "confirm": "Delete",
     "cancel": "Cancel"
@@ -308,7 +308,25 @@
     "removeTitle": "Remove {{name}}?",
     "removeBody": "{{name}} leaves the cast. Where a board names it, the reference is left standing as a gap.",
     "removeNote": "Nothing on the shelf is deleted: the pictures drawn of it stay among the files.",
-    "removeConfirm": "Remove it"
+    "removeConfirm": "Remove it",
+    "narratorTip": "Narrator: lines that belong to nobody are read in it, and every character falls back to it",
+    "voiceModel": "Voice",
+    "voiceModelNone": "The narrator, this machine, or the deployment's default",
+    "voiceTone": "Tone",
+    "voiceRate": "Pace",
+    "voicePitch": "Pitch",
+    "voiceManner": "Manner",
+    "voiceMannerTip": "How this character likes to say things",
+    "voiceTry": "Hear it",
+    "voiceTryBusy": "Hearing it…",
+    "voiceTryFailed": "The try-out did not come back",
+    "voiceUnset": "No voice yet",
+    "voiceSet": "Voice set",
+    "voiceOrphan": "This machine does not have that model",
+    "voiceOrphanNote": "This machine does not have that model; lines fall back to the next layer",
+    "voiceLines": "Lines this character says in the story: {{count}}",
+    "voiceNoLines": "No lines yet",
+    "voiceNamed": "{{named}}/{{total}} characters have a voice"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act.",
@@ -396,6 +414,8 @@
     "lines": "{{count}} lines",
     "noDialogue": "Nothing is said in this shot.",
     "speaker": "Speaker",
+    "speakerRole": "Character",
+    "speakerName": "Speaker name",
     "line": "Line",
     "tone": "Tone",
     "offScreen": "off screen",
@@ -435,13 +455,14 @@
     "withSubtitles": "Write the lines as a caption track",
     "noLines": "Nothing is said in this telling yet.",
     "subtitlesNote": "A caption sits where the shot was planned to run; a clip that came back a different length leaves the words where they are.",
-    "againNote": "A change here takes effect at the next assembly.",
     "nothingToAssemble": "No clip has been filmed yet — make the acts first.",
     "assemble": "Assemble the film",
     "reassemble": "Assemble again",
     "noVideo": "{{place}} has no clip yet",
     "assetMissing": "The material of {{place}} has left the project; film it again",
     "noDuration": "The material of {{place}} was never measured; the planned length is used",
+    "lineOverrun": "A reading runs {{over}}s past its shot in {{place}}",
+    "lineUnmeasured": "A reading in {{place}} was never measured; it is laid at its shot's own length",
     "warnings": "and {{count}} more",
     "goFill": "Go and fill it",
     "assembled": "Assembled: {{count}} clips, {{seconds}}s.",
@@ -465,7 +486,14 @@
     "clipFrameLine": "Episode {{chapter}} · Act {{act}} · Shot {{shot}}",
     "notFilmed": "not filmed",
     "line": "{{speaker}}: {{text}}",
-    "ownSoundNote": "The clips carry their own sound too, so two things may be heard at once; turn one of them down in the cutting room."
+    "ownSoundNote": "The clips carry their own sound too, so two things may be heard at once; turn one of them down in the cutting room.",
+    "lineVoice": "Line {{number}}",
+    "filmFresh": "The film is the telling as it stands.",
+    "filmBehind": "The film is behind the telling; exporting assembles it again first.",
+    "exportFresh": "Export the film (assemble first)",
+    "filmCarries": "It carries {{voices}} readings, {{music}} pieces of music, and subtitles {{subtitles}}.",
+    "subtitlesOn": "on",
+    "subtitlesOff": "off"
   },
   "import": {
     "name": "Name",
@@ -492,7 +520,8 @@
       "empty": "No clip has been filmed yet — nothing to import.",
       "done": "Imported {{count}} clips into “{{name}}”.",
       "name": "{{name}} · cut"
-    }
+    },
+    "voiceLine": "Line {{at}}"
   },
   "voice": {
     "rowLabel": "Sound",
@@ -502,6 +531,19 @@
     "noSound": "Write what this act sounds like on the board first.",
     "take": "{{seconds}}",
     "again": "Ask for another",
-    "instructions": "Read it as a {{genre}} told in a {{style}} register — steady and unhurried, and no more dramatic than the lines are."
+    "instructions": "Read it as a {{genre}} told in a {{style}} register — steady and unhurried, and no more dramatic than the lines are.",
+    "sample": "This is a line read aloud, to hear whether the voice fits.",
+    "unspent": "Not read yet",
+    "spent": "Read, {{seconds}}",
+    "spentIn": "Read, {{seconds}} · {{voice}}",
+    "stale": "The words changed since this was read",
+    "lineAsk": "Read this line",
+    "saveFirst": "Write the change down before reading it",
+    "allRead": "Every line is read ({{count}})",
+    "legacyNote": "an older reading of the whole act",
+    "audioFallback": "The audio model here is what characters without a model of their own — and the narrator — fall back to. Each character's voice is set on the third step.",
+    "fitsSped": "{{over}}s longer than its shot · read {{speed}}× faster",
+    "fitsOverrun": "{{over}}s longer than its shot · read as fast as it may, {{spill}}s over the shot",
+    "fitsUnmeasured": "No measured length · laid at the shot's own length"
   }
 }

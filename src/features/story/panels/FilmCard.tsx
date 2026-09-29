@@ -8,11 +8,14 @@ import type {
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "../../editor/stores/appStore";
-import { useProjectStore } from "../../editor/stores/projectStore";
+import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { askSavePath, fileSafeName } from "../../editor/launcher/savePath";
 import { clipApi, type ClipCapabilities } from "../../clip/api";
 import { useClipStore } from "../../clip/stores/clipStore";
 import { useExportStore } from "../../clip/stores/exportStore";
+import { assemblyCarries, assemblyDigest, planAssembly } from "../assembly";
+import { assembleStory } from "../assembleStory";
+import { saveEverything } from "../stores/storyJobStore";
 import { useStoryExportStore } from "../stores/storyExportStore";
 
 /** How often a running render is looked at, in milliseconds. */
@@ -34,6 +37,7 @@ const POLL_MS = 700;
 export function FilmCard({
   story,
   timeline,
+  withSubtitles,
   assembleBlocked,
   assembling,
   onAssembleAgain,
@@ -41,6 +45,8 @@ export function FilmCard({
   story: StoryDocument;
   /** The timeline the telling was laid down on, if the document still has it. */
   timeline: TimelineDocument | undefined;
+  /** Whether the lines are written on the film as a caption track. */
+  withSubtitles: boolean;
   /** Why the clips cannot be laid out, if they cannot. */
   assembleBlocked: string | null;
   /** Whether an assembly is already on its way. */
@@ -48,6 +54,7 @@ export function FilmCard({
   onAssembleAgain: () => void;
 }) {
   const { t } = useTranslation();
+  const moka = useProjectStore((state) => state.moka);
   const task = useStoryExportStore((state) => state.task);
   const error = useStoryExportStore((state) => state.error);
   const [capabilities, setCapabilities] = useState<ClipCapabilities | null>(
@@ -58,6 +65,26 @@ export function FilmCard({
   // Where the last render of this session went, held while the process runs:
   // this card is the only place a reader is told it.
   const savedTo = task?.status === "done" ? task.savedTo : undefined;
+  // Whether the film is behind the telling: what the assembly would lay down
+  // now, read the same way the assembly reads it, against what was written
+  // down when the timeline was last laid down. A telling that has never been
+  // assembled is behind by definition, and pressing export assembles it.
+  const plan = moka === null ? undefined : planAssembly(story, moka);
+  const behind =
+    moka === null ||
+    plan === undefined ||
+    assemblyDigest(story, moka, plan, {
+      withSubtitles,
+      ...(story.edit.timelineId === undefined
+        ? {}
+        : { timelineId: story.edit.timelineId }),
+    }) !== story.edit.assembledDigest;
+  // What the film will carry, counted from the same plan the digest is taken
+  // from: what is heard, and whether the words are written on it.
+  const carried =
+    plan === undefined || moka === null
+      ? undefined
+      : assemblyCarries(story, moka, plan);
 
   // What this machine can do, asked once: the answer cannot change while the
   // process runs, and a machine without a renderer is not a broken step — it is
@@ -113,7 +140,6 @@ export function FilmCard({
   }, [task?.id, live, task]);
 
   const start = async () => {
-    if (timeline === undefined) return;
     setBusy(true);
     useStoryExportStore.getState().setError(null);
     try {
@@ -126,12 +152,30 @@ export function FilmCard({
         ? held.destination
         : await askSavePath({
             title: t("story:edit.saveTitle"),
-            defaultName: `${fileSafeName(timeline.name)}.mp4`,
+            defaultName: `${fileSafeName(timeline?.name ?? story.name)}.mp4`,
             extensions: ["mp4"],
           });
       if (destination === null) return;
       useStoryExportStore.getState().setDestination(destination);
-      const started = await clipApi.start(timeline.id, destination);
+      // A telling that has moved on since it was laid down is assembled again
+      // first: a render of the older timeline is a film of a telling that is no
+      // longer there, which is exactly the one a reader would not have asked
+      // for. The save is what puts the new assembly where the server can read
+      // it, and the render is the server's, so the order is assemble, save,
+      // render.
+      const target = behind
+        ? (await assembleStory(story.id, { withSubtitles })).timelineId
+        : timeline?.id;
+      if (target === undefined) return;
+      if (!(await saveEverything())) {
+        const blocked = saveTrouble();
+        throw new Error(
+          blocked.detail === undefined
+            ? blocked.message
+            : `${blocked.message} ${blocked.detail}`,
+        );
+      }
+      const started = await clipApi.start(target, destination);
       useStoryExportStore.getState().setTask(started);
     } catch (problem) {
       useStoryExportStore
@@ -157,14 +201,17 @@ export function FilmCard({
     }
   };
 
-  const blocked =
-    timeline === undefined
+  // What stops the export: a machine that cannot render, or a telling with
+  // nothing to render. A timeline that is behind is not a reason to stop —
+  // pressing export assembles it again first — so those two blocks lift while
+  // the assembly is owed.
+  const blocked = !capabilities?.available
+    ? (capabilities?.reason ?? t("story:edit.noFfmpeg"))
+    : !behind && timeline === undefined
       ? t("story:edit.noTimeline")
-      : !capabilities?.available
-        ? (capabilities?.reason ?? t("story:edit.noFfmpeg"))
-        : timeline.clips.length === 0
-          ? t("story:edit.nothingToRender")
-          : null;
+      : !behind && timeline !== undefined && timeline.clips.length === 0
+        ? t("story:edit.nothingToRender")
+        : null;
   const problem =
     error ??
     (task !== null && !live && task.status !== "done"
@@ -187,6 +234,26 @@ export function FilmCard({
       {savedTo !== undefined && (
         <p className="story-hint" data-testid="story-film-saved">
           {t("story:edit.filmSaved", { path: savedTo })}
+        </p>
+      )}
+
+      {/* Whether the film is the telling as it stands, and what it carries:
+          a reader deciding to export from here should not have to remember
+          what the step said two presses ago. */}
+      {!live && (
+        <p className="story-hint" data-testid="story-film-freshness">
+          {behind ? t("story:edit.filmBehind") : t("story:edit.filmFresh")}
+        </p>
+      )}
+      {!live && carried !== undefined && (
+        <p className="story-hint" data-testid="story-film-carries">
+          {t("story:edit.filmCarries", {
+            voices: carried.voices,
+            music: carried.music,
+            subtitles: withSubtitles
+              ? t("story:edit.subtitlesOn")
+              : t("story:edit.subtitlesOff"),
+          })}
         </p>
       )}
 
@@ -243,9 +310,11 @@ export function FilmCard({
             title={blocked ?? undefined}
             type="button"
           >
-            {savedTo === undefined
-              ? t("story:edit.export")
-              : t("story:edit.exportAgain")}
+            {behind
+              ? t("story:edit.exportFresh")
+              : savedTo === undefined
+                ? t("story:edit.export")
+                : t("story:edit.exportAgain")}
           </button>
         )}
         {/* The way into the cutting room is the timeline's, not the film's: a

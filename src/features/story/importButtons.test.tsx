@@ -122,6 +122,60 @@ describe("taking a telling into the canvas", () => {
       true,
     );
   });
+
+  it("makes a card a line for a telling read aloud line by line", async () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0]!;
+    moka.resources.voice = [
+      {
+        id: "said-one",
+        name: "said-one.mp3",
+        path: "assets/voice/said-one.mp3",
+        mime: "audio/mpeg",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        probe: {
+          mime: "audio/mpeg",
+          bytes: 2_048,
+          sha256: "1".repeat(64),
+          durationMs: 900,
+        },
+      },
+    ];
+    const frame = story.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.voices = [
+      {
+        lineId: frame.dialogue[0]!.id,
+        text: frame.dialogue[0]!.text,
+        voice: "reader-1",
+        slot: {
+          takes: [
+            { assetIds: ["said-one"], createdAt: "2026-01-01T00:00:00.000Z" },
+          ],
+        },
+      },
+    ];
+    openAtStep(moka, "storyboard");
+    const before = canvases().length;
+    fireEvent.click(screen.getByTestId("story-import-canvas"));
+    await screen.findByTestId("story-import-canvas-dialog-name");
+    fireEvent.click(screen.getByTestId("story-import-canvas-dialog-confirm"));
+
+    await waitFor(() => expect(canvases()).toHaveLength(before + 1));
+    const made = canvases()[canvases().length - 1]!;
+    // The reading is a card of its own, filed as a voice and named for the line
+    // it reads — and the whole act's reading is nowhere on the board, since
+    // there is none.
+    const readings = made.nodes.filter(
+      (node) =>
+        (node.data as { audioCategory?: string }).audioCategory === "voice",
+    );
+    expect(readings).toHaveLength(1);
+    expect(readings[0]?.title).toContain("Line 1");
+    expect((readings[0]?.data as { assetId?: string }).assetId).toBe(
+      "said-one",
+    );
+  });
 });
 
 describe("taking a telling into the cutting room", () => {

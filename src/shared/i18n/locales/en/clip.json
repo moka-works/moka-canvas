@@ -50,6 +50,7 @@
       "backSecond": "Back one second",
       "backToHead": "Back to the head",
       "clearSelection": "Clear the selection",
+      "editSubtitle": "Edit a subtitle",
       "forwardFrame": "Forward one frame",
       "forwardSecond": "Forward one second",
       "playPause": "Play / pause",
@@ -67,7 +68,9 @@
       "delete": "Delete",
       "down": "↓",
       "end": "End",
+      "enter": "Enter",
       "escape": "Escape",
+      "f2": "F2",
       "home": "Home",
       "left": "←",
       "minus": "-",
@@ -85,12 +88,14 @@
     "splitLabel": "Height of the preview"
   },
   "menu": {
+    "addSubtitle": "Add subtitle here",
     "addTrack": "Add track",
     "addTrackAbove": "Add track above",
     "addTrackBelow": "Add track below",
     "align": "Align",
     "alignLeft": "Align left",
     "distributeEvenly": "Distribute evenly",
+    "editSubtitle": "Edit subtitle",
     "joinButted": "Join butted",
     "removeTrack": "Remove track",
     "rename": "Rename…",
@@ -392,6 +397,11 @@
     "trackLocked": "That track is locked.",
     "videoOnVideoTrack": "A video or an image goes on a video track.",
     "addedInOrder": "Added {{count}} files, one after another."
+  },
+  "cues": {
+    "editor": "Subtitle text",
+    "noRoom": "There is no room for another subtitle here.",
+    "placeholder": "Type the words"
   },
   "subtitles": {
     "clipLimit": "The timeline holds at most {{max}} clips — delete {{extra}} first.",

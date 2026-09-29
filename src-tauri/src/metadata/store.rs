@@ -360,6 +360,7 @@ impl MetadataStore for FileMetadataStore {
             model: draft.model.clone(),
             display_name: draft.display_name.clone(),
             max_video_seconds: draft.max_video_seconds,
+            scenes: draft.scenes.clone(),
             sub_models: draft.sub_models.clone(),
             enabled: draft.enabled,
         };

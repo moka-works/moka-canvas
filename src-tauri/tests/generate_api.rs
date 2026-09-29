@@ -92,6 +92,7 @@ async fn configured(harness: &Harness, base_url: &str, models: &[(&str, Capabili
                 model: (*id).into(),
                 display_name: (*id).into(),
                 max_video_seconds: None,
+                scenes: Vec::new(),
                 sub_models: Vec::new(),
                 enabled: true,
                 expected_revision: None,

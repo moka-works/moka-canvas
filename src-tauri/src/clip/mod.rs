@@ -14,6 +14,7 @@
 
 pub mod ass;
 pub mod audio;
+pub mod fonts;
 pub mod jobs;
 pub mod locate;
 pub mod plan;
@@ -77,6 +78,8 @@ pub struct PlanAsset {
     pub path: PathBuf,
     /// The project's own reading of what the file is.
     pub mime: String,
+    /// Which shelf the project files it on, when it still files it anywhere.
+    pub category: Option<String>,
     pub has_audio: bool,
 }
 
@@ -128,12 +131,14 @@ pub fn sources_for(root: &Path, moka: &MokaFile, timeline: &TimelineDocument) ->
         };
         let path = root.join(&entry.path);
         let mime = entry.mime.clone().unwrap_or_default();
-        let has_audio = media_has_audio(&path, &mime);
+        let category = moka.resources.category_of(asset_id).map(str::to_string);
+        let has_audio = carries_audio(&path, &mime, category.as_deref());
         sources.assets.insert(
             asset_id.to_string(),
             PlanAsset {
                 path,
                 mime,
+                category,
                 has_audio,
             },
         );
@@ -147,6 +152,26 @@ pub fn named_asset(clip: &TimelineClip) -> Option<&str> {
         return None;
     }
     clip.asset_id.as_deref().filter(|id| !id.is_empty())
+}
+
+/// Whether a file carries sound, read from the project's own records.
+///
+/// A file the project files on its voice or music shelf is sound whatever its
+/// type says: a recording whose mime was never written down is still a
+/// recording, and rendering it silent is the mistake this is here to stop.
+/// Pictures and words are never sound, and everything else is read from the
+/// file itself.
+fn carries_audio(path: &Path, mime: &str, category: Option<&str>) -> bool {
+    if mime.is_empty() {
+        return match category {
+            Some("voice") | Some("music") => true,
+            Some("images") | Some("texts") => false,
+            // A picture with no type on file is read the way a picture with
+            // one would be: box by box, and sound when it cannot be told.
+            _ => iso_bmff_has_audio_track(path).unwrap_or(true),
+        };
+    }
+    media_has_audio(path, mime)
 }
 
 /// Whether a file carries sound, read from its own headers.
@@ -309,6 +334,27 @@ mod tests {
     }
 
     #[test]
+    fn a_file_whose_mime_was_never_written_down_is_read_by_its_shelf() {
+        let root = tempfile::tempdir().unwrap();
+        let file = fixtures::write_file(root.path(), "assets/voice/said.mp3", b"not really");
+        // A recording with no type on file is still a recording: the shelf it
+        // is filed on says what nobody wrote down.
+        assert!(carries_audio(&file, "", Some("voice")));
+        assert!(carries_audio(&file, "", Some("music")));
+        // Pictures and words are never sound.
+        assert!(!carries_audio(&file, "", Some("images")));
+        assert!(!carries_audio(&file, "", Some("texts")));
+        // And a video with no type falls back to reading the container, which
+        // assumes sound for a file it cannot walk.
+        assert!(carries_audio(&file, "", Some("videos")));
+        assert!(carries_audio(&file, "", None));
+        // A file whose type is known is read the way it always was, whatever
+        // shelf it sits on.
+        assert!(carries_audio(&file, "audio/wav", Some("voice")));
+        assert!(!carries_audio(&file, "image/png", Some("images")));
+    }
+
+    #[test]
     fn the_sources_record_what_each_file_is_and_whether_it_is_there() {
         let root = tempfile::tempdir().unwrap();
         let file = fixtures::write_file(
@@ -317,6 +363,11 @@ mod tests {
             &fixtures::mp4_bytes(true),
         );
         let gone = root.path().join("assets/videos/gone.mp4");
+        // A recording nobody typed a mime for, filed on the voice shelf.
+        let _said = fixtures::write_file(root.path(), "assets/voice/said.mp3", b"not really");
+        let mut untyped = fixtures::entry("a4", "said", "assets/voice/said.mp3", "audio/mpeg");
+        untyped.mime = None;
+        untyped.probe = None;
         let project = fixtures::moka(
             vec![
                 fixtures::entry("a1", "a", "assets/videos/a.mp4", "video/mp4"),
@@ -328,6 +379,7 @@ mod tests {
         let clip = fixtures::material("c1", "t1", TrackKind::Video, "a1", 0, 1_000);
         let words = fixtures::text("c2", "t2", 0, 1_000, "Hello", fixtures::text_style());
         let missing = fixtures::material("c3", "t1", TrackKind::Video, "a2", 2_000, 1_000);
+        let spoken = fixtures::material("c4", "t3", TrackKind::Audio, "a4", 0, 1_000);
         let project = crate::domain::MokaFile {
             resources: crate::domain::ResourceRegistry {
                 videos: vec![
@@ -335,6 +387,7 @@ mod tests {
                     project.resources.videos[1].clone(),
                 ],
                 texts: vec![project.resources.texts[0].clone()],
+                voice: vec![untyped],
                 ..Default::default()
             },
             ..project
@@ -344,14 +397,16 @@ mod tests {
             vec![
                 fixtures::track("t1", TrackKind::Video),
                 fixtures::track("t2", TrackKind::Text),
+                fixtures::track("t3", TrackKind::Audio),
             ],
-            vec![clip, words, missing],
+            vec![clip, words, missing, spoken],
             Vec::new(),
         );
         let sources = sources_for(root.path(), &project, &timeline);
         let asset = sources.asset("a1").expect("the material is recorded");
         assert_eq!(asset.path, file);
         assert!(asset.has_audio);
+        assert_eq!(asset.category.as_deref(), Some("videos"));
         assert_eq!(sources.file_of("a1"), Some(file.as_path()));
         // A file that is not there is recorded as what the document says and
         // refused by the planner, not by this reading.
@@ -360,5 +415,11 @@ mod tests {
         let _ = gone;
         // Words name no file at all.
         assert!(sources.asset("a3").is_none());
+        // A recording with no type on file is still sound: its shelf says so,
+        // and a voice rendered silent is the worse mistake.
+        let said = sources.asset("a4").expect("the recording is recorded");
+        assert_eq!(said.category.as_deref(), Some("voice"));
+        assert!(said.has_audio);
+        assert_eq!(sources.file_of("a4"), Some(said.path.as_path()));
     }
 }

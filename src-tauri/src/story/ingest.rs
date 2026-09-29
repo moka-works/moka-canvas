@@ -126,6 +126,7 @@ fn target_label(target: &StoryTarget) -> String {
         StoryTarget::ActVideo { .. } => "act video".to_string(),
         StoryTarget::KeyframeVideo { .. } => "keyframe video".to_string(),
         StoryTarget::Voice { .. } => "act voice".to_string(),
+        StoryTarget::LineVoice { .. } => "line voice".to_string(),
         StoryTarget::Music { .. } => "act music".to_string(),
     }
 }

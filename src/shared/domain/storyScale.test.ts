@@ -32,6 +32,7 @@ function everyShotSays(moka: MokaFile, lines: number): MokaFile {
     for (const act of chapter.acts) {
       for (const keyframe of act.keyframes) {
         keyframe.dialogue = Array.from({ length: lines }, (_, at) => ({
+          id: `${keyframe.id}-line-${at + 1}`,
           speaker: "阿澈",
           text: `第 ${at + 1} 句台词，说给夜里停下的这班车听。`,
         }));

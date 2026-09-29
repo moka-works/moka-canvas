@@ -29,6 +29,7 @@ const CHAPTER_SECOND: &str = "chapter-second";
 const ACT: &str = "act-1";
 const FRAME_FIRST: &str = "frame-1";
 const FRAME_SECOND: &str = "frame-2";
+const LINE_FIRST: &str = "line-1";
 const HERO: &str = "element-hero";
 const PARTNER: &str = "element-partner";
 const SCENE: &str = "element-scene";
@@ -130,6 +131,7 @@ fn frame(index: usize) -> StoryKeyframe {
         duration_ms: 1_000,
         art: empty_slot(),
         video: empty_slot(),
+        voices: None,
     }
 }
 
@@ -166,6 +168,7 @@ fn element(id: &str, kind: StoryElementKind) -> StoryElement {
         } else {
             None
         },
+        voice: None,
     }
 }
 
@@ -223,6 +226,7 @@ fn story_document() -> MokaFile {
         film_role: story::StoryFilmRole::Reference,
         content: "雨中的站台，一个人立在灯下。".into(),
         dialogue: vec![StoryDialogueLine {
+            id: Some(LINE_FIRST.into()),
             character_id: Some(HERO.into()),
             speaker: "林".into(),
             text: "车已经停运了。".into(),
@@ -239,6 +243,7 @@ fn story_document() -> MokaFile {
             }],
         },
         video: empty_slot(),
+        voices: None,
     };
     let second = StoryKeyframe {
         id: FRAME_SECOND.into(),
@@ -252,6 +257,7 @@ fn story_document() -> MokaFile {
         duration_ms: 3_000,
         art: empty_slot(),
         video: empty_slot(),
+        voices: None,
     };
 
     moka.stories = Some(vec![StoryDocument {
@@ -321,6 +327,7 @@ fn story_document() -> MokaFile {
                 turnaround: Some(StorySlot {
                     takes: vec![take(HERO_SHEET)],
                 }),
+                voice: None,
             },
             element(PARTNER, StoryElementKind::Character),
             element(SCENE, StoryElementKind::Scene),
@@ -340,7 +347,9 @@ fn story_document() -> MokaFile {
                 keyframe_id: None,
                 clip_id: "clip-video".into(),
             }]),
+            assembled_digest: None,
         },
+        narrator: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }]);
@@ -691,6 +700,171 @@ fn names_the_chapters_an_element_was_seen_in_and_refuses_a_chapter_it_has_not() 
     );
 }
 
+fn voice(model: &str, tone: &str) -> story::StoryVoiceProfile {
+    story::StoryVoiceProfile {
+        model: model.into(),
+        voice: tone.into(),
+        rate: None,
+        pitch: None,
+        instructions: None,
+    }
+}
+
+#[test]
+fn gives_a_character_a_voice_takes_it_away_and_keeps_the_round_trip() {
+    let moka = story_document();
+    let held = story::StoryVoiceProfile {
+        model: "voice-model".into(),
+        voice: "longxiaochun".into(),
+        rate: Some(1.2),
+        pitch: None,
+        instructions: Some("低沉、慢".into()),
+    };
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryElement {
+            story_id: STORY.into(),
+            element_id: HERO.into(),
+            patch: StoryElementPatch {
+                voice: Some(Some(held.clone())),
+                ..Default::default()
+            },
+        }],
+    );
+    let hero = story_of(&next)
+        .elements
+        .iter()
+        .find(|element| element.id == HERO)
+        .unwrap();
+    assert_eq!(hero.voice, Some(held));
+    // The characters beside them were never named, and no voice is written for
+    // them: a voice holding nothing is not a voice.
+    assert!(story_of(&next).elements[1].voice.is_none());
+
+    // Taken off the element rather than left holding nothing.
+    let cleared = round_trip(
+        &next,
+        vec![DocumentCommand::UpdateStoryElement {
+            story_id: STORY.into(),
+            element_id: HERO.into(),
+            patch: StoryElementPatch {
+                voice: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(story_of(&cleared).elements[0].voice.is_none());
+
+    // A pitch no provider would take is refused.
+    let mut beyond = voice("", "");
+    beyond.pitch = Some(3.0);
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateStoryElement {
+                story_id: STORY.into(),
+                element_id: HERO.into(),
+                patch: StoryElementPatch {
+                    voice: Some(Some(beyond)),
+                    ..Default::default()
+                },
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
+fn keeps_a_characters_voice_through_a_cast_listed_again_without_it() {
+    let moka = story_document();
+    let voiced = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryElement {
+            story_id: STORY.into(),
+            element_id: HERO.into(),
+            patch: StoryElementPatch {
+                voice: Some(Some(voice("", "longxiaochun"))),
+                ..Default::default()
+            },
+        }],
+    );
+    // A reading brings words, not a voice: the voice is one of the reader's
+    // answers about a character, so a listing that says nothing of it leaves
+    // it standing.
+    let mut listed = story_of(&voiced).elements[0].clone();
+    listed.voice = None;
+    listed.description = "重写的描述".into();
+    let next = round_trip(
+        &voiced,
+        vec![DocumentCommand::SetStoryElements {
+            story_id: STORY.into(),
+            elements: vec![listed],
+        }],
+    );
+    let hero = &story_of(&next).elements[0];
+    assert_eq!(hero.description, "重写的描述");
+    assert_eq!(hero.voice.as_ref().unwrap().voice, "longxiaochun");
+}
+
+#[test]
+fn writes_the_narrators_voice_and_takes_it_away_again() {
+    let moka = story_document();
+    assert!(story_of(&moka).narrator.is_none());
+    assert!(!serde_json::to_string(story_of(&moka))
+        .unwrap()
+        .contains("narrator"));
+
+    let told = voice("", "旁白的音色");
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryNarrator {
+            story_id: STORY.into(),
+            narrator: Some(told.clone()),
+        }],
+    );
+    assert_eq!(story_of(&next).narrator, Some(told));
+
+    let cleared = round_trip(
+        &next,
+        vec![DocumentCommand::UpdateStoryNarrator {
+            story_id: STORY.into(),
+            narrator: None,
+        }],
+    );
+    assert!(story_of(&cleared).narrator.is_none());
+
+    let mut beyond = voice("", "");
+    beyond.rate = Some(4.0);
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateStoryNarrator {
+                story_id: STORY.into(),
+                narrator: Some(beyond),
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+/// A telling written before voices existed is still a telling: the document is
+/// read, and nothing is written back for the voices it never carried.
+#[test]
+fn reads_a_document_written_before_voices_existed() {
+    let moka = story_document();
+    let mut raw: serde_json::Value = serde_json::to_value(story_of(&moka)).unwrap();
+    raw.as_object_mut().unwrap().remove("narrator");
+    for element in raw["elements"].as_array_mut().unwrap() {
+        element.as_object_mut().unwrap().remove("voice");
+    }
+    let story: StoryDocument = serde_json::from_value(raw).unwrap();
+    assert!(story.narrator.is_none());
+    assert!(story.elements[0].voice.is_none());
+    assert!(!serde_json::to_string(&story.elements[0])
+        .unwrap()
+        .contains("voice"));
+}
+
 #[test]
 fn keeps_an_acts_frames_and_clip_when_it_keeps_its_id() {
     let moka = story_document();
@@ -824,6 +998,7 @@ fn moves_only_the_fields_a_shot_patch_names_and_keeps_a_shot_to_its_length() {
                 shot_size: Some(StoryShotSize::ExtremeWide),
                 duration_ms: Some(1_200),
                 dialogue: Some(vec![StoryDialogueLine {
+                    id: Some("line-second".into()),
                     character_id: None,
                     speaker: "周".into(),
                     text: "车还会来。".into(),
@@ -855,6 +1030,67 @@ fn moves_only_the_fields_a_shot_patch_names_and_keeps_a_shot_to_its_length() {
         ),
         "VALIDATION_FAILED"
     );
+}
+
+#[test]
+fn refuses_a_line_of_dialogue_with_no_name_of_its_own_or_two_sharing_one() {
+    let moka = story_document();
+    let patched = |dialogue: Vec<StoryDialogueLine>| DocumentCommand::UpdateStoryKeyframe {
+        story_id: STORY.into(),
+        chapter_id: CHAPTER_FIRST.into(),
+        act_id: ACT.into(),
+        keyframe_id: FRAME_FIRST.into(),
+        patch: StoryKeyframePatch {
+            dialogue: Some(dialogue),
+            ..Default::default()
+        },
+    };
+    let line = |id: Option<&str>, text: &str| StoryDialogueLine {
+        id: id.map(str::to_string),
+        character_id: None,
+        speaker: "周".into(),
+        text: text.into(),
+        tone: None,
+    };
+    assert_eq!(
+        code_of(&moka, patched(vec![line(None, "车还会来。")])),
+        "VALIDATION_FAILED"
+    );
+    assert_eq!(
+        code_of(
+            &moka,
+            patched(vec![
+                line(Some("same"), "车还会来。"),
+                line(Some("same"), "车不会来了。"),
+            ])
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+/// A telling written before lines had names is still a telling: the document
+/// is read, and the names it does not carry are left off rather than written
+/// back as something else.
+#[test]
+fn reads_a_document_whose_lines_have_no_names() {
+    let moka = story_document();
+    let mut raw: serde_json::Value = serde_json::to_value(story_of(&moka)).unwrap();
+    for frame in raw["chapters"][0]["acts"][0]["keyframes"]
+        .as_array_mut()
+        .unwrap()
+    {
+        for line in frame["dialogue"].as_array_mut().unwrap() {
+            line.as_object_mut().unwrap().remove("id");
+        }
+    }
+    let story: StoryDocument = serde_json::from_value(raw).unwrap();
+    let lines = &story.chapters[0].acts[0].keyframes[0].dialogue;
+    assert_eq!(lines[0].id, None);
+    assert_eq!(lines[0].speaker, "林");
+    // And a line with no name is not written back holding an empty one.
+    let written =
+        serde_json::to_string(&story.chapters[0].acts[0].keyframes[0].dialogue[0]).unwrap();
+    assert!(!written.contains("\"id\""));
 }
 
 /// A shot's role in filming is a word a document carries only when it says
@@ -911,6 +1147,7 @@ fn files_a_drawing_at_the_place_a_target_names() {
                 keyframe_id: FRAME_SECOND.into(),
             },
             slot: slot.clone(),
+            read: None,
         }],
     );
     assert_eq!(story_of(&next).chapters[0].acts[0].keyframes[1].art, slot);
@@ -936,6 +1173,7 @@ fn files_a_voice_and_a_score_where_an_act_keeps_them() {
             slot: StorySlot {
                 takes: vec![take("asset-act-voice")],
             },
+            read: None,
         }],
     );
     let act = &story_of(&next).chapters[0].acts[0];
@@ -957,6 +1195,7 @@ fn files_a_voice_and_a_score_where_an_act_keeps_them() {
             slot: StorySlot {
                 takes: vec![take("asset-act-music")],
             },
+            read: None,
         }],
     );
     let act = &story_of(&scored).chapters[0].acts[0];
@@ -983,6 +1222,7 @@ fn trims_a_slot_to_what_a_place_keeps_oldest_first_and_drops_two_of_one_drawing(
                 view: StoryElementView::Main,
             },
             slot: StorySlot { takes },
+            read: None,
         }],
     )
     .0;
@@ -1008,6 +1248,7 @@ fn refuses_a_place_the_story_no_longer_holds() {
                     view: StoryElementView::Main,
                 },
                 slot: empty_slot(),
+                read: None,
             }
         ),
         "STORY_TARGET_INVALID"
@@ -1022,6 +1263,7 @@ fn refuses_a_place_the_story_no_longer_holds() {
                     view: StoryElementView::Turnaround,
                 },
                 slot: empty_slot(),
+                read: None,
             }
         ),
         "STORY_TARGET_INVALID"
@@ -1042,12 +1284,44 @@ fn remembers_what_a_story_was_assembled_into_and_refuses_a_timeline_nobody_holds
                     keyframe_id: None,
                     clip_id: "clip-cut-a".into(),
                 }])),
+                assembled_digest: Some(Some("0f3a91cd".into())),
             },
         }],
     );
     let edit = &story_of(&next).edit;
     assert_eq!(edit.timeline_id.as_deref(), Some(TIMELINE));
     assert_eq!(edit.clip_by_act.as_ref().unwrap()[0].clip_id, "clip-cut-a");
+    assert_eq!(edit.assembled_digest.as_deref(), Some("0f3a91cd"));
+
+    // A digest is what an assembly writes down; anything else is refused
+    // rather than kept as though it meant something.
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryEdit {
+                story_id: STORY.into(),
+                patch: StoryEditPatch {
+                    assembled_digest: Some(Some("NOT-A-DIGEST".into())),
+                    ..Default::default()
+                },
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+
+    // And it can be taken away again, which is what an undo of the first
+    // assembly's own writing looks like.
+    let without = round_trip(
+        &next,
+        vec![DocumentCommand::SetStoryEdit {
+            story_id: STORY.into(),
+            patch: StoryEditPatch {
+                assembled_digest: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(story_of(&without).edit.assembled_digest, None);
 
     assert_eq!(
         code_of(
@@ -1481,6 +1755,7 @@ fn create_story(name: &str) -> StoryDocument {
         max_reference_images: story::REFERENCE_IMAGES_DEFAULT,
         confirmed_steps: Vec::new(),
         edit: StoryEdit::default(),
+        narrator: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }

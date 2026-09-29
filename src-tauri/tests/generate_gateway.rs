@@ -108,6 +108,7 @@ impl Rig {
                     model: id.clone(),
                     display_name: id.clone(),
                     max_video_seconds: None,
+                    scenes: Vec::new(),
                     sub_models: Vec::new(),
                     enabled: true,
                     expected_revision: None,
@@ -787,6 +788,7 @@ async fn a_model_with_no_stored_key_is_reported_before_anything_is_sent() {
             model: "gpt-5.5".into(),
             display_name: "GPT-5.5".into(),
             max_video_seconds: None,
+            scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
             expected_revision: None,
@@ -1384,6 +1386,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
             model: stored.model.clone(),
             display_name: stored.display_name.clone(),
             max_video_seconds: None,
+            scenes: Vec::new(),
             sub_models: vec![SubModel {
                 model: "happy-ref".into(),
                 url: Some(format!("{base_url}/v1/video-images")),
