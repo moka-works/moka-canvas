@@ -302,14 +302,14 @@ export function createFrameSources(): PreviewFrameSources {
     if (playing) {
       // The element plays its own picture; the room's clock only asks where.
       const element = elementEngine().startPlaying(
-        clip.id,
         assetId,
+        clip.id,
         materialMs,
         clip.speed,
       );
       return element ? elementPicture(element) : { kind: "waiting" };
     }
-    const element = elementEngine().elementFor(clip.id, assetId, materialMs);
+    const element = elementEngine().elementFor(assetId, materialMs);
     if (!element) return { kind: "waiting" };
     return elementPicture(element);
   };
@@ -317,6 +317,9 @@ export function createFrameSources(): PreviewFrameSources {
   return {
     frameFor: pictureOf,
     engineOf: (assetId) => engines.get(assetId),
+    // The composition is the frame the elements' claims are counted in: one
+    // picture's asks belong together, and the next picture's do not.
+    beginFrame: () => elementEngine().beginFrame(),
     stopPlayback,
     onArrive(listener) {
       arrivals.push(listener);

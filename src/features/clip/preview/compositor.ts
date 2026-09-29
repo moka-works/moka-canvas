@@ -48,6 +48,15 @@ export interface FrameSources {
     clip: TimelineClip,
     materialMs: number,
   ): Promise<FramePicture | null>;
+  /**
+   * Told before a frame's pictures are read.
+   *
+   * A composition is the unit a caller can be sure of: everything asked for
+   * between one frame and the next belongs to the same picture, which is what
+   * tells a second reader of one file — the far side of a seam — from the
+   * next piece of a cut. Optional, so a test's own sources need not care.
+   */
+  beginFrame?(): void;
 }
 
 export interface ComposeFrameOptions {
@@ -308,6 +317,9 @@ export async function composeFrame(
       ? options.sources.frameFor(clip, materialMoment(clip, atMs))
       : Promise.resolve(null);
 
+  // Everything read from here until the next composition belongs to this one
+  // picture, which is the news a source's own pool counts on.
+  options.sources.beginFrame?.();
   const chosen: FrameLayer[] = [];
   for (const track of timeline.tracks) {
     if (track.hidden) continue;
