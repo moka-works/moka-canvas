@@ -41,6 +41,7 @@ import {
   type TrimDraft,
 } from "../interactions/gestures";
 import { snapContext } from "../interactions/snapping";
+import { editCue, newCueAt } from "../interactions/textActions";
 import {
   SEAM_TOO_SHORT_MESSAGE,
   clampSeamMs,
@@ -66,6 +67,7 @@ import {
   type TrackRow,
 } from "./geometry";
 import { renderTimeline } from "./render";
+import { CueEditor } from "./CueEditor";
 import { frameAligned } from "./timecode";
 import { useTimelineDecor } from "./decor";
 
@@ -184,6 +186,7 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
   } | null>(null);
   const pxPerSec = useClipStore((state) => state.view.pxPerSec);
   const playheadMs = useClipStore((state) => state.playheadMs);
+  const cueEditor = useClipStore((state) => state.cueEditor);
   const decor = useTimelineDecor();
   const spacerWidth = contentWidth(timeline, playheadMs, pxPerSec);
   const spacerHeight = contentHeight(timeline);
@@ -468,6 +471,15 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     const viewport = viewportRef.current;
     const local = localPoint(event);
     if (!viewport || !local || event.button !== 0) return;
+    // A press on the room while a cue is being written is the click that ends
+    // the session: the textarea's own blur settles the words where they were
+    // typed, and the press is spent on that rather than growing into a gesture
+    // it was never aimed at.
+    if (useClipStore.getState().cueEditor) {
+      if (document.activeElement instanceof HTMLElement)
+        document.activeElement.blur();
+      return;
+    }
     if (inRuler(local.y, viewport.scrollTop)) {
       // The ruler is 04's own hand-hold; choosing clips happens below it.
       // The seek lands first: a capture that a browser refuses is a drag that
@@ -896,6 +908,30 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     showHover(null);
   };
 
+  /**
+   * A double click opens the cue editor over the words it landed on.
+   *
+   * A text block is rewritten where it stands; a blank stretch of a text row
+   * is where a new cue would go, and its window is planned before the editor
+   * opens — a row that has no room, a locked row or a cut at its ceiling is
+   * refused with words of its own. Nothing else takes a double click: a
+   * picture or a sound has no words to write in place, and everything else on
+   * the cut already answers the pointer on its first press.
+   */
+  const onDoubleClick = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const local = localPoint(event);
+    if (!local) return;
+    const hit = hitAt(local.x, local.y);
+    if (hit?.kind === "clip") {
+      if (hit.clip.kind === "text") editCue(hit.clip);
+      return;
+    }
+    if (hit?.kind !== "empty" || hit.trackId === null) return;
+    const track = timeline.tracks.find((row) => row.id === hit.trackId);
+    if (track?.kind !== "text") return;
+    newCueAt(track.id, Math.max(0, msAt(local.x, viewNow())));
+  };
+
   /** A right-click opens the cut's own menu, over whichever piece it landed on. */
   const onContextMenu = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     event.preventDefault();
@@ -923,7 +959,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     setMenu({
       x: event.clientX,
       y: event.clientY,
-      target: { kind: "clips", onClip: hit.kind === "clip" },
+      target: {
+        kind: "clips",
+        onClip: hit.kind === "clip",
+        // A blank a right-click landed on is where a cue could go: the menu
+        // offers the writing there, and the moment is the plan's to clamp.
+        blank:
+          hit.kind === "empty" && hit.trackId !== null
+            ? {
+                trackId: hit.trackId,
+                atMs: Math.max(0, msAt(local.x, viewNow())),
+              }
+            : null,
+      },
     });
   };
 
@@ -1060,6 +1108,7 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
       <canvas
         className={canvasClass}
         onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick}
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -1070,6 +1119,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
         onPointerUp={onPointerUp}
         ref={canvasRef}
       />
+      {cueEditor && (
+        // Keyed by the session so a second editor never inherits the first
+        // one's half-typed words: a new session is a new textarea.
+        <CueEditor
+          key={
+            cueEditor.kind === "clip"
+              ? cueEditor.clipId
+              : `${cueEditor.trackId}:${cueEditor.startMs}`
+          }
+          session={cueEditor}
+          timeline={timeline}
+        />
+      )}
       {menu && (
         <TimelineMenu
           onClose={() => setMenu(null)}

@@ -4556,6 +4556,32 @@ body.is-dragging-split {
   cursor: pointer;
 }
 
+/* The words being rewritten where they stand: the editor is laid over the
+   cue's own block, in the coordinates the drawn rows are measured in, so the
+   scrolling that moves the block moves the editor with it. */
+.clip-tl-cue {
+  min-width: 140px;
+  position: absolute;
+  z-index: 1;
+}
+
+.clip-tl-cue-input {
+  background: var(--surface);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  height: 100%;
+  line-height: 1.45;
+  outline: none;
+  padding: 2px 6px;
+  resize: none;
+  width: 100%;
+}
+
 /* The 02 copy over a cut with nothing on it: it reads the empty rows without
    taking the ruler's clicks or the scroller's wheel. */
 .clip-tl-empty {

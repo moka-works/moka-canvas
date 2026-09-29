@@ -4,6 +4,7 @@
 //! preview approximates can be read and asserted line by line. The table is
 //! package 11's §5, written the way the subtitle renderer spells it.
 
+use super::fonts::{CJK_FAMILY, LATIN_FAMILY};
 use crate::domain::{TextAlign, TextClipStyle, TextPosition, TimelineClip, TimelineDocument};
 
 /// The header and style a script starts with. `Encoding` is 1 because the
@@ -40,11 +41,19 @@ pub fn build_ass(timeline: &TimelineDocument) -> String {
         return String::new();
     }
 
-    let mut styles: Vec<&TextClipStyle> = Vec::new();
+    // The words a style has to draw decide the face it is drawn in: one family
+    // per style is all the format carries, and nothing here may lean on the
+    // renderer's own fallback, so a style whose words reach past Latin is
+    // written in the bundled CJK family outright.
+    let mut styles: Vec<(&TextClipStyle, bool)> = Vec::new();
     for clip in &clips {
-        let style = &clip.text.as_ref().expect("filtered above").style;
-        if !styles.iter().any(|held| same_style(held, style)) {
-            styles.push(style);
+        let text = clip.text.as_ref().expect("filtered above");
+        match styles
+            .iter_mut()
+            .find(|(held, _)| same_style(held, &text.style))
+        {
+            Some((_, beyond)) => *beyond = *beyond || beyond_latin(&text.content),
+            None => styles.push((&text.style, beyond_latin(&text.content))),
         }
     }
 
@@ -61,8 +70,8 @@ pub fn build_ass(timeline: &TimelineDocument) -> String {
     out.push_str("[V4+ Styles]\n");
     out.push_str(STYLE_FORMAT);
     out.push('\n');
-    for (index, style) in styles.iter().enumerate() {
-        out.push_str(&style_line(index, style, width, height));
+    for (index, (style, beyond)) in styles.iter().enumerate() {
+        out.push_str(&style_line(index, style, *beyond, width, height));
         out.push('\n');
     }
     out.push('\n');
@@ -73,7 +82,7 @@ pub fn build_ass(timeline: &TimelineDocument) -> String {
         let style = &clip.text.as_ref().expect("filtered above").style;
         let at = styles
             .iter()
-            .position(|held| same_style(held, style))
+            .position(|(held, _)| same_style(held, style))
             .expect("every clip's style was collected");
         out.push_str(&dialogue_line(clip, at));
         out.push('\n');
@@ -97,7 +106,13 @@ fn same_style(a: &TextClipStyle, b: &TextClipStyle) -> bool {
 }
 
 /// One `Style:` line, named `S<index>`.
-fn style_line(index: usize, style: &TextClipStyle, width: i32, height: i32) -> String {
+fn style_line(
+    index: usize,
+    style: &TextClipStyle,
+    beyond_latin: bool,
+    width: i32,
+    height: i32,
+) -> String {
     let plate = style.background.as_deref();
     // The plate wins over the outline: under `BorderStyle=3` the outline is
     // the plate's padding, so the two cannot both be spelled.
@@ -120,7 +135,7 @@ fn style_line(index: usize, style: &TextClipStyle, width: i32, height: i32) -> S
         "Style: S{index},{font},{size},{primary},{primary},{outline_colour},&H00000000,\
 {bold},{italic},0,0,100,100,0,0,{border_style},{outline},0,{alignment},{margin_h},{margin_h},\
 {margin_v},1",
-        font = first_family(&style.font_family),
+        font = burn_in_font(style, beyond_latin),
         size = style.font_size.max(0),
         primary = bgr(&style.color),
         bold = if style.bold { -1 } else { 0 },
@@ -189,19 +204,72 @@ pub fn alignment_number(align: TextAlign, position: TextPosition) -> i32 {
     column + row
 }
 
+/// The family the burn-in is actually written in.
+///
+/// One family per style is all the format carries, and the renderer's per-glyph
+/// fallback is not something this pipeline can lean on: words that reach past
+/// Latin are written in the bundled CJK family outright, and Latin words keep
+/// the family their stack leads with — the picker's Latin families are the ones
+/// installed machines are read against, and the bundled Latin face answers for
+/// everything else.
+pub fn burn_in_font(style: &TextClipStyle, beyond_latin: bool) -> String {
+    if beyond_latin {
+        return CJK_FAMILY.to_string();
+    }
+    first_family(&style.font_family).unwrap_or_else(|| LATIN_FAMILY.to_string())
+}
+
 /// The family a stack leads with, quotes and spaces aside — the same reading
 /// the font picker does on the TypeScript side.
-pub fn first_family(stack: &str) -> String {
-    let first = stack.split(',').next().unwrap_or("");
-    let trimmed = first
-        .trim()
-        .trim_matches(|ch| ch == '\'' || ch == '"')
-        .trim();
-    if trimmed.is_empty() {
-        "sans-serif".to_string()
-    } else {
-        trimmed.to_string()
-    }
+///
+/// The css keywords (`ui-sans-serif`, `system-ui`, `sans-serif`, …) are ways
+/// of saying "whatever the system has" rather than families a renderer can be
+/// asked for, so a stack made only of them names nothing.
+pub fn first_family(stack: &str) -> Option<String> {
+    stack
+        .split(',')
+        .map(|part| {
+            part.trim()
+                .trim_matches(|ch| ch == '\'' || ch == '"')
+                .trim()
+                .to_string()
+        })
+        .find(|family| !family.is_empty() && !is_css_keyword(family))
+}
+
+/// Whether a spelling means "whatever the system has" rather than a family.
+fn is_css_keyword(family: &str) -> bool {
+    const KEYWORDS: [&str; 12] = [
+        "ui-sans-serif",
+        "ui-serif",
+        "ui-monospace",
+        "ui-rounded",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "sans-serif",
+        "serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+    ];
+    KEYWORDS
+        .iter()
+        .any(|keyword| family.eq_ignore_ascii_case(keyword))
+}
+
+/// Whether a body of words reaches past the Latin scripts.
+///
+/// Latin letters with their accents, the punctuation around them, and the
+/// currency marks are what the picker's families and the bundled Latin face
+/// cover; anything else — Chinese first among them — is drawn from the bundled
+/// CJK family, since one family per style is all there is and nothing falls
+/// back per glyph.
+pub fn beyond_latin(text: &str) -> bool {
+    text.chars().any(|ch| {
+        let code = ch as u32;
+        !(code < 0x0370 || (0x2000..=0x206F).contains(&code) || (0x20A0..=0x20CF).contains(&code))
+    })
 }
 
 /// `#rrggbb` as the `&H00BBGGRR` the format writes colours in.
@@ -281,13 +349,71 @@ mod tests {
     }
 
     #[test]
-    fn the_font_is_the_first_family_of_the_stack() {
-        assert_eq!(first_family("Inter, ui-sans-serif, system-ui"), "Inter");
+    fn a_stack_names_its_first_family_and_the_keywords_name_nothing() {
+        assert_eq!(
+            first_family("Inter, ui-sans-serif, system-ui"),
+            Some("Inter".to_string())
+        );
         assert_eq!(
             first_family("\"Courier New\", Courier, monospace"),
-            "Courier New"
+            Some("Courier New".to_string())
         );
-        assert_eq!(first_family(""), "sans-serif");
+        assert_eq!(first_family("ui-sans-serif, system-ui, sans-serif"), None);
+        assert_eq!(first_family(""), None);
+    }
+
+    #[test]
+    fn words_past_latin_take_the_bundled_cjk_family() {
+        // A plain Latin body stays with whatever the stack names…
+        let style = fixtures::text_style();
+        assert_eq!(burn_in_font(&style, false), "Inter");
+        // …while anything past Latin is drawn from the face that has it.
+        assert_eq!(burn_in_font(&style, true), CJK_FAMILY);
+        // A stack that names nothing falls back to the bundled Latin face.
+        let keyworded = TextClipStyle {
+            font_family: "ui-sans-serif, system-ui, sans-serif".to_string(),
+            ..fixtures::text_style()
+        };
+        assert_eq!(burn_in_font(&keyworded, false), LATIN_FAMILY);
+
+        assert!(!beyond_latin("Hello, world — “quotes”, café"));
+        assert!(!beyond_latin(""));
+        assert!(beyond_latin("中"));
+        assert!(beyond_latin("字幕，你好！"));
+    }
+
+    #[test]
+    fn a_style_with_chinese_words_is_written_in_the_cjk_face() {
+        let timeline = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Text)],
+            vec![
+                fixtures::text("c1", "t1", 0, 1000, "中文标题", fixtures::text_style()),
+                // The same style again, in Latin: still one style line, and it
+                // is the CJK face — the style has Chinese to draw somewhere.
+                fixtures::text("c2", "t1", 1000, 1000, "Latin", fixtures::text_style()),
+            ],
+            Vec::new(),
+        );
+        let ass = build_ass(&timeline);
+        assert_eq!(styles_in(&ass).len(), 1, "{ass}");
+        assert!(styles_in(&ass)[0].contains(",Noto Sans SC,"), "{ass}");
+
+        let latin = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Text)],
+            vec![fixtures::text(
+                "c1",
+                "t1",
+                0,
+                1000,
+                "Latin words",
+                fixtures::text_style(),
+            )],
+            Vec::new(),
+        );
+        let ass = build_ass(&latin);
+        assert!(styles_in(&ass)[0].contains(",Inter,"), "{ass}");
     }
 
     #[test]
