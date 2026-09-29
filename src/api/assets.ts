@@ -117,3 +117,16 @@ export function assetUrl(id: AssetId): string {
 export function assetThumbUrl(id: AssetId, width: number): string {
   return `${assetUrl(id)}?w=${width}`;
 }
+
+/**
+ * The sound of an asset on its own, for the player that only wants to hear it.
+ *
+ * A film's sound read from the film itself is a whole picture file streamed
+ * for its sound; the server answers this with the sound alone in a small file
+ * of its own where it can make one, and with the file itself where it cannot
+ * — so a caller has nothing to check, and a voice reads the smallest thing
+ * that plays.
+ */
+export function assetAudioUrl(id: AssetId): string {
+  return `${assetUrl(id)}/audio`;
+}

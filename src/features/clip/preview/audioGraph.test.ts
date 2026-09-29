@@ -12,6 +12,7 @@ import {
   clipGainAt,
   needsResync,
   transitionGain,
+  type AudioEngine,
 } from "./audioGraph";
 
 const T0 = "2024-01-01T00:00:00.000Z";
@@ -278,8 +279,10 @@ describe("the voices the preview keeps", () => {
     // The file is asked for as there is something to play, not minutes ahead:
     // a whole picture file told to preload everything is a cut's connections.
     expect(voice.preload).toBe("metadata");
+    // What a voice reads is the sound alone: the server keeps a small copy of
+    // a film's sound beside the project, and this is where it is asked for.
     expect(voice.getAttribute("src")).toBe(
-      "/api/v1/projects/current/assets/asset-a",
+      "/api/v1/projects/current/assets/asset-a/audio",
     );
 
     engine.pause();
@@ -301,5 +304,104 @@ describe("the voices the preview keeps", () => {
     // makes a voice free to use, not a voice to replace.
     expect(voicesMade.length).toBe(pool);
     expect(soundingVoice()).toBe(voice);
+  });
+
+  it("asks for the sound of the cut's films before anything waits on it", () => {
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        asked.push(String(url));
+        return Promise.resolve({
+          body: { cancel: () => undefined },
+        } as unknown as Response);
+      }),
+    );
+    const engine = audioEngine();
+    const timeline = soundCut();
+    // Two pieces of one film and a piece of one sound: the film's copy is
+    // asked for once, and a file that is sound already asks for nothing.
+    timeline.clips = [
+      clip({ id: "clip-a", kind: "video", assetId: "asset-film" }),
+      clip({ id: "clip-b", kind: "video", assetId: "asset-film" }),
+      clip({ id: "clip-c", kind: "audio", assetId: "asset-song" }),
+    ];
+    engine.warm(timeline);
+    expect(asked).toEqual([
+      "/api/v1/projects/current/assets/asset-film/audio",
+    ]);
+  });
+
+  describe("a sounding source whose element walks by hand", () => {
+    /** One voice over a four-second piece, positioned by the test itself. */
+    function sounding(): { engine: AudioEngine; element: HTMLAudioElement } {
+      const engine = audioEngine();
+      engine.setTimeline(soundCut());
+      engine.play(0);
+      const element = soundingVoice();
+      let time = 0;
+      Object.defineProperty(element, "currentTime", {
+        get: () => time,
+        set: (value: number) => {
+          time = value;
+        },
+        configurable: true,
+      });
+      // Put in place once more, so where the voice last saw the element stand
+      // is where the test starts it from.
+      engine.play(0);
+      return { engine, element };
+    }
+
+    it("is caught up a little fast when it is a little behind", () => {
+      vi.useFakeTimers();
+      try {
+        const { engine, element } = sounding();
+        element.currentTime = 0.9;
+        vi.advanceTimersByTime(300);
+        engine.tick(1_100);
+        // Two tenths behind: walked up to, not jumped.
+        expect(element.currentTime).toBe(0.9);
+        expect(element.playbackRate).toBeCloseTo(1.08, 5);
+
+        // The clock reached again: the piece's own speed comes back.
+        element.currentTime = 1.05;
+        vi.advanceTimersByTime(300);
+        engine.tick(1_100);
+        expect(element.playbackRate).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("is walked back at once when it has lost its place", () => {
+      vi.useFakeTimers();
+      try {
+        const { engine, element } = sounding();
+        element.currentTime = 0.2;
+        vi.advanceTimersByTime(300);
+        engine.tick(1_000);
+        // Most of a second behind is not a drift: it is a lost place.
+        expect(element.currentTime).toBe(1);
+        expect(element.playbackRate).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("is left alone while it is waiting for its own file", () => {
+      vi.useFakeTimers();
+      try {
+        const { engine, element } = sounding();
+        // It has not moved since it was put in place: a seek now would be one
+        // more thing for a starved source to do.
+        vi.advanceTimersByTime(300);
+        engine.tick(1_000);
+        expect(element.currentTime).toBe(0);
+        expect(element.playbackRate).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

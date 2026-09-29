@@ -5,7 +5,7 @@ import type {
   TimelineDocument,
   TimelineTrack,
 } from "../../../shared/domain";
-import { assetUrl } from "../../../api";
+import { assetAudioUrl } from "../../../api";
 import { useAppStore } from "../../editor/stores/appStore";
 import { i18n } from "../../../shared/i18n";
 import { useClipStore } from "../stores/clipStore";
@@ -22,6 +22,11 @@ import { fadeFactor, materialMoment } from "./compositor";
  * short chain: the clip's level (volume × fades × mute) into its track's mute
  * into the master. At most four sound at once, the ones nearest the playhead;
  * a seam window's two sides cross through the same one place (10 §4).
+ *
+ * What a voice reads is the sound alone: the server keeps a small copy of a
+ * film's sound beside the project, so a voice is not a whole picture file
+ * streamed for the part of it that can be heard. The copies are asked for as
+ * the room takes a cut up, before anything is waiting on them.
  *
  * The clock never waits on any of this. A browser that will not start audio
  * is a silent preview, not a stopped one, and a file it will not play is one
@@ -93,8 +98,32 @@ export function needsResync(expectedMs: number, actualMs: number): boolean {
   return Math.abs(expectedMs - actualMs) >= RESYNC_THRESHOLD_MS;
 }
 
-/** How often a sounding source's position is checked against the clock. */
+/**
+ * How often a sounding source's position is checked against the clock.
+ */
 export const RESYNC_INTERVAL_MS = 250;
+
+/**
+ * The most of the gap a source catches up in, as a share of its own speed.
+ *
+ * A source that is behind is caught up by playing a little fast rather than
+ * by a jump: with the pitch kept, a few per cent is not a thing the ear picks
+ * out of a preview, where a seek every quarter second is.
+ */
+const CATCH_UP_SHARE = 0.08;
+
+/**
+ * How far behind a source may be before it is walked back to the clock at
+ * once.
+ *
+ * Past this the gap is one no gentle catch-up closes in the time a reader
+ * would accept, and a source this far out has usually lost its place rather
+ * than fallen behind it — a jumped clock, a stall it never came back from.
+ */
+export const RESYNC_HARD_MS = 400;
+
+/** How little a source may have moved between looks before it counts as stalled. */
+const STALLED_MOVE_MS = 20;
 
 /** The most elements that may sound at once. */
 export const MAX_VOICES = 4;
@@ -148,6 +177,8 @@ interface Voice {
   track: TimelineTrack | null;
   /** When this voice's position was last checked against the clock. */
   checkedAt: number;
+  /** Where the element stood at that check, in milliseconds. */
+  movedAtMs: number;
 }
 
 let context: AudioContext | null = null;
@@ -216,6 +247,7 @@ function makeVoice(ctx: AudioContext): Voice | null {
     clip: null,
     track: null,
     checkedAt: 0,
+    movedAtMs: 0,
   };
   return voice;
 }
@@ -343,8 +375,10 @@ function assign(voice: Voice, entry: AudibleClip, atMs: number): void {
   if (!assetId) return;
   if (voice.assetId !== assetId) {
     // The element is recycled: the old file's sound is dropped and the new
-    // one is fetched, which is the whole "pool of ≤4" in one line.
-    voice.element.src = assetUrl(assetId);
+    // one is fetched, which is the whole "pool of ≤4" in one line. What it
+    // is pointed at is the sound alone — a whole picture file streamed for
+    // its sound is what the server's own copy of it exists to spare.
+    voice.element.src = assetAudioUrl(assetId);
     voice.assetId = assetId;
   }
   voice.clipId = clip.id;
@@ -361,12 +395,43 @@ function assign(voice: Voice, entry: AudibleClip, atMs: number): void {
     // given once it has; the picture's clock is not held up for it.
   }
   voice.checkedAt = Date.now();
+  voice.movedAtMs = Number.isFinite(voice.element.currentTime)
+    ? voice.element.currentTime * 1_000
+    : materialMs;
   if (context) scheduleGain(context, voice, clip, track, atMs);
   if (playing) {
     void voice.element.play().catch(() => {
       // A file the browser will not play is this clip's silence; the rest of
       // the cut is unaffected.
     });
+  }
+}
+
+/**
+ * Asks the server for the sound of the files a cut will play, before it plays.
+ *
+ * A voice reads a small copy of a film's sound where one has been made, and
+ * making it is a read of the whole picture file: asked for as the room takes
+ * the cut up, that read happens while nothing is waiting on it rather than
+ * under the first play. A file that is not a film has its own sound already.
+ */
+function warmCut(timeline: TimelineDocument): void {
+  if (typeof fetch !== "function") return;
+  const asked = new Set<AssetId>();
+  for (const clip of timeline.clips) {
+    if (clip.kind !== "video" || !clip.assetId) continue;
+    if (asked.has(clip.assetId)) continue;
+    asked.add(clip.assetId);
+    void fetch(assetAudioUrl(clip.assetId)).then(
+      (response) => {
+        // The copy is what was wanted; the answer itself is the server's to
+        // read, and the body is let go of rather than held.
+        void response.body?.cancel();
+      },
+      () => {
+        // A server that cannot answer leaves the voice to read the file.
+      },
+    );
   }
 }
 
@@ -390,26 +455,55 @@ function rebuild(atMs: number): void {
   }
 }
 
-/** The drift of one sounding voice, and its correction when it has drifted. */
+/**
+ * The drift of one sounding voice, and what is done about it.
+ *
+ * A source that is only slightly behind is left alone: a correction that
+ * fired on every check would be an audible stutter, and the ear only notices
+ * a tenth of a second. Past that band the source is caught up the way the ear
+ * does not hear — playing a little fast until it has the clock again, pitch
+ * kept — rather than by a jump, which is a seam in the sound however small it
+ * is. A source that has not moved at all since the last look is not behind
+ * its own accord: it is waiting for its file, and a seek would be one more
+ * thing for a starved source to do. Only a source that has lost its place
+ * outright is walked back to the clock at once.
+ */
 function checkDrift(voice: Voice, atMs: number): void {
   if (!voice.clip) return;
+  const speed = Math.max(0.01, Math.abs(voice.clip.speed));
   const expectedMs = materialMoment(voice.clip, atMs);
   const actualMs = voice.element.currentTime * 1_000;
-  if (needsResync(expectedMs, actualMs)) {
+  const driftMs = expectedMs - actualMs;
+  const movedMs = actualMs - voice.movedAtMs;
+  voice.movedAtMs = actualMs;
+  voice.checkedAt = Date.now();
+  if (!needsResync(expectedMs, actualMs)) {
+    // On the clock again: a catch-up that was running is over.
+    if (voice.element.playbackRate !== speed) voice.element.playbackRate = speed;
+    return;
+  }
+  if (movedMs < STALLED_MOVE_MS) return;
+  if (Math.abs(driftMs) >= RESYNC_HARD_MS) {
     // Hard correction, once: the element is pulled back to where the clock
     // stands rather than walked there, and left alone afterwards.
     try {
       voice.element.currentTime = expectedMs / 1_000;
+      voice.movedAtMs = expectedMs;
     } catch {
       // A position the element will not take is one it does not hold yet.
     }
+    if (voice.element.playbackRate !== speed) voice.element.playbackRate = speed;
+    return;
   }
-  voice.checkedAt = Date.now();
+  const rate = driftMs > 0 ? speed * (1 + CATCH_UP_SHARE) : speed * (1 - CATCH_UP_SHARE);
+  if (voice.element.playbackRate !== rate) voice.element.playbackRate = rate;
 }
 
 export interface AudioEngine {
   /** The cut being heard; a document change is the same rebuild as an edit. */
   setTimeline(next: TimelineDocument | null): void;
+  /** Asks for the cut's sound copies before anything is waiting on them. */
+  warm(timeline: TimelineDocument): void;
   /** Starts sounding from a moment, building the audible set for it. */
   play(atMs: number): void;
   /** Stops every element: after this, nothing the engine holds is playing. */
@@ -428,6 +522,10 @@ function engine(): AudioEngine {
     setTimeline(next) {
       timeline = next;
       if (playing) rebuild(lastPlayhead);
+    },
+
+    warm(next) {
+      warmCut(next);
     },
 
     play(atMs) {

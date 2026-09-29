@@ -748,9 +748,65 @@ pub async fn stream_asset(
         }
     }
 
-    let mut file = tokio::fs::File::open(&asset.path)
+    let mime = asset
+        .entry
+        .mime
+        .clone()
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    serve_file(&asset.path, &mime, &headers).await
+}
+
+/// The sound of one asset, for the player that only wants to hear it.
+///
+/// A film's sound read from the film itself is a whole picture file streamed
+/// for its sound — dozens of small reads a second, against the same file the
+/// preview is reading for its frames. The project's own copy of the sound is
+/// answered where one has been made, and made where it has not; a file that
+/// is not a film, and one whose sound cannot be taken out, are the file
+/// itself, exactly what a voice read before any of this existed.
+pub async fn stream_asset_audio(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, Problem> {
+    let asset = state.store.asset_file(&id, None).await?;
+    let mime = asset
+        .entry
+        .mime
+        .clone()
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    // A sound file is already the smallest thing that plays it, and a picture
+    // that is not a film has no sound to take out of it.
+    if !mime.starts_with("video/") {
+        return serve_file(&asset.path, &mime, &headers).await;
+    }
+    let root = current_root(&state).await?;
+    let entry = asset.entry.clone();
+    let source = asset.path.clone();
+    let program = state.clip_program();
+    let file = crate::assets::audio::audio_for(&root, &entry, &source, program.as_deref())
         .await
-        .map_err(problem_from_io)?;
+        .map_err(Problem::from)?;
+    let audio_mime = if file.extension().and_then(|extension| extension.to_str()) == Some("m4a") {
+        "audio/mp4"
+    } else {
+        &mime
+    };
+    serve_file(&file, audio_mime, &headers).await
+}
+
+/// Serves a file's bytes, the whole of it or the range that was asked for.
+///
+/// Everything a reader plays is served this way: the file itself, the drawing
+/// of a picture at a width, and the sound taken out of a film. The range is
+/// what a player uses to read what it needs rather than all of it, so a
+/// response that answers a range says so in as many words.
+async fn serve_file(
+    path: &std::path::Path,
+    mime: &str,
+    headers: &HeaderMap,
+) -> Result<Response, Problem> {
+    let mut file = tokio::fs::File::open(path).await.map_err(problem_from_io)?;
     let total = file.metadata().await.map_err(problem_from_io)?.len();
     let range = parse_range_header(
         headers
@@ -778,18 +834,13 @@ pub async fn stream_asset(
     };
 
     let body = Body::from_stream(ReaderStream::new(file.take(length)));
-    let mime = asset
-        .entry
-        .mime
-        .clone()
-        .unwrap_or_else(|| "application/octet-stream".to_string());
     let mut response = Response::builder()
         .status(status)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_LENGTH, length.to_string())
         .header(
             header::CONTENT_TYPE,
-            HeaderValue::from_str(&mime)
+            HeaderValue::from_str(mime)
                 .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
         )
         .body(body)

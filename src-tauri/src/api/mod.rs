@@ -112,6 +112,15 @@ impl ApiState {
         self.clip_probe.capabilities()
     }
 
+    /// The renderer this process would run, where one was found.
+    ///
+    /// The path alone, without asking what the program can do: taking the
+    /// sound out of a film uses one stream copy, and a program that turns out
+    /// not to be able runs nothing and the file is answered as it is.
+    pub fn clip_program(&self) -> Option<std::path::PathBuf> {
+        self.clip_probe.program().map(|path| path.to_path_buf())
+    }
+
     /// The models directory: where converter scripts live. Used during
     /// startup to deploy built-in converters and by the API to list the
     /// available protocols.
@@ -165,6 +174,12 @@ pub fn router() -> axum::Router<ApiState> {
         .route(
             "/api/v1/projects/current/assets/{id}/content",
             put(routes::replace_asset),
+        )
+        // The file's sound alone, for the room's voices: a whole picture file
+        // streamed for its sound is what this exists to keep them out of.
+        .route(
+            "/api/v1/projects/current/assets/{id}/audio",
+            get(routes::stream_asset_audio),
         )
         .route(
             "/api/v1/projects/current/assets/{id}/reveal",
