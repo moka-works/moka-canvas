@@ -607,12 +607,12 @@ describe("model settings", () => {
     const save = () =>
       screen.getByRole("button", { name: "Save model" }) as HTMLButtonElement;
     expect(save().disabled).toBe(true);
-    expect(screen.getByText("A group needs a model name.")).toBeTruthy();
+    expect(screen.getByText("A group needs a model name")).toBeTruthy();
 
     fireEvent.change(screen.getByTestId("model-group-1-model"), {
       target: { value: "half-i2v" },
     });
-    expect(screen.getByText("Check at least one scenario.")).toBeTruthy();
+    expect(screen.getByText("Check at least one scenario")).toBeTruthy();
     fireEvent.click(screen.getByTestId("model-group-1-scene-imageToVideo"));
     expect(save().disabled).toBe(false);
 
@@ -622,7 +622,7 @@ describe("model settings", () => {
       target: { value: "api.example.com/video" },
     });
     expect(
-      screen.getByText("A group URL has to start with http:// or https://."),
+      screen.getByText("A group URL has to start with http:// or https://"),
     ).toBeTruthy();
     expect(save().disabled).toBe(true);
   });

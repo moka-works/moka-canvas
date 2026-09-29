@@ -154,7 +154,7 @@ describe("the five steps", () => {
       "story-step-outline",
     ) as HTMLButtonElement;
     expect(outline.disabled).toBe(true);
-    expect(outline.title).toBe("Premise comes first.");
+    expect(outline.title).toBe("Premise comes first");
     for (const step of ["elements", "storyboard", "edit"]) {
       expect(
         (screen.getByTestId(`story-step-${step}`) as HTMLButtonElement)
@@ -239,7 +239,7 @@ describe("the five steps", () => {
       expect(badge.textContent).toBe("1");
       const button = screen.getByTestId("story-step-storyboard");
       expect(button.className).toContain("is-failed");
-      expect(button.getAttribute("title")).toBe("Elements comes first.");
+      expect(button.getAttribute("title")).toBe("Elements comes first");
       // The step with nothing wrong with it carries no mark.
       expect(screen.queryByTestId("story-step-failed-outline")).toBeNull();
     } finally {
@@ -413,7 +413,7 @@ describe("the five steps", () => {
     ).toBe(false);
     const edit = screen.getByTestId("story-step-edit") as HTMLButtonElement;
     expect(edit.disabled).toBe(true);
-    expect(edit.title).toBe("Storyboard comes first.");
+    expect(edit.title).toBe("Storyboard comes first");
   });
 });
 
@@ -468,7 +468,7 @@ describe("naming a story", () => {
     const input = screen.getByRole("textbox", { name: "Rename 雨夜列车" });
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByRole("alert").textContent).toBe("A story needs a name.");
+    expect(screen.getByRole("alert").textContent).toBe("A story needs a name");
     expect(
       screen.getByRole("textbox", { name: "Rename 雨夜列车" }),
     ).toBeTruthy();

@@ -1,9 +1,9 @@
 {
   "panel": {
     "title": "Assistant",
-    "noCanvas": "No canvas is open.",
-    "emptyFresh": "A new conversation, nothing said in it yet.",
-    "emptyNone": "Nothing has been asked over this canvas yet.",
+    "noCanvas": "No canvas is open",
+    "emptyFresh": "A new conversation, nothing said in it yet",
+    "emptyNone": "Nothing has been asked over this canvas yet",
     "fromAssets": "From assets…",
     "fromAssetsTip": "Put files from the shelf on the canvas, ready to ask about"
   },
@@ -15,7 +15,7 @@
   "line": {
     "about": "What this was about",
     "gone": "{{title}} — gone",
-    "goneTip": "This card is no longer on the canvas.",
+    "goneTip": "This card is no longer on the canvas",
     "showOnCanvas": "Show on canvas",
     "showInAssets": "Show in assets",
     "askCardAgain": "Ask the card again",
@@ -48,7 +48,7 @@
     "conversationMany": "conversations"
   },
   "about": {
-    "none": "About nothing yet — choose a card, or name one with @.",
+    "none": "About nothing yet — choose a card, or name one with @",
     "some": "About {{summary}}"
   },
   "intent": {
@@ -76,14 +76,14 @@
   },
   "ask": {
     "modes": "What to ask for",
-    "refusal": "No {{capability}} model is configured yet.",
+    "refusal": "No {{capability}} model is configured yet",
     "configure": "Configure models",
     "field": "Ask about this canvas",
     "send": "Send: {{intent}}",
     "stop": "Stop",
-    "leftOutOne": "{{count}} card is too much to send with one question and stayed behind.",
-    "leftOutMany": "{{count}} cards are too much to send with one question and stayed behind.",
-    "questionBack": "The question is back in the field, nothing sent yet.",
+    "leftOutOne": "{{count}} card is too much to send with one question and stayed behind",
+    "leftOutMany": "{{count}} cards are too much to send with one question and stayed behind",
+    "questionBack": "The question is back in the field, nothing sent yet",
     "cardGone": "a card that is gone"
   },
   "model": {
@@ -95,9 +95,9 @@
     "title": "Send earlier lines with this",
     "label": "How many earlier lines to send",
     "choiceTip": "Send the last {{count}} lines of this conversation along with the question",
-    "noteOff": "Nothing said before this question is sent with it.",
-    "noteEmpty": "Nothing has been said yet to send along.",
-    "noteSome": "About {{count}} characters of this conversation go with the ask."
+    "noteOff": "Nothing said before this question is sent with it",
+    "noteEmpty": "Nothing has been said yet to send along",
+    "noteSome": "About {{count}} characters of this conversation go with the ask"
   },
   "made": {
     "nothing": "Made nothing",
@@ -116,17 +116,17 @@
     "clipboardRefused": "The clipboard would not take it"
   },
   "failure": {
-    "noAnswer": "The answer did not arrive.",
-    "stoppedEarly": "Stopped before anything arrived."
+    "noAnswer": "The answer did not arrive",
+    "stoppedEarly": "Stopped before anything arrived"
   },
   "store": {
     "linesLetGoOne": "1 old line let go to keep the conversation readable. Undo brings it back.",
     "linesLetGoMany": "{{count}} old lines let go to keep the conversation readable. Undo brings them back.",
     "stoppedStays": "Stopped. The card is on the canvas to ask again.",
-    "cardEmpty": "The card did not come back with anything.",
-    "cardRefused": "The canvas would not take the card.",
+    "cardEmpty": "The card did not come back with anything",
+    "cardRefused": "The canvas would not take the card",
     "stoppedKept": "Stopped. What had arrived was kept.",
-    "cardGone": "The card that answer named is no longer on the canvas.",
+    "cardGone": "The card that answer named is no longer on the canvas",
     "removeConfirm": "Delete “{{title}}” and its {{count}} {{lines}}?",
     "removeAllConfirm": "Delete all {{count}} {{conversations}} and their {{lines}} {{linesWord}}?",
     "retryConfirm": "Ask “{{title}}” to make it again? The card is already on the canvas, so only the making is paid for."

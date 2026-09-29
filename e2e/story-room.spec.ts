@@ -86,7 +86,7 @@ test("a story is begun under a name and stood on at its first step", async ({
   await expect(page.getByTestId("story-step-outline")).toBeDisabled();
   await expect(page.getByTestId("story-step-outline")).toHaveAttribute(
     "title",
-    "Premise comes first.",
+    "Premise comes first",
   );
   await expect(page.locator(".story-head-name")).toHaveText("Rain at Night");
 

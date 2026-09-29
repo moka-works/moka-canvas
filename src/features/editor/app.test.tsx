@@ -298,7 +298,7 @@ describe("what has just happened", () => {
         .getState()
         .pushToast(
           "error",
-          "1 of 1 pieces did not come back.",
+          "1 of 1 pieces did not come back",
           undefined,
           "model gpt-4o-mini has no stored API key",
         );
@@ -322,7 +322,7 @@ describe("what has just happened", () => {
     act(() => {
       useAppStore.getState().pushToast(
         "error",
-        "1 of 2 pieces did not come back.",
+        "1 of 2 pieces did not come back",
         {
           label: "Ask again",
           go: () => {

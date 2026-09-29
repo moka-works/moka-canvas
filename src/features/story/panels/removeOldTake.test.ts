@@ -60,7 +60,7 @@ describe("removeOldTake", () => {
 
       const line = await removeOldTake(ids.heroMain, () => "dropped");
 
-      expect(line).toBe("文件仍被别处使用，只从故事里移走了。");
+      expect(line).toBe("文件仍被别处使用，只从故事里移走了");
       expect(shelf()).toContain(ids.heroMain);
     } finally {
       // The catalogue is shared with the cases after this one.

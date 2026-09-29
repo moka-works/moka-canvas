@@ -30,7 +30,7 @@
     "needsName": "A project needs a name",
     "description": "Description",
     "descriptionPlaceholder": "What this project is about",
-    "hint": "The name stands in the working page's bar and on the card in the launcher."
+    "hint": "The name stands in the working page's bar and on the card in the launcher"
   },
   "models": {
     "new": "New {{category}} model",
@@ -55,7 +55,7 @@
     "headingNew": "New {{category}} model",
     "displayName": "Display name",
     "displayNameTip": "What the pickers show",
-    "identifierClash": "Every identifier this name suggests is already taken; change the display name and save again.",
+    "identifierClash": "Every identifier this name suggests is already taken; change the display name and save again",
     "protocol": "Protocol",
     "noProtocols": "No protocol is available for this kind of model. Its shapes come from converter scripts, and none are deployed.",
     "url": "URL",
@@ -66,19 +66,19 @@
     "modelNameTip": "The name the provider knows",
     "maxVideoSeconds": "Longest clip (seconds)",
     "maxVideoSecondsHint": "A provider films what its model takes. A telling whose act runs longer is filmed in pieces of at most this long; leave it blank and the app's own ceiling stands in.",
-    "maxVideoSecondsRange": "Between 1 and {{max}} seconds, or blank.",
+    "maxVideoSecondsRange": "Between 1 and {{max}} seconds, or blank",
     "groupConfig": "Configuration",
     "groupScenes": "Scenarios",
     "groupNoScenes": "No scenario yet",
     "groupAdd": "Add scenario",
     "groupRemove": "Remove",
-    "groupInherits": "Speaks the protocol of the first group, and uses its key.",
+    "groupInherits": "Speaks the protocol of the first group, and uses its key",
     "groupUrlTip": "Leave blank to use the first group's URL",
-    "groupNeedsModel": "A group needs a model name.",
-    "groupNeedsScene": "Check at least one scenario.",
-    "groupUrlBad": "A group URL has to start with http:// or https://.",
+    "groupNeedsModel": "A group needs a model name",
+    "groupNeedsScene": "Check at least one scenario",
+    "groupUrlBad": "A group URL has to start with http:// or https://",
     "groupUncovered": "No group answers for these scenarios, so such requests are refused:",
-    "groupNeedsOne": "Check at least one scenario across the groups.",
+    "groupNeedsOne": "Check at least one scenario across the groups",
     "apiKey": "API key",
     "keyStoredTip": "Stored ({{masked}}) — leave blank to keep",
     "keyCopiedTip": "Copied from “{{name}}” — leave blank to keep",
@@ -98,20 +98,20 @@
     "switchToKeyring": "Move the master key into the OS keychain? Stored API keys keep working; the master.key file is removed.",
     "switchToFile": "Move the master key into a file in the metadata directory? Stored API keys keep working; the keychain entry is removed.",
     "removeKey": "Delete the stored key of “{{name}}”? The model configuration stays; requests will fail until a new key is entered.",
-    "envLocked": "MOKA_METADATA_KEY is set; the exported key takes precedence and cannot be moved from here.",
-    "noKeychain": "The OS keychain is not available in this runtime, so the file tier is the only choice.",
+    "envLocked": "MOKA_METADATA_KEY is set; the exported key takes precedence and cannot be moved from here",
+    "noKeychain": "The OS keychain is not available in this runtime, so the file tier is the only choice",
     "storedKeys": "Stored keys",
     "hideKeys": "Hide stored keys",
     "manageKeys": "Manage keys",
     "manageKeysCount": "Manage keys ({{count}})",
-    "noneStored": "No API keys are stored.",
+    "noneStored": "No API keys are stored",
     "categoryDefault": " · category default",
     "rotated": " · rotated {{date}}"
   },
   "secretNotes": {
-    "keyring": "Stored keys are sealed with a master key held in the operating system's keychain.",
-    "env": "Stored keys are sealed with the master key this server was started with (MOKA_METADATA_KEY).",
-    "unset": "No key has been stored yet, so there is no master key protecting anything so far."
+    "keyring": "Stored keys are sealed with a master key held in the operating system's keychain",
+    "env": "Stored keys are sealed with the master key this server was started with (MOKA_METADATA_KEY)",
+    "unset": "No key has been stored yet, so there is no master key protecting anything so far"
   },
   "generation": {
     "systemPrompt": "System prompt",
@@ -148,16 +148,16 @@
     "storyDefaults": "Story room defaults",
     "story": "Story room",
     "splitChars": "Manuscript part length",
-    "splitCharsTip": "The most of a manuscript one chapter is written from, in characters; a longer part is cut at the nearest sentence end.",
+    "splitCharsTip": "The most of a manuscript one chapter is written from, in characters; a longer part is cut at the nearest sentence end",
     "readChars": "Characters per reading",
-    "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time.",
+    "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time",
     "save": "Save preferences"
   },
   "pictureTools": {
     "label": "Picture tools",
     "heading": "Picture tools on a node",
     "hint": "{{tools}} work on the pixels a picture already has, so they cost nothing and give the same answer twice. {{asks}} do not: each hands the picture to a model, one with a region marked on it and one with a question about it, so each costs what an ask costs.",
-    "note": "None of them rewrites the file a node holds: what they make is filed beside it and given a node of its own."
+    "note": "None of them rewrites the file a node holds: what they make is filed beside it and given a node of its own"
   },
   "join": {
     "and": " and ",

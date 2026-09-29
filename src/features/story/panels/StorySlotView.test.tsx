@@ -176,7 +176,7 @@ describe("throwing an old drawing away", () => {
 
   it("says what came back, and stays up for the next one", async () => {
     const onRemove = vi.fn(
-      async () => "The file is still used elsewhere, so it stays on the shelf.",
+      async () => "The file is still used elsewhere, so it stays on the shelf",
     );
     draw({ slot: slot(["asset-a", "asset-b"]), onRemove });
     fireEvent.click(screen.getByTestId("story-slot-main-pick"));

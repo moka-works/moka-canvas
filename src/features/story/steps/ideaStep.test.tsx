@@ -320,7 +320,7 @@ describe("uploading a manuscript", () => {
     await waitFor(() => {
       const said = useAppStore.getState().toasts.at(-1);
       expect(said?.message).toBe(
-        "The project changed elsewhere — reload it, or give this change up.",
+        "The project changed elsewhere — reload it, or give this change up",
       );
     });
     expect(upload).not.toHaveBeenCalled();

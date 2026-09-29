@@ -1,10 +1,10 @@
 {
   "page": {
     "title": "Assets",
-    "empty": "Pick a file to read it.",
+    "empty": "Pick a file to read it",
     "historyBoundary": "Files room",
-    "saveConflict": "The project changed elsewhere; reopen it to carry on.",
-    "saveFailed": "The project could not be saved."
+    "saveConflict": "The project changed elsewhere; reopen it to carry on",
+    "saveFailed": "The project could not be saved"
   },
   "view": {
     "label": "Files shown",
@@ -12,9 +12,9 @@
     "unused": "Unused"
   },
   "shelf": {
-    "empty": "The project holds no {{kind}} files yet.",
+    "empty": "The project holds no {{kind}} files yet",
     "emptyBoard": "This board uses no {{kind}} files yet. Add from the project, or import one.",
-    "emptyUnused": "Nothing is unused — every file is placed somewhere.",
+    "emptyUnused": "Nothing is unused — every file is placed somewhere",
     "unplaced": "Imported, not placed"
   },
   "overview": {
@@ -34,7 +34,7 @@
     "story": "Story",
     "open": "Open",
     "openAria": "Open {{title}}",
-    "none": "Nothing in this project uses this file yet — a package exported without unused files leaves it behind.",
+    "none": "Nothing in this project uses this file yet — a package exported without unused files leaves it behind",
     "oldTake": "old take",
     "boardCard": "{{board}} · {{card}}",
     "cutClip": "{{timeline}} · {{clip}}",
@@ -51,6 +51,6 @@
   },
   "inspector": {
     "label": "File",
-    "empty": "What a file is, and what was said about it, is read here."
+    "empty": "What a file is, and what was said about it, is read here"
   }
 }

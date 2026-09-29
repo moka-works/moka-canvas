@@ -276,7 +276,7 @@ describe("missing-asset recovery", () => {
       target: { files: [new File(["x"], "lake.png", { type: "image/png" })] },
     });
 
-    await screen.findByText("All referenced assets are accounted for.");
+    await screen.findByText("All referenced assets are accounted for");
     const putCall = fetchMock.mock.calls.find(
       ([url, init]) =>
         String(url).includes(`/assets/${ids.assetImage}/content`) &&
@@ -353,7 +353,7 @@ describe("export package", () => {
     expect(asked.textContent).toContain("never exported");
     // The cost of the second choice is known before the choice is made.
     expect(asked.textContent).toContain(
-      "Leaves out 1 unreferenced asset (3.0 MB).",
+      "Leaves out 1 unreferenced asset (3.0 MB)",
     );
     expect(exportCalls()).toHaveLength(0);
 

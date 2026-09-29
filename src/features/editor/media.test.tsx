@@ -458,7 +458,7 @@ describe("asset deletion", () => {
     expect(useEditorStore.getState().assetDeletePrompt).toBeNull();
     const toasts = useAppStore.getState().toasts;
     expect(toasts.at(-1)?.message).toBe(
-      "The asset cannot be deleted: it is the drawing 林 · Main picture in “雨夜列车” is using.",
+      "The asset cannot be deleted: it is the drawing 林 · Main picture in “雨夜列车” is using",
     );
     expect(deleted(storyIds().heroMain)).toBe(false);
   });
@@ -469,7 +469,7 @@ describe("asset deletion", () => {
     expect(useEditorStore.getState().assetDeletePrompt).toBeNull();
     const toasts = useAppStore.getState().toasts;
     expect(toasts.at(-1)?.message).toBe(
-      "The asset cannot be deleted: clip “opening.mp4” on the timeline “Timeline 1” is using it.",
+      "The asset cannot be deleted: clip “opening.mp4” on the timeline “Timeline 1” is using it",
     );
     expect(deleted(timelineIds().videoAsset)).toBe(false);
   });

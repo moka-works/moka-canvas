@@ -1043,7 +1043,7 @@ describe("history panel", () => {
 
   it("says nothing has been asked yet when nothing has", async () => {
     const panel = await openHistory();
-    expect(panel.textContent).toContain("Nothing has been asked here yet.");
+    expect(panel.textContent).toContain("Nothing has been asked here yet");
     expect(screen.queryByLabelText("Filter by node")).toBeNull();
   });
 

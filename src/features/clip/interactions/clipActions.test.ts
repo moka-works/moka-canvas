@@ -194,7 +194,7 @@ describe("splitting", () => {
       });
       splitSelectionAtPlayhead();
       expect(cut().clips).toHaveLength(1);
-      expect(messages()).toEqual(["Too short to split at the playhead."]);
+      expect(messages()).toEqual(["Too short to split at the playhead"]);
       expect(entryCount()).toBe(0);
       useAppStore.setState({ toasts: [] });
     }
@@ -261,7 +261,7 @@ describe("splitting", () => {
 
     splitSelectionAtPlayhead();
 
-    expect(messages()).toEqual(["The playhead is not over the selected clip."]);
+    expect(messages()).toEqual(["The playhead is not over the selected clip"]);
     expect(entryCount()).toBe(0);
   });
 });
@@ -427,7 +427,7 @@ describe("landing a file from the shelf", () => {
     dropAssetOnTrack(cut(), notes.id, ids.videoTrack, 0);
 
     expect(cut().clips).toHaveLength(1);
-    expect(messages()).toEqual(["Text clips are made on the Text page."]);
+    expect(messages()).toEqual(["Text clips are made on the Text page"]);
   });
 
   it("says what a file's kind needs of a row, and keeps off locked rows", () => {
@@ -436,7 +436,7 @@ describe("landing a file from the shelf", () => {
 
     // The fixture's one video file dropped on the audio row.
     dropAssetOnTrack(cut(), ids.videoAsset, ids.audioTrack, 0);
-    expect(messages()).toEqual(["A video or an image goes on a video track."]);
+    expect(messages()).toEqual(["A video or an image goes on a video track"]);
     expect(cut().clips).toHaveLength(1);
   });
 
@@ -450,7 +450,7 @@ describe("landing a file from the shelf", () => {
 
     dropAssetOnTrack(cut(), ids.videoAsset, ids.videoTrack, 0);
 
-    expect(messages()).toEqual(["That track is locked."]);
+    expect(messages()).toEqual(["That track is locked"]);
     expect(cut().clips).toHaveLength(1);
   });
 
@@ -632,7 +632,7 @@ describe("adding at the playhead", () => {
       startMs: frameAligned(1_234, 30),
     });
     expect(useClipStore.getState().selection.clipIds).toEqual([added.id]);
-    expect(messages()).toEqual(["Added opening.mp4."]);
+    expect(messages()).toEqual(["Added opening.mp4"]);
   });
 
   it("steps past a locked top row to the next that takes the file", () => {
@@ -665,7 +665,7 @@ describe("adding at the playhead", () => {
     addAssetAtPlayhead("asset-notes");
 
     expect(cut().clips).toHaveLength(1);
-    expect(messages()).toEqual(["Text clips are made on the Text page."]);
+    expect(messages()).toEqual(["Text clips are made on the Text page"]);
   });
 
   it("lands a batch one after another, the cursor walking along", () => {
@@ -694,7 +694,7 @@ describe("adding at the playhead", () => {
     ]);
     // The last of the run is what is left chosen, and one line says the lot.
     expect(useClipStore.getState().selection.clipIds).toEqual([landed[2].id]);
-    expect(messages()).toEqual(["Added 3 files, one after another."]);
+    expect(messages()).toEqual(["Added 3 files, one after another"]);
   });
 
   it("skips words in a batch and still lands the rest", () => {
@@ -712,8 +712,8 @@ describe("adding at the playhead", () => {
     addAssetsAtPlayhead(["asset-notes", "asset-score", ids.videoAsset]);
 
     expect(messages()).toEqual([
-      "Text clips are made on the Text page.",
-      "Added 2 files, one after another.",
+      "Text clips are made on the Text page",
+      "Added 2 files, one after another",
     ]);
     const audio = cut().clips.find(
       (clip) => clip.assetId === "asset-score" && clip.id !== "clip-score",
@@ -742,7 +742,7 @@ describe("adding at the playhead", () => {
 
     addAssetsAtPlayhead([ids.videoAsset, "asset-score"]);
 
-    expect(messages()).toEqual(["That track is locked."]);
+    expect(messages()).toEqual(["That track is locked"]);
     const late = cut().clips.filter((clip) => clip.startMs >= 500);
     expect(late.map((clip) => clip.assetId)).toEqual(["asset-score"]);
   });
@@ -887,7 +887,7 @@ describe("the guard rails", () => {
     deleteSelection();
 
     expect(cut().clips.map((clip) => clip.id)).toContain(ids.clipC);
-    expect(messages()).toEqual(["That track is locked."]);
+    expect(messages()).toEqual(["That track is locked"]);
     expect(entryCount()).toBe(0);
   });
 });
@@ -1029,7 +1029,7 @@ describe("tidying a selection", () => {
       clipIds: [ids.clipA, ids.clipC],
     });
     alignSelection("left");
-    expect(messages()).toEqual(["That track is locked."]);
+    expect(messages()).toEqual(["That track is locked"]);
     expect(entryCount()).toBe(0);
   });
 });

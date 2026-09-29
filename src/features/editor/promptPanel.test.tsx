@@ -1329,7 +1329,7 @@ describe("a mention that points at nothing", () => {
     );
     // Said where it can be read, not only on a control that stopped working.
     expect(panel().textContent).toContain(
-      "A mention names a node that is not on this canvas.",
+      "A mention names a node that is not on this canvas",
     );
 
     // A mention of a node that is there is not a reason to refuse.
