@@ -479,7 +479,8 @@ function checkDrift(voice: Voice, atMs: number): void {
   voice.checkedAt = Date.now();
   if (!needsResync(expectedMs, actualMs)) {
     // On the clock again: a catch-up that was running is over.
-    if (voice.element.playbackRate !== speed) voice.element.playbackRate = speed;
+    if (voice.element.playbackRate !== speed)
+      voice.element.playbackRate = speed;
     return;
   }
   if (movedMs < STALLED_MOVE_MS) return;
@@ -492,10 +493,12 @@ function checkDrift(voice: Voice, atMs: number): void {
     } catch {
       // A position the element will not take is one it does not hold yet.
     }
-    if (voice.element.playbackRate !== speed) voice.element.playbackRate = speed;
+    if (voice.element.playbackRate !== speed)
+      voice.element.playbackRate = speed;
     return;
   }
-  const rate = driftMs > 0 ? speed * (1 + CATCH_UP_SHARE) : speed * (1 - CATCH_UP_SHARE);
+  const rate =
+    driftMs > 0 ? speed * (1 + CATCH_UP_SHARE) : speed * (1 - CATCH_UP_SHARE);
   if (voice.element.playbackRate !== rate) voice.element.playbackRate = rate;
 }
 

@@ -327,9 +327,7 @@ describe("the voices the preview keeps", () => {
       clip({ id: "clip-c", kind: "audio", assetId: "asset-song" }),
     ];
     engine.warm(timeline);
-    expect(asked).toEqual([
-      "/api/v1/projects/current/assets/asset-film/audio",
-    ]);
+    expect(asked).toEqual(["/api/v1/projects/current/assets/asset-film/audio"]);
   });
 
   describe("a sounding source whose element walks by hand", () => {
