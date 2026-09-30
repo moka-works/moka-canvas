@@ -57,7 +57,6 @@ import type {
 import {
   storyActMusicPrompt,
   storyActVideoPrompt,
-  storyActVoicePrompt,
   storyElementMainPrompt,
   storyElementTurnaroundPrompt,
   storyElementsPrompt,
@@ -911,10 +910,12 @@ export function planLineVoices(
  *
  * One ask for the whole act rather than one a line, because a voice that
  * changed halfway through an act is not a voice: the lines of every shot are
- * flattened in board order, and a line with no words in it is not read. Kept
- * for the tellings voiced before each character had a voice: a take already
- * filed under the old ask is replayed and retried through it, and nothing new
- * is asked for that way.
+ * flattened in board order, and a line with no words in it is not read. The
+ * ask carries the words themselves, one line to a line — a voice reads
+ * whatever it is given, so the speaker's name and the tone in brackets stay
+ * out of it too. Kept for the tellings voiced before each character had a
+ * voice: a take already filed under the old ask is replayed and retried
+ * through it, and nothing new is asked for that way.
  */
 export function planActVoice(
   story: StoryDocument,
@@ -923,24 +924,18 @@ export function planActVoice(
 ): StoryJobItemDraft[] {
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
-  const lines = act.keyframes
+  const words = act.keyframes
     .flatMap((keyframe) => keyframe.dialogue)
-    .map((line) => spokenLine(line))
+    .map((line) => line.text.trim())
     .filter((line) => line !== "");
-  if (lines.length === 0) return [];
+  if (words.length === 0) return [];
   const target: StoryTarget = { kind: "voice", chapterId, actId };
   return [
     {
       id: jobKey(target),
       target,
       capability: "speech",
-      prompt: storyActVoicePrompt({
-        ...lookOf(story),
-        genre: story.brief.genre,
-        title: act.title,
-        summary: act.summary,
-        lines,
-      }),
+      prompt: words.join("\n"),
       inputs: [],
       params: voiceParams(story),
     },

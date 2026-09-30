@@ -936,8 +936,12 @@ describe("the sound of an act", () => {
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe(`actVoice:${ids.chapterFirst}:${ids.act}`);
     expect(items[0].capability).toBe("speech");
-    expect(items[0].prompt).toContain("林：车已经停运了。（平静）");
-    expect(items[0].prompt).toContain("周：下一班还来。");
+    // The words themselves and nothing else: a voice given the speaker's name
+    // or the bracketed tone would read those out too.
+    expect(items[0].prompt).toContain("车已经停运了。");
+    expect(items[0].prompt).toContain("下一班还来。");
+    expect(items[0].prompt).not.toContain("林");
+    expect(items[0].prompt).not.toContain("平静");
     expect(items[0].prompt.indexOf("车已经停运了")).toBeLessThan(
       items[0].prompt.indexOf("下一班还来"),
     );

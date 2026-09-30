@@ -1,9 +1,0 @@
-Read the lines of this act of a film aloud, in one voice, from the first to the last, with nothing between them that is not written here.
-
-The act: {{ title }} — {{ summary }}
-The film: {{ genre }}, {{ style }}
-
-The script, one line to a line. {{ speaker }} says what follows the colon; the words in brackets are how it is said and are not read out:
-{% for line in lines %}{{ line }}
-{% endfor %}
-Read only these lines. No narration, no introduction, no closing, no reading of the speaker's name or of the brackets. Leave a short pause where a line ends and the next begins.

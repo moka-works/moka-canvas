@@ -35,7 +35,6 @@ import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
 import storyKeyframe from "./story/keyframe.tmpl?raw";
 import storyActVideo from "./story/act-video.tmpl?raw";
-import storyActVoice from "./story/act-voice.tmpl?raw";
 import storyActMusic from "./story/act-music.tmpl?raw";
 import storyKeyframeVideo from "./story/keyframe-video.tmpl?raw";
 
@@ -401,24 +400,6 @@ export function storyKeyframeVideoPrompt(
   },
 ): string {
   return render(storyKeyframeVideo, input);
-}
-
-/**
- * An act's lines read aloud, as one script for one voice.
- *
- * The lines arrive already composed — `speaker：text` with the tone in brackets
- * where the board gave one — because the same words are what the captions say,
- * and two places composing them would be two places to disagree.
- */
-export function storyActVoicePrompt(
-  input: StoryLook & {
-    genre: string;
-    title: string;
-    summary: string;
-    lines: readonly string[];
-  },
-): string {
-  return render(storyActVoice, input);
 }
 
 /** An act's music and sound, under the words and the pictures. */
