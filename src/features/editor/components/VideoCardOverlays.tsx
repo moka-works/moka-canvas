@@ -17,6 +17,28 @@ const MEDIA_INSET = 8;
 const MEDIA_TOP = NODE_HEADER_HEIGHT + MEDIA_INSET;
 
 /**
+ * The mark on the play button: a solid triangle, drawn rather than typed.
+ *
+ * A font's own ▶ brings its bearings with it — small, and leaning off the
+ * centre of whatever box holds it. Drawn, the triangle fills a known part of
+ * the button, and steps a touch right, which is where a pointing shape reads
+ * as still.
+ */
+function PlayMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="currentColor"
+      height="30"
+      viewBox="0 0 24 24"
+      width="30"
+    >
+      <path d="M8.4 5.4v13.2l10.8-6.6z" />
+    </svg>
+  );
+}
+
+/**
  * Where the face goes while the card under it is being dragged: the position
  * the gesture started from plus how far it has come, which is where the drawn
  * card is a frame ahead of the document.
@@ -77,7 +99,7 @@ function VideoFace({
           onClick={() => void face.current?.play()}
           type="button"
         >
-          ▶
+          <PlayMark />
         </button>
       )}
       {media.label && <span className="video-card-label">{media.label}</span>}

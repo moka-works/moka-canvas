@@ -3773,11 +3773,11 @@ button.danger:hover:not(:disabled) {
   color: #fff;
   cursor: pointer;
   display: flex;
-  font-size: 14px;
   height: 42px;
   justify-content: center;
   left: 50%;
-  padding-left: 3px;
+  /* The global button padding would squeeze the round face off centre. */
+  padding: 0;
   pointer-events: auto;
   position: absolute;
   top: 50%;
