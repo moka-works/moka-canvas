@@ -5191,11 +5191,16 @@ body.is-dragging-split {
   padding-top: 12px;
 }
 
+/* The heading and its buttons share one line where the column is wide enough
+   and fall under each other where it is not. They read from the left rather
+   than being pushed to opposite ends: a column dragged narrow hides whatever
+   was pressed against its right edge, and a button nobody can see is a button
+   that is not there. */
 .clip-text-subtitle-head {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  justify-content: space-between;
 }
 
 .clip-text-subtitle-head h3 {
@@ -5206,10 +5211,14 @@ body.is-dragging-split {
 
 .clip-text-subtitle-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
+/* Kept at their own width: squeezed, the pair folds their labels onto two
+   lines rather than stepping under each other. */
 .clip-text-subtitle-actions > button {
+  flex: none;
   font-size: 11px;
   padding: 3px 7px;
 }
@@ -5254,16 +5263,29 @@ body.is-dragging-split {
   margin: 0;
 }
 
+/* The option and the button it changes are one thing, kept at the row's end:
+   the free space of the row goes before the pair, never between them. */
+.clip-text-transcribe-run {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .clip-text-transcribe-go {
   font-size: 11px;
-  margin-left: auto;
   padding: 3px 7px;
 }
 
+/* A row of words is as wide as the words are: held off the grid's sizing, so
+   a long cue ellipsizes inside the column instead of pushing the whole
+   section — buttons and all — past the edge it is drawn at. */
 .clip-subtitle-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .clip-subtitle-row {

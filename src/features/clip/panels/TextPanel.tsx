@@ -297,24 +297,29 @@ export function TextPanel() {
               ))}
             </select>
           </label>
-          <label className="clip-text-check">
-            <input
-              checked={diarize}
-              disabled={busy}
-              onChange={(event) => setDiarize(event.target.checked)}
-              type="checkbox"
-            />
-            <span>{t("clip:textPanel.diarize")}</span>
-          </label>
-          <button
-            className="clip-text-transcribe-go"
-            disabled={busy || blocked !== null}
-            onClick={ask}
-            title={busy ? busyLabel : (blocked ?? undefined)}
-            type="button"
-          >
-            {busy ? busyLabel : t("clip:textPanel.transcribe")}
-          </button>
+          {/* The option and the ask it changes travel as one: however the row
+              wraps, telling speakers apart never drifts away from the button
+              it belongs to. */}
+          <div className="clip-text-transcribe-run">
+            <label className="clip-text-check">
+              <input
+                checked={diarize}
+                disabled={busy}
+                onChange={(event) => setDiarize(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{t("clip:textPanel.diarize")}</span>
+            </label>
+            <button
+              className="clip-text-transcribe-go"
+              disabled={busy || blocked !== null}
+              onClick={ask}
+              title={busy ? busyLabel : (blocked ?? undefined)}
+              type="button"
+            >
+              {busy ? busyLabel : t("clip:textPanel.transcribe")}
+            </button>
+          </div>
         </div>
         {transcribeError ? (
           <p className="clip-text-hint" role="alert">
