@@ -9,6 +9,19 @@
 --   2. Receive JSON with output.audio.url
 --   3. Download the audio from that URL (handled by Rust)
 
+-- Whether the model takes the room's free-form direction as written.
+--
+-- A name this does not recognise keeps the direction: the v2 and v3 names are
+-- the ones heard to refuse it, and everything else the platform serves under
+-- this shape is left as it was.
+function reads_free_instruction(model)
+    model = model or ""
+    local reads_none = model:match("^cosyvoice%-v2") ~= nil
+    local fixed_pair = model:match("^cosyvoice%-v3") ~= nil
+        and model:match("^cosyvoice%-v3%.5") == nil
+    return not (reads_none or fixed_pair)
+end
+
 function build_request(call, req, inputs)
     local body = {model = call.model}
     body.input = {text = req.prompt}
@@ -31,8 +44,15 @@ function build_request(call, req, inputs)
         body.input.rate = rate
     end
     if req.params.pitch then body.input.pitch = tonumber(req.params.pitch) end
+    -- The room's direction is free text, and the engine families read it
+    -- differently: v2 reads none at all, and the v3 pair take only their own
+    -- fixed phrasing — a free sentence comes back as engine code 428 rather
+    -- than being obeyed. v3.5 and later read it as sent, so a direction a
+    -- family cannot take is left unsaid rather than sent to be refused.
     local instruction = req.params.instructions
-    if instruction and instruction ~= "" then body.input.instruction = instruction end
+    if instruction and instruction ~= "" and reads_free_instruction(call.model) then
+        body.input.instruction = instruction
+    end
 
     return {
         method = "POST",

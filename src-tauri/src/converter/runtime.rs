@@ -476,6 +476,56 @@ mod tests {
             serde_json::from_str(out["body"].as_str().unwrap()).expect("a JSON body");
         assert_eq!(body["input"]["rate"], 2);
 
+        // The direction does not reach every family: v2 reads none at all, and
+        // the v3 pair take only their own fixed phrasing — a free sentence is
+        // refused with the engine's code 428. The room's words are left off
+        // for those, since a refused ask reads nothing.
+        for model in ["cosyvoice-v2", "cosyvoice-v3-flash", "cosyvoice-v3-plus"] {
+            let out = rt
+                .call_json_value(
+                    &speech,
+                    "build_request",
+                    vec![
+                        serde_json::json!({"url": "https://ws.test/tts", "model": model}),
+                        serde_json::json!({
+                            "prompt": "hello",
+                            "params": {"voice": "longxiaochun", "instructions": "平稳地念"},
+                        }),
+                        serde_json::json!([]),
+                    ],
+                )
+                .unwrap();
+            let body: serde_json::Value =
+                serde_json::from_str(out["body"].as_str().unwrap()).expect("a JSON body");
+            assert_eq!(
+                body["input"].get("instruction"),
+                None,
+                "{model} must be spared a direction it refuses"
+            );
+        }
+
+        // v3.5 and later read the free text, and it travels as written.
+        let out = rt
+            .call_json_value(
+                &speech,
+                "build_request",
+                vec![
+                    serde_json::json!({
+                        "url": "https://ws.test/tts",
+                        "model": "cosyvoice-v3.5-flash",
+                    }),
+                    serde_json::json!({
+                        "prompt": "hello",
+                        "params": {"voice": "longanyang", "instructions": "按喜剧的演法念"},
+                    }),
+                    serde_json::json!([]),
+                ],
+            )
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(out["body"].as_str().unwrap()).expect("a JSON body");
+        assert_eq!(body["input"]["instruction"], "按喜剧的演法念");
+
         // Video: the async DashScope task shape.
         let video = rt
             .load(&scripts.join("models/video/bailianVideo/bailian-video.lua"))
