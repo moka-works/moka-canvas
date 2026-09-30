@@ -526,6 +526,28 @@ mod tests {
             serde_json::from_str(out["body"].as_str().unwrap()).expect("a JSON body");
         assert_eq!(body["input"]["instruction"], "按喜剧的演法念");
 
+        // The sample rate the room sends under its own name travels as this
+        // engine's `sample_rate`. The bug this pins: the script read a
+        // snake_case key no request carries, so the setting was dropped
+        // without a word and the engine's default was heard instead.
+        let out = rt
+            .call_json_value(
+                &speech,
+                "build_request",
+                vec![
+                    serde_json::json!({"url": "https://ws.test/tts", "model": "cosyvoice-v1"}),
+                    serde_json::json!({
+                        "prompt": "hello",
+                        "params": {"voice": "longxiaochun", "sampleRate": 48000},
+                    }),
+                    serde_json::json!([]),
+                ],
+            )
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(out["body"].as_str().unwrap()).expect("a JSON body");
+        assert_eq!(body["input"]["sample_rate"], 48000);
+
         // Video: the async DashScope task shape.
         let video = rt
             .load(&scripts.join("models/video/bailianVideo/bailian-video.lua"))

@@ -27,7 +27,8 @@ function build_request(call, req, inputs)
     body.input = {text = req.prompt}
 
     -- The room's audio settings, under this service's own names: the pace,
-    -- pitch, volume and sample rate arrive as `rate`, `pitch`, `volume` and
+    -- pitch and volume arrive as `rate`, `pitch` and `volume`, the sample
+    -- rate as `sampleRate` — the room's name for it — sent on as
     -- `sample_rate`, and the acting direction as `instructions`, which this
     -- engine spells `instruction`. A caller that stated only the generic
     -- `speed` is paced by it as well. The engine takes a pace between 0.5 and
@@ -35,7 +36,7 @@ function build_request(call, req, inputs)
     -- be refused.
     if req.params.voice then body.input.voice = req.params.voice end
     if req.params.format then body.input.format = req.params.format end
-    if req.params.sample_rate then body.input.sample_rate = tonumber(req.params.sample_rate) end
+    if req.params.sampleRate then body.input.sample_rate = tonumber(req.params.sampleRate) end
     if req.params.volume then body.input.volume = tonumber(req.params.volume) end
     local rate = tonumber(req.params.rate or req.params.speed)
     if rate then
