@@ -59,7 +59,6 @@ import {
   storyActVideoPrompt,
   storyActVoicePrompt,
   storyElementMainPrompt,
-  storyLineVoicePrompt,
   storyElementTurnaroundPrompt,
   storyElementsPrompt,
   storyKeyframePrompt,
@@ -870,13 +869,11 @@ export function planLineVoiceAsks(
         id: jobKey(target),
         target,
         capability: "speech",
-        prompt: storyLineVoicePrompt({
-          ...lookOf(story),
-          genre: story.brief.genre,
-          act: act.title,
-          text,
-          ...(tone === "" ? {} : { tone }),
-        }),
+        // The words are the line's own and nothing else: a voice that can
+        // read is a voice that reads whatever it is given, directions and
+        // all. The tone and the act ride in the params' direction instead,
+        // which is the parameter a speech model reads as how to say things.
+        prompt: text,
         inputs: [],
         params: voiceParamsFor(story, voice, {
           act: act.summary,

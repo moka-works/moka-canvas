@@ -36,7 +36,6 @@ import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
 import storyKeyframe from "./story/keyframe.tmpl?raw";
 import storyActVideo from "./story/act-video.tmpl?raw";
 import storyActVoice from "./story/act-voice.tmpl?raw";
-import storyLineVoice from "./story/line-voice.tmpl?raw";
 import storyActMusic from "./story/act-music.tmpl?raw";
 import storyKeyframeVideo from "./story/keyframe-video.tmpl?raw";
 
@@ -420,25 +419,6 @@ export function storyActVoicePrompt(
   },
 ): string {
   return render(storyActVoice, input);
-}
-
-/**
- * One line of dialogue read aloud, in the voice its speaker has.
- *
- * The words are the line's own and nothing else: the tone travels in the ask's
- * instructions rather than folded into the text, because a voice asked to read
- * a bracketed direction reads the brackets, and a caption or a take that kept
- * them would carry the direction into the film.
- */
-export function storyLineVoicePrompt(
-  input: StoryLook & {
-    genre: string;
-    act: string;
-    text: string;
-    tone?: string;
-  },
-): string {
-  return render(storyLineVoice, input);
 }
 
 /** An act's music and sound, under the words and the pictures. */
