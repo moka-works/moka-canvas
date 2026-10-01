@@ -497,7 +497,7 @@ function KeyframeRow({
                 <video
                   muted
                   preload="metadata"
-                  src={`/api/v1/projects/current/assets/${clip.assetIds[0]}`}
+                  src={assetUrl(clip.assetIds[0])}
                 />
                 {/*
                   The shot is filmed once, but not only once: a take the reader

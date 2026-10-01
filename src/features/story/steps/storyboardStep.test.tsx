@@ -19,6 +19,7 @@ import type { MokaFile } from "../../../shared/domain";
 import {
   buildLongStory,
   buildStoryMokaFile,
+  goldenNodeIds,
   storyIds,
 } from "../../../shared/domain/fixtures";
 import { createAct, createKeyframe } from "../../../shared/domain/factories";
@@ -713,7 +714,9 @@ describe("writing an episode's board", () => {
           .getByTestId("story-kf-slot-0")
           .querySelector("img")
           ?.getAttribute("src"),
-      ).toBe("/api/v1/projects/current/assets/asset-frame-first?w=768"),
+      ).toBe(
+        `/api/v1/projects/current/assets/asset-frame-first?w=768&project=${goldenNodeIds().project}`,
+      ),
     );
 
     // The one still on its way shows a place being painted, not one drawn.

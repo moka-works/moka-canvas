@@ -8,7 +8,7 @@ import type {
   RunStatus,
   SessionId,
 } from "../shared/domain";
-import { http } from "./client";
+import { http, withProject } from "./client";
 
 /**
  * One reference a node will send, described from what the project recorded
@@ -85,8 +85,10 @@ function follow(id: RunId, listener: RunListener): () => void {
     return () => {};
   }
 
+  // An event source sends no header of its own, so the project rides in the
+  // address here as it does for a picture.
   const source = new EventSource(
-    `/api/v1/generate/stream?runId=${encodeURIComponent(id)}`,
+    withProject(`/api/v1/generate/stream?runId=${encodeURIComponent(id)}`),
   );
   const stop = () => source.close();
 

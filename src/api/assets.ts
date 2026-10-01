@@ -1,5 +1,5 @@
 import type { AssetCategory, AssetId, ResourceEntry } from "../shared/domain";
-import { http } from "./client";
+import { http, withProject } from "./client";
 import type { SaveResult } from "./projects";
 
 /** Asset mutations persist server-side, so they echo the new revision. */
@@ -101,9 +101,15 @@ export const assetsApi = {
   },
 };
 
-/** Same-origin streaming URL for an asset of the currently open project. */
+/**
+ * Same-origin streaming URL for an asset of the window's own project.
+ *
+ * A picture or a recording is fetched by the browser itself, which sends no
+ * project header with it — so the URL names the project where the request
+ * layer would otherwise have named it.
+ */
 export function assetUrl(id: AssetId): string {
-  return `/api/v1/projects/current/assets/${id}`;
+  return withProject(`/api/v1/projects/current/assets/${id}`);
 }
 
 /**
@@ -115,7 +121,7 @@ export function assetUrl(id: AssetId): string {
  * caller has nothing to check.
  */
 export function assetThumbUrl(id: AssetId, width: number): string {
-  return `${assetUrl(id)}?w=${width}`;
+  return withProject(`/api/v1/projects/current/assets/${id}?w=${width}`);
 }
 
 /**
@@ -128,5 +134,5 @@ export function assetThumbUrl(id: AssetId, width: number): string {
  * that plays.
  */
 export function assetAudioUrl(id: AssetId): string {
-  return `${assetUrl(id)}/audio`;
+  return withProject(`/api/v1/projects/current/assets/${id}/audio`);
 }

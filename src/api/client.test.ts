@@ -1,11 +1,16 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  currentProject,
   errorText,
+  http,
   isApiError,
   isConfigurationTrouble,
+  nameProject,
+  projectHeaders,
   readProblem,
+  withProject,
 } from "./client";
 import { i18n } from "../shared/i18n";
 
@@ -20,6 +25,11 @@ const thrown = (code: string): ApiError =>
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
+  nameProject(null);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("readProblem", () => {
@@ -111,5 +121,86 @@ describe("isApiError", () => {
     expect(isApiError(thrown("CONFLICT"), "CONFLICT")).toBe(true);
     expect(isApiError(thrown("CONFLICT"), "NOT_FOUND")).toBe(false);
     expect(isApiError(new Error("conflict"))).toBe(false);
+  });
+});
+
+describe("the project a window speaks for", () => {
+  it("names the project on requests once the window has one", async () => {
+    const seen: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_path: string, init?: RequestInit) => {
+        seen.push(init ?? {});
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }),
+    );
+
+    await http.request("/api/v1/projects/current/commands", {
+      method: "POST",
+      body: {},
+    });
+    expect(new Headers(seen[0]?.headers).get("x-moka-project")).toBeNull();
+
+    nameProject("0192b7d4-0000-7000-8000-0000000000aa");
+    await http.request("/api/v1/projects/current/commands", {
+      method: "POST",
+      body: {},
+    });
+    expect(new Headers(seen[1]?.headers).get("x-moka-project")).toBe(
+      "0192b7d4-0000-7000-8000-0000000000aa",
+    );
+    // The content type the JSON body always had is still there beside it.
+    expect(new Headers(seen[1]?.headers).get("content-type")).toBe(
+      "application/json",
+    );
+  });
+
+  it("carries the project in the address where no header can ride", () => {
+    expect(withProject("/api/v1/projects/current/assets/a-1")).toBe(
+      "/api/v1/projects/current/assets/a-1",
+    );
+    expect(projectHeaders()).toEqual({});
+
+    nameProject("p-1");
+    expect(withProject("/api/v1/projects/current/assets/a-1")).toBe(
+      "/api/v1/projects/current/assets/a-1?project=p-1",
+    );
+    expect(withProject("/api/v1/projects/current/assets/a-1?w=64")).toBe(
+      "/api/v1/projects/current/assets/a-1?w=64&project=p-1",
+    );
+    expect(currentProject()).toBe("p-1");
+
+    nameProject(null);
+    expect(currentProject()).toBeNull();
+    expect(projectHeaders()).toEqual({});
+  });
+
+  it("remembers the project a window had across a reload of it", async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => void stored.set(key, value),
+        removeItem: (key: string) => void stored.delete(key),
+      },
+    });
+    vi.resetModules();
+
+    const window1 = await import("./client");
+    expect(window1.currentProject()).toBeNull();
+    window1.nameProject("0192b7d4-0000-7000-8000-0000000000aa");
+
+    // A reload is the module starting over on the same window's storage.
+    vi.resetModules();
+    const reloaded = await import("./client");
+    expect(reloaded.currentProject()).toBe(
+      "0192b7d4-0000-7000-8000-0000000000aa",
+    );
+
+    // A window that puts its project down remembers nothing.
+    reloaded.nameProject(null);
+    vi.resetModules();
+    const fresh = await import("./client");
+    expect(fresh.currentProject()).toBeNull();
   });
 });

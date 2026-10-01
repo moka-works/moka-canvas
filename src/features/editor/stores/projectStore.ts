@@ -16,7 +16,7 @@ import {
   type OpenProjectResult,
   type SaveResult,
 } from "../../../api/projects";
-import { isApiError } from "../../../api/client";
+import { isApiError, nameProject } from "../../../api/client";
 import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "./appStore";
 import { useOpenCanvases } from "./openCanvases";
@@ -206,6 +206,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       flushTimer = null;
       // A flush from the previously open project must not be awaited here.
       flushInFlight = null;
+      // Every request from this window is about what the window is looking
+      // at, from here on: two windows on one server are two readers, and one
+      // opening a project must not move the other off its own.
+      nameProject(opened.moka.metadata.id);
       // Which boards this machine was left looking at is kept beside the
       // project rather than in it, so taking up the document takes up that list
       // too and opens onto the board the work was left on.
@@ -310,6 +314,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       readInFlight = null;
       stopSelfCheckWatch();
       useOpenCanvases.getState().forget();
+      // The window is about nothing now, and says so, rather than going on
+      // naming a project nobody is looking at.
+      nameProject(null);
       set({
         root: null,
         moka: null,

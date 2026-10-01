@@ -16,7 +16,11 @@ import type {
   StoryJobRecord,
 } from "../../../api/story";
 import type { MokaFile } from "../../../shared/domain";
-import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
+import {
+  buildStoryMokaFile,
+  goldenNodeIds,
+  storyIds,
+} from "../../../shared/domain/fixtures";
 import { actCast } from "../../../shared/domain/story";
 import { undo } from "../../editor/commands/execute";
 import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
@@ -543,7 +547,9 @@ describe("a room opened again over what it has already read", () => {
         .getByTestId("story-slot-main")
         .querySelector("img")
         ?.getAttribute("src"),
-    ).toBe("/api/v1/projects/current/assets/asset-lover-main?w=768");
+    ).toBe(
+      `/api/v1/projects/current/assets/asset-lover-main?w=768&project=${goldenNodeIds().project}`,
+    );
     // Nothing was asked for a second time, and nothing was said again.
     expect(starts).toHaveLength(3);
     expect(useAppStore.getState().toasts).toHaveLength(toasts);
@@ -842,7 +848,7 @@ describe("the pictures of an element", () => {
       .getByTestId("story-slot-main")
       .querySelector("img");
     expect(shown?.getAttribute("src")).toBe(
-      "/api/v1/projects/current/assets/asset-ticket-main?w=768",
+      `/api/v1/projects/current/assets/asset-ticket-main?w=768&project=${goldenNodeIds().project}`,
     );
   });
 

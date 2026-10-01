@@ -127,6 +127,77 @@ interface RequestOptions {
   onUploadProgress?: (fraction: number) => void;
 }
 
+/** The header a request names its project in. */
+const PROJECT_HEADER = "x-moka-project";
+
+/** Where this window keeps the project it names, so a reload keeps it too. */
+const PROJECT_STORAGE_KEY = "moka.canvas.project";
+
+/** The project this window's requests speak for, if the window has one. */
+let namedProject: string | null = readNamedProject();
+
+function readNamedProject(): string | null {
+  try {
+    return window.sessionStorage.getItem(PROJECT_STORAGE_KEY);
+  } catch {
+    // A window without storage still works; it just cannot remember.
+    return null;
+  }
+}
+
+/**
+ * The project this window's requests are about, once the window has one.
+ *
+ * One server may hold several projects open — two windows on one machine, or
+ * two readers on one deployment — and the client is what keeps each of them
+ * speaking about its own: every request of this window names the project the
+ * window has open rather than trusting whatever was opened most recently.
+ */
+export function currentProject(): string | null {
+  return namedProject;
+}
+
+/**
+ * Names the project every request from this window is about.
+ *
+ * Kept per window rather than shared with a neighbour: two windows on one
+ * machine are two readers, and one opening a project must not move the other
+ * off the one it is looking at. `null` hands the window back to 'whichever is
+ * open' — what a lone window always meant.
+ */
+export function nameProject(id: string | null): void {
+  namedProject = id;
+  try {
+    if (id === null) window.sessionStorage.removeItem(PROJECT_STORAGE_KEY);
+    else window.sessionStorage.setItem(PROJECT_STORAGE_KEY, id);
+  } catch {
+    // The name still holds for this page; only remembering it was lost.
+  }
+}
+
+/**
+ * The header a request names its project in, when this window has one.
+ *
+ * Empty for a window that has not opened anything yet, so it is answered
+ * about the most recently opened project exactly as it always was.
+ */
+export function projectHeaders(): Record<string, string> {
+  return namedProject === null ? {} : { [PROJECT_HEADER]: namedProject };
+}
+
+/**
+ * The same address with the project named where only the address can be.
+ *
+ * A picture, a recording or an event stream is fetched by the browser itself
+ * — an `<img>` or a `EventSource` sends no header of its own — so for those
+ * the project has to ride in the address rather than in a header.
+ */
+export function withProject(url: string): string {
+  if (namedProject === null) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}project=${encodeURIComponent(namedProject)}`;
+}
+
 async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -139,14 +210,17 @@ async function request<T>(
 
   let response: Response;
   try {
+    const named = projectHeaders();
     response = await fetch(path, {
       method,
       signal: options.signal,
       // FormData sets its own multipart boundary header.
       headers:
         options.body !== undefined && !options.formData
-          ? { "Content-Type": "application/json" }
-          : undefined,
+          ? { "Content-Type": "application/json", ...named }
+          : Object.keys(named).length > 0
+            ? named
+            : undefined,
       body: options.formData
         ? options.formData
         : options.body !== undefined
@@ -224,6 +298,11 @@ function requestWithProgress<T>(
     const xhr = new XMLHttpRequest();
     xhr.open(options.method ?? "POST", path);
     xhr.responseType = "text";
+    // The progress-carrying upload travels by hand, so it names its project
+    // by hand too: the request layer's own header never runs for it.
+    for (const [header, value] of Object.entries(projectHeaders())) {
+      xhr.setRequestHeader(header, value);
+    }
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && options.onUploadProgress) {
         options.onUploadProgress(event.loaded / event.total);

@@ -1,5 +1,5 @@
 import type { AssetId, Capability, IsoTimestamp } from "../shared/domain";
-import { ApiError, http, readProblem } from "./client";
+import { ApiError, http, projectHeaders, readProblem } from "./client";
 
 /**
  * Why a piece of media travels with a request. The role, not the mime type,
@@ -144,7 +144,7 @@ async function streamText(
     response = await fetch(path("text"), {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...projectHeaders() },
       body: JSON.stringify({
         ...request,
         capability: "text",
