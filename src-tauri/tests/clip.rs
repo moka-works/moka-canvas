@@ -566,6 +566,22 @@ async fn the_export_paths_are_as_unavailable_as_the_machine_is() {
     let root = tempfile::tempdir().unwrap();
     let app = test_app(root.path(), Some(PathBuf::from("/nonexistent/ffmpeg")));
 
+    // A render is asked for from inside a project, which is the only place a
+    // room has a timeline to render.
+    let created = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects",
+            json!({
+                "directory": root.path().join("project").to_string_lossy(),
+                "name": "Unavailable",
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
     let capabilities = app
         .clone()
         .oneshot(

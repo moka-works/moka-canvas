@@ -421,7 +421,6 @@ enum ItemMessage {
 
 /// The story jobs this process is driving, and how to stop them.
 pub struct StoryJobManager {
-    store: Arc<FsProjectStore>,
     provider: Arc<ProviderExecutor>,
     /// The jobs being driven, by id, each with the flag it answers to.
     active: Mutex<HashMap<String, Cancel>>,
@@ -433,14 +432,9 @@ pub struct StoryJobManager {
 }
 
 impl StoryJobManager {
-    pub fn new(
-        store: Arc<FsProjectStore>,
-        provider: Arc<ProviderExecutor>,
-        limits: StoryConfig,
-    ) -> Arc<Self> {
+    pub fn new(provider: Arc<ProviderExecutor>, limits: StoryConfig) -> Arc<Self> {
         let permits = Arc::new(Semaphore::new(limits.max_parallel_items.max(1)));
         Arc::new(Self {
-            store,
             provider,
             active: Mutex::new(HashMap::new()),
             permits,
@@ -456,16 +450,18 @@ impl StoryJobManager {
     /// Writes the queued record and hands it to a driver.
     ///
     /// The caller has already validated the request against the document; what
-    /// is left here is the record and a driver that outlives the call.
+    /// is left here is the record and a driver that outlives the call. `store`
+    /// is the project the batch belongs to, resolved for the request that asked
+    /// for it.
     pub async fn start(
         self: &Arc<Self>,
+        store: &Arc<FsProjectStore>,
         story_id: String,
         kind: StoryJobKind,
         model: String,
         items: Vec<StoryJobItem>,
     ) -> Result<StoryJobRecord, ProjectError> {
-        let project_id = self
-            .store
+        let project_id = store
             .current()
             .await?
             .ok_or_else(|| ProjectError::domain("PROJECT_NOT_OPEN", "No project is open"))?
@@ -488,11 +484,12 @@ impl StoryJobManager {
             created_at: now.clone(),
             updated_at: now,
         };
-        let record = self.store.create_story_job(record).await?;
+        let record = store.create_story_job(record).await?;
         let driver = Arc::clone(self);
+        let session = Arc::clone(store);
         let job_id = record.id.clone();
         tokio::spawn(async move {
-            driver.drive(job_id).await;
+            driver.drive(session, job_id).await;
         });
         Ok(record)
     }
@@ -503,8 +500,8 @@ impl StoryJobManager {
     /// to put an answer. The sweep has already failed everything that cannot be
     /// picked up again, so what is left is waiting on a shot a provider is
     /// still filming.
-    pub async fn resume_interrupted(self: &Arc<Self>) {
-        let interrupted = match self.store.interrupted_story_jobs().await {
+    pub async fn resume_interrupted(self: &Arc<Self>, store: &Arc<FsProjectStore>) {
+        let interrupted = match store.interrupted_story_jobs().await {
             Ok(interrupted) => interrupted,
             Err(error) => {
                 tracing::warn!("the story jobs left in progress could not be listed: {error}");
@@ -513,8 +510,9 @@ impl StoryJobManager {
         };
         for job_id in interrupted {
             let driver = Arc::clone(self);
+            let session = Arc::clone(store);
             tokio::spawn(async move {
-                driver.drive(job_id).await;
+                driver.drive(session, job_id).await;
             });
         }
     }
@@ -525,8 +523,12 @@ impl StoryJobManager {
     /// driver is the only writer of the record, so the flag goes up and the
     /// record is read as it stands. One nobody is driving has nothing to
     /// interrupt and is ended here.
-    pub async fn cancel(&self, job_id: &str) -> Result<StoryJobRecord, ProjectError> {
-        let mut record = self.store.get_story_job(job_id).await?;
+    pub async fn cancel(
+        &self,
+        store: &Arc<FsProjectStore>,
+        job_id: &str,
+    ) -> Result<StoryJobRecord, ProjectError> {
+        let mut record = store.get_story_job(job_id).await?;
         if record.status.is_terminal() {
             return Err(ProjectError::domain(
                 super::STORY_JOB_NOT_CANCELLABLE,
@@ -544,7 +546,7 @@ impl StoryJobManager {
         record.status = StoryJobStatus::Cancelled;
         record.cancel_requested = true;
         record.updated_at = now_iso();
-        self.store.update_story_job(record).await
+        store.update_story_job(record).await
     }
 
     /// Whether this process is driving the job right now.
@@ -573,8 +575,8 @@ impl StoryJobManager {
     /// that already answered are left alone, pieces a previous process placed
     /// as jobs are waited out by the handle on the record, and the rest are
     /// asked for now.
-    async fn drive(self: Arc<Self>, job_id: String) {
-        let Some(record) = self.claim(&job_id).await else {
+    async fn drive(self: Arc<Self>, store: Arc<FsProjectStore>, job_id: String) {
+        let Some(record) = self.claim(&store, &job_id).await else {
             return;
         };
         // The flag is armed before the first piece starts and not before: a
@@ -603,6 +605,7 @@ impl StoryJobManager {
                 break;
             }
             let manager = Arc::clone(&self);
+            let session = Arc::clone(&store);
             let sender = sender.clone();
             let cancel = cancel.clone();
             let context = Arc::clone(&context);
@@ -610,7 +613,10 @@ impl StoryJobManager {
             let item = record.items[position].clone();
             let placed = item.task_id.clone();
             tokio::spawn(async move {
-                work(manager, context, position, item, placed, cancel, sender).await;
+                work(
+                    manager, session, context, position, item, placed, cancel, sender,
+                )
+                .await;
             });
         }
         // The driver's own sender is dropped, so the last piece finishing is
@@ -624,18 +630,18 @@ impl StoryJobManager {
                     let item = &mut record.items[index];
                     item.status = StoryJobStatus::Running;
                     item.started_at = Some(now_iso());
-                    written = self.write(&record).await;
+                    written = self.write(&store, &record).await;
                 }
                 ItemMessage::Placed { index, task_id } => {
                     record.items[index].task_id = Some(task_id);
-                    written = self.write(&record).await;
+                    written = self.write(&store, &record).await;
                 }
                 ItemMessage::Progress { index, fraction } => {
                     record.items[index].progress = Some(fraction);
                     // Written on a beat rather than on every look: a shot is
                     // looked at every few seconds, and the record is a file.
                     if written.elapsed() >= PROGRESS_INTERVAL {
-                        written = self.write(&record).await;
+                        written = self.write(&store, &record).await;
                     }
                 }
                 ItemMessage::Done { index, outcome } => {
@@ -660,12 +666,12 @@ impl StoryJobManager {
                         item.text = outcome.text;
                         item.asset_ids = outcome.asset_ids;
                     }
-                    written = self.write(&record).await;
+                    written = self.write(&store, &record).await;
                 }
             }
         }
 
-        self.settle(&mut record, &cancel).await;
+        self.settle(&store, &mut record, &cancel).await;
         self.release(&job_id);
     }
 
@@ -674,7 +680,7 @@ impl StoryJobManager {
     /// The seat is taken before the record is read, so two drivers racing for
     /// one job cannot both be let through: the map is the lock, and the record
     /// is what a client reads.
-    async fn claim(&self, job_id: &str) -> Option<StoryJobRecord> {
+    async fn claim(&self, store: &Arc<FsProjectStore>, job_id: &str) -> Option<StoryJobRecord> {
         {
             let mut active = self
                 .active
@@ -688,11 +694,11 @@ impl StoryJobManager {
 
         // Only a batch that has not settled is worth driving: one that was
         // cancelled before a driver reached it is already over.
-        match self.store.get_story_job(job_id).await {
+        match store.get_story_job(job_id).await {
             Ok(mut record) if !record.status.is_terminal() => {
                 record.status = StoryJobStatus::Running;
                 record.updated_at = now_iso();
-                match self.store.update_story_job(record).await {
+                match store.update_story_job(record).await {
                     Ok(record) => Some(record),
                     Err(error) => {
                         tracing::warn!("story job {job_id}: could not be marked running: {error}");
@@ -714,8 +720,8 @@ impl StoryJobManager {
     }
 
     /// Writes the record, and says when it was written.
-    async fn write(&self, record: &StoryJobRecord) -> Instant {
-        if let Err(error) = self.store.update_story_job(record.clone()).await {
+    async fn write(&self, store: &Arc<FsProjectStore>, record: &StoryJobRecord) -> Instant {
+        if let Err(error) = store.update_story_job(record.clone()).await {
             tracing::warn!("story job {}: could not be written: {error}", record.id);
         }
         Instant::now()
@@ -728,7 +734,12 @@ impl StoryJobManager {
     /// nothing wrong. Otherwise every piece that answered makes it succeeded,
     /// and anything less is failed — with what did answer kept, so the room can
     /// offer to ask only for the rest.
-    async fn settle(&self, record: &mut StoryJobRecord, cancel: &Cancel) {
+    async fn settle(
+        &self,
+        store: &Arc<FsProjectStore>,
+        record: &mut StoryJobRecord,
+        cancel: &Cancel,
+    ) {
         let stopped = cancel.is_cancelled();
         let failed = record
             .items
@@ -764,7 +775,7 @@ impl StoryJobManager {
             StoryJobStatus::Failed
         };
         record.updated_at = now_iso();
-        self.write(record).await;
+        self.write(store, record).await;
     }
 }
 
@@ -773,8 +784,10 @@ impl StoryJobManager {
 /// A free function rather than a method because it is what a task is made of:
 /// everything it may touch arrives as an argument, and nothing of the manager
 /// is borrowed across an await.
+#[allow(clippy::too_many_arguments)]
 async fn work(
     manager: Arc<StoryJobManager>,
+    store: Arc<FsProjectStore>,
     context: Arc<JobContext>,
     index: usize,
     item: StoryJobItem,
@@ -783,7 +796,7 @@ async fn work(
     sender: mpsc::Sender<ItemMessage>,
 ) {
     let outcome = match manager
-        .answer(&context, &item, placed, &cancel, &sender, index)
+        .answer(&store, &context, &item, placed, &cancel, &sender, index)
         .await
     {
         Ok(outcome) => outcome,
@@ -809,8 +822,10 @@ impl StoryJobManager {
     /// twenty pieces waits its turn at the provider instead of opening twenty
     /// connections: what is bounded is how many generations are in flight, not
     /// how many pieces a batch has.
+    #[allow(clippy::too_many_arguments)]
     async fn answer(
         &self,
+        store: &Arc<FsProjectStore>,
         context: &JobContext,
         item: &StoryJobItem,
         placed: Option<String>,
@@ -862,7 +877,7 @@ impl StoryJobManager {
             let task = match placed {
                 Some(task_id) => task_id,
                 None => {
-                    let task = self.provider.shoot(request, cancel).await?;
+                    let task = self.provider.shoot(store, request, cancel).await?;
                     if sender
                         .send(ItemMessage::Placed {
                             index,
@@ -878,8 +893,11 @@ impl StoryJobManager {
                     task.id
                 }
             };
-            let result = self.provider.collect(&task, cancel, &progress).await?;
-            return self.file(context, item, result).await;
+            let result = self
+                .provider
+                .collect(store, &task, cancel, &progress)
+                .await?;
+            return self.file(store, context, item, result).await;
         }
 
         // A written answer is asked for as a stream even though nothing here
@@ -891,13 +909,16 @@ impl StoryJobManager {
         } else {
             DeltaSink::default()
         };
-        let result = self.provider.answer_once(request, &deltas, cancel).await?;
+        let result = self
+            .provider
+            .answer_once(store, request, &deltas, cancel)
+            .await?;
         if context.kind.is_words() {
             // Words are kept as they came: what they mean is read by the room,
             // which is where the document is.
             return Ok(ItemOutcome::answered(result.text, Vec::new()));
         }
-        self.file(context, item, result).await
+        self.file(store, context, item, result).await
     }
 
     /// Files a media answer in the project and reports what it became.
@@ -907,6 +928,7 @@ impl StoryJobManager {
     /// in it: the room would have no picture to confirm.
     async fn file(
         &self,
+        store: &Arc<FsProjectStore>,
         context: &JobContext,
         item: &StoryJobItem,
         result: crate::generate::GenerateResult,
@@ -921,7 +943,7 @@ impl StoryJobManager {
             });
         }
         let entries = ingest_story_result(
-            &*self.store,
+            store.as_ref(),
             &context.job_id,
             &context.story_id,
             item,

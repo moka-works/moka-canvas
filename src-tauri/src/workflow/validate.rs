@@ -545,6 +545,7 @@ mod tests {
 
         async fn execute(
             &self,
+            _session: &Arc<crate::project::store::FsProjectStore>,
             _request: ExecutionRequest,
             _progress: ProgressReporter,
         ) -> Result<ExecutionOutput, ExecutionError> {

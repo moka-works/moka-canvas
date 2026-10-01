@@ -22,6 +22,7 @@ use serde_json::{Map, Value};
 use crate::config::GenerateConfig;
 use crate::domain::Capability;
 use crate::metadata::{Preferences, Scene};
+use crate::project::store::FsProjectStore;
 use crate::project::ProjectStore;
 use crate::telemetry::GenerationNote;
 
@@ -46,7 +47,6 @@ struct Placement {
 /// Places generations with the models the user configured.
 pub struct Gateway {
     models: Arc<ModelRepo>,
-    assets: Arc<dyn ProjectStore>,
     budgets: GenerateConfig,
     /// What cuts a window out of a recording, where the deployment has one. A
     /// caller that named a window and got a whole file instead would be
@@ -59,13 +59,11 @@ pub struct Gateway {
 impl Gateway {
     pub fn new(
         models: Arc<ModelRepo>,
-        assets: Arc<dyn ProjectStore>,
         budgets: GenerateConfig,
         audio: Option<Arc<dyn AudioWindow>>,
     ) -> Self {
         Self {
             models,
-            assets,
             budgets,
             audio,
             tasks: TaskRegistry::new(),
@@ -80,21 +78,24 @@ impl Gateway {
     /// what gets stored.
     pub async fn text(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         sink: &DeltaSink,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
-        self.answer(stamped(request, Capability::Text), sink, cancel)
+        self.answer(session, stamped(request, Capability::Text), sink, cancel)
             .await
     }
 
     /// A picture, with or without something to edit or imitate.
     pub async fn image(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
         self.answer(
+            session,
             stamped(request, Capability::Image),
             &DeltaSink::default(),
             cancel,
@@ -105,10 +106,12 @@ impl Gateway {
     /// Speech.
     pub async fn speech(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
         self.answer(
+            session,
             stamped(request, Capability::Speech),
             &DeltaSink::default(),
             cancel,
@@ -119,10 +122,12 @@ impl Gateway {
     /// A score.
     pub async fn music(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
         self.answer(
+            session,
             stamped(request, Capability::Music),
             &DeltaSink::default(),
             cancel,
@@ -137,10 +142,11 @@ impl Gateway {
     /// handle comes back at once and is polled through [`Gateway::poll`].
     pub async fn video(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<AsyncTask, ProviderError> {
-        self.start_job(stamped(request, Capability::Video), cancel)
+        self.start_job(session, stamped(request, Capability::Video), cancel)
             .await
     }
 
@@ -151,20 +157,22 @@ impl Gateway {
     /// of a few words.
     pub async fn transcribe(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<AsyncTask, ProviderError> {
-        self.start_job(stamped(request, Capability::Asr), cancel)
+        self.start_job(session, stamped(request, Capability::Asr), cancel)
             .await
     }
 
     /// One job started, whichever capability asked for it.
     async fn start_job(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<AsyncTask, ProviderError> {
-        let placement = self.place(request, cancel).await?;
+        let placement = self.place(session, request, cancel).await?;
         let adapter = for_protocol(placement.call.protocol.clone());
         let started = Instant::now();
         let task = self
@@ -193,7 +201,7 @@ impl Gateway {
         // Tracked before the handle is handed back: a client that polls at
         // once must not find it missing.
         self.tasks.register(task.clone());
-        self.noted(&task).await;
+        self.noted(session, &task).await;
         Ok(task)
     }
 
@@ -226,11 +234,11 @@ impl Gateway {
     /// restart and reporting one already paid for as never heard of. Failing to
     /// write it is a warning rather than an error: the job is running either
     /// way, and refusing the handle would lose it.
-    async fn noted(&self, task: &AsyncTask) {
+    async fn noted(&self, session: &Arc<FsProjectStore>, task: &AsyncTask) {
         let Ok(record) = serde_json::to_value(task) else {
             return;
         };
-        if let Err(error) = self.assets.record_job(&task.id, record).await {
+        if let Err(error) = session.record_job(&task.id, record).await {
             tracing::warn!("job {}: could not be written down: {error}", task.id);
         }
     }
@@ -241,26 +249,31 @@ impl Gateway {
     /// A note that cannot be read is taken for one that is not there: the job it
     /// named cannot be asked after either way, and what a caller needs is one
     /// answer rather than an account of the disk.
-    async fn recall(&self, task: &str) -> Option<AsyncTask> {
-        let record = self.assets.job(task).await.ok().flatten()?;
+    async fn recall(&self, session: &Arc<FsProjectStore>, task: &str) -> Option<AsyncTask> {
+        let record = session.job(task).await.ok().flatten()?;
         serde_json::from_value(record).ok()
     }
 
     /// A job that will not answer again, dropped from the table and from the
     /// note that outlived the request which started it.
-    async fn settled(&self, task: &str) {
+    async fn settled(&self, session: &Arc<FsProjectStore>, task: &str) {
         self.tasks.forget(task);
-        if let Err(error) = self.assets.drop_job(task).await {
+        if let Err(error) = session.drop_job(task).await {
             tracing::warn!("job {task}: the note of it could not be dropped: {error}");
         }
     }
 
     /// One look at a job started here.
-    pub async fn poll(&self, task: &str, cancel: &Cancel) -> Result<TaskState, ProviderError> {
+    pub async fn poll(
+        &self,
+        session: &Arc<FsProjectStore>,
+        task: &str,
+        cancel: &Cancel,
+    ) -> Result<TaskState, ProviderError> {
         let tracked = match self.tasks.get(task) {
             Ok(tracked) => tracked,
             // A restart empties the table without ending the job.
-            Err(ProviderError::TaskMissing { .. }) => match self.recall(task).await {
+            Err(ProviderError::TaskMissing { .. }) => match self.recall(session, task).await {
                 Some(recalled) => {
                     self.tasks.register(recalled.clone());
                     recalled
@@ -289,8 +302,10 @@ impl Gateway {
             // A job that answered is done with, and one the provider has
             // forgotten cannot answer again: keeping either handle would only
             // grow the table.
-            Ok(TaskState::Succeeded(_) | TaskState::Failed { .. }) => self.settled(task).await,
-            Err(ProviderError::TaskExpired { .. }) => self.settled(task).await,
+            Ok(TaskState::Succeeded(_) | TaskState::Failed { .. }) => {
+                self.settled(session, task).await
+            }
+            Err(ProviderError::TaskExpired { .. }) => self.settled(session, task).await,
             // Anything else is this process failing to look rather than the
             // job ending, and dropping the handle would lose a shot the
             // provider is still making.
@@ -313,11 +328,12 @@ impl Gateway {
     /// One answer, waited out or read as it arrives.
     async fn answer(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         sink: &DeltaSink,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
-        let placement = self.place(request, cancel).await?;
+        let placement = self.place(session, request, cancel).await?;
         let (forwarded, watching) = counting(sink);
         let streaming = watching.is_streaming();
         let adapter = for_protocol(placement.call.protocol.clone());
@@ -370,6 +386,7 @@ impl Gateway {
     /// way to a provider is the reference media itself.
     async fn place(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<Placement, ProviderError> {
@@ -382,7 +399,7 @@ impl Gateway {
         let scene = scene_of(&request);
         let resolved = resolve_within(&snapshot, &request.model, capability, scene)?;
         let inputs = load_inputs(
-            self.assets.as_ref(),
+            session.as_ref(),
             &request,
             &self.budgets,
             self.audio.as_deref(),

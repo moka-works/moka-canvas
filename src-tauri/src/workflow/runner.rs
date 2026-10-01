@@ -26,7 +26,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 pub struct RunManager {
-    store: Arc<FsProjectStore>,
     executors: Vec<Arc<dyn WorkflowExecutor>>,
     enabled_executors: Vec<String>,
     /// How many runs drive at once, as permits rather than as a lock.
@@ -464,13 +463,11 @@ fn card_title(parent: &str, number: usize) -> String {
 
 impl RunManager {
     pub fn new(
-        store: Arc<FsProjectStore>,
         executors: Vec<Arc<dyn WorkflowExecutor>>,
         enabled_executors: Vec<String>,
         concurrent_runs: usize,
     ) -> Arc<Self> {
         Arc::new(Self {
-            store,
             executors,
             enabled_executors,
             gate: tokio::sync::Semaphore::new(concurrent_runs),
@@ -533,15 +530,19 @@ impl RunManager {
 
     /// Validates the request against the current document, persists the
     /// queued record, and hands the run to the driver task.
+    ///
+    /// `store` is the project the run belongs to, resolved for the request that
+    /// asked for it: the document is validated against that project and the
+    /// record is kept in it, whatever anybody opens while the run drives.
     pub async fn start(
         self: &Arc<Self>,
+        store: &Arc<FsProjectStore>,
         canvas_id: &str,
         node_ids: Vec<NodeId>,
         retry_of_run_id: Option<RunId>,
         assistant_session_id: Option<SessionId>,
     ) -> Result<RunRecord, StartRunError> {
-        let opened = self
-            .store
+        let opened = store
             .current()
             .await?
             .ok_or_else(|| ProjectError::domain("PROJECT_NOT_OPEN", "No project is open"))?;
@@ -612,20 +613,25 @@ impl RunManager {
             created_at: now.clone(),
             updated_at: now,
         };
-        let run = self.store.create_run(run).await?;
+        let run = store.create_run(run).await?;
 
         let driver = Arc::clone(self);
+        let session = Arc::clone(store);
         let run_id = run.id.clone();
         tokio::spawn(async move {
-            driver.drive(run_id, snapshot).await;
+            driver.drive(session, run_id, snapshot).await;
         });
         Ok(run)
     }
 
     /// A retry is a brand-new run linked to its predecessor; it revalidates
     /// against the current document rather than trusting the old snapshot.
-    pub async fn retry(self: &Arc<Self>, run_id: &str) -> Result<RunRecord, StartRunError> {
-        let run = self.store.get_run(run_id).await?;
+    pub async fn retry(
+        self: &Arc<Self>,
+        store: &Arc<FsProjectStore>,
+        run_id: &str,
+    ) -> Result<RunRecord, StartRunError> {
+        let run = store.get_run(run_id).await?;
         if !matches!(run.status, RunStatus::Failed | RunStatus::Cancelled) {
             return Err(ProjectError::domain(
                 "RUN_NOT_RETRYABLE",
@@ -634,6 +640,7 @@ impl RunManager {
             .into());
         }
         self.start(
+            store,
             &run.canvas_id.clone(),
             run.requested_node_ids.clone(),
             Some(run.id.clone()),
@@ -651,8 +658,8 @@ impl RunManager {
     /// somewhere to put an answer. The sweep on open has already failed
     /// everything that cannot be picked up again, so what is left here is
     /// waiting on a job a provider is still running.
-    pub async fn resume_interrupted(self: &Arc<Self>) {
-        let interrupted = match self.store.interrupted_runs().await {
+    pub async fn resume_interrupted(self: &Arc<Self>, store: &Arc<FsProjectStore>) {
+        let interrupted = match store.interrupted_runs().await {
             Ok(interrupted) => interrupted,
             Err(error) => {
                 tracing::warn!("the runs left in progress could not be listed: {error}");
@@ -661,8 +668,9 @@ impl RunManager {
         };
         for run_id in interrupted {
             let driver = Arc::clone(self);
+            let session = Arc::clone(store);
             tokio::spawn(async move {
-                driver.resume(run_id).await;
+                driver.resume(session, run_id).await;
             });
         }
     }
@@ -672,15 +680,15 @@ impl RunManager {
     /// Revalidated against the document rather than trusted: it may have been
     /// edited while the process was down, and a step whose node is gone has
     /// nothing left to wait out.
-    async fn resume(self: Arc<Self>, run_id: RunId) {
-        let run = match self.store.get_run(&run_id).await {
+    async fn resume(self: Arc<Self>, store: Arc<FsProjectStore>, run_id: RunId) {
+        let run = match store.get_run(&run_id).await {
             Ok(run) => run,
             Err(error) => {
                 tracing::warn!("run {run_id}: could not be read back: {error}");
                 return;
             }
         };
-        let Some(opened) = self.store.current().await.ok().flatten() else {
+        let Some(opened) = store.current().await.ok().flatten() else {
             return;
         };
         let snapshot = match validate_run(
@@ -700,7 +708,7 @@ impl RunManager {
                     .map(|issue| issue.message.clone())
                     .unwrap_or_else(|| "The document no longer supports this run".to_string());
                 tracing::warn!("run {run_id}: {reason}");
-                self.end_unresumable(run, &reason).await;
+                self.end_unresumable(&store, run, &reason).await;
                 return;
             }
         };
@@ -716,23 +724,23 @@ impl RunManager {
         if !same_walk {
             let reason = "The graph was edited while this run was in progress";
             tracing::warn!("run {run_id}: {reason}");
-            self.end_unresumable(run, reason).await;
+            self.end_unresumable(&store, run, reason).await;
             return;
         }
-        self.drive(run_id, snapshot).await;
+        self.drive(store, run_id, snapshot).await;
     }
 
     /// Ends a run that cannot be picked up again.
     ///
     /// Left in progress it would be attempted at every open after this one, and
     /// the notes of the jobs it was waiting on would stay on disk for nobody.
-    async fn end_unresumable(&self, run: RunRecord, reason: &str) {
+    async fn end_unresumable(&self, store: &Arc<FsProjectStore>, run: RunRecord, reason: &str) {
         let _guard = self.transitions.lock().await;
         let run_id = run.id.clone();
         let mut run = run;
         for step in &run.steps {
             if let Some(task_id) = &step.task_id {
-                if let Err(error) = self.store.drop_job(task_id).await {
+                if let Err(error) = store.drop_job(task_id).await {
                     tracing::warn!("run {run_id}: job {task_id} could not be forgotten: {error}");
                 }
             }
@@ -746,15 +754,19 @@ impl RunManager {
             }
         }
         run.updated_at = now_iso();
-        match self.store.update_run(run).await {
+        match store.update_run(run).await {
             Ok(run) => self.ended(&run).await,
             Err(error) => tracing::warn!("run {run_id}: could not be ended: {error}"),
         }
     }
 
-    pub async fn cancel(&self, run_id: &str) -> Result<RunRecord, ProjectError> {
+    pub async fn cancel(
+        &self,
+        store: &Arc<FsProjectStore>,
+        run_id: &str,
+    ) -> Result<RunRecord, ProjectError> {
         let _guard = self.transitions.lock().await;
-        let run = self.store.get_run(run_id).await?;
+        let run = store.get_run(run_id).await?;
         match run.status {
             RunStatus::Queued => {
                 let mut run = run;
@@ -768,7 +780,7 @@ impl RunManager {
                 run.updated_at = now_iso();
                 // Ended here rather than by a driver, and so said here: a run
                 // cancelled before it started has nobody else to speak for it.
-                let run = self.store.update_run(run).await?;
+                let run = store.update_run(run).await?;
                 self.ended(&run).await;
                 Ok(run)
             }
@@ -799,7 +811,12 @@ impl RunManager {
             .contains(run_id)
     }
 
-    async fn drive(self: Arc<Self>, run_id: RunId, snapshot: RunSnapshot) {
+    async fn drive(
+        self: Arc<Self>,
+        store: Arc<FsProjectStore>,
+        run_id: RunId,
+        snapshot: RunSnapshot,
+    ) {
         // Held for the whole walk rather than taken per step: what the ceiling
         // bounds is how many runs are driving, and a step that let its permit go
         // would hand the run's place to another one mid-flight.
@@ -810,12 +827,12 @@ impl RunManager {
             .expect("the ceiling on runs is never closed");
         let mut run = {
             let _guard = self.transitions.lock().await;
-            match self.store.get_run(&run_id).await {
+            match store.get_run(&run_id).await {
                 Ok(run) if run.status == RunStatus::Queued => {
                     let mut run = run;
                     run.status = RunStatus::Running;
                     run.updated_at = now_iso();
-                    match self.store.update_run(run).await {
+                    match store.update_run(run).await {
                         Ok(run) => run,
                         Err(error) => {
                             tracing::warn!("run {run_id}: could not mark running: {error}");
@@ -881,13 +898,13 @@ impl RunManager {
                 run.steps[position].status = RunStatus::Running;
                 run.steps[position].started_at = Some(now_iso());
                 run.updated_at = now_iso();
-                if let Err(error) = self.store.update_run(run.clone()).await {
+                if let Err(error) = store.update_run(run.clone()).await {
                     tracing::warn!("run {run_id}: could not persist step start: {error}");
                 }
             }
 
             let outcome = self
-                .run_step(&mut run, &snapshot, position, &outputs, placed)
+                .run_step(&store, &mut run, &snapshot, position, &outputs, placed)
                 .await;
             run.steps[position].finished_at = Some(now_iso());
             match outcome {
@@ -902,7 +919,8 @@ impl RunManager {
                     step.task_id = artifacts.task.as_ref().map(|job| job.task_id.clone());
                     step.task_created_at = artifacts.task.map(|job| job.created_at);
                     if let Some(promotion) = promotion {
-                        self.promote_result(&snapshot, node_id, promotion).await;
+                        self.promote_result(&store, &snapshot, node_id, promotion)
+                            .await;
                     }
                     if let Some(value) = value {
                         snapshot.record_output(node_id, &value);
@@ -935,6 +953,7 @@ impl RunManager {
                         // A cancellation produced no output. Only a step an
                         // executor ran can fail, so there is no kind to check.
                         self.promote_result(
+                            &store,
                             &snapshot,
                             node_id,
                             Promotion::Failed(error.message.clone()),
@@ -942,12 +961,12 @@ impl RunManager {
                         .await;
                     }
                     run.updated_at = now_iso();
-                    let _ = self.store.update_run(run.clone()).await;
+                    let _ = store.update_run(run.clone()).await;
                     break;
                 }
             }
             run.updated_at = now_iso();
-            if let Err(error) = self.store.update_run(run.clone()).await {
+            if let Err(error) = store.update_run(run.clone()).await {
                 tracing::warn!("run {run_id}: could not persist step result: {error}");
             }
         }
@@ -959,7 +978,7 @@ impl RunManager {
         // job, rather than a handle on disk that nobody is ever coming back for.
         for step in &run.steps {
             if let Some(task_id) = &step.task_id {
-                if let Err(error) = self.store.drop_job(task_id).await {
+                if let Err(error) = store.drop_job(task_id).await {
                     tracing::warn!("run {run_id}: job {task_id} could not be forgotten: {error}");
                 }
             }
@@ -979,7 +998,7 @@ impl RunManager {
                 run.cancel_requested = true;
             }
             run.updated_at = now_iso();
-            match self.store.update_run(run).await {
+            match store.update_run(run).await {
                 // Said after the write rather than before: a listener that
                 // hears the ending is about to ask for the record, and it has
                 // to be there.
@@ -1121,6 +1140,7 @@ impl RunManager {
     /// leave enough behind to ask again rather than pay for a second shot.
     async fn run_step(
         &self,
+        store: &Arc<FsProjectStore>,
         run: &mut RunRecord,
         snapshot: &RunSnapshot,
         position: usize,
@@ -1149,16 +1169,18 @@ impl RunManager {
                     // going to give.
                     Some(job) => job,
                     None => {
-                        let Some(job) = executor.place_job(request.clone()).await? else {
+                        let Some(job) = executor.place_job(store, request.clone()).await? else {
                             // Nothing to wait for, so nothing to write down.
-                            let outcome = executor.execute(request, progress).await;
+                            let outcome = executor.execute(store, request, progress).await;
                             run.steps[position].progress = how_far();
-                            return self.finish_step(run, snapshot, &node_id, outcome?).await;
+                            return self
+                                .finish_step(store, run, snapshot, &node_id, outcome?)
+                                .await;
                         };
                         run.steps[position].task_id = Some(job.task_id.clone());
                         run.steps[position].task_created_at = Some(job.created_at.clone());
                         run.updated_at = now_iso();
-                        if let Err(error) = self.store.update_run(run.clone()).await {
+                        if let Err(error) = store.update_run(run.clone()).await {
                             tracing::warn!(
                                 "run {}: could not persist the job handle: {error}",
                                 run.id
@@ -1167,10 +1189,11 @@ impl RunManager {
                         job
                     }
                 };
-                let outcome = executor.wait_job(job.clone(), progress).await;
+                let outcome = executor.wait_job(store, job.clone(), progress).await;
                 run.steps[position].progress = how_far();
-                let (value, mut artifacts) =
-                    self.finish_step(run, snapshot, &node_id, outcome?).await?;
+                let (value, mut artifacts) = self
+                    .finish_step(store, run, snapshot, &node_id, outcome?)
+                    .await?;
                 // Reported with the artifacts as well, so a step waited out in
                 // one call and one waited out in two leave the same record.
                 artifacts.task = Some(job);
@@ -1185,6 +1208,7 @@ impl RunManager {
     /// flows between nodes is an asset reference, never the bytes.
     async fn finish_step(
         &self,
+        store: &Arc<FsProjectStore>,
         run: &RunRecord,
         snapshot: &RunSnapshot,
         node_id: &str,
@@ -1216,7 +1240,7 @@ impl RunManager {
             usage: None,
         };
         let resolved = snapshot.generation_inputs(&node.id);
-        let entries = ingest_generated(self.store.as_ref(), run, node, &resolved, &result)
+        let entries = ingest_generated(store.as_ref(), run, node, &resolved, &result)
             .await
             .map_err(|error| ExecutionError {
                 code: error.code(),
@@ -1264,10 +1288,17 @@ impl RunManager {
     /// Best-effort: the run record keeps the output even when the node vanished
     /// or the write could not land, and a result the canvas cannot show is not
     /// worth failing a run over.
-    async fn promote_result(&self, snapshot: &RunSnapshot, node_id: &str, promotion: Promotion) {
+    async fn promote_result(
+        &self,
+        store: &Arc<FsProjectStore>,
+        snapshot: &RunSnapshot,
+        node_id: &str,
+        promotion: Promotion,
+    ) {
         let canvas_id = snapshot.canvas_id.clone();
         let node_id = node_id.to_string();
         self.write_live(
+            store,
             &format!("run: result promotion for node {node_id}"),
             |moka| promotion_commands(moka, &canvas_id, &node_id, &promotion),
         )
@@ -1278,11 +1309,12 @@ impl RunManager {
     /// from a fresh read whenever the document moved in between.
     async fn write_live(
         &self,
+        store: &Arc<FsProjectStore>,
         label: &str,
         build: impl Fn(&MokaFile) -> Option<Vec<DocumentCommand>>,
     ) {
         for _ in 0..5 {
-            let current = match self.store.current().await {
+            let current = match store.current().await {
                 Ok(Some(opened)) => opened,
                 _ => return,
             };
@@ -1290,7 +1322,7 @@ impl RunManager {
             let Some(commands) = build(&current.moka) else {
                 return;
             };
-            match self.store.apply_commands(revision, commands).await {
+            match store.apply_commands(revision, commands).await {
                 Ok(_) => return,
                 Err(error) if error.code() == "REVISION_CONFLICT" => continue,
                 Err(error) => {
@@ -2253,12 +2285,12 @@ mod tests {
         assert_eq!(card_title("Poster", 3), "Poster 3");
     }
 
-    /// Opens a project on a temporary directory and a run manager over it, with
-    /// no executors: what is under test here is the write, not the running.
-    async fn manager_over(tmp: &TempDir) -> Arc<RunManager> {
+    /// Opens a project on a temporary directory and a run manager with no
+    /// executors: what is under test here is the write, not the running.
+    async fn manager_over(tmp: &TempDir) -> (Arc<RunManager>, Arc<FsProjectStore>) {
         let config = Arc::new(parse_test_config(tmp.path()));
-        let store = Arc::new(FsProjectStore::new(config));
-        store
+        let registry = crate::project::store::ProjectRegistry::new(config);
+        let (store, _) = registry
             .create_project(
                 &tmp.path().join("demo"),
                 CreateProject {
@@ -2268,14 +2300,14 @@ mod tests {
             )
             .await
             .expect("the project opens");
-        RunManager::new(store, Vec::new(), Vec::new(), 1)
+        let manager = RunManager::new(Vec::new(), Vec::new(), 1);
+        (manager, store)
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_write_rebuilds_itself_when_the_document_moves_under_it() {
         let tmp = TempDir::new().expect("a temporary directory");
-        let manager = manager_over(&tmp).await;
-        let store = Arc::clone(&manager.store);
+        let (manager, store) = manager_over(&tmp).await;
         let canvas_id = {
             let opened = store.current().await.expect("read").expect("open");
             let canvas_id = opened.moka.canvas[0].id.clone();
@@ -2300,7 +2332,7 @@ mod tests {
         let counted = Arc::clone(&attempts);
         let promotion = onto(vec![words("An answer.", None)]);
         manager
-            .write_live("test", |moka| {
+            .write_live(&store, "test", |moka| {
                 // The first read is the one an edit lands behind: the rename goes
                 // in after the document was read and before what was built from
                 // it is applied, which is the race the retry is there for.

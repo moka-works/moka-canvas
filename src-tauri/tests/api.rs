@@ -315,6 +315,193 @@ async fn create_open_and_recent_flow() {
     assert_eq!(body_json(response).await.as_array().unwrap().len(), 0);
 }
 
+/// The same request, with the project it is about said in the header.
+fn named(mut request: Request<Body>, project: &str) -> Request<Body> {
+    request.headers_mut().insert(
+        "x-moka-project",
+        project.parse().expect("a project id fits in a header"),
+    );
+    request
+}
+
+/// The answer the current-project route gives about the project a request
+/// names, in either form: a header, the query, or neither.
+async fn current_of(
+    app: &axum::Router,
+    via_header: Option<&str>,
+    via_query: Option<&str>,
+) -> Value {
+    let uri = match via_query {
+        Some(id) => format!("/api/v1/projects/current?project={id}"),
+        None => "/api/v1/projects/current".to_string(),
+    };
+    let mut request = Request::builder().uri(uri);
+    if let Some(id) = via_header {
+        request = request.header("x-moka-project", id);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    body_json(response).await
+}
+
+/// A request says which project it is about, and the answer is about that one.
+///
+/// Two windows on one server each keep a project of their own, and "the
+/// current project" is a single slot they would otherwise fight over: a
+/// request names its project in the header, and an address that cannot carry
+/// one — a picture a tag asks for, a stream an `EventSource` reads — names the
+/// same project in the query.
+#[tokio::test]
+async fn one_server_answers_about_the_project_each_request_names() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+
+    let first = create_project(&app, &temp.path().join("first"), "First").await;
+    let first_id = first["moka"]["metadata"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let first_root = first["root"].as_str().unwrap().to_string();
+    let second = create_project(&app, &temp.path().join("second"), "Second").await;
+    let second_id = second["moka"]["metadata"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let second_root = second["root"].as_str().unwrap().to_string();
+
+    // Each window files a picture of its own. The first goes in named by a
+    // header while the second project is the one that was opened last, so a
+    // server that ignored the name would file it into the wrong project.
+    let png = make_test_png();
+    let response = app
+        .clone()
+        .oneshot(named(
+            multipart_request("/api/v1/projects/current/assets", ("first.png", &png), &[]),
+            &first_id,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let first_asset = body_json(response).await["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let shelved = current_of(&app, Some(&first_id), None).await;
+    assert_eq!(
+        shelved["moka"]["resources"]["images"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let untouched = current_of(&app, None, None).await;
+    assert_eq!(untouched["moka"]["metadata"]["id"], json!(second_id));
+    assert!(
+        untouched["moka"]["resources"]["images"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{untouched}"
+    );
+
+    // The second files by naming itself in the query, the way anything that
+    // cannot set a header has to.
+    let response = app
+        .clone()
+        .oneshot(multipart_request(
+            &format!("/api/v1/projects/current/assets?project={second_id}"),
+            ("second.png", &png),
+            &[],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // A request that names nothing is about the project opened last.
+    let answered = current_of(&app, None, None).await;
+    assert_eq!(answered["root"], json!(second_root));
+    assert_eq!(answered["moka"]["metadata"]["name"], "Second");
+    assert_eq!(
+        answered["moka"]["resources"]["images"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // A header names the first project, and so does the query.
+    let answered = current_of(&app, Some(&first_id), None).await;
+    assert_eq!(answered["root"], json!(first_root));
+    assert_eq!(answered["moka"]["metadata"]["name"], "First");
+    let answered = current_of(&app, None, Some(&first_id)).await;
+    assert_eq!(answered["root"], json!(first_root));
+
+    // Both at once: a client that can set a header speaks with one voice even
+    // when the address beside it still carries the parameter.
+    let answered = current_of(&app, Some(&first_id), Some(&second_id)).await;
+    assert_eq!(answered["root"], json!(first_root));
+
+    // A project nobody holds open is refused in either form.
+    let unknown = "0192b7d4-0000-7000-8000-0000000000ff";
+    for request in [
+        Request::builder()
+            .uri(format!("/api/v1/projects/current?project={unknown}"))
+            .body(Body::empty())
+            .unwrap(),
+        Request::builder()
+            .uri("/api/v1/projects/current")
+            .header("x-moka-project", unknown)
+            .body(Body::empty())
+            .unwrap(),
+    ] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response
+                .headers()
+                .get("x-error-code")
+                .and_then(|value| value.to_str().ok()),
+            Some("PROJECT_NOT_OPEN")
+        );
+    }
+
+    // The picture is served out of the project the address names: a tag asking
+    // for a picture sends no header of its own.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/projects/current/assets/{first_asset}?project={first_id}"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&bytes[..], &png[..]);
+
+    // The same address without the name is about the current project, which
+    // never held that picture.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{first_asset}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn a_folder_that_holds_something_needs_consent_before_a_project_goes_in() {
     let temp = tempfile::tempdir().unwrap();

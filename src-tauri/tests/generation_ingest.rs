@@ -7,7 +7,7 @@ use moka_canvas::domain::{
 use moka_canvas::generate::{
     ingest_generated, GenerateInput, GenerateResult, GeneratedItem, InputRole, ResolvedInputs,
 };
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{CreateProject, ProjectStore};
 use moka_canvas::workflow::PROVIDER_EXECUTOR_KEY;
 use serde_json::json;
@@ -15,11 +15,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
 
-async fn create_store(tmp: &TempDir) -> (FsProjectStore, PathBuf, String) {
+async fn create_store(
+    tmp: &TempDir,
+) -> (Arc<ProjectRegistry>, Arc<FsProjectStore>, PathBuf, String) {
     let config = Arc::new(parse_test_config(tmp.path()));
-    let store = FsProjectStore::new(config);
+    let registry = Arc::new(ProjectRegistry::new(config));
     let root = tmp.path().join("demo-project");
-    let opened = store
+    let (store, opened) = registry
         .create_project(
             &root,
             CreateProject {
@@ -30,7 +32,7 @@ async fn create_store(tmp: &TempDir) -> (FsProjectStore, PathBuf, String) {
         .await
         .unwrap();
     let canvas_id = opened.moka.canvas[0].id.clone();
-    (store, root, canvas_id)
+    (registry, store, root, canvas_id)
 }
 
 fn run(canvas_id: &str) -> RunRecord {
@@ -182,7 +184,7 @@ fn make_test_wav() -> Vec<u8> {
 #[tokio::test]
 async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
     let tmp = TempDir::new().unwrap();
-    let (store, root, canvas_id) = create_store(&tmp).await;
+    let (registry, store, root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(
         NodeKind::Image,
@@ -207,7 +209,7 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
         usage: None,
     };
 
-    let entries = ingest_generated(&store, &run, &node, &inputs, &result)
+    let entries = ingest_generated(store.as_ref(), &run, &node, &inputs, &result)
         .await
         .unwrap();
     assert_eq!(entries.len(), 1);
@@ -237,8 +239,8 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
 
     // The document was persisted, and the provenance survives the round trip
     // through it rather than living only in memory.
-    store.open_project(&root).await.unwrap();
-    let reopened = registered(&store).await;
+    registry.open_project(&root).await.unwrap();
+    let reopened = registered(store.as_ref()).await;
     assert_eq!(reopened.len(), 1);
     let stored = reopened[0]
         .provenance
@@ -254,12 +256,12 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
 #[tokio::test]
 async fn an_answer_a_conversation_asked_for_is_traced_back_to_it() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root, canvas_id) = create_store(&tmp).await;
+    let (registry, store, _root, canvas_id) = create_store(&tmp).await;
     let run = run_asked_over(&canvas_id, "session-lantern");
     let node = asking(NodeKind::Image, "Poster", None);
 
     let entries = ingest_generated(
-        &store,
+        store.as_ref(),
         &run,
         &node,
         &ResolvedInputs::default(),
@@ -274,11 +276,11 @@ async fn an_answer_a_conversation_asked_for_is_traced_back_to_it() {
     );
     assert_eq!(provenance.run_id.as_deref(), Some(run.id.as_str()));
 
-    store
+    registry
         .open_project(&tmp.path().join("demo-project"))
         .await
         .unwrap();
-    let stored = registered(&store).await;
+    let stored = registered(store.as_ref()).await;
     assert_eq!(
         stored[0]
             .provenance
@@ -293,14 +295,14 @@ async fn an_answer_a_conversation_asked_for_is_traced_back_to_it() {
 #[tokio::test]
 async fn several_answers_are_numbered_and_one_is_not() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, _root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(NodeKind::Image, "Poster", None);
     let inputs = ResolvedInputs::default();
     let short = id_tag(&run.id, 8);
 
     let pair = ingest_generated(
-        &store,
+        store.as_ref(),
         &run,
         &node,
         &inputs,
@@ -316,7 +318,7 @@ async fn several_answers_are_numbered_and_one_is_not() {
     );
 
     let single = ingest_generated(
-        &store,
+        store.as_ref(),
         &run,
         &node,
         &inputs,
@@ -325,13 +327,13 @@ async fn several_answers_are_numbered_and_one_is_not() {
     .await
     .unwrap();
     assert_eq!(single[0].name, format!("Poster-{short}"));
-    assert_eq!(registered(&store).await.len(), 3);
+    assert_eq!(registered(store.as_ref()).await.len(), 3);
 }
 
 #[tokio::test]
 async fn an_answer_of_only_words_becomes_a_text_asset() {
     let tmp = TempDir::new().unwrap();
-    let (store, root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(NodeKind::Text, "Synopsis", None);
     let result = GenerateResult {
@@ -340,9 +342,15 @@ async fn an_answer_of_only_words_becomes_a_text_asset() {
         usage: None,
     };
 
-    let entries = ingest_generated(&store, &run, &node, &ResolvedInputs::default(), &result)
-        .await
-        .unwrap();
+    let entries = ingest_generated(
+        store.as_ref(),
+        &run,
+        &node,
+        &ResolvedInputs::default(),
+        &result,
+    )
+    .await
+    .unwrap();
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
     assert!(entry.path.starts_with("assets/texts/"), "{}", entry.path);
@@ -359,7 +367,7 @@ async fn an_answer_of_only_words_becomes_a_text_asset() {
 #[tokio::test]
 async fn an_answer_with_nothing_in_it_writes_nothing() {
     let tmp = TempDir::new().unwrap();
-    let (store, root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(NodeKind::Image, "Poster", None);
     let inputs = ResolvedInputs::default();
@@ -369,18 +377,24 @@ async fn an_answer_with_nothing_in_it_writes_nothing() {
         items: Vec::new(),
         usage: None,
     };
-    assert!(ingest_generated(&store, &run, &node, &inputs, &blank)
-        .await
-        .unwrap()
-        .is_empty());
     assert!(
-        ingest_generated(&store, &run, &node, &inputs, &GenerateResult::default())
+        ingest_generated(store.as_ref(), &run, &node, &inputs, &blank)
             .await
             .unwrap()
             .is_empty()
     );
+    assert!(ingest_generated(
+        store.as_ref(),
+        &run,
+        &node,
+        &inputs,
+        &GenerateResult::default()
+    )
+    .await
+    .unwrap()
+    .is_empty());
 
-    assert!(registered(&store).await.is_empty());
+    assert!(registered(store.as_ref()).await.is_empty());
     assert_eq!(files_in(&root, "images"), 0);
     assert_eq!(std::fs::read_dir(root.join("tmp")).unwrap().count(), 0);
 }
@@ -388,7 +402,7 @@ async fn an_answer_with_nothing_in_it_writes_nothing() {
 #[tokio::test]
 async fn speech_and_music_land_where_their_kind_implies() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, _root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let inputs = ResolvedInputs::default();
 
@@ -397,7 +411,7 @@ async fn speech_and_music_land_where_their_kind_implies() {
     let mut score = asking(NodeKind::Audio, "Score", None);
     score.data.generation.as_mut().unwrap().capability = Capability::Music;
     ingest_generated(
-        &store,
+        store.as_ref(),
         &run,
         &score,
         &inputs,
@@ -408,7 +422,7 @@ async fn speech_and_music_land_where_their_kind_implies() {
 
     let narration = asking(NodeKind::Audio, "Narration", None);
     ingest_generated(
-        &store,
+        store.as_ref(),
         &run,
         &narration,
         &inputs,
@@ -417,7 +431,7 @@ async fn speech_and_music_land_where_their_kind_implies() {
     .await
     .unwrap();
 
-    let entries = registered(&store).await;
+    let entries = registered(store.as_ref()).await;
     assert_eq!(entries.len(), 2);
     let by_name = |wanted: &str| {
         entries
@@ -442,7 +456,7 @@ async fn speech_and_music_land_where_their_kind_implies() {
 #[tokio::test]
 async fn a_part_that_cannot_be_written_takes_the_rest_with_it() {
     let tmp = TempDir::new().unwrap();
-    let (store, root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(NodeKind::Image, "Poster", None);
     let result = answer(vec![
@@ -450,14 +464,20 @@ async fn a_part_that_cannot_be_written_takes_the_rest_with_it() {
         image(Vec::new()), // the provider sent a part with nothing in it
     ]);
 
-    let error = ingest_generated(&store, &run, &node, &ResolvedInputs::default(), &result)
-        .await
-        .unwrap_err();
+    let error = ingest_generated(
+        store.as_ref(),
+        &run,
+        &node,
+        &ResolvedInputs::default(),
+        &result,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.code(), "ASSET_INVALID");
 
     // Half an answer would sit in the resources panel as clutter nobody asked
     // for, with no node to point at it: the part that landed is taken back out.
-    assert!(registered(&store).await.is_empty());
+    assert!(registered(store.as_ref()).await.is_empty());
     assert_eq!(files_in(&root, "images"), 0);
     assert_eq!(std::fs::read_dir(root.join("tmp")).unwrap().count(), 0);
 }
@@ -465,7 +485,7 @@ async fn a_part_that_cannot_be_written_takes_the_rest_with_it() {
 #[tokio::test]
 async fn the_snapshot_is_the_spec_itself_minus_when_it_was_edited() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root, canvas_id) = create_store(&tmp).await;
+    let (_registry, store, _root, canvas_id) = create_store(&tmp).await;
     let run = run(&canvas_id);
     let node = asking(
         NodeKind::Image,
@@ -478,9 +498,15 @@ async fn the_snapshot_is_the_spec_itself_minus_when_it_was_edited() {
         usage: None,
     };
 
-    let entries = ingest_generated(&store, &run, &node, &ResolvedInputs::default(), &result)
-        .await
-        .unwrap();
+    let entries = ingest_generated(
+        store.as_ref(),
+        &run,
+        &node,
+        &ResolvedInputs::default(),
+        &result,
+    )
+    .await
+    .unwrap();
     let snapshot = entries[0]
         .provenance
         .as_ref()

@@ -159,10 +159,13 @@ async fn health(State(state): State<ApiState>) -> impl IntoResponse {
 async fn ready(State(state): State<ApiState>) -> impl IntoResponse {
     let config_loaded = state.config.server.static_dir.is_dir();
     let metadata_writable = state.metadata.probe_write().await.is_ok();
-    let project_directory = match state.store.current().await {
-        Ok(None) => true,
-        Ok(Some(open)) => open.root.is_dir(),
-        Err(_) => false,
+    let project_directory = match state.store.current_store() {
+        None => true,
+        Some(store) => match store.current().await {
+            Ok(None) => true,
+            Ok(Some(open)) => open.root.is_dir(),
+            Err(_) => false,
+        },
     };
     let ready = config_loaded && metadata_writable && project_directory;
     let status = if ready {

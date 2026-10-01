@@ -3,13 +3,14 @@ use crate::clip::locate::{CapabilityProbe, ClipCapabilities};
 use crate::config::{AppConfig, RuntimeMode};
 use crate::generate::{Gateway, ModelRepo};
 use crate::metadata::{self, MetadataStore};
-use crate::project::store::FsProjectStore;
-use crate::project::ProjectStore;
+use crate::project::store::{FsProjectStore, ProjectRegistry};
 use crate::story::StoryJobManager;
 use crate::workflow::executor::DeterministicExecutor;
 use crate::workflow::provider::ProviderExecutor;
 use crate::workflow::runner::RunManager;
 use crate::workflow::WorkflowExecutor;
+use axum::extract::{FromRequestParts, Query};
+use axum::http::request::Parts;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,7 +23,10 @@ pub mod routes;
 pub struct ApiState {
     pub mode: RuntimeMode,
     pub config: Arc<AppConfig>,
-    pub store: Arc<FsProjectStore>,
+    /// Every project this process holds open. A request that names one is
+    /// answered about that project; a request that names none is answered
+    /// about the last one opened, which is what a lone window always meant.
+    pub store: Arc<ProjectRegistry>,
     pub metadata: Arc<dyn MetadataStore>,
     pub models: Arc<ModelRepo>,
     pub gateway: Arc<Gateway>,
@@ -66,7 +70,7 @@ impl ApiState {
         converter_root: PathBuf,
     ) -> Self {
         let config = Arc::new(config);
-        let store = Arc::new(FsProjectStore::new(Arc::clone(&config)));
+        let store = Arc::new(ProjectRegistry::new(Arc::clone(&config)));
         let models = Arc::new(ModelRepo::new(Arc::clone(&metadata)));
         // The same renderer the cutting room exports with, asked for one cut
         // instead: a recognition request names a window of a recording, and a
@@ -74,7 +78,6 @@ impl ApiState {
         let clip_probe = Arc::new(CapabilityProbe::new(&config.clip));
         let gateway = Arc::new(Gateway::new(
             Arc::clone(&models),
-            Arc::clone(&store) as Arc<dyn ProjectStore>,
             config.generate.clone(),
             Some(Arc::new(crate::clip::audio::Windows::new(Arc::clone(
                 &clip_probe,
@@ -86,12 +89,11 @@ impl ApiState {
             Arc::clone(&provider) as Arc<dyn WorkflowExecutor>,
         ];
         let runs = RunManager::new(
-            Arc::clone(&store),
             executors,
             config.active_executors(),
             config.generate.concurrent_runs(),
         );
-        let story_jobs = StoryJobManager::new(Arc::clone(&store), provider, config.story.clone());
+        let story_jobs = StoryJobManager::new(provider, config.story.clone());
         Self {
             mode,
             store,
@@ -126,6 +128,67 @@ impl ApiState {
     /// available protocols.
     pub fn converter_root(&self) -> &Path {
         &self.converter_root
+    }
+}
+
+/// The header a client names its project in.
+const PROJECT_HEADER: &str = "x-moka-project";
+
+/// The query parameter for the clients that cannot send one.
+///
+/// A browser fetches a picture or a recording through an `<img>` or a
+/// `<video>` tag, and those carry no header of their own; the address is the
+/// only place left to say which project is meant.
+#[derive(serde::Deserialize)]
+struct ProjectQuery {
+    project: Option<String>,
+}
+
+/// Which project a request named, if it named one.
+///
+/// The header first and the query second, so a client that can set headers
+/// speaks with one voice even when a media address beside it still carries the
+/// parameter.
+fn named_project(parts: &Parts) -> Option<String> {
+    let named = |value: &str| {
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_string())
+    };
+    let from_header = parts
+        .headers
+        .get(PROJECT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(named);
+    from_header.or_else(|| {
+        Query::<ProjectQuery>::try_from_uri(&parts.uri)
+            .ok()
+            .and_then(|query| query.0.project)
+            .as_deref()
+            .and_then(named)
+    })
+}
+
+/// The open project a handler is about, resolved before it runs.
+///
+/// Every route that reads or writes a project takes this: the project the
+/// request names, or the one most recently opened when it names none. A
+/// handler holds it for the whole call, so nothing it does can land in a
+/// project another request opened in between.
+pub struct ProjectSession(pub Arc<FsProjectStore>);
+
+impl FromRequestParts<ApiState> for ProjectSession {
+    type Rejection = problem::Problem;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &ApiState,
+    ) -> Result<Self, Self::Rejection> {
+        let named = named_project(parts);
+        state
+            .store
+            .resolve(named.as_deref())
+            .map(ProjectSession)
+            .map_err(problem::Problem::from)
     }
 }
 

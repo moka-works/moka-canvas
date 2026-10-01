@@ -14,7 +14,7 @@ use moka_canvas::domain::{
     TransitionKind, MOKA_FILE_VERSION,
 };
 use moka_canvas::project::codec::{decode_moka_file, encode_moka_file};
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::ProjectRegistry;
 use moka_canvas::project::{CreateProject, ProjectStore, StagedAsset};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1499,9 +1499,9 @@ fn test_png() -> Vec<u8> {
 async fn removing_an_asset_still_referenced_by_a_clip_is_refused() {
     let tmp = TempDir::new().unwrap();
     let config = Arc::new(parse_test_config(tmp.path()));
-    let store = Arc::new(FsProjectStore::new(config));
+    let registry = ProjectRegistry::new(config);
     let root = tmp.path().join("demo-project");
-    store
+    let (store, _opened) = registry
         .create_project(
             &root,
             CreateProject {

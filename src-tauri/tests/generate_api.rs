@@ -20,6 +20,7 @@ use moka_canvas::config::{parse_test_config, RuntimeMode};
 use moka_canvas::domain::Capability;
 use moka_canvas::metadata::crypto::MASTER_KEY_FILE;
 use moka_canvas::metadata::{Defaults, ModelDraft, Protocol};
+use moka_canvas::project::CreateProject;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -38,7 +39,7 @@ struct Harness {
 /// Server mode would create one on the first credential stored, but a
 /// generation cannot be placed without a credential to send, so the tier is
 /// fixed here rather than left incidental.
-fn harness() -> Harness {
+async fn harness() -> Harness {
     let tmp = TempDir::new().expect("a temporary directory");
     let config = parse_test_config(tmp.path());
     let metadata = config
@@ -50,6 +51,20 @@ fn harness() -> Harness {
     let encoded = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
     std::fs::write(metadata.join(MASTER_KEY_FILE), encoded).expect("the master key is written");
     let state = ApiState::new(config, RuntimeMode::Web, &metadata).expect("the store opens");
+    // A request that generates belongs to a project — the inputs it names are
+    // read from the open document and the handle it is polled with is noted
+    // there — so the harness opens one the way the launcher does.
+    let (_store, _opened) = state
+        .store
+        .create_project(
+            &tmp.path().join("project"),
+            CreateProject {
+                name: "Generations".into(),
+                first_canvas_name: None,
+            },
+        )
+        .await
+        .expect("the project scaffolds");
     let app = moka_canvas::server::router(state.clone());
     Harness {
         app,
@@ -254,7 +269,7 @@ fn written(answer: &str) -> Response {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_text_answer_comes_back_as_one_document() {
-    let harness = harness();
+    let harness = harness().await;
     let base_url = serve(Router::new().route(
         "/v1/responses",
         post(|| async { written("a whole answer") }),
@@ -279,7 +294,7 @@ async fn a_text_answer_comes_back_as_one_document() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_streamed_answer_arrives_in_pieces_and_ends_with_the_whole_thing() {
-    let harness = harness();
+    let harness = harness().await;
     let base_url = serve(Router::new().route(
         "/v1/responses",
         post(|| async { events(&["\"Hel\"", "\"lo\""]) }),
@@ -331,7 +346,7 @@ async fn a_streamed_answer_arrives_in_pieces_and_ends_with_the_whole_thing() {
 /// rather than as a status the reader has already moved past.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stream_that_could_not_be_placed_still_ends_with_an_explanation() {
-    let harness = harness();
+    let harness = harness().await;
 
     let (status, headers, body) = send(
         &harness.app,
@@ -360,7 +375,7 @@ async fn a_stream_that_could_not_be_placed_still_ends_with_an_explanation() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_picture_comes_back_encoded_beside_its_mime_type() {
-    let harness = harness();
+    let harness = harness().await;
     let picture = encoded(4, 3);
     let answering = picture.clone();
     let base_url = serve(Router::new().route(
@@ -414,7 +429,7 @@ async fn a_picture_comes_back_encoded_beside_its_mime_type() {
 async fn the_endpoint_decides_the_capability_rather_than_the_body() {
     let watched = Watch::default();
     let counting = watched.clone();
-    let harness = harness();
+    let harness = harness().await;
     let picture = encoded(2, 2);
     let answering = picture.clone();
     let base_url = serve(
@@ -466,7 +481,7 @@ async fn the_endpoint_decides_the_capability_rather_than_the_body() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn speech_comes_back_as_sound_rather_than_as_text() {
-    let harness = harness();
+    let harness = harness().await;
     let base_url = serve(Router::new().route(
         "/v1/audio/speech",
         post(|| async {
@@ -559,7 +574,7 @@ async fn video_provider(watched: Watch, outcome: &str) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_shot_comes_back_as_a_handle_and_is_polled_until_it_ends() {
     let watched = Watch::default();
-    let harness = harness();
+    let harness = harness().await;
     let base_url = video_provider(watched.clone(), "completed").await;
     configured(&harness, &base_url, &[("a-video-model", Capability::Video)]).await;
 
@@ -634,7 +649,7 @@ async fn a_shot_comes_back_as_a_handle_and_is_polled_until_it_ends() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_that_failed_is_reported_when_it_is_polled() {
     let watched = Watch::default();
-    let harness = harness();
+    let harness = harness().await;
     let base_url = video_provider(watched, "failed").await;
     configured(&harness, &base_url, &[("a-video-model", Capability::Video)]).await;
 
@@ -672,7 +687,7 @@ async fn a_job_that_failed_is_reported_when_it_is_polled() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_handle_this_server_never_issued_is_missing() {
-    let harness = harness();
+    let harness = harness().await;
     let request = Request::builder()
         .uri("/api/v1/generate/tasks/not-a-handle")
         .body(Body::empty())
@@ -688,7 +703,7 @@ async fn a_handle_this_server_never_issued_is_missing() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_capability_with_no_model_behind_it_is_a_configuration_problem() {
-    let harness = harness();
+    let harness = harness().await;
 
     let (status, body) = send_json(
         &harness.app,
@@ -709,7 +724,7 @@ async fn a_capability_with_no_model_behind_it_is_a_configuration_problem() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_answer_that_carried_nothing_is_reported_rather_than_stored() {
-    let harness = harness();
+    let harness = harness().await;
     let base_url =
         serve(Router::new().route("/v1/responses", post(|| async { written("   ") }))).await;
     configured(&harness, &base_url, &[("gpt-5.5", Capability::Text)]).await;
@@ -729,7 +744,7 @@ async fn an_answer_that_carried_nothing_is_reported_rather_than_stored() {
 /// an upload needs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_prompt_too_large_for_a_generation_is_refused() {
-    let harness = harness();
+    let harness = harness().await;
     let oversized = "x".repeat(1024 * 1024 + 1);
 
     let (status, body) = send_json(
@@ -748,7 +763,7 @@ async fn a_prompt_too_large_for_a_generation_is_refused() {
 /// the wrong type was read and cannot be used.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_body_that_cannot_be_read_is_a_validation_problem() {
-    let harness = harness();
+    let harness = harness().await;
 
     let truncated = Request::builder()
         .method("POST")
@@ -778,7 +793,7 @@ async fn a_body_that_cannot_be_read_is_a_validation_problem() {
 /// key replaced by the masked form.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_provider_credential_never_appears_in_an_answer() {
-    let harness = harness();
+    let harness = harness().await;
     let base_url = serve(Router::new().route(
         "/v1/responses",
         post(|| async {
@@ -846,7 +861,7 @@ async fn deploy_scripts() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_recognition_without_a_recording_is_refused_by_its_script() {
     deploy_scripts().await;
-    let harness = harness();
+    let harness = harness().await;
     // Routed but never reached: the refusal happens before anything is sent,
     // because there is nothing to send.
     let base_url = serve(Router::new().route("/anything", get(|| async { StatusCode::OK }))).await;
@@ -875,7 +890,7 @@ async fn a_recognition_without_a_recording_is_refused_by_its_script() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_recognition_naming_a_recording_that_cannot_be_read_never_leaves() {
     deploy_scripts().await;
-    let harness = harness();
+    let harness = harness().await;
     let watched = Watch::default();
     let seen = watched.clone();
     let base_url = serve(Router::new().route(
@@ -900,9 +915,10 @@ async fn a_recognition_naming_a_recording_that_cannot_be_read_never_leaves() {
     )
     .await;
 
-    // This app has no project open, so the store's own refusal is what comes
-    // back — the same one every other route gives for it.
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(code(&body), "PROJECT_NOT_OPEN");
+    // The recording is not in the open project, so the request stops where it
+    // stands — the same refusal every other route gives for an asset that is
+    // not there.
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(code(&body), "NOT_FOUND");
     assert_eq!(watched.times(), 0, "the provider was never asked");
 }

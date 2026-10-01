@@ -10,7 +10,7 @@ use moka_canvas::assets::new_tmp_path;
 use moka_canvas::config::parse_test_config;
 use moka_canvas::domain::{DocumentCommand, ResourceEntry, RunRecord};
 use moka_canvas::imaging::{operate, Operator, OperatorRequest};
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{
     AssetChange, AssetFile, AssetShelfEdit, ByteRange, CreateProject, FiledAsset, OpenProject,
     PackageReport, PackageScope, ProjectError, ProjectStore, SaveResult, StagedAsset,
@@ -22,11 +22,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
 
-async fn opened_project(tmp: &TempDir) -> (FsProjectStore, PathBuf) {
+async fn opened_project(tmp: &TempDir) -> (Arc<ProjectRegistry>, Arc<FsProjectStore>, PathBuf) {
     let config = Arc::new(parse_test_config(tmp.path()));
-    let store = FsProjectStore::new(config);
+    let registry = Arc::new(ProjectRegistry::new(config));
     let root = tmp.path().join("studio");
-    store
+    let (store, _opened) = registry
         .create_project(
             &root,
             CreateProject {
@@ -36,7 +36,7 @@ async fn opened_project(tmp: &TempDir) -> (FsProjectStore, PathBuf) {
         )
         .await
         .unwrap();
-    (store, root)
+    (registry, store, root)
 }
 
 /// A picture with something in it, so a cut of it can be told from a cut of any
@@ -179,11 +179,18 @@ fn cut(subject: &str) -> OperatorRequest {
 #[tokio::test]
 async fn a_cut_is_filed_beside_its_subject_and_the_subject_is_untouched() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let subject = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
+    let (registry, store, root) = opened_project(&tmp).await;
+    let subject = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
     let before = std::fs::read(root.join(&subject.path)).unwrap();
 
-    let report = operate(&store, cut(&subject.id)).await.unwrap();
+    let report = operate(store.as_ref(), cut(&subject.id)).await.unwrap();
 
     assert_eq!(report.entries.len(), 1);
     let made = &report.entries[0];
@@ -202,24 +209,31 @@ async fn a_cut_is_filed_beside_its_subject_and_the_subject_is_untouched() {
     assert_eq!(leftovers(&root), 0);
 
     // The subject is still there and still itself: nothing was written over it.
-    let entries = registered(&store).await;
+    let entries = registered(store.as_ref()).await;
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().any(|entry| entry.id == subject.id));
     assert_eq!(std::fs::read(root.join(&subject.path)).unwrap(), before);
 
     // And the two of them are still both there once the document is read back
     // from disk rather than held in memory.
-    store.open_project(&root).await.unwrap();
-    assert_eq!(registered(&store).await.len(), 2);
+    registry.open_project(&root).await.unwrap();
+    assert_eq!(registered(store.as_ref()).await.len(), 2);
 }
 
 #[tokio::test]
 async fn the_record_says_what_was_done_to_what_and_by_nobody() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let subject = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
+    let (registry, store, root) = opened_project(&tmp).await;
+    let subject = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
 
-    let report = operate(&store, cut(&subject.id)).await.unwrap();
+    let report = operate(store.as_ref(), cut(&subject.id)).await.unwrap();
     let made = &report.entries[0];
     let record = made.provenance.as_ref().expect("where it came from");
 
@@ -244,8 +258,8 @@ async fn the_record_says_what_was_done_to_what_and_by_nobody() {
 
     // The record is written into the document, so a project handed to somebody
     // else still says how each of its pictures was made.
-    store.open_project(&root).await.unwrap();
-    let reopened = registered(&store).await;
+    registry.open_project(&root).await.unwrap();
+    let reopened = registered(store.as_ref()).await;
     let kept = reopened
         .iter()
         .find(|entry| entry.id == made.id)
@@ -260,11 +274,18 @@ async fn the_record_says_what_was_done_to_what_and_by_nobody() {
 #[tokio::test]
 async fn a_division_files_every_piece_in_reading_order() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let subject = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
+    let (_registry, store, root) = opened_project(&tmp).await;
+    let subject = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
 
     let report = operate(
-        &store,
+        store.as_ref(),
         OperatorRequest {
             tool: Operator::Split,
             asset_id: subject.id.clone(),
@@ -306,7 +327,7 @@ async fn a_division_files_every_piece_in_reading_order() {
 /// A store that lets the first piece through and refuses the rest, the way a
 /// disk that runs out of room part-way through a division would.
 struct RefusesAfter {
-    inner: FsProjectStore,
+    inner: Arc<FsProjectStore>,
     seen: AtomicUsize,
     let_through: usize,
 }
@@ -324,16 +345,6 @@ impl ProjectStore for RefusesAfter {
         self.inner.add_asset(staged).await
     }
 
-    async fn create_project(
-        &self,
-        root: &Path,
-        input: CreateProject,
-    ) -> Result<OpenProject, ProjectError> {
-        self.inner.create_project(root, input).await
-    }
-    async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError> {
-        self.inner.open_project(entry).await
-    }
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError> {
         self.inner.current().await
     }
@@ -393,13 +404,6 @@ impl ProjectStore for RefusesAfter {
             .export_package(destination, allow_incomplete, scope)
             .await
     }
-    async fn import_package(
-        &self,
-        archive: &Path,
-        target_root: &Path,
-    ) -> Result<OpenProject, ProjectError> {
-        self.inner.import_package(archive, target_root).await
-    }
     async fn list_runs(&self) -> Result<Vec<RunRecord>, ProjectError> {
         self.inner.list_runs().await
     }
@@ -438,8 +442,15 @@ impl ProjectStore for RefusesAfter {
 #[tokio::test]
 async fn a_division_that_cannot_be_filed_takes_back_the_piece_that_landed() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let subject = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
+    let (_registry, store, root) = opened_project(&tmp).await;
+    let subject = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
     let stubborn = RefusesAfter {
         inner: store,
         seen: AtomicUsize::new(0),
@@ -475,17 +486,24 @@ async fn a_division_that_cannot_be_filed_takes_back_the_piece_that_landed() {
 #[tokio::test]
 async fn a_subject_with_no_picture_in_it_is_refused_before_anything_is_written() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let spoken = filed(&store, &root, "narration.wav", speech(), "audio/wav").await;
+    let (_registry, store, root) = opened_project(&tmp).await;
+    let spoken = filed(
+        store.as_ref(),
+        &root,
+        "narration.wav",
+        speech(),
+        "audio/wav",
+    )
+    .await;
 
-    let error = operate(&store, cut(&spoken.id)).await.unwrap_err();
+    let error = operate(store.as_ref(), cut(&spoken.id)).await.unwrap_err();
     assert_eq!(error.code(), "UNSUPPORTED_MEDIA_TYPE");
     assert!(
         error.to_string().contains("audio/"),
         "the refusal names the kind of thing it was given: {error}"
     );
 
-    assert_eq!(registered(&store).await.len(), 1);
+    assert_eq!(registered(store.as_ref()).await.len(), 1);
     assert_eq!(files_in(&root, "images"), 0);
     assert_eq!(leftovers(&root), 0);
 }
@@ -493,22 +511,24 @@ async fn a_subject_with_no_picture_in_it_is_refused_before_anything_is_written()
 #[tokio::test]
 async fn a_subject_the_project_does_not_hold_is_said_to_be_missing() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
+    let (_registry, store, root) = opened_project(&tmp).await;
 
-    let error = operate(&store, cut("asset-nobody-has")).await.unwrap_err();
+    let error = operate(store.as_ref(), cut("asset-nobody-has"))
+        .await
+        .unwrap_err();
     assert_eq!(error.code(), "NOT_FOUND");
-    assert_eq!(registered(&store).await.len(), 0);
+    assert_eq!(registered(store.as_ref()).await.len(), 0);
     assert_eq!(leftovers(&root), 0);
 }
 
 #[tokio::test]
 async fn a_picture_past_the_ceiling_is_refused_from_its_header_and_not_decoded() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
+    let (_registry, store, root) = opened_project(&tmp).await;
     // There are no pixels behind this header at all, so a refusal that came from
     // trying to read them would be a different refusal.
     let promised = filed(
-        &store,
+        store.as_ref(),
         &root,
         "enormous.bmp",
         promised_only(8000, 6000),
@@ -520,7 +540,9 @@ async fn a_picture_past_the_ceiling_is_refused_from_its_header_and_not_decoded()
     let probe = promised.probe.as_ref().expect("a picture is measured");
     assert_eq!((probe.width, probe.height), (Some(8000), Some(6000)));
 
-    let error = operate(&store, cut(&promised.id)).await.unwrap_err();
+    let error = operate(store.as_ref(), cut(&promised.id))
+        .await
+        .unwrap_err();
     assert_eq!(
         error.code(),
         "VALIDATION_FAILED",
@@ -532,7 +554,7 @@ async fn a_picture_past_the_ceiling_is_refused_from_its_header_and_not_decoded()
         "the refusal says what to do about it: {error}"
     );
 
-    assert_eq!(registered(&store).await.len(), 1);
+    assert_eq!(registered(store.as_ref()).await.len(), 1);
     assert_eq!(files_in(&root, "images"), 1);
     assert_eq!(leftovers(&root), 0);
 }
@@ -540,11 +562,18 @@ async fn a_picture_past_the_ceiling_is_refused_from_its_header_and_not_decoded()
 #[tokio::test]
 async fn a_turn_reports_the_words_it_was_made_from_and_keeps_its_size() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let subject = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
+    let (_registry, store, root) = opened_project(&tmp).await;
+    let subject = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
 
     let report = operate(
-        &store,
+        store.as_ref(),
         OperatorRequest {
             tool: Operator::Tilt,
             asset_id: subject.id.clone(),
@@ -576,10 +605,17 @@ async fn a_turn_reports_the_words_it_was_made_from_and_keeps_its_size() {
 #[tokio::test]
 async fn a_picture_that_arrived_lossy_is_filed_lossy_and_one_that_did_not_is_not() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = opened_project(&tmp).await;
-    let photograph = filed(&store, &root, "field.jpg", jpeg(64, 48), "image/jpeg").await;
+    let (_registry, store, root) = opened_project(&tmp).await;
+    let photograph = filed(
+        store.as_ref(),
+        &root,
+        "field.jpg",
+        jpeg(64, 48),
+        "image/jpeg",
+    )
+    .await;
 
-    let report = operate(&store, cut(&photograph.id)).await.unwrap();
+    let report = operate(store.as_ref(), cut(&photograph.id)).await.unwrap();
     assert_eq!(report.entries[0].mime.as_deref(), Some("image/jpeg"));
     assert!(
         report.entries[0].path.ends_with(".jpg"),
@@ -587,8 +623,15 @@ async fn a_picture_that_arrived_lossy_is_filed_lossy_and_one_that_did_not_is_not
         report.entries[0].path
     );
 
-    let drawing = filed(&store, &root, "harvest.png", sheet(64, 48), "image/png").await;
-    let report = operate(&store, cut(&drawing.id)).await.unwrap();
+    let drawing = filed(
+        store.as_ref(),
+        &root,
+        "harvest.png",
+        sheet(64, 48),
+        "image/png",
+    )
+    .await;
+    let report = operate(store.as_ref(), cut(&drawing.id)).await.unwrap();
     assert_eq!(report.entries[0].mime.as_deref(), Some("image/png"));
 
     assert_eq!(files_in(&root, "images"), 4);

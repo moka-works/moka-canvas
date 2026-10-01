@@ -19,6 +19,26 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Every project this process holds open, by the id its document carries.
+///
+/// One server answers several clients at once, and each of them may be
+/// reading a project of its own. A request that names one is answered about
+/// that project; a request that names none is answered about the last one
+/// opened, which is what a single window and a lone reader have always been
+/// given.
+pub struct ProjectRegistry {
+    config: Arc<AppConfig>,
+    open: Mutex<OpenProjects>,
+}
+
+struct OpenProjects {
+    by_id: std::collections::HashMap<String, Arc<FsProjectStore>>,
+    /// The project the last opening made the one to be shown: what a request
+    /// that names no project is about.
+    current: Option<String>,
+}
+
+/// One open project, and everything this process knows about it.
 pub struct FsProjectStore {
     config: Arc<AppConfig>,
     state: Arc<Mutex<Option<OpenState>>>,
@@ -59,6 +79,174 @@ struct VerifyJob {
     path: PathBuf,
     sha256: String,
     referencing_nodes: Vec<SelfCheckNodeRef>,
+}
+
+impl ProjectRegistry {
+    pub fn new(config: Arc<AppConfig>) -> Self {
+        Self {
+            config,
+            open: Mutex::new(OpenProjects {
+                by_id: std::collections::HashMap::new(),
+                current: None,
+            }),
+        }
+    }
+
+    /// Makes a project in `root`.
+    ///
+    /// Reopening an existing valid root is idempotent: what is there is
+    /// opened rather than written over.
+    pub async fn create_project(
+        &self,
+        root: &Path,
+        input: CreateProject,
+    ) -> Result<(Arc<FsProjectStore>, OpenProject), ProjectError> {
+        if input.name.trim().is_empty() {
+            return Err(ProjectError::domain(
+                "VALIDATION_FAILED",
+                "Project name is empty",
+            ));
+        }
+        FsProjectStore::scaffold(root)?;
+
+        if FsProjectStore::moka_path(root).exists() {
+            return self.open_project(root).await;
+        }
+
+        let now = now_iso();
+        let moka = MokaFile {
+            version: MOKA_FILE_VERSION.to_string(),
+            metadata: ProjectMetadata {
+                id: new_id(),
+                name: input.name.trim().to_string(),
+                description: None,
+                cover_path: None,
+                revision: 0,
+                created_at: now.clone(),
+                updated_at: now,
+            },
+            resources: ResourceRegistry::default(),
+            folders: None,
+            timelines: None,
+            stories: None,
+            canvas: vec![CanvasDocument::empty(
+                new_id(),
+                first_canvas_name(input.first_canvas_name),
+            )],
+        };
+        FsProjectStore::atomic_write(&self.config, root, &moka)?;
+        FsProjectStore::clean_tmp(root);
+        let stamp = std::fs::metadata(FsProjectStore::moka_path(root))
+            .and_then(|m| m.modified())
+            .ok();
+        let revision = moka.metadata.revision;
+        Ok(self.publish(root.to_path_buf(), moka, revision, stamp))
+    }
+
+    /// Opens the project `entry` names: its directory, or a `.moka` file
+    /// inside one.
+    pub async fn open_project(
+        &self,
+        entry: &Path,
+    ) -> Result<(Arc<FsProjectStore>, OpenProject), ProjectError> {
+        let root = if entry.is_dir() {
+            entry.to_path_buf()
+        } else if entry.extension().and_then(|ext| ext.to_str()) == Some("moka") {
+            entry.parent().map(Path::to_path_buf).ok_or_else(|| {
+                ProjectError::domain("PROJECT_NOT_FOUND", "No containing directory")
+            })?
+        } else {
+            return Err(ProjectError::domain(
+                "PROJECT_NOT_FOUND",
+                format!("Not a project directory or .moka file: {}", entry.display()),
+            ));
+        };
+        let (moka, stamp) = FsProjectStore::load_from_disk(&self.config, &root)?;
+        FsProjectStore::clean_tmp(&root);
+        // A project made before saves asked where to go has no output folder
+        // yet, and the save dialogs open at it: made here rather than left to
+        // the first export, which never invents one.
+        std::fs::create_dir_all(root.join("output"))?;
+        FsProjectStore::sweep_interrupted_runs(&root);
+        FsProjectStore::sweep_interrupted_story_jobs(&root);
+        let revision = moka.metadata.revision;
+        Ok(self.publish(root, moka, revision, stamp))
+    }
+
+    /// Brings a package in and opens what it carried.
+    pub async fn import_package(
+        &self,
+        archive: &Path,
+        target_root: &Path,
+    ) -> Result<(Arc<FsProjectStore>, OpenProject), ProjectError> {
+        crate::project::package::import_project(archive, target_root, &self.config.limits)?;
+        self.open_project(target_root).await
+    }
+
+    /// The project a request is about.
+    ///
+    /// The one it names when it names one — refused when that is not what is
+    /// open — and the last one opened when it names none.
+    pub fn resolve(&self, scope: Option<&str>) -> Result<Arc<FsProjectStore>, ProjectError> {
+        let open = self.open.lock().expect("store poisoned");
+        let id = match scope {
+            Some(id) => id,
+            None => match open.current.as_deref() {
+                Some(id) => id,
+                None => {
+                    return Err(ProjectError::domain(
+                        "PROJECT_NOT_OPEN",
+                        "No project is open",
+                    ))
+                }
+            },
+        };
+        open.by_id.get(id).cloned().ok_or_else(|| {
+            ProjectError::domain(
+                "PROJECT_NOT_OPEN",
+                format!("The project named by the request is not open: {id}"),
+            )
+        })
+    }
+
+    /// The store of the project the last opening made the one to be shown.
+    ///
+    /// No project is not an error here, unlike `resolve`: this is the question
+    /// a readiness probe asks, and a server whose project has not been chosen
+    /// yet is answering about a directory that does not exist rather than
+    /// failing at anything.
+    pub fn current_store(&self) -> Option<Arc<FsProjectStore>> {
+        let open = self.open.lock().expect("store poisoned");
+        let id = open.current.as_deref()?;
+        open.by_id.get(id).cloned()
+    }
+
+    /// Publishes a freshly read document under its own id.
+    ///
+    /// A project already open keeps the store it had: a run driving for it
+    /// holds that store, and reopening the same project should not leave the
+    /// run writing into a document nobody watches. What changes is the state,
+    /// which is why the store's own open counter still guards the reads
+    /// behind it.
+    fn publish(
+        &self,
+        root: PathBuf,
+        moka: MokaFile,
+        revision: i32,
+        stamp: Option<std::time::SystemTime>,
+    ) -> (Arc<FsProjectStore>, OpenProject) {
+        let id = moka.metadata.id.clone();
+        let mut open = self.open.lock().expect("store poisoned");
+        let store = open
+            .by_id
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(FsProjectStore::new(Arc::clone(&self.config))));
+        let opened = store.publish(root, moka, revision, stamp);
+        open.by_id.insert(id.clone(), Arc::clone(&store));
+        open.current = Some(id);
+        (store, opened)
+    }
 }
 
 impl FsProjectStore {
@@ -415,8 +603,8 @@ impl FsProjectStore {
         Ok(candidate)
     }
 
-    fn atomic_write(&self, root: &Path, moka: &MokaFile) -> Result<(), ProjectError> {
-        let bytes = encode_moka_file(moka, Some(self.config.projects.max_moka_file_bytes))?;
+    fn atomic_write(config: &AppConfig, root: &Path, moka: &MokaFile) -> Result<(), ProjectError> {
+        let bytes = encode_moka_file(moka, Some(config.projects.max_moka_file_bytes))?;
         let tmp = root
             .join("tmp")
             .join(format!("canvas.moka.{}.tmp", uuid::Uuid::now_v7()));
@@ -428,7 +616,7 @@ impl FsProjectStore {
     }
 
     fn load_from_disk(
-        &self,
+        config: &AppConfig,
         root: &Path,
     ) -> Result<(MokaFile, Option<std::time::SystemTime>), ProjectError> {
         let path = Self::moka_path(root);
@@ -442,7 +630,7 @@ impl FsProjectStore {
                 ProjectError::Io(error)
             }
         })?;
-        if bytes.len() as u64 > self.config.projects.max_moka_file_bytes {
+        if bytes.len() as u64 > config.projects.max_moka_file_bytes {
             return Err(ProjectError::domain(
                 "MOKA_TOO_LARGE",
                 "canvas.moka exceeds the configured size limit",
@@ -703,7 +891,7 @@ impl FsProjectStore {
         let mut next = next;
         next.metadata.revision = state.revision + 1;
         next.metadata.updated_at = now_iso();
-        self.atomic_write(&state.root, &next)?;
+        Self::atomic_write(&self.config, &state.root, &next)?;
         state.moka = next;
         state.revision = state.moka.metadata.revision;
         state.file_stamp = std::fs::metadata(Self::moka_path(&state.root))
@@ -906,79 +1094,6 @@ fn first_canvas_name(given: Option<String>) -> String {
 
 #[async_trait::async_trait]
 impl ProjectStore for FsProjectStore {
-    async fn create_project(
-        &self,
-        root: &Path,
-        input: CreateProject,
-    ) -> Result<OpenProject, ProjectError> {
-        if input.name.trim().is_empty() {
-            return Err(ProjectError::domain(
-                "VALIDATION_FAILED",
-                "Project name is empty",
-            ));
-        }
-        Self::scaffold(root)?;
-
-        // Reopening an existing valid root is idempotent.
-        if Self::moka_path(root).exists() {
-            return self.open_project(root).await;
-        }
-
-        let now = now_iso();
-        let moka = MokaFile {
-            version: MOKA_FILE_VERSION.to_string(),
-            metadata: ProjectMetadata {
-                id: new_id(),
-                name: input.name.trim().to_string(),
-                description: None,
-                cover_path: None,
-                revision: 0,
-                created_at: now.clone(),
-                updated_at: now,
-            },
-            resources: ResourceRegistry::default(),
-            folders: None,
-            timelines: None,
-            stories: None,
-            canvas: vec![CanvasDocument::empty(
-                new_id(),
-                first_canvas_name(input.first_canvas_name),
-            )],
-        };
-        self.atomic_write(root, &moka)?;
-        Self::clean_tmp(root);
-        let stamp = std::fs::metadata(Self::moka_path(root))
-            .and_then(|m| m.modified())
-            .ok();
-        let revision = moka.metadata.revision;
-        Ok(self.publish(root.to_path_buf(), moka, revision, stamp))
-    }
-
-    async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError> {
-        let root = if entry.is_dir() {
-            entry.to_path_buf()
-        } else if entry.extension().and_then(|ext| ext.to_str()) == Some("moka") {
-            entry.parent().map(Path::to_path_buf).ok_or_else(|| {
-                ProjectError::domain("PROJECT_NOT_FOUND", "No containing directory")
-            })?
-        } else {
-            return Err(ProjectError::domain(
-                "PROJECT_NOT_FOUND",
-                format!("Not a project directory or .moka file: {}", entry.display()),
-            ));
-        };
-        let (moka, stamp) = self.load_from_disk(&root)?;
-        Self::clean_tmp(&root);
-        // A project made before saves asked where to go has no output folder
-        // yet, and the save dialogs open at it: made here rather than left to
-        // the first export, which never invents one.
-        std::fs::create_dir_all(root.join("output"))?;
-        Self::sweep_interrupted_runs(&root);
-        Self::sweep_interrupted_story_jobs(&root);
-        let revision = moka.metadata.revision;
-        Ok(self.publish(root, moka, revision, stamp))
-    }
-
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError> {
         let mut guard = self.state.lock().expect("store poisoned");
         Ok(guard.as_mut().map(|state| {
@@ -1435,15 +1550,6 @@ impl ProjectStore for FsProjectStore {
             allow_incomplete,
             scope,
         )
-    }
-
-    async fn import_package(
-        &self,
-        archive: &Path,
-        target_root: &Path,
-    ) -> Result<OpenProject, ProjectError> {
-        crate::project::package::import_project(archive, target_root, &self.config.limits)?;
-        self.open_project(target_root).await
     }
 
     async fn list_runs(&self) -> Result<Vec<RunRecord>, ProjectError> {

@@ -140,14 +140,15 @@ pub struct PackageScope {
     pub referenced_assets_only: bool,
 }
 
+/// One open project: what every room reads and writes.
+///
+/// Opening, making and importing a project are what a [`ProjectRegistry`] is
+/// for, since they are what a project is made *by*; everything here is asked
+/// of a project that is already open.
+///
+/// [`ProjectRegistry`]: store::ProjectRegistry
 #[async_trait::async_trait]
 pub trait ProjectStore: Send + Sync {
-    async fn create_project(
-        &self,
-        root: &Path,
-        input: CreateProject,
-    ) -> Result<OpenProject, ProjectError>;
-    async fn open_project(&self, entry: &Path) -> Result<OpenProject, ProjectError>;
     async fn current(&self) -> Result<Option<OpenProject>, ProjectError>;
     /// The open project's root, without the document that stands in it.
     ///
@@ -201,11 +202,6 @@ pub trait ProjectStore: Send + Sync {
         allow_incomplete: bool,
         scope: PackageScope,
     ) -> Result<PackageReport, ProjectError>;
-    async fn import_package(
-        &self,
-        archive: &Path,
-        target_root: &Path,
-    ) -> Result<OpenProject, ProjectError>;
     async fn list_runs(&self) -> Result<Vec<crate::domain::RunRecord>, ProjectError>;
     async fn create_run(
         &self,

@@ -31,7 +31,7 @@ use moka_canvas::metadata::{
     self, Defaults, ImagePreferences, MetadataStore, ModelDraft, Preferences, Protocol, Scene,
     SubModel,
 };
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{CreateProject, ProjectStore, StagedAsset};
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -201,9 +201,9 @@ async fn rig_under_text_budget(text_timeout_seconds: u64) -> Rig {
         .expect("the store opens");
 
     let models = Arc::new(ModelRepo::new(metadata));
-    let assets = Arc::new(FsProjectStore::new(Arc::clone(&config)));
+    let registry = ProjectRegistry::new(Arc::clone(&config));
     let project = tmp.path().join("demo-project");
-    assets
+    let (assets, _opened) = registry
         .create_project(
             &project,
             CreateProject {
@@ -216,7 +216,6 @@ async fn rig_under_text_budget(text_timeout_seconds: u64) -> Rig {
 
     let gateway = Arc::new(Gateway::new(
         Arc::clone(&models),
-        Arc::clone(&assets) as Arc<dyn ProjectStore>,
         budgets,
         // No cutter: a request that names a window is refused here, and a test
         // that transcribes places its own.
@@ -376,6 +375,7 @@ async fn a_generation_goes_to_the_default_model_when_the_request_names_none() {
     let result = rig
         .gateway
         .text(
+            &rig.assets,
             // No model of its own, which is what a node with nothing picked
             // looks like.
             request(Capability::Text, "describe a lantern", json!({})),
@@ -425,6 +425,7 @@ async fn a_parameter_the_caller_set_reaches_the_provider_over_the_global_one() {
     let _ = rig
         .gateway
         .image(
+            &rig.assets,
             request(Capability::Image, "a cat", json!({ "size": "512x512" })),
             &Cancel::new(),
         )
@@ -432,6 +433,7 @@ async fn a_parameter_the_caller_set_reaches_the_provider_over_the_global_one() {
     let _ = rig
         .gateway
         .image(
+            &rig.assets,
             request(Capability::Image, "a cat", json!({})),
             &Cancel::new(),
         )
@@ -500,7 +502,7 @@ async fn each_capability_is_asked_at_the_address_that_serves_it() {
     generation.model = "gpt-image-2".into();
     let picture = rig
         .gateway
-        .image(generation, &Cancel::new())
+        .image(&rig.assets, generation, &Cancel::new())
         .await
         .expect("the image request is placed where images live");
 
@@ -520,7 +522,12 @@ async fn each_capability_is_asked_at_the_address_that_serves_it() {
     generation.model = "gpt-5.5".into();
     let words = rig
         .gateway
-        .text(generation, &DeltaSink::default(), &Cancel::new())
+        .text(
+            &rig.assets,
+            generation,
+            &DeltaSink::default(),
+            &Cancel::new(),
+        )
         .await
         .expect("the text request stays on its own address");
 
@@ -572,7 +579,7 @@ async fn a_reference_is_read_out_of_the_project_and_sent_along() {
     }];
     let result = rig
         .gateway
-        .image(generation, &Cancel::new())
+        .image(&rig.assets, generation, &Cancel::new())
         .await
         .expect("the edit arrives");
 
@@ -641,6 +648,7 @@ async fn a_channel_that_asked_to_be_waited_for_is_asked_again_after_that_wait() 
     let result = rig
         .gateway
         .text(
+            &rig.assets,
             request(Capability::Text, "describe a lantern", json!({})),
             &DeltaSink::default(),
             &Cancel::new(),
@@ -690,6 +698,7 @@ async fn a_credential_the_provider_rejected_is_reported_once() {
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(Capability::Text, "describe a lantern", json!({})),
             &DeltaSink::default(),
             &Cancel::new(),
@@ -719,6 +728,7 @@ async fn an_answer_that_carried_nothing_is_reported_rather_than_stored() {
     let error = rig
         .gateway
         .image(
+            &rig.assets,
             request(Capability::Image, "a cat", json!({})),
             &Cancel::new(),
         )
@@ -754,7 +764,12 @@ async fn a_model_that_generates_something_else_is_refused_before_anything_is_sen
     generation.model = "gpt-image-2".into();
     let error = rig
         .gateway
-        .text(generation, &DeltaSink::default(), &Cancel::new())
+        .text(
+            &rig.assets,
+            generation,
+            &DeltaSink::default(),
+            &Cancel::new(),
+        )
         .await
         .expect_err("the capability does not match");
 
@@ -800,6 +815,7 @@ async fn a_model_with_no_stored_key_is_reported_before_anything_is_sent() {
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(Capability::Text, "describe a lantern", json!({})),
             &DeltaSink::default(),
             &Cancel::new(),
@@ -848,6 +864,7 @@ async fn a_cancelled_generation_never_reaches_the_provider() {
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(Capability::Text, "describe a lantern", json!({})),
             &DeltaSink::default(),
             &cancel,
@@ -970,6 +987,7 @@ async fn a_stream_that_keeps_producing_outlives_the_budget_meant_for_the_whole()
     let result = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1020,6 +1038,7 @@ async fn a_stream_that_goes_quiet_is_given_up_on() {
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1067,6 +1086,7 @@ async fn a_streamed_answer_reaches_the_caller_as_it_arrives_and_comes_back_whole
     let result = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1184,6 +1204,7 @@ async fn a_failure_after_something_was_streamed_is_not_asked_again() {
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1269,6 +1290,7 @@ async fn a_shot_is_started_polled_and_then_the_handle_is_done_with() {
     let task = rig
         .gateway
         .video(
+            &rig.assets,
             request(Capability::Video, "a slow pan", json!({ "seconds": 6 })),
             &Cancel::new(),
         )
@@ -1285,7 +1307,12 @@ async fn a_shot_is_started_polled_and_then_the_handle_is_done_with() {
     assert_eq!(watched.body(0)["seconds"], 6);
 
     let cancel = Cancel::new();
-    match rig.gateway.poll(&task.id, &cancel).await.expect("a look") {
+    match rig
+        .gateway
+        .poll(&rig.assets, &task.id, &cancel)
+        .await
+        .expect("a look")
+    {
         TaskState::Pending { retry_after_ms } => {
             assert!(retry_after_ms > 0, "another look is worth waiting for")
         }
@@ -1295,7 +1322,7 @@ async fn a_shot_is_started_polled_and_then_the_handle_is_done_with() {
 
     match rig
         .gateway
-        .poll(&task.id, &cancel)
+        .poll(&rig.assets, &task.id, &cancel)
         .await
         .expect("the job is collected")
     {
@@ -1312,7 +1339,7 @@ async fn a_shot_is_started_polled_and_then_the_handle_is_done_with() {
     assert!(rig.gateway.tasks().is_empty());
     let error = rig
         .gateway
-        .poll(&task.id, &cancel)
+        .poll(&rig.assets, &task.id, &cancel)
         .await
         .expect_err("the handle is done with");
     assert_eq!(error.code(), "TASK_NOT_FOUND");
@@ -1414,7 +1441,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
     }];
     let task = rig
         .gateway
-        .video(asked, &Cancel::new())
+        .video(&rig.assets, asked, &Cancel::new())
         .await
         .expect("the job starts at the sub-model's address");
 
@@ -1429,7 +1456,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
     // provider's, and only the one that issued the handle can answer for it.
     match rig
         .gateway
-        .poll(&task.id, &Cancel::new())
+        .poll(&rig.assets, &task.id, &Cancel::new())
         .await
         .expect("the poll finds the job")
     {
@@ -1444,6 +1471,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
     let error = rig
         .gateway
         .video(
+            &rig.assets,
             request(Capability::Video, "words alone", json!({})),
             &Cancel::new(),
         )
@@ -1463,7 +1491,7 @@ async fn a_handle_the_gateway_never_issued_is_missing() {
     let rig = rig().await;
     let error = rig
         .gateway
-        .poll("a-handle-from-nowhere", &Cancel::new())
+        .poll(&rig.assets, "a-handle-from-nowhere", &Cancel::new())
         .await
         .expect_err("nothing is tracked under it");
     assert_eq!(error.code(), "TASK_NOT_FOUND");
@@ -1485,6 +1513,7 @@ async fn a_job_the_provider_has_forgotten_ends_the_tracking() {
     let task = rig
         .gateway
         .video(
+            &rig.assets,
             request(Capability::Video, "a slow pan", json!({})),
             &Cancel::new(),
         )
@@ -1495,7 +1524,7 @@ async fn a_job_the_provider_has_forgotten_ends_the_tracking() {
     // one this provider no longer knows.
     let error = rig
         .gateway
-        .poll(&task.id, &Cancel::new())
+        .poll(&rig.assets, &task.id, &Cancel::new())
         .await
         .expect_err("the job is gone");
     assert_eq!(error.code(), "TASK_EXPIRED");
@@ -1700,7 +1729,7 @@ async fn a_recognition_script_runs_its_whole_conversation_and_answers_with_words
     let cancel = Cancel::new();
     let task = rig
         .gateway
-        .transcribe(request, &cancel)
+        .transcribe(&rig.assets, request, &cancel)
         .await
         .expect("the reading starts");
     assert_eq!(task.capability, Capability::Asr);
@@ -1708,7 +1737,7 @@ async fn a_recognition_script_runs_its_whole_conversation_and_answers_with_words
 
     let state = rig
         .gateway
-        .poll(&task.id, &cancel)
+        .poll(&rig.assets, &task.id, &cancel)
         .await
         .expect("the job is tracked");
     let TaskState::Succeeded(result) = state else {
@@ -1799,6 +1828,7 @@ async fn a_script_backed_answer_is_served_whole_to_a_caller_who_is_not_reading_t
     let whole = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1817,6 +1847,7 @@ async fn a_script_backed_answer_is_served_whole_to_a_caller_who_is_not_reading_t
     let error = rig
         .gateway
         .text(
+            &rig.assets,
             request(
                 Capability::Text,
                 "describe a lantern",
@@ -1920,6 +1951,7 @@ async fn a_script_naming_a_handler_it_never_wrote_is_refused_before_anything_is_
     let error = rig
         .gateway
         .transcribe(
+            &rig.assets,
             GenerateRequest {
                 capability: Capability::Asr,
                 ..GenerateRequest::default()
@@ -1973,6 +2005,7 @@ async fn a_step_that_never_ends_is_stopped_at_the_ceiling() {
     let error = rig
         .gateway
         .transcribe(
+            &rig.assets,
             GenerateRequest {
                 capability: Capability::Asr,
                 ..GenerateRequest::default()

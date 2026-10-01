@@ -7,7 +7,9 @@ use super::{
     WorkflowExecutor, WorkflowValue,
 };
 use crate::domain::{RunId, ValidationIssue};
+use crate::project::store::FsProjectStore;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 const OPERATION_TEXT: &str = "deterministic.text";
@@ -173,6 +175,7 @@ impl WorkflowExecutor for DeterministicExecutor {
 
     async fn execute(
         &self,
+        _session: &Arc<FsProjectStore>,
         request: ExecutionRequest,
         progress: ProgressReporter,
     ) -> Result<ExecutionOutput, ExecutionError> {

@@ -16,6 +16,7 @@ use crate::domain::{
     AssetId, DataType, IsoTimestamp, NodeId, NodeKind, RunId, ValidationIssue, WorkflowNode,
 };
 use crate::generate::{DeltaSink, GenerateRequest, GeneratedItem};
+use crate::project::store::FsProjectStore;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -217,8 +218,11 @@ pub trait WorkflowExecutor: Send + Sync {
     fn key(&self) -> &str;
     fn supports(&self, operation_type: &str) -> bool;
     async fn validate(&self, request: &ExecutionRequest) -> Result<(), ExecutionValidationError>;
+    /// Runs one step. `session` is the project the run belongs to, which is
+    /// where an answer's bytes are filed and where a job's note is written.
     async fn execute(
         &self,
+        session: &Arc<FsProjectStore>,
         request: ExecutionRequest,
         progress: ProgressReporter,
     ) -> Result<ExecutionOutput, ExecutionError>;
@@ -230,6 +234,7 @@ pub trait WorkflowExecutor: Send + Sync {
     /// `None` is the ordinary answer — this executor answers inside `execute`.
     async fn place_job(
         &self,
+        _session: &Arc<FsProjectStore>,
         _request: ExecutionRequest,
     ) -> Result<Option<PlacedJob>, ExecutionError> {
         Ok(None)
@@ -241,6 +246,7 @@ pub trait WorkflowExecutor: Send + Sync {
     /// one read back off a run record that was.
     async fn wait_job(
         &self,
+        _session: &Arc<FsProjectStore>,
         _job: PlacedJob,
         _progress: ProgressReporter,
     ) -> Result<ExecutionOutput, ExecutionError> {

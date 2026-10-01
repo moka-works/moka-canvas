@@ -20,6 +20,7 @@ use moka_canvas::converter::deploy::ensure_deployed;
 use moka_canvas::domain::Capability;
 use moka_canvas::metadata::crypto::MASTER_KEY_FILE;
 use moka_canvas::metadata::{self, Defaults, MetadataStore, ModelDraft, Protocol};
+use moka_canvas::project::CreateProject;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -130,6 +131,19 @@ async fn harness() -> Harness {
         store,
         models_root().await.to_path_buf(),
     );
+    // A generation belongs to a project, so the harness opens one the way the
+    // launcher does before anything generates.
+    let (_store, _opened) = state
+        .store
+        .create_project(
+            &tmp.path().join("project"),
+            CreateProject {
+                name: "Converters".into(),
+                first_canvas_name: None,
+            },
+        )
+        .await
+        .expect("the project scaffolds");
     let app = moka_canvas::server::router(state.clone());
     Harness {
         app,

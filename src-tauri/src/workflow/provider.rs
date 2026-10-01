@@ -17,6 +17,7 @@ use crate::generate::{
     AsyncTask, Cancel, DeltaSink, Gateway, GenerateRequest, GenerateResult, ProviderError,
     TaskState,
 };
+use crate::project::store::FsProjectStore;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -86,6 +87,7 @@ impl ProviderExecutor {
     /// written is not the one a gateway gives up on.
     pub async fn answer_once(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         deltas: &DeltaSink,
         cancel: &Cancel,
@@ -99,7 +101,7 @@ impl ProviderExecutor {
                 cancelled: false,
             });
         }
-        let result = answered(&self.gateway, &request, deltas, cancel)
+        let result = answered(session, &self.gateway, &request, deltas, cancel)
             .await
             .map_err(step_error)?;
         cancel.check().map_err(step_error)?;
@@ -113,6 +115,7 @@ impl ProviderExecutor {
     /// one only if something on disk says it exists.
     pub async fn shoot(
         &self,
+        session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<AsyncTask, ExecutionError> {
@@ -137,7 +140,7 @@ impl ProviderExecutor {
             });
         }
         self.gateway
-            .video(request, cancel)
+            .video(session, request, cancel)
             .await
             .map_err(step_error)
     }
@@ -149,11 +152,12 @@ impl ProviderExecutor {
     /// that started it.
     pub async fn collect(
         &self,
+        session: &Arc<FsProjectStore>,
         task: &str,
         cancel: &Cancel,
         progress: &ProgressReporter,
     ) -> Result<GenerateResult, ExecutionError> {
-        let result = waited(&self.gateway, task, cancel, progress)
+        let result = waited(session, &self.gateway, task, cancel, progress)
             .await
             .map_err(step_error)?;
         cancel.check().map_err(step_error)?;
@@ -231,6 +235,7 @@ fn asked_for(request: &ExecutionRequest) -> Result<GenerateRequest, ExecutionErr
 /// capability back on, so a request that disagreed with the node it came from
 /// cannot reach a provider it was not meant for.
 async fn answered(
+    session: &Arc<FsProjectStore>,
     gateway: &Gateway,
     request: &GenerateRequest,
     deltas: &DeltaSink,
@@ -240,10 +245,10 @@ async fn answered(
         // Words are the only answer that arrives a piece at a time. Whether a
         // provider is asked for a stream at all is the sink's business, so one
         // nobody is watching costs nothing here.
-        Capability::Text => gateway.text(request.clone(), deltas, cancel).await,
-        Capability::Image => gateway.image(request.clone(), cancel).await,
-        Capability::Speech => gateway.speech(request.clone(), cancel).await,
-        Capability::Music => gateway.music(request.clone(), cancel).await,
+        Capability::Text => gateway.text(session, request.clone(), deltas, cancel).await,
+        Capability::Image => gateway.image(session, request.clone(), cancel).await,
+        Capability::Speech => gateway.speech(session, request.clone(), cancel).await,
+        Capability::Music => gateway.music(session, request.clone(), cancel).await,
         // A shot is started and then waited out, and starting one here would be
         // starting something nobody in this call is going to collect.
         Capability::Video => Err(ProviderError::invalid(
@@ -265,6 +270,7 @@ async fn answered(
 /// gives one, and the ceiling — a number the deployment set rather than one
 /// this module knows — is what turns a job one silently forgot into a failure.
 async fn waited(
+    session: &Arc<FsProjectStore>,
     gateway: &Gateway,
     task: &str,
     cancel: &Cancel,
@@ -274,7 +280,7 @@ async fn waited(
     // measured against the same ceiling the loop counts to.
     let ceiling = gateway.poll_ceiling();
     for look in 0..ceiling {
-        let delay = match gateway.poll(task, cancel).await? {
+        let delay = match gateway.poll(session, task, cancel).await? {
             TaskState::Succeeded(result) => return Ok(result),
             // The job ended badly rather than this step failing to look, but
             // the two carry the same information: what went wrong, and whether
@@ -349,20 +355,28 @@ impl WorkflowExecutor for ProviderExecutor {
 
     async fn execute(
         &self,
+        session: &Arc<FsProjectStore>,
         request: ExecutionRequest,
         progress: ProgressReporter,
     ) -> Result<ExecutionOutput, ExecutionError> {
         // A shot goes through the same two halves a run drives separately, so
         // asking for a whole step and asking for it in two cannot come apart.
-        if let Some(job) = self.place_job(request.clone()).await? {
-            let mut output = self.wait_job(job.clone(), progress).await?;
+        if let Some(job) = self.place_job(session, request.clone()).await? {
+            let mut output = self.wait_job(session, job.clone(), progress).await?;
             output.task = Some(job);
             return Ok(output);
         }
         let generation = asked_for(&request)?;
         progress.report(0.0);
         let cancel = self.in_flight.flag(&request.run_id);
-        let outcome = answered(&self.gateway, &generation, &request.deltas, &cancel).await;
+        let outcome = answered(
+            session,
+            &self.gateway,
+            &generation,
+            &request.deltas,
+            &cancel,
+        )
+        .await;
         self.in_flight.release(&request.run_id);
         let result = outcome.map_err(step_error)?;
         // Checked on the way out as well as on the way in: a cancel that landed
@@ -379,6 +393,7 @@ impl WorkflowExecutor for ProviderExecutor {
 
     async fn place_job(
         &self,
+        session: &Arc<FsProjectStore>,
         request: ExecutionRequest,
     ) -> Result<Option<PlacedJob>, ExecutionError> {
         let generation = asked_for(&request)?;
@@ -388,7 +403,7 @@ impl WorkflowExecutor for ProviderExecutor {
             return Ok(None);
         }
         let cancel = self.in_flight.flag(&request.run_id);
-        let task = match self.gateway.video(generation, &cancel).await {
+        let task = match self.gateway.video(session, generation, &cancel).await {
             Ok(task) => task,
             Err(error) => {
                 self.in_flight.release(&request.run_id);
@@ -406,12 +421,13 @@ impl WorkflowExecutor for ProviderExecutor {
 
     async fn wait_job(
         &self,
+        session: &Arc<FsProjectStore>,
         job: PlacedJob,
         progress: ProgressReporter,
     ) -> Result<ExecutionOutput, ExecutionError> {
         progress.report(0.0);
         let cancel = self.in_flight.flag(&job.run_id);
-        let outcome = waited(&self.gateway, &job.task_id, &cancel, &progress).await;
+        let outcome = waited(session, &self.gateway, &job.task_id, &cancel, &progress).await;
         self.in_flight.release(&job.run_id);
         let result = outcome.map_err(step_error)?;
         cancel.check().map_err(step_error)?;

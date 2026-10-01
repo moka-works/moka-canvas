@@ -8,7 +8,7 @@ use moka_canvas::domain::{
     TimelineTrack, TrackKind,
 };
 use moka_canvas::project::codec::decode_moka_file;
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{AssetShelfEdit, CreateProject, ProjectStore, StagedAsset};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,11 +29,11 @@ fn scaffold_ok(root: &Path) {
     assert!(root.join("tmp").is_dir());
 }
 
-async fn create_store(tmp: &TempDir) -> (Arc<FsProjectStore>, PathBuf) {
+async fn create_store(tmp: &TempDir) -> (Arc<ProjectRegistry>, Arc<FsProjectStore>, PathBuf) {
     let config = Arc::new(test_config(tmp.path()));
-    let store = Arc::new(FsProjectStore::new(config));
+    let registry = Arc::new(ProjectRegistry::new(config));
     let project_root = tmp.path().join("demo-project");
-    store
+    let (store, _opened) = registry
         .create_project(
             &project_root,
             CreateProject {
@@ -43,18 +43,18 @@ async fn create_store(tmp: &TempDir) -> (Arc<FsProjectStore>, PathBuf) {
         )
         .await
         .unwrap();
-    (store, project_root)
+    (registry, store, project_root)
 }
 
 #[tokio::test]
 async fn create_scaffolds_the_project_tree_and_reopen_is_idempotent() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     scaffold_ok(&root);
 
     // Opening the directory again keeps the same project identity.
     let first = store.current().await.unwrap().unwrap();
-    let reopened = store
+    let (_same, reopened) = registry
         .create_project(
             &root,
             CreateProject {
@@ -74,10 +74,10 @@ async fn create_scaffolds_the_project_tree_and_reopen_is_idempotent() {
 async fn the_first_canvas_takes_the_name_the_interface_gave_it() {
     let tmp = TempDir::new().unwrap();
     let config = Arc::new(test_config(tmp.path()));
-    let store = Arc::new(FsProjectStore::new(config));
+    let registry = Arc::new(ProjectRegistry::new(config));
 
     let spoken_root = tmp.path().join("spoken");
-    let spoken = store
+    let (_spoken, spoken) = registry
         .create_project(
             &spoken_root,
             CreateProject {
@@ -90,10 +90,10 @@ async fn the_first_canvas_takes_the_name_the_interface_gave_it() {
     assert_eq!(spoken.moka.canvas[0].name, "画布 1");
 
     // The name reaches the file and not only the answer.
-    let reopened = store.open_project(&spoken_root).await.unwrap();
+    let reopened = registry.open_project(&spoken_root).await.unwrap().1;
     assert_eq!(reopened.moka.canvas[0].name, "画布 1");
 
-    let quiet = store
+    let (_quiet, quiet) = registry
         .create_project(
             &tmp.path().join("quiet"),
             CreateProject {
@@ -109,7 +109,7 @@ async fn the_first_canvas_takes_the_name_the_interface_gave_it() {
 #[tokio::test]
 async fn canvas_moka_round_trips_through_disk() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
     let node = make_node(NodeKind::Text, "Note".into(), 10.0, 20.0);
@@ -127,7 +127,7 @@ async fn canvas_moka_round_trips_through_disk() {
     assert_eq!(saved.revision, 1);
 
     // Re-open from disk and verify the node survived.
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert_eq!(reopened.moka.canvas[0].nodes.len(), 1);
     assert_eq!(reopened.moka.canvas[0].nodes[0].id, node.id);
     assert_eq!(reopened.moka.metadata.revision, 1);
@@ -144,7 +144,7 @@ async fn canvas_moka_round_trips_through_disk() {
 #[tokio::test]
 async fn a_failed_write_leaves_the_document_as_the_file_has_it() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let revision = current.moka.metadata.revision;
     let canvas_id = current.moka.canvas[0].id.clone();
@@ -225,7 +225,7 @@ fn empty_timeline(id: &str, name: &str) -> TimelineDocument {
 #[tokio::test]
 async fn a_timeline_lands_through_the_pipeline_and_reads_back() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     assert!(current.moka.timelines.is_none());
 
@@ -243,7 +243,7 @@ async fn a_timeline_lands_through_the_pipeline_and_reads_back() {
     assert_eq!(saved.revision, 1);
 
     // Re-open from disk and verify the timeline survived whole.
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     let held = reopened.moka.timelines.as_ref().unwrap();
     assert_eq!(held.len(), 1);
     assert_eq!(held[0].id, timeline.id);
@@ -254,7 +254,7 @@ async fn a_timeline_lands_through_the_pipeline_and_reads_back() {
 #[tokio::test]
 async fn the_project_s_own_words_reach_the_disk_and_an_emptied_name_is_refused() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let before = store.current().await.unwrap().unwrap().moka.metadata;
 
     let saved = store
@@ -269,7 +269,7 @@ async fn the_project_s_own_words_reach_the_disk_and_an_emptied_name_is_refused()
         .unwrap();
 
     // Trimmed on the way in, and read back off the disk as written.
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert_eq!(reopened.moka.metadata.name, "Autumn campaign");
     assert_eq!(
         reopened.moka.metadata.description.as_deref(),
@@ -288,7 +288,7 @@ async fn the_project_s_own_words_reach_the_disk_and_an_emptied_name_is_refused()
         )
         .await
         .unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert!(reopened.moka.metadata.description.is_none());
 
     let refused = store
@@ -306,7 +306,7 @@ async fn the_project_s_own_words_reach_the_disk_and_an_emptied_name_is_refused()
 #[tokio::test]
 async fn stale_revision_is_rejected() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
     let node = make_node(NodeKind::Text, "Note".into(), 0.0, 0.0);
@@ -319,7 +319,7 @@ async fn stale_revision_is_rejected() {
 #[tokio::test]
 async fn external_edit_is_detected_as_conflict() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
 
@@ -339,7 +339,7 @@ async fn external_edit_is_detected_as_conflict() {
 #[tokio::test]
 async fn apply_commands_validates_edges() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
     let text = make_node(NodeKind::Text, "A".into(), 0.0, 0.0);
@@ -389,7 +389,7 @@ async fn apply_commands_validates_edges() {
 #[tokio::test]
 async fn move_nodes_round_trip_with_inverse() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
     let node = make_node(NodeKind::Text, "Draggable".into(), 5.0, 6.0);
@@ -425,7 +425,7 @@ async fn move_nodes_round_trip_with_inverse() {
 #[tokio::test]
 async fn asset_upload_registers_and_streams_back() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
 
     // A real 64x64 PNG so the probe records dimensions.
     let png = make_test_png();
@@ -452,7 +452,7 @@ async fn asset_upload_registers_and_streams_back() {
     assert!(file.path.is_file());
 
     // Registry persisted: reopen and verify the entry survives.
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert_eq!(reopened.moka.resources.images.len(), 1);
     assert!(reopened.self_check.ok);
 }
@@ -482,7 +482,7 @@ fn make_test_wav() -> Vec<u8> {
 #[tokio::test]
 async fn wav_upload_records_audio_probe_metadata() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
 
     let staging = root.join("tmp").join("upload-tone.bin");
     std::fs::write(&staging, make_test_wav()).unwrap();
@@ -508,7 +508,7 @@ async fn wav_upload_records_audio_probe_metadata() {
 #[tokio::test]
 async fn invalid_upload_leaves_no_orphans() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let staging = root.join("tmp").join("upload-empty.bin");
     std::fs::write(&staging, b"").unwrap();
     let result = store
@@ -539,7 +539,7 @@ async fn invalid_upload_leaves_no_orphans() {
 #[tokio::test]
 async fn removing_a_referenced_asset_is_rejected() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-ref.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -571,7 +571,7 @@ async fn removing_a_referenced_asset_is_rejected() {
 #[tokio::test]
 async fn self_check_reports_missing_and_changed_files() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-missing.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -589,7 +589,7 @@ async fn self_check_reports_missing_and_changed_files() {
 
     // Delete the file externally; reopening must surface the exact path.
     std::fs::remove_file(root.join(&entry.path)).unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert!(!reopened.self_check.ok);
     assert_eq!(reopened.self_check.issues.len(), 1);
     assert_eq!(reopened.self_check.issues[0].expected_path, entry.path);
@@ -603,7 +603,7 @@ async fn self_check_reports_missing_and_changed_files() {
     let mut longer = make_test_png();
     longer.extend_from_slice(b"\n");
     std::fs::write(root.join(&entry.path), &longer).unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     // Nothing is left to read once the length disagrees: the issue is final.
     assert!(reopened.self_check_verified);
     assert_eq!(
@@ -618,7 +618,7 @@ async fn self_check_reports_missing_and_changed_files() {
     let middle = edited_in_place.len() / 2;
     edited_in_place[middle] ^= 0xff;
     std::fs::write(root.join(&entry.path), &edited_in_place).unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert!(
         reopened.self_check.ok,
         "a file that kept its length is not something the sizes can speak about"
@@ -657,7 +657,7 @@ async fn wait_for_verification(
 #[tokio::test]
 async fn a_file_put_back_stops_being_an_issue() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-returned.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -674,7 +674,7 @@ async fn a_file_put_back_stops_being_an_issue() {
         .entry;
 
     std::fs::remove_file(root.join(&entry.path)).unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert_eq!(reopened.self_check.issues.len(), 1);
 
     std::fs::write(root.join(&entry.path), &png).unwrap();
@@ -694,7 +694,7 @@ async fn a_file_put_back_stops_being_an_issue() {
 #[tokio::test]
 async fn a_finding_about_bytes_stands_until_the_entry_moves_on() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-swapped.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -714,7 +714,7 @@ async fn a_finding_about_bytes_stands_until_the_entry_moves_on() {
     let middle = edited.len() / 2;
     edited[middle] ^= 0xff;
     std::fs::write(root.join(&entry.path), &edited).unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert!(
         reopened.self_check.ok,
         "the length is the one the entry recorded, so the open has nothing to say"
@@ -774,7 +774,7 @@ async fn a_finding_about_bytes_stands_until_the_entry_moves_on() {
 #[tokio::test]
 async fn replace_asset_bytes_clears_missing_state() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-replace.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -808,14 +808,14 @@ async fn replace_asset_bytes_clears_missing_state() {
         .unwrap()
         .entry;
     assert_eq!(updated.id, entry.id);
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert!(reopened.self_check.ok);
 }
 
 #[tokio::test]
 async fn what_a_reader_says_about_an_asset_reaches_the_disk() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let png = make_test_png();
     let staging = root.join("tmp").join("upload-shelf.bin");
     std::fs::write(&staging, &png).unwrap();
@@ -888,7 +888,7 @@ async fn what_a_reader_says_about_an_asset_reaches_the_disk() {
     assert!(taken_back.note.is_none());
     assert_eq!(taken_back.tags, unchecked.tags);
 
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     let on_disk = reopened
         .moka
         .resources
@@ -907,7 +907,7 @@ async fn what_a_reader_says_about_an_asset_reaches_the_disk() {
 #[tokio::test]
 async fn the_shelf_refuses_more_than_it_can_hold() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let staging = root.join("tmp").join("upload-crowded.bin");
     std::fs::write(&staging, make_test_png()).unwrap();
     let entry = store
@@ -965,7 +965,7 @@ async fn the_shelf_refuses_more_than_it_can_hold() {
 #[tokio::test]
 async fn filing_a_text_node_writes_its_words_once() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
 
@@ -1017,7 +1017,7 @@ async fn filing_a_text_node_writes_its_words_once() {
     assert!(!again.created);
     assert_eq!(again.change.entry.id, entry.id);
 
-    let reopened = store
+    let (_same, reopened) = registry
         .create_project(
             &root,
             CreateProject {
@@ -1037,7 +1037,7 @@ async fn filing_a_text_node_writes_its_words_once() {
 #[tokio::test]
 async fn filing_a_picture_keeps_the_picture_it_already_has() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (_registry, store, root) = create_store(&tmp).await;
     let staging = root.join("tmp").join("upload-lantern.bin");
     std::fs::write(&staging, make_test_png()).unwrap();
     let entry = store
@@ -1098,7 +1098,7 @@ async fn filing_a_picture_keeps_the_picture_it_already_has() {
 #[tokio::test]
 async fn a_node_with_nothing_in_it_cannot_be_filed() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
 
@@ -1157,7 +1157,7 @@ async fn a_node_with_nothing_in_it_cannot_be_filed() {
 #[tokio::test]
 async fn path_escape_is_rejected_when_streaming() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let result = store.asset_file("../../etc/passwd", None).await;
     assert!(result.is_err());
 }
@@ -1165,7 +1165,7 @@ async fn path_escape_is_rejected_when_streaming() {
 #[tokio::test]
 async fn commands_module_applies_group_dissolve() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let current = store.current().await.unwrap().unwrap();
     let canvas_id = current.moka.canvas[0].id.clone();
 
@@ -1262,7 +1262,7 @@ fn held(canvas: &CanvasDocument) -> Vec<String> {
 #[tokio::test]
 async fn a_conversation_survives_the_disk_and_undoes_to_nothing() {
     let tmp = TempDir::new().unwrap();
-    let (store, root) = create_store(&tmp).await;
+    let (registry, store, root) = create_store(&tmp).await;
     let opened = store.current().await.unwrap().unwrap();
     let canvas_id = opened.moka.canvas[0].id.clone();
     assert_eq!(
@@ -1321,7 +1321,7 @@ async fn a_conversation_survives_the_disk_and_undoes_to_nothing() {
     );
 
     store.apply_commands(0, turn).await.unwrap();
-    let reopened = store.open_project(&root).await.unwrap();
+    let reopened = registry.open_project(&root).await.unwrap().1;
     assert_eq!(
         reopened.moka.canvas[0], spoken.canvas[0],
         "what was said is what comes back off the disk"
@@ -1337,7 +1337,7 @@ async fn a_conversation_survives_the_disk_and_undoes_to_nothing() {
 #[tokio::test]
 async fn the_oldest_lines_go_at_the_ceiling_and_come_back_on_undo() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let opened = store.current().await.unwrap().unwrap();
     let canvas_id = opened.moka.canvas[0].id.clone();
 
@@ -1399,7 +1399,7 @@ async fn the_oldest_lines_go_at_the_ceiling_and_come_back_on_undo() {
 #[tokio::test]
 async fn a_conversation_nobody_had_is_not_there_to_say_something_in() {
     let tmp = TempDir::new().unwrap();
-    let (store, _root) = create_store(&tmp).await;
+    let (_registry, store, _root) = create_store(&tmp).await;
     let opened = store.current().await.unwrap().unwrap();
     let canvas_id = opened.moka.canvas[0].id.clone();
     let session = conversation("Asked and answered");

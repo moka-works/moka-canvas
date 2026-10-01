@@ -11,15 +11,15 @@ use moka_canvas::config::{parse_test_config, GenerateConfig};
 use moka_canvas::domain::Capability;
 use moka_canvas::generate::media::{load_inputs, AudioWindow};
 use moka_canvas::generate::{GenerateInput, GenerateRequest, InputRole};
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{CreateProject, ProjectStore, StagedAsset};
 use tempfile::TempDir;
 
 async fn open_project(tmp: &TempDir) -> (Arc<FsProjectStore>, std::path::PathBuf) {
     let config = Arc::new(parse_test_config(tmp.path()));
-    let store = Arc::new(FsProjectStore::new(config));
+    let registry = ProjectRegistry::new(config);
     let root = tmp.path().join("demo-project");
-    store
+    let (store, _opened) = registry
         .create_project(
             &root,
             CreateProject {

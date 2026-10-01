@@ -9,7 +9,7 @@ use moka_canvas::domain::{
 };
 use moka_canvas::metadata::{crypto, docs};
 use moka_canvas::project::codec::decode_moka_file;
-use moka_canvas::project::store::FsProjectStore;
+use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{CreateProject, PackageScope, ProjectStore, StagedAsset};
 use serde_json::{json, Value};
 use sha2::Digest;
@@ -539,7 +539,10 @@ const ASKED_IN_SESSION: &str = "0192b7d4-2222-7000-8000-000000000003";
 
 /// A project with an asset on a canvas and one on the shelf.
 struct StagedProject {
-    store: FsProjectStore,
+    /// What opens packages, which is the registry's to do rather than the
+    /// store's.
+    registry: Arc<ProjectRegistry>,
+    store: Arc<FsProjectStore>,
     root: PathBuf,
     /// The asset a run made, which a node holds.
     placed: String,
@@ -550,8 +553,8 @@ struct StagedProject {
 /// Built through the store rather than the API: how an asset came to be is not
 /// a thing an upload can claim.
 async fn stage_generated_project(root: &Path) -> StagedProject {
-    let store = FsProjectStore::new(Arc::new(parse_test_config(root)));
-    let created = store
+    let registry = Arc::new(ProjectRegistry::new(Arc::new(parse_test_config(root))));
+    let (store, created) = registry
         .create_project(
             &root.join("projects"),
             CreateProject {
@@ -674,6 +677,7 @@ async fn stage_generated_project(root: &Path) -> StagedProject {
         .unwrap();
 
     StagedProject {
+        registry,
         store,
         root: project_root,
         placed: made.entry.id,
@@ -789,8 +793,8 @@ async fn a_package_of_the_work_forgets_the_run_but_keeps_the_asking() {
         "a full backup carries the run with the work"
     );
 
-    let imported = staged
-        .store
+    let (_imported, imported) = staged
+        .registry
         .import_package(&work, &temp.path().join("imports").join("Made"))
         .await
         .unwrap();
@@ -895,8 +899,8 @@ async fn a_small_package_leaves_the_shelf_behind_entry_and_file_together() {
         "and how much room it freed"
     );
 
-    let imported = staged
-        .store
+    let (_imported, imported) = staged
+        .registry
         .import_package(&small, &temp.path().join("imports").join("Small"))
         .await
         .unwrap();
@@ -981,7 +985,11 @@ async fn an_older_package_is_cleaned_to_the_rule_this_build_keeps() {
     );
 
     let target = temp.path().join("imports").join("Older");
-    let imported = staged.store.import_package(&older, &target).await.unwrap();
+    let (_imported, imported) = staged
+        .registry
+        .import_package(&older, &target)
+        .await
+        .unwrap();
     assert!(
         imported.self_check.issues.is_empty(),
         "what arrives opens as whole: {:?}",
@@ -1041,7 +1049,11 @@ async fn a_package_that_says_it_carried_the_runs_keeps_them_through_an_import() 
     assert_eq!(manifest_of(&entries)["personalHistory"], true);
 
     let target = temp.path().join("imports").join("Backup");
-    let imported = staged.store.import_package(&backup, &target).await.unwrap();
+    let (_imported, imported) = staged
+        .registry
+        .import_package(&backup, &target)
+        .await
+        .unwrap();
     assert!(
         imported.self_check.issues.is_empty(),
         "what arrives opens as whole: {:?}",

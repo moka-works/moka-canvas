@@ -9,7 +9,7 @@ use super::dto::{
     StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
-use super::{filesystem, ApiState};
+use super::{filesystem, ApiState, ProjectSession};
 use crate::clip::jobs::{drive, ExportRun, ExportTask};
 use crate::clip::locate::ClipCapabilities;
 use crate::clip::plan::build_plan;
@@ -24,6 +24,7 @@ use crate::generate::{
 };
 use crate::imaging::{operate, OperatorReport, OperatorRequest};
 use crate::metadata::RecentProject;
+use crate::project::store::FsProjectStore;
 use crate::project::{
     AssetShelfEdit, ByteRange, CreateProject, OpenProject, PackageScope, ProjectStore, StagedAsset,
 };
@@ -95,10 +96,6 @@ fn project_not_open() -> Problem {
         "PROJECT_NOT_OPEN",
         "No project is open",
     )
-}
-
-async fn current_root(state: &ApiState) -> Result<PathBuf, Problem> {
-    state.store.project_root().await.map_err(Problem::from)
 }
 
 pub async fn public_config(State(state): State<ApiState>) -> Json<PublicConfigResponse> {
@@ -265,7 +262,7 @@ pub async fn create_project(
             "The target folder is not empty; the project needs a subfolder of its own",
         ));
     };
-    let opened = state
+    let (_, opened) = state
         .store
         .create_project(
             &root,
@@ -291,7 +288,7 @@ pub async fn open_project(
             "A project path is required",
         ));
     }
-    let opened = state
+    let (session, opened) = state
         .store
         .open_project(FsPath::new(request.path.trim()))
         .await?;
@@ -300,15 +297,15 @@ pub async fn open_project(
     // sweep on open has already failed whatever cannot be picked up, and what is
     // left is waiting on a job a provider is still running — a run's step or a
     // story's shot, and the two are picked up by the machine that drives them.
-    state.runs.resume_interrupted().await;
-    state.story_jobs.resume_interrupted().await;
+    state.runs.resume_interrupted(&session).await;
+    state.story_jobs.resume_interrupted(&session).await;
     Ok(Json(open_response(opened)))
 }
 
 pub async fn current_project(
-    State(state): State<ApiState>,
+    session: ProjectSession,
 ) -> Result<Json<OpenProjectResponse>, Problem> {
-    let Some(opened) = state.store.current().await? else {
+    let Some(opened) = session.0.current().await? else {
         return Err(project_not_open());
     };
     Ok(Json(open_response(opened)))
@@ -316,9 +313,9 @@ pub async fn current_project(
 
 /// The file check on its own, for a room that was entered before it finished.
 pub async fn current_self_check(
-    State(state): State<ApiState>,
+    session: ProjectSession,
 ) -> Result<Json<SelfCheckResponse>, Problem> {
-    let Some((report, verified)) = state.store.self_check_status().await? else {
+    let Some((report, verified)) = session.0.self_check_status().await? else {
         return Err(project_not_open());
     };
     Ok(Json(SelfCheckResponse { report, verified }))
@@ -326,6 +323,7 @@ pub async fn current_self_check(
 
 pub async fn apply_commands(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<ApplyCommandsRequest>, JsonRejection>,
 ) -> Result<Json<SaveResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
@@ -343,12 +341,12 @@ pub async fn apply_commands(
     let wrote_metadata = commands
         .iter()
         .any(|command| matches!(command, DocumentCommand::UpdateProjectMetadata { .. }));
-    let result = state
-        .store
+    let result = session
+        .0
         .apply_commands(request.expected_revision, commands)
         .await?;
     if wrote_metadata {
-        if let Some(opened) = state.store.current().await? {
+        if let Some(opened) = session.0.current().await? {
             upsert_recent(&state, &opened).await;
         }
     }
@@ -445,13 +443,14 @@ async fn read_upload(
 
 pub async fn upload_asset(
     State(state): State<ApiState>,
+    session: ProjectSession,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<AssetChangeResponse>), Problem> {
-    let root = current_root(&state).await?;
+    let root = session.0.project_root().await?;
     let max = state.config.server.max_upload_bytes;
     let upload = read_upload(&mut multipart, &root, max).await?;
-    let change = state
-        .store
+    let change = session
+        .0
         .add_asset(StagedAsset {
             name: upload.name,
             tmp_path: upload.tmp_path,
@@ -472,14 +471,15 @@ pub async fn upload_asset(
 
 pub async fn replace_asset(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<AssetChangeResponse>, Problem> {
-    let root = current_root(&state).await?;
+    let root = session.0.project_root().await?;
     let max = state.config.server.max_upload_bytes;
     let upload = read_upload(&mut multipart, &root, max).await?;
-    let change = state
-        .store
+    let change = session
+        .0
         .replace_asset_bytes(
             &id,
             StagedAsset {
@@ -503,12 +503,12 @@ pub async fn replace_asset(
 /// of. The file underneath is not looked at, so saying a picture is a keeper
 /// costs nothing of the picture's and re-hashes nothing.
 pub async fn patch_asset_shelf(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
     Json(request): Json<AssetShelfRequest>,
 ) -> Result<Json<AssetChangeResponse>, Problem> {
-    let change = state
-        .store
+    let change = session
+        .0
         .update_asset_shelf(
             &id,
             AssetShelfEdit {
@@ -533,11 +533,11 @@ pub async fn patch_asset_shelf(
 /// travel up from the browser a second time. A node that already holds a file
 /// keeps it: there is nothing to write, so the entry is marked as one to hand.
 pub async fn file_node_asset(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Json(request): Json<FileNodeRequest>,
 ) -> Result<(StatusCode, Json<FileNodeResponse>), Problem> {
-    let filed = state
-        .store
+    let filed = session
+        .0
         .file_node_as_asset(request.canvas_id.trim(), request.node_id.trim())
         .await?;
     let status = if filed.created {
@@ -557,10 +557,10 @@ pub async fn file_node_asset(
 }
 
 pub async fn delete_asset(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<SaveResponse>, Problem> {
-    let saved = state.store.remove_asset(&id).await?;
+    let saved = session.0.remove_asset(&id).await?;
     Ok(Json(SaveResponse {
         revision: saved.revision,
         updated_at: saved.updated_at,
@@ -568,10 +568,10 @@ pub async fn delete_asset(
 }
 
 pub async fn reveal_asset(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<StatusCode, Problem> {
-    let asset = state.store.asset_file(&id, None).await?;
+    let asset = session.0.asset_file(&id, None).await?;
     reveal_in_folder(&asset.path)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -620,11 +620,11 @@ fn spawn_reveal(program: &str, args: &[&std::ffi::OsStr]) -> Result<(), Problem>
 /// them back as well would double the cost of a tool whose whole product is a
 /// new node.
 pub async fn apply_picture_tool(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<OperatorRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<OperatorReport>), Problem> {
     let Json(request) = json_or_problem(json)?;
-    let report = operate(&*state.store, request).await?;
+    let report = operate(session.0.as_ref(), request).await?;
     Ok((StatusCode::CREATED, Json(report)))
 }
 
@@ -688,12 +688,12 @@ pub struct AssetStreamQuery {
 }
 
 pub async fn stream_asset(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
     Query(query): Query<AssetStreamQuery>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
-    let asset = state.store.asset_file(&id, None).await?;
+    let asset = session.0.asset_file(&id, None).await?;
 
     // A picture asked for at a width is answered from the drawings the project
     // keeps beside it; everything else, and anything that cannot be drawn, is
@@ -701,7 +701,7 @@ pub async fn stream_asset(
     // runtime's own threads.
     if let (Some(width), Some(mime)) = (query.w, asset.entry.mime.as_deref()) {
         if mime.starts_with("image/") {
-            let root = current_root(&state).await?;
+            let root = session.0.project_root().await?;
             let entry = asset.entry.clone();
             let source = asset.path.clone();
             let drawn = tokio::task::spawn_blocking(move || {
@@ -766,10 +766,11 @@ pub async fn stream_asset(
 /// itself, exactly what a voice read before any of this existed.
 pub async fn stream_asset_audio(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
-    let asset = state.store.asset_file(&id, None).await?;
+    let asset = session.0.asset_file(&id, None).await?;
     let mime = asset
         .entry
         .mime
@@ -780,7 +781,7 @@ pub async fn stream_asset_audio(
     if !mime.starts_with("video/") {
         return serve_file(&asset.path, &mime, &headers).await;
     }
-    let root = current_root(&state).await?;
+    let root = session.0.project_root().await?;
     let entry = asset.entry.clone();
     let source = asset.path.clone();
     let program = state.clip_program();
@@ -865,7 +866,7 @@ async fn serve_file(
 /// asked for rather than invented: a package nobody said where to put is a
 /// package written somewhere nobody asked for.
 pub async fn export_package(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<ExportRequest>, JsonRejection>,
 ) -> Result<Json<PackageResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
@@ -877,8 +878,8 @@ pub async fn export_package(
             "A destination is required",
         ));
     }
-    let report = state
-        .store
+    let report = session
+        .0
         .export_package(
             FsPath::new(asked),
             request.allow_incomplete,
@@ -930,7 +931,9 @@ async fn finish_import(
     name: Option<&str>,
 ) -> Result<(StatusCode, Json<OpenProjectResponse>), Problem> {
     let target = import_target(directory, name, &archive_stem(archive))?;
-    let opened = state.store.import_package(archive, &target).await?;
+    // A package carried into a project of its own: the opened project is what
+    // the answer speaks about, and the store it opened is left out of it.
+    let (_session, opened) = state.store.import_package(archive, &target).await?;
     upsert_recent(state, &opened).await;
     Ok((StatusCode::CREATED, Json(open_response(opened))))
 }
@@ -1022,8 +1025,8 @@ pub async fn import_project(
     result
 }
 
-pub async fn list_runs(State(state): State<ApiState>) -> Result<Json<Vec<RunRecord>>, Problem> {
-    let runs = state.store.list_runs().await?;
+pub async fn list_runs(session: ProjectSession) -> Result<Json<Vec<RunRecord>>, Problem> {
+    let runs = session.0.list_runs().await?;
     Ok(Json(runs))
 }
 
@@ -1042,6 +1045,7 @@ fn start_run_problem(error: crate::workflow::runner::StartRunError) -> Problem {
 
 pub async fn start_run(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<StartRunRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<RunRecord>), Problem> {
     let Json(request) = json_or_problem(json)?;
@@ -1055,6 +1059,7 @@ pub async fn start_run(
     let run = state
         .runs
         .start(
+            &session.0,
             &request.canvas_id,
             request.node_ids,
             None,
@@ -1070,26 +1075,32 @@ pub async fn start_run(
 }
 
 pub async fn get_run(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<RunRecord>, Problem> {
-    let run = state.store.get_run(&id).await?;
+    let run = session.0.get_run(&id).await?;
     Ok(Json(run))
 }
 
 pub async fn cancel_run(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<RunRecord>, Problem> {
-    let run = state.runs.cancel(&id).await?;
+    let run = state.runs.cancel(&session.0, &id).await?;
     Ok(Json(run))
 }
 
 pub async fn retry_run(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<(StatusCode, Json<RunRecord>), Problem> {
-    let run = state.runs.retry(&id).await.map_err(start_run_problem)?;
+    let run = state
+        .runs
+        .retry(&session.0, &id)
+        .await
+        .map_err(start_run_problem)?;
     Ok((StatusCode::CREATED, Json(run)))
 }
 
@@ -1115,10 +1126,11 @@ fn story_issues_problem(issues: Vec<ValidationIssue>, message: &str) -> Problem 
 /// disagree with each other.
 pub async fn start_story_job(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<StartStoryJobRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<StoryJobRecord>), Problem> {
     let Json(request) = json_or_problem(json)?;
-    let opened = state.store.current().await?.ok_or_else(|| {
+    let opened = session.0.current().await?.ok_or_else(|| {
         Problem::new(
             StatusCode::CONFLICT,
             "PROJECT_NOT_OPEN",
@@ -1148,7 +1160,7 @@ pub async fn start_story_job(
     // story has out: two drawings of one story are two independent asks, and
     // the client is what keeps one place from being asked for twice.
     if issues.is_empty() {
-        let jobs = state.store.list_story_jobs().await?;
+        let jobs = session.0.list_story_jobs().await?;
         let active = jobs.iter().filter(|job| !job.status.is_terminal()).count();
         if active >= state.story_jobs.limits().max_active_jobs_per_project {
             issues.push(crate::story::validate::busy_issue(
@@ -1187,7 +1199,13 @@ pub async fn start_story_job(
     .map_err(Problem::from)?;
     let job = state
         .story_jobs
-        .start(request.story_id, request.kind, resolved.config_id, items)
+        .start(
+            &session.0,
+            request.story_id,
+            request.kind,
+            resolved.config_id,
+            items,
+        )
         .await?;
     Ok((StatusCode::CREATED, Json(job)))
 }
@@ -1200,10 +1218,10 @@ pub async fn start_story_job(
 /// it is, because a room that could not see it would either lose the answer or
 /// write it in years later, over whatever the reader had said since.
 pub async fn list_story_jobs(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Query(query): Query<StoryJobQuery>,
 ) -> Result<Json<Vec<StoryJobRecord>>, Problem> {
-    let jobs = state.store.list_story_jobs().await?;
+    let jobs = session.0.list_story_jobs().await?;
     let mine = |job: &StoryJobRecord| {
         query
             .story_id
@@ -1227,18 +1245,19 @@ pub async fn list_story_jobs(
 }
 
 pub async fn get_story_job(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<StoryJobRecord>, Problem> {
-    let job = state.store.get_story_job(&id).await?;
+    let job = session.0.get_story_job(&id).await?;
     Ok(Json(job))
 }
 
 pub async fn cancel_story_job(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<StoryJobRecord>, Problem> {
-    let job = state.story_jobs.cancel(&id).await?;
+    let job = state.story_jobs.cancel(&session.0, &id).await?;
     Ok(Json(job))
 }
 
@@ -1251,13 +1270,13 @@ pub async fn cancel_story_job(
 /// still to come, and a mark on it would leave them unread by every room
 /// opened after this one.
 pub async fn read_story_job(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<StoryJobRecord>, Problem> {
-    let mut job = state.store.get_story_job(&id).await?;
+    let mut job = session.0.get_story_job(&id).await?;
     if job.status.is_terminal() && job.read_at.is_none() {
         job.read_at = Some(now_iso());
-        job = state.store.update_story_job(job).await?;
+        job = session.0.update_story_job(job).await?;
     }
     Ok(Json(job))
 }
@@ -1269,11 +1288,11 @@ pub async fn read_story_job(
 /// and the one sent — and the disagreement between them is the hardest kind of
 /// bug to find. So the walking happens here and the client only renders it.
 pub async fn preview_generation(
-    State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerationPreviewRequest>, JsonRejection>,
 ) -> Result<Json<GenerationPreviewResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let opened = state.store.current().await?.ok_or_else(project_not_open)?;
+    let opened = session.0.current().await?.ok_or_else(project_not_open)?;
     let canvas = opened
         .moka
         .canvas
@@ -1312,7 +1331,7 @@ pub async fn preview_generation(
             .get(position)
             .cloned()
             .unwrap_or_default();
-        inputs.push(preview_input(&state, &opened.moka.resources, input, source).await);
+        inputs.push(preview_input(&session.0, &opened.moka.resources, input, source).await);
     }
 
     Ok(Json(GenerationPreviewResponse {
@@ -1325,7 +1344,7 @@ pub async fn preview_generation(
 
 /// One reference, described from what the project recorded about its asset.
 async fn preview_input(
-    state: &ApiState,
+    session: &FsProjectStore,
     resources: &ResourceRegistry,
     input: &GenerateInput,
     node_id: String,
@@ -1334,7 +1353,7 @@ async fn preview_input(
     // Asked of the store rather than trusted from the registry: it resolves the
     // path inside the project root and says whether a file is there, which is
     // the same answer a run gets when it comes to load the bytes.
-    let reachable = state.store.asset_file(&input.asset_id, None).await.is_ok();
+    let reachable = session.asset_file(&input.asset_id, None).await.is_ok();
     let probe = recorded.and_then(|entry| entry.probe.as_ref());
     PreviewInput {
         role: input.role,
@@ -1516,6 +1535,7 @@ const STREAM_BUFFER_BYTES: usize = 64 * 1024;
 /// type is the response itself rather than a result the router unwraps.
 pub async fn generate_text(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Response {
     let request = match json_or_problem(json) {
@@ -1523,11 +1543,11 @@ pub async fn generate_text(
         Err(problem) => return problem.into_response(),
     };
     if request.wants_stream() {
-        return stream_text(&state, request);
+        return stream_text(&state, Arc::clone(&session.0), request);
     }
     match state
         .gateway
-        .text(request, &DeltaSink::default(), &Cancel::new())
+        .text(&session.0, request, &DeltaSink::default(), &Cancel::new())
         .await
     {
         Ok(result) => Json(GenerateResponse::succeeded(result)).into_response(),
@@ -1537,28 +1557,40 @@ pub async fn generate_text(
 
 pub async fn generate_image(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Result<Json<GenerateResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let result = state.gateway.image(request, &Cancel::new()).await?;
+    let result = state
+        .gateway
+        .image(&session.0, request, &Cancel::new())
+        .await?;
     Ok(Json(GenerateResponse::succeeded(result)))
 }
 
 pub async fn generate_speech(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Result<Json<GenerateResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let result = state.gateway.speech(request, &Cancel::new()).await?;
+    let result = state
+        .gateway
+        .speech(&session.0, request, &Cancel::new())
+        .await?;
     Ok(Json(GenerateResponse::succeeded(result)))
 }
 
 pub async fn generate_music(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Result<Json<GenerateResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let result = state.gateway.music(request, &Cancel::new()).await?;
+    let result = state
+        .gateway
+        .music(&session.0, request, &Cancel::new())
+        .await?;
     Ok(Json(GenerateResponse::succeeded(result)))
 }
 
@@ -1566,10 +1598,14 @@ pub async fn generate_music(
 /// is polled until the job ends.
 pub async fn generate_video(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Result<Json<GenerateResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let task = state.gateway.video(request, &Cancel::new()).await?;
+    let task = state
+        .gateway
+        .video(&session.0, request, &Cancel::new())
+        .await?;
     Ok(Json(GenerateResponse::started(&task, None)))
 }
 
@@ -1581,19 +1617,24 @@ pub async fn generate_video(
 /// it the same way it polls a shot.
 pub async fn generate_asr(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Result<Json<GenerateResponse>, Problem> {
     let Json(request) = json_or_problem(json)?;
-    let task = state.gateway.transcribe(request, &Cancel::new()).await?;
+    let task = state
+        .gateway
+        .transcribe(&session.0, request, &Cancel::new())
+        .await?;
     Ok(Json(GenerateResponse::started(&task, None)))
 }
 
 /// One look at a job this server started.
 pub async fn poll_generation_task(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Path(id): Path<String>,
 ) -> Result<Json<GenerateResponse>, Problem> {
-    match state.gateway.poll(&id, &Cancel::new()).await? {
+    match state.gateway.poll(&session.0, &id, &Cancel::new()).await? {
         TaskState::Pending { retry_after_ms } => {
             // Still tracked, because a job that is running is the only kind
             // that answers with a wait; looked up here rather than up front so
@@ -1638,6 +1679,7 @@ const KEEP_ALIVE: &str = ": keep-alive\n\n";
 /// that drops half way, loses the typewriter and nothing else.
 pub async fn stream_run_events(
     State(state): State<ApiState>,
+    session: ProjectSession,
     Query(query): Query<RunStreamQuery>,
 ) -> Response {
     let run_id = query.run_id.trim().to_string();
@@ -1645,7 +1687,7 @@ pub async fn stream_run_events(
     // gap between the two: a run that ends after this point says so on a
     // channel this listener is already on.
     let mut listener = state.runs.events().follow(&run_id);
-    let run = match state.store.get_run(&run_id).await {
+    let run = match session.0.get_run(&run_id).await {
         Ok(run) => run,
         Err(error) => {
             // Closed only when there is no such run: a channel belonging to one
@@ -1659,7 +1701,7 @@ pub async fn stream_run_events(
     };
 
     let (mut writer, reader) = tokio::io::duplex(STREAM_BUFFER_BYTES);
-    let store = state.store.clone();
+    let store = Arc::clone(&session.0);
     let following = run_id.clone();
 
     tokio::spawn(async move {
@@ -1743,7 +1785,11 @@ fn ending(run: &RunRecord) -> serde_json::Value {
 /// The frames are written into one end of a pipe and served from the other,
 /// which is where a delta callback that cannot wait meets a response body that
 /// is a stream of bytes.
-fn stream_text(state: &ApiState, request: GenerateRequest) -> Response {
+fn stream_text(
+    state: &ApiState,
+    session: Arc<FsProjectStore>,
+    request: GenerateRequest,
+) -> Response {
     let (mut writer, reader) = tokio::io::duplex(STREAM_BUFFER_BYTES);
     let (deltas, mut received) = mpsc::unbounded_channel::<String>();
     let sink = DeltaSink::new(std::sync::Arc::new(move |chunk: &str| {
@@ -1756,7 +1802,7 @@ fn stream_text(state: &ApiState, request: GenerateRequest) -> Response {
     let gateway = state.gateway.clone();
 
     tokio::spawn(async move {
-        let mut pending = Box::pin(gateway.text(request, &sink, &watching));
+        let mut pending = Box::pin(gateway.text(&session, request, &sink, &watching));
         let outcome = loop {
             tokio::select! {
                 Some(chunk) = received.recv() => {
@@ -1861,6 +1907,7 @@ pub async fn clip_capabilities(State(state): State<ApiState>) -> Json<ClipCapabi
 /// rendered is refused here rather than inside a task nobody is watching.
 pub async fn start_clip_export(
     State(state): State<ApiState>,
+    session: ProjectSession,
     json: Result<Json<ClipExportRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<ExportTask>), Problem> {
     let Json(request) = json_or_problem(json)?;
@@ -1886,7 +1933,7 @@ pub async fn start_clip_export(
                 .unwrap_or_else(|| crate::clip::locate::UNAVAILABLE_REASON.to_string()),
         ));
     }
-    let opened = state.store.current().await?.ok_or_else(project_not_open)?;
+    let opened = session.0.current().await?.ok_or_else(project_not_open)?;
     let timeline = opened
         .moka
         .timelines
