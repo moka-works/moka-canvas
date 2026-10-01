@@ -7,6 +7,7 @@ import {
   newTimeline,
   openClipRoom,
   openRecent,
+  persistedTimelineNames,
   projectHome,
 } from "./helpers";
 
@@ -159,7 +160,12 @@ test("each timeline keeps its own view, and the machine keeps them across a relo
   await strip.getByRole("tab", { name: "Timeline 1" }).click();
   await expect(timeline(page)).toHaveAttribute("data-px-per-sec", "90");
 
-  // The remembering is the machine's, so a reload opens onto it again.
+  // The remembering is the machine's, so a reload opens onto it again — but
+  // the cut itself is saved a beat after the clicks, and the reload must go
+  // looking for a document that already holds both timelines.
+  await expect
+    .poll(() => persistedTimelineNames(page))
+    .toEqual(["Timeline 1", "Timeline 2"]);
   await page.reload();
   await openRecent(page, "Timeline Room");
   await openClipRoom(page);
