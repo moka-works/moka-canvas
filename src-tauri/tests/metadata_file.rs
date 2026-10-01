@@ -324,17 +324,17 @@ async fn a_previous_recent_project_file_outside_the_directory_is_ignored() {
 #[cfg(unix)]
 #[tokio::test]
 async fn an_unwritable_directory_rejects_every_write_and_publishes_nothing() {
-    use std::os::unix::fs::PermissionsExt;
-
     let root = tempfile::tempdir().unwrap();
     let store = open(root.path()).expect("the store opens");
     store.upsert_recent(&recent("kept")).await.unwrap();
 
-    // Every write starts in the scratch area, so making it unwritable stands in
-    // for a full disk or a permissions change part-way through a session.
+    // Every write starts in the scratch area, so a scratch that cannot be
+    // used stands in for a full disk or a permissions change part-way through
+    // a session. It is blocked with a file where its directory belongs rather
+    // than with mode bits, which a root process writes straight through.
     let scratch = root.path().join(TMP_DIR);
-    let writable = std::fs::Permissions::from_mode(0o700);
-    std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o500)).unwrap();
+    std::fs::remove_dir_all(&scratch).unwrap();
+    std::fs::write(&scratch, b"").unwrap();
 
     // Three in a row: the streak that escalates the log from a warning to an
     // error, because by then every user edit is being rejected.
@@ -343,7 +343,7 @@ async fn an_unwritable_directory_rejects_every_write_and_publishes_nothing() {
         assert_eq!(error.code(), "METADATA_WRITE_FAILED");
     }
 
-    std::fs::set_permissions(&scratch, writable.clone()).unwrap();
+    std::fs::remove_file(&scratch).unwrap();
 
     let listed = store.list_recent().await.unwrap();
     assert_eq!(

@@ -336,11 +336,25 @@ mod tests {
         );
         std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o500)).unwrap();
 
+        // File modes do not bind a root process — it writes through them — so
+        // on such a machine a 0o500 directory is not read-only and the probe
+        // rightly answers ready. Whether the modes hold is probed with the
+        // same write the store itself would make.
+        let canary = scratch.join(".mode-canary");
+        let modes_hold = std::fs::write(&canary, b"").is_err();
+        let _ = std::fs::remove_file(&canary);
+
         let response = ready(State(state)).await.into_response();
-        assert_eq!(response.status(), 503);
-        let body = body_json(response).await;
-        assert_eq!(body["status"], "unavailable");
-        assert_eq!(body["checks"]["metadata"], false);
+        if modes_hold {
+            assert_eq!(response.status(), 503);
+            let body = body_json(response).await;
+            assert_eq!(body["status"], "unavailable");
+            assert_eq!(body["checks"]["metadata"], false);
+        } else {
+            // The directory takes writes, so the honest answer is ready —
+            // and this is still a reading of the probe, not of the modes.
+            assert_eq!(response.status(), 200);
+        }
 
         std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
