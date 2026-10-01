@@ -217,10 +217,10 @@ make package-linux
 
 在 `src-tauri/target/release/bundle/` 下生成三种包，并由 `scripts/collect-release.mjs` 一并复制进 `release/`：
 
-| 包       | 文件名                                | 面向                      |
-| -------- | ------------------------------------- | ------------------------- |
-| deb      | `Moka Canvas_<version>_amd64.deb`     | Debian、Ubuntu 及其衍生版 |
-| rpm      | `Moka Canvas-<version>-1.x86_64.rpm`  | Fedora、RHEL、openSUSE    |
+| 包       | 文件名                                 | 面向                      |
+| -------- | -------------------------------------- | ------------------------- |
+| deb      | `Moka Canvas_<version>_amd64.deb`      | Debian、Ubuntu 及其衍生版 |
+| rpm      | `Moka Canvas-<version>-1.x86_64.rpm`   | Fedora、RHEL、openSUSE    |
 | AppImage | `Moka Canvas_<version>_amd64.AppImage` | 任何发行版，免安装        |
 
 deb 与 rpm 交给系统包管理器安装，它们的运行期依赖由 Tauri 从构建机上实际链接到的库推出（本构建得到的是 `libwebkit2gtk-4.1-0` 与 `libgtk-3-0`）。AppImage 自带全部内容，`chmod +x` 之后直接运行。
