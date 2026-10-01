@@ -15,8 +15,11 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   timeout: 30_000,
-  // The server tracks a single current project, so browser tests share one
-  // server and must not interleave.
+  // Projects are no longer why the suite serializes: each window names the
+  // project it speaks for, and one server holds several (multi-project.spec.ts
+  // proves two windows side by side). What still serializes it is the rest of
+  // the shared home — the launcher's list of projects and the app's settings,
+  // which specs clear or rewrite as their own setup.
   workers: 1,
   fullyParallel: false,
   // The interface follows the browser's language; the assertions are English,

@@ -68,7 +68,7 @@
 ## 测试与验证
 
 - 单元测试：vitest，与被测文件同目录（`src/**/*.test.ts[x]`），node 环境。
-- e2e：Playwright，`workers: 1`、`fullyParallel: false`（服务器只跟踪一个当前项目，用例必须串行）；前置先 `make web-build`；`scripts/e2e-server.mjs` 以临时配置启动真实 `moka-server`，`e2e/mock-provider.ts` 是替身模型提供方。
+- e2e：Playwright，`workers: 1`、`fullyParallel: false`（服务器已支持同时打开多个项目、每个窗口各自具名请求，但启动器最近项目列表与应用设置仍全局共享，用例仍须串行）；前置先 `make web-build`；`scripts/e2e-server.mjs` 以临时配置启动真实 `moka-server`，`e2e/mock-provider.ts` 是替身模型提供方。
 - Rust：`src-tauri/tests/*.rs` 集成测试（`tower::ServiceExt` + `tempfile`）。
 - **UI/交互改动必须在真实界面验证**（`make web-serve` 或 e2e），类型检查与单测不算验证。
 - 打包验证纪律：为检查而 `hdiutil attach` 的 DMG 必须**当轮 detach**，并清掉 `rw.*.dmg` 等中间文件——残留的僵尸卷会让用户下次 `make package-macos` 以笼统错误失败。
