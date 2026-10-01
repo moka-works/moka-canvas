@@ -125,7 +125,10 @@ describe("selection action bar", () => {
     expect(screen.queryByTestId("selection-action-bar")).toBeNull();
 
     select([ids.text, ids.operation]);
-    const bar = screen.getByTestId("selection-action-bar");
+    // The bar's commit can trail the selection on a loaded machine, so it is
+    // waited for; the absence checks above stay instant, since a bar that
+    // lingers would be the bug they are for.
+    const bar = await screen.findByTestId("selection-action-bar");
     expect(
       within(bar).getByRole("button", { name: "Distribute horizontally" }),
     ).toBeTruthy();
@@ -136,7 +139,7 @@ describe("selection action bar", () => {
     await openGolden();
     select([ids.text, ids.operation]);
 
-    const bar = screen.getByTestId("selection-action-bar");
+    const bar = await screen.findByTestId("selection-action-bar");
     fireEvent.click(within(bar).getByRole("button", { name: "Align right" }));
 
     // Both take the right edge of the room they took up together, which ran
@@ -154,7 +157,7 @@ describe("selection action bar", () => {
     });
     select([ids.text, ids.operation]);
 
-    const bar = screen.getByTestId("selection-action-bar");
+    const bar = await screen.findByTestId("selection-action-bar");
     expect(
       within(bar).getByRole("button", { name: "Distribute horizontally" }),
     ).toHaveProperty("disabled", true);
@@ -184,9 +187,12 @@ describe("selection action bar", () => {
     select([ids.text, ids.operation]);
 
     fireEvent.click(
-      within(screen.getByTestId("selection-action-bar")).getByRole("button", {
-        name: "Group",
-      }),
+      within(await screen.findByTestId("selection-action-bar")).getByRole(
+        "button",
+        {
+          name: "Group",
+        },
+      ),
     );
     let canvas = useProjectStore.getState().moka!.canvas[0];
     expect(canvas.groups).toHaveLength(1);
@@ -194,9 +200,12 @@ describe("selection action bar", () => {
     // Grouping leaves the frame and its members selected, so Delete takes the
     // whole lot.
     fireEvent.click(
-      within(screen.getByTestId("selection-action-bar")).getByRole("button", {
-        name: "Delete",
-      }),
+      within(await screen.findByTestId("selection-action-bar")).getByRole(
+        "button",
+        {
+          name: "Delete",
+        },
+      ),
     );
     canvas = useProjectStore.getState().moka!.canvas[0];
     // The group and its members went together, and the edges that touched them.

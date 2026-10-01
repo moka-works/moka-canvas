@@ -145,7 +145,11 @@ describe("the zoom controls under the canvas", () => {
         .getState()
         .setSelection({ nodeIds: [ids.text, ids.operation], edgeIds: [] });
     });
-    expect(toSelection).toHaveProperty("disabled", false);
+    // The commit that enables the button can trail a loaded machine's next
+    // line, so the state it settles on is waited for rather than read at once.
+    await vi.waitFor(() => {
+      expect(toSelection).toHaveProperty("disabled", false);
+    });
     fireEvent.click(toSelection);
 
     // The room the two nodes take up together, from the brief's left edge to

@@ -121,11 +121,15 @@ describe("the canvas's own view settings", () => {
     fireEvent.click(within(background).getByRole("button", { name: "Blank" }));
     expect(canvas().settings.background).toBe("blank");
     expect(useHistoryStore.getState().undoStack.length).toBe(before + 1);
-    expect(
-      within(background)
-        .getByRole("button", { name: "Blank" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    // The press the click draws can trail the click on a loaded machine, so
+    // the state it settles on is waited for rather than read at once.
+    await vi.waitFor(() => {
+      expect(
+        within(background)
+          .getByRole("button", { name: "Blank" })
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
 
     // Asking again for what is already drawn writes nothing.
     fireEvent.click(within(background).getByRole("button", { name: "Blank" }));
@@ -139,7 +143,9 @@ describe("the canvas's own view settings", () => {
 
     fireEvent.click(toggle);
     expect(canvas().settings.showMinimap).toBe(false);
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    await vi.waitFor(() => {
+      expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    });
 
     fireEvent.click(toggle);
     expect(canvas().settings.showMinimap).toBe(true);
@@ -155,9 +161,13 @@ describe("choosing the palette a canvas is drawn in", () => {
 
     expect(useAppearance.getState().theme).toBe("paper");
     expect(localStorage.getItem("moka-canvas:canvas-theme")).toBe("paper");
-    expect(
-      group.getByRole("button", { name: "Paper" }).getAttribute("aria-pressed"),
-    ).toBe("true");
+    await vi.waitFor(() => {
+      expect(
+        group
+          .getByRole("button", { name: "Paper" })
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
     // Nothing about it reaches the project, so nobody else opens it in paper.
     expect(canvas().settings).toEqual({
       background: "dots",

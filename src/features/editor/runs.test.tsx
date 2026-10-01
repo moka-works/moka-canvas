@@ -982,7 +982,9 @@ describe("run UI", () => {
         },
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "▶ Run this node" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "▶ Run this node" }),
+    );
 
     const issues = await screen.findByRole("alert");
     expect(issues.textContent).toContain("PORT_UNRESOLVED");

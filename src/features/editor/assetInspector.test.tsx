@@ -189,9 +189,9 @@ describe("the file the shelf was asked about", () => {
     act(() => {
       useEditorStore.getState().selectOnly(ids.image);
     });
-    expect(screen.getByLabelText<HTMLInputElement>("Node title").value).toBe(
-      "Reference image",
-    );
+    expect(
+      (await screen.findByLabelText<HTMLInputElement>("Node title")).value,
+    ).toBe("Reference image");
 
     // Asking about the file is the later question, so it is the one answered —
     // a reader who clicked a file on the shelf is not told about a card they
@@ -208,9 +208,9 @@ describe("the file the shelf was asked about", () => {
       useEditorStore.getState().selectOnly(ids.image);
     });
     expect(useEditorStore.getState().inspectedAssetId).toBeNull();
-    expect(screen.getByLabelText<HTMLInputElement>("Node title").value).toBe(
-      "Reference image",
-    );
+    expect(
+      (await screen.findByLabelText<HTMLInputElement>("Node title")).value,
+    ).toBe("Reference image");
     expect(rowOf(ids.assetImage).className).not.toContain("is-inspected");
   });
 

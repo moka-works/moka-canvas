@@ -685,7 +685,11 @@ describe("editor shell integration", () => {
     const inspector = screen.getByRole("complementary", {
       name: "Inspector",
     });
-    expect(inspector.textContent).toContain("lake.png");
+    // The inspector still reads as empty until the selection's commit lands,
+    // which can trail a loaded machine's next line.
+    await vi.waitFor(() => {
+      expect(inspector.textContent).toContain("lake.png");
+    });
     expect(inspector.textContent).toContain("image/png");
     expect(inspector.textContent).toContain("64×64");
     expect(inspector.textContent).toContain("assets/images/lake-00000000.png");
@@ -703,7 +707,9 @@ describe("editor shell integration", () => {
         .getState()
         .setSelection({ nodeIds: [ids.text], edgeIds: [] });
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save as material" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as material" }),
+    );
     await act(() => Promise.resolve());
     const call = fetchMock.mock.calls.find(
       ([url]) => url === "/api/v1/projects/current/assets/from-node",
@@ -749,7 +755,7 @@ describe("editor shell integration", () => {
         .getState()
         .setSelection({ nodeIds: [ids.image], edgeIds: [] });
     });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog.textContent).toContain("lake.png");
     expect(dialog.textContent).toContain("1 node");

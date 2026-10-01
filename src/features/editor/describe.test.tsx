@@ -260,7 +260,7 @@ async function openDescribe(): Promise<HTMLElement> {
       .setSelection({ nodeIds: [ids.image], edgeIds: [] });
   });
   fireEvent.click(
-    within(screen.getByTestId("node-action-bar")).getByRole("button", {
+    within(await screen.findByTestId("node-action-bar")).getByRole("button", {
       name: "Describe",
     }),
   );
@@ -424,7 +424,7 @@ describe("reading a picture back as words", () => {
         .setSelection({ nodeIds: [ids.image], edgeIds: [] });
     });
     fireEvent.click(
-      within(screen.getByTestId("node-action-bar")).getByRole("button", {
+      within(await screen.findByTestId("node-action-bar")).getByRole("button", {
         name: "Describe",
       }),
     );

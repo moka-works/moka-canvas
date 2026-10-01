@@ -140,7 +140,7 @@ describe("the keyboard help", () => {
     await openGolden();
     select([ids.text]);
 
-    const field = screen.getByRole("textbox", { name: "Node title" });
+    const field = await screen.findByRole("textbox", { name: "Node title" });
     fireEvent.keyDown(field, { key: "?" });
 
     expect(

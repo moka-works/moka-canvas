@@ -296,11 +296,16 @@ describe("missing-asset recovery", () => {
     // only just arrived and the column turns over with it, so turning it over
     // is waited for rather than done and read the same instant: under a loaded
     // machine the commit that shows the face can land after the next line, and
-    // a click can land on a node React is replacing on the way.
-    await vi.waitFor(() => {
-      fireEvent.click(screen.getByTestId("left-tab-assets"));
-      expect(screen.queryByText("lake.png")).not.toBeNull();
-    });
+    // a click can land on a node React is replacing on the way. The wait is
+    // longer than the suite's usual patience because the whole board chunk is
+    // being compiled and let in while the other workers hammer the machine.
+    await vi.waitFor(
+      () => {
+        fireEvent.click(screen.getByTestId("left-tab-assets"));
+        expect(screen.queryByText("lake.png")).not.toBeNull();
+      },
+      { timeout: 5_000 },
+    );
     const row = screen.getByText("lake.png").closest(".resource-row");
     expect(row?.textContent).not.toContain("broken");
   });
@@ -537,14 +542,20 @@ describe("unsaved-work guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Projects menu" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Projects" }));
     await screen.findByRole("alertdialog");
+    // The debounced write can go out while the question is on screen — the
+    // guard itself says so — and what discard promises is that closing sends
+    // nothing of what is left. So the reading is taken at the door.
+    const sentBefore = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes("/projects/current/commands"),
+    ).length;
     fireEvent.click(screen.getByRole("button", { name: "Discard and close" }));
     expect(useAppStore.getState().phase).toBe("launcher");
     expect(useProjectStore.getState().moka).toBeNull();
     expect(
-      fetchMock.mock.calls.some(([url]) =>
+      fetchMock.mock.calls.filter(([url]) =>
         String(url).includes("/projects/current/commands"),
       ),
-    ).toBe(false);
+    ).toHaveLength(sentBefore);
   });
 
   it("save and close flushes the pending changes first", async () => {

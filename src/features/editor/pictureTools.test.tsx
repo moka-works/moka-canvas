@@ -182,6 +182,10 @@ async function selectPicture() {
       .getState()
       .setSelection({ nodeIds: [ids.image], edgeIds: [] });
   });
+  // The bar was seen missing the instant after this on a loaded machine, so it
+  // is waited for rather than read the same turn: what the tests are about is
+  // the bar that arrives with the selection, not its exact commit.
+  await screen.findByTestId("node-action-bar");
 }
 
 /**

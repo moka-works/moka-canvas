@@ -139,7 +139,9 @@ describe("the node JSON view", () => {
 
     // Folded away until asked for: it is for comparing against, not for
     // reading past.
-    const details = screen.getByTestId("node-json").closest("details")!;
+    const details = (await screen.findByTestId("node-json")).closest(
+      "details",
+    )!;
     expect(details.open).toBe(false);
     fireEvent.click(within(details).getByText("JSON"));
     expect(details.open).toBe(true);
@@ -151,6 +153,7 @@ describe("the node JSON view", () => {
     const ids = goldenNodeIds();
     await openGolden();
     select([ids.text]);
+    await screen.findByTestId("node-json");
 
     act(() => renameNode(ids.text, "Renamed brief"));
 
@@ -165,7 +168,7 @@ describe("the node JSON view", () => {
     await openGolden();
     select([ids.text]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy JSON" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy JSON" }));
     await settle();
 
     expect(writeText).toHaveBeenCalledWith(
@@ -180,7 +183,7 @@ describe("the node JSON view", () => {
     await openGolden();
     select([ids.text]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy JSON" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy JSON" }));
     await settle();
 
     expect(useAppStore.getState().toasts).toMatchObject([
