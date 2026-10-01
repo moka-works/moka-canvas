@@ -7,7 +7,7 @@ src-tauri/target/
 src-tauri/gen/
 .DS_Store
 data/
-test-results/
+test-results*/
 playwright-report/
 # The configuration one deployment actually reads. Only the example is tracked:
 # what lives here is a machine's addresses, ceilings and secrets.

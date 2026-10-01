@@ -12,9 +12,14 @@ import {
  *
  * A fixed port rather than one chosen as it binds: the server under test is
  * booted by the runner before any test could say where a channel should point,
- * and the address ends up typed into a dialog by a browser.
+ * and the address ends up typed into a dialog by a browser. It follows the
+ * app's port by default so that one `MOKA_E2E_PORT` moves a whole isolated
+ * run off the default pair, and can be pinned on its own when needed.
  */
-export const PROVIDER_PORT = Number(process.env.MOKA_E2E_PROVIDER_PORT ?? 8972);
+export const PROVIDER_PORT = Number(
+  process.env.MOKA_E2E_PROVIDER_PORT ??
+    Number(process.env.MOKA_E2E_PORT ?? 8971) + 1,
+);
 /** Where the stand-in's own bookkeeping routes are, beside the ones it serves. */
 export const PROVIDER_ORIGIN = `http://127.0.0.1:${PROVIDER_PORT}`;
 export const PROVIDER_ADDRESS = `${PROVIDER_ORIGIN}/v1`;
