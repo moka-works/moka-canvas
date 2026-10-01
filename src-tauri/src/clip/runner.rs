@@ -3,9 +3,10 @@
 //! The scratch directory is created here and removed here, on every way out:
 //! a render that failed, was cancelled, or ran out of its budget leaves
 //! nothing behind, and neither does one that succeeded once its artifact has
-//! been taken away. The process is killed rather than asked to stop, and it is
-//! killed by being dropped too, so a server that goes away does not leave an
-//! encoder running.
+//! been taken away. The process is killed rather than asked to stop — the
+//! whole group of it, since the program may be a wrapper holding the pipes
+//! with children of its own — and it is killed by being dropped too, so a
+//! server that goes away does not leave an encoder running.
 //!
 //! The progress pipe is read in ffmpeg's own units: `out_time_ms` is
 //! microseconds. That is a historical quirk of the progress protocol and the
@@ -188,16 +189,24 @@ pub async fn run_command(
     cancel: oneshot::Receiver<()>,
     on_progress: impl Fn(f64) + Send + Sync + 'static,
 ) -> Result<(), RunError> {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         // A server that goes away must not leave an encoder behind.
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    // A group of its own, so stopping the renderer stops whatever it spawned:
+    // killing the child alone would leave a wrapper's own children holding
+    // the pipes open and the readers waiting them out.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|error| RunError::Unstartable(format!("Could not run ffmpeg: {error}")))?;
+    let mut group = GroupGuard::new(&child);
 
     let stdout = child
         .stdout
@@ -224,13 +233,18 @@ pub async fn run_command(
         _ = tokio::time::sleep(timeout) => Ending::TimedOut,
     };
     let ending = match ending {
-        Ending::Exited(status) => Ending::Exited(status),
+        Ending::Exited(status) => {
+            group.disarm();
+            Ending::Exited(status)
+        }
         Ending::Cancelled => {
             stop(&mut child).await;
+            group.disarm();
             Ending::Cancelled
         }
         Ending::TimedOut => {
             stop(&mut child).await;
+            group.disarm();
             Ending::TimedOut
         }
     };
@@ -251,8 +265,69 @@ pub async fn run_command(
 
 /// Kills the process and waits for it, so nothing is left running or half-read.
 async fn stop(child: &mut tokio::process::Child) {
+    // The whole group, not just the child: the pipes close for good when
+    // everything the renderer started is gone.
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        kill_group(pid as i32);
+    }
+    // And the child itself, which covers the moment before it has joined the
+    // group; a second kill lands on a process already gone and is ignored.
     let _ = child.start_kill();
     let _ = child.wait().await;
+}
+
+/// Kills the whole process group until the run's ending has been seen.
+///
+/// Dropping the child alone kills the child; a wrapper's own children would
+/// live on, holding the pipes and running an encoder the server no longer
+/// follows. Disarmed once the child has been reaped, since from then on
+/// nothing in the group is this run's to end — and the id may yet be reused.
+struct GroupGuard {
+    #[cfg(unix)]
+    pgid: Option<i32>,
+}
+
+impl GroupGuard {
+    fn new(child: &tokio::process::Child) -> Self {
+        #[cfg(unix)]
+        {
+            Self {
+                pgid: child.id().map(|pid| pid as i32),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = child;
+            Self {}
+        }
+    }
+
+    fn disarm(&mut self) {
+        #[cfg(unix)]
+        {
+            self.pgid = None;
+        }
+    }
+}
+
+impl Drop for GroupGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pgid) = self.pgid {
+            kill_group(pgid);
+        }
+    }
+}
+
+/// Kills every process in one group, the leader included.
+#[cfg(unix)]
+fn kill_group(pgid: i32) {
+    // An id that no longer names a live group is answered with `ESRCH`; there
+    // is nothing else this call can disturb.
+    unsafe {
+        libc::kill(-pgid, libc::SIGKILL);
+    }
 }
 
 /// Reads the progress pipe, reporting every moment the renderer sends.
