@@ -36,6 +36,17 @@
 
 应用的窗口由 WebView2——Edge 的渲染引擎——绘制，因此无论是运行 `make tauri-dev` 还是使用安装后的应用都需要它：没有它就没有窗口可画。NSIS 安装包在缺少它的机器上会下载微软的引导程序来安装，所以那次安装需要联网。WiX 与 NSIS 本身只在构建安装器时才需要，`make package-windows` 按 Tauri 前置条件覆盖了这些。
 
+### Linux
+
+窗口由 WebKitGTK 渲染，开发包在构建与运行时都要有——缺了它 `cargo` 会在 `webkit2gtk-sys` 处停下。Debian、Ubuntu 及其衍生版一条命令装齐（即 Tauri 前置条件里的那一行）：
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+rpm 系发行版把 `-dev` 换成对应的 `-devel`（`webkit2gtk4.1-devel`、`gtk3-devel`、`libsoup3-devel`、`librsvg2-devel`）；具体包名以 [Tauri 前置条件](https://tauri.app/start/prerequisites/) 为准。Rust 与 Node.js 的装法同 macOS。
+
 ## 片段导出（ffmpeg）
 
 时间线导出由 ffmpeg 完成，它不随程序打包。没有它程序照常运行——导出会自报不可用，其对话框列出每一条出路——要导出的机器需要一份带 **libass**（烧录字幕的 `ass` 滤镜）与 `xfade`（转场）的构建。`brew install ffmpeg` 的普通 formula 编译时不含 libass：没有台词的剪辑可以导出，带台词的剪辑会被点名拒绝，而不是悄悄把台词丢掉。
@@ -57,6 +68,8 @@ MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make tauri-dev
 或者写进配置文件作为 `clip.ffmpegPath`，让每次运行都能找到。Rust 测试套件以同样方式查找渲染器；ffmpeg 缺 libass 的机器会在两个烧录字幕的片段测试上失败，因此在 macOS 上完整跑一遍是 `MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make check`。
 
 Windows：安装一份全功能构建——gyan.dev 的 ["full"](https://www.gyan.dev/ffmpeg/builds/)，或 [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) 的发布版——同样指名它，`clip.ffmpegPath: 'C:\path\to\ffmpeg.exe'` 或 `MOKA_FFMPEG`，或把它的 `bin` 目录放进 `PATH`。
+
+Linux：发行版自己的 `ffmpeg` 包通常就是带 libass 的完整构建——Debian 与 Ubuntu 的官方构建即是如此——`sudo apt install ffmpeg` 之后用下面那条命令确认即可。
 
 任何构建都可以被问它有什么：`ffmpeg -h filter=ass` 在滤镜存在时会描述它，不存在时会说 `Unknown filter 'ass'.`。
 
@@ -195,6 +208,26 @@ Makefile 强制这些检查，并在缺失时自动安装 Rust 目标。构建�
 - 打包的 exe 未签名；Windows SmartScreen 可能会警告。
 - 交叉构建的安装器尚未在物理 Windows 机器上冒烟测试；分发前先安装一次验证。
 - 绝不要把 `cross-package-windows` 与另一个打包任务（`package-macos`、`package-web`、`web-build`）并发运行。它们都会重建 `dist/`，而 vite 在重建开始时清空 `dist/`。如果 bundler 在 `dist/` 为空时解析资源，Tauri 的资源遍历器会静默跳过该目录，产出没有 `web/` 的安装器——安装后的应用启动即退出（内嵌 HTTP 服务器需要 `web/` 资源目录）。如果安装好的 Windows 构建双击「没反应」，检查安装器确实包含 `web/`（`7zz l <setup.exe>`）并重建。
+
+### Linux 安装包（仅 Linux）
+
+```sh
+make package-linux
+```
+
+在 `src-tauri/target/release/bundle/` 下生成三种包，并由 `scripts/collect-release.mjs` 一并复制进 `release/`：
+
+| 包       | 文件名                                | 面向                      |
+| -------- | ------------------------------------- | ------------------------- |
+| deb      | `Moka Canvas_<version>_amd64.deb`     | Debian、Ubuntu 及其衍生版 |
+| rpm      | `Moka Canvas-<version>-1.x86_64.rpm`  | Fedora、RHEL、openSUSE    |
+| AppImage | `Moka Canvas_<version>_amd64.AppImage` | 任何发行版，免安装        |
+
+deb 与 rpm 交给系统包管理器安装，它们的运行期依赖由 Tauri 从构建机上实际链接到的库推出（本构建得到的是 `libwebkit2gtk-4.1-0` 与 `libgtk-3-0`）。AppImage 自带全部内容，`chmod +x` 之后直接运行。
+
+AppImage 由 linuxdeploy 生成：Tauri 从 GitHub 取 linuxdeploy、AppRun 与 gtk 插件，放在 `~/.cache/tauri/` 下，所以打包 AppImage 需要联网。那份缓存不在 `make clean` 的范围内——它是跨项目共用的工具，不是本仓库的产物。
+
+每种包各起一次 `npm run tauri build -- --bundles <kind>`，而不是把三种写进同一次运行：tauri-bundler 2.11 的一个进程被打包两种以上时，会在打完最后一种之后空转——CPU 满载、不再输出、也不落任何文件——而只要一种就总能收尾。两次运行的差别仅在这个分组，产物完全一致。
 
 ### 更新应用图标
 

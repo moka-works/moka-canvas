@@ -36,6 +36,17 @@ The window renders in the system's own WebKit, so the desktop app runs with noth
 
 The app's window is drawn by WebView2 — Edge's rendering engine — so it is needed to run `make tauri-dev` as much as the installed app: without it there is no window to draw in. The NSIS setup installs it on machines that lack it, by downloading Microsoft's bootstrapper, so that install needs network. WiX and NSIS themselves are only needed to build installers, which `make package-windows` covers per the Tauri prerequisites.
 
+### Linux
+
+The window is drawn by WebKitGTK, and its development package is needed to build as much as to run — without it `cargo` stops at `webkit2gtk-sys`. On Debian, Ubuntu, and their derivatives one command installs the lot (the line from the Tauri prerequisites):
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+On rpm-based distributions the `-dev` packages become the matching `-devel` ones (`webkit2gtk4.1-devel`, `gtk3-devel`, `libsoup3-devel`, `librsvg2-devel`); the [Tauri prerequisites](https://tauri.app/start/prerequisites/) have the exact names. Rust and Node.js install the same way as on macOS.
+
 ## Clip export (ffmpeg)
 
 Timeline export is done by ffmpeg, which is not bundled. The program runs without it — export reports itself unavailable and its dialog names every way out — and a machine that is meant to export needs a build with **libass** (the `ass` filter that burns captions in) and `xfade` (the transitions). The plain `brew install ffmpeg` formula is built without libass: a cut with no words exports, and one with words is refused by name rather than quietly losing them.
@@ -57,6 +68,8 @@ MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make tauri-dev
 or write it into the configuration file as `clip.ffmpegPath` so every run finds it. The Rust suites look for their renderer the same way, and a machine whose ffmpeg lacks libass fails the two clip tests that burn a caption in, so a full run on macOS is `MOKA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg make check`.
 
 Windows: install a full-featured build — gyan.dev's ["full"](https://www.gyan.dev/ffmpeg/builds/), or a [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) release — and name it the same way, `clip.ffmpegPath: 'C:\path\to\ffmpeg.exe'` or `MOKA_FFMPEG`, or put its `bin` directory on `PATH`.
+
+Linux: the distribution's own `ffmpeg` package is normally a full build with libass — Debian's and Ubuntu's are — so `sudo apt install ffmpeg` is all it takes; confirm with the command below.
 
 Any build can be asked what it has: `ffmpeg -h filter=ass` describes the filter when it is there, and says `Unknown filter 'ass'.` when it is not.
 
@@ -195,6 +208,26 @@ Caveats:
 - The bundled exe is unsigned; Windows SmartScreen may warn.
 - The cross-built installer has not been smoke-tested on a physical Windows machine; verify by installing once before distribution.
 - Never run `cross-package-windows` concurrently with another package task (`package-macos`, `package-web`, `web-build`). All of them rebuild `dist/`, and vite empties `dist/` at the start of a rebuild. If the bundler resolves resources while `dist/` is empty, Tauri's resource walker silently skips the directory, producing an installer without `web/` — the installed app then exits immediately on launch (the embedded HTTP server requires the `web/` resource directory). If an installed Windows build "does nothing" on double-click, check that the installer actually contains `web/` (`7zz l <setup.exe>`) and rebuild.
+
+### Linux packages (Linux only)
+
+```sh
+make package-linux
+```
+
+Produces three packages under `src-tauri/target/release/bundle/`, and `scripts/collect-release.mjs` copies them all into `release/`:
+
+| Package  | File name                              | For                            |
+| -------- | -------------------------------------- | ------------------------------ |
+| deb      | `Moka Canvas_<version>_amd64.deb`      | Debian, Ubuntu and derivatives |
+| rpm      | `Moka Canvas-<version>-1.x86_64.rpm`   | Fedora, RHEL, openSUSE         |
+| AppImage | `Moka Canvas_<version>_amd64.AppImage` | any distribution, no install   |
+
+The deb and the rpm are installed by the system package manager, and their runtime dependencies are derived by Tauri from the libraries actually linked on the build machine (this build yields `libwebkit2gtk-4.1-0` and `libgtk-3-0`). The AppImage carries everything itself — `chmod +x` and run it.
+
+The AppImage is produced by linuxdeploy: Tauri fetches linuxdeploy, AppRun, and the gtk plugin from GitHub and keeps them in `~/.cache/tauri/`, so packaging an AppImage needs network. That cache is outside `make clean` — it is tooling shared across projects, not an artifact of this repository.
+
+Each kind gets its own `npm run tauri build -- --bundles <kind>` rather than sharing one run: a single tauri-bundler 2.11 process asked for two or more kinds stalls after its last bundle — CPU pegged, no further output, no files written — while a process asked for exactly one always finishes. The grouping is the only difference; the artifacts are identical.
 
 ### Updating app icons
 

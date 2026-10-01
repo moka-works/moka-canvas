@@ -5,7 +5,16 @@ const root = new URL("..", import.meta.url).pathname;
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const targetDir = join(root, "src-tauri", "target");
 const releaseDir = join(root, "release");
-const extensions = new Set([".dmg", ".msi", ".exe"]);
+const extensions = new Set([
+  ".dmg",
+  ".msi",
+  ".exe",
+  ".deb",
+  ".rpm",
+  ".AppImage",
+]);
+// deb and AppImage separate the version with underscores, rpm with dashes.
+const versionTags = [`_${pkg.version}_`, `-${pkg.version}-`];
 
 const bundleRoots = [join(targetDir, "release", "bundle")];
 for (const entry of await readdir(targetDir, { withFileTypes: true })) {
@@ -16,7 +25,7 @@ for (const entry of await readdir(targetDir, { withFileTypes: true })) {
 
 const artifacts = [];
 for (const bundleRoot of bundleRoots) {
-  for (const bundleType of ["dmg", "msi", "nsis"]) {
+  for (const bundleType of ["dmg", "msi", "nsis", "deb", "rpm", "appimage"]) {
     const dir = join(bundleRoot, bundleType);
     let entries;
     try {
@@ -25,7 +34,10 @@ for (const bundleRoot of bundleRoots) {
       continue;
     }
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.includes(`_${pkg.version}_`)) {
+      if (
+        !entry.isFile() ||
+        !versionTags.some((tag) => entry.name.includes(tag))
+      ) {
         continue;
       }
       const extension = entry.name.slice(entry.name.lastIndexOf("."));

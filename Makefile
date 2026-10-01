@@ -2,7 +2,7 @@ SHELL := /bin/sh
 CARGO_MANIFEST := src-tauri/Cargo.toml
 WINDOWS_CROSS_TARGET := x86_64-pc-windows-gnu
 
-.PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-windows cross-package-windows set-version clean
+.PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-windows package-linux cross-package-windows set-version clean
 
 ifeq (set-version,$(firstword $(MAKECMDGOALS)))
 SET_VERSION_ARG := $(word 2,$(MAKECMDGOALS))
@@ -66,6 +66,17 @@ package-macos: web-build
 package-windows: web-build
 	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) printf '%s\n' 'package-windows must run on Windows.' >&2; exit 1;; esac
 	npm run tauri build -- --bundles msi,nsis
+	node scripts/collect-release.mjs
+
+# One invocation per package kind: a single tauri-bundler process asked for two
+# or more kinds stalls after its last bundle — CPU pegged, nothing written, no
+# child running — while a process asked for exactly one always finishes. Same
+# binary and flags either way; only the grouping differs.
+package-linux: web-build
+	@test "$$(uname -s)" = "Linux" || (printf '%s\n' 'package-linux must run on Linux.' >&2; exit 1)
+	npm run tauri build -- --bundles deb
+	npm run tauri build -- --bundles rpm
+	npm run tauri build -- --bundles appimage
 	node scripts/collect-release.mjs
 
 cross-package-windows: web-build
