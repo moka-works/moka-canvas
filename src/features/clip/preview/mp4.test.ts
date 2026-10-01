@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { Mp4Error, parseFile, parseMoov } from "./mp4";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Mp4Error, openMp4, parseFile, parseMoov } from "./mp4";
 import { planFor } from "./samplePlan";
 
 /**
@@ -385,6 +385,75 @@ describe("walking a file's boxes", () => {
       bytes(ftyp(), moov(videoTrak({ format: "vp09", entry: deeper }))),
     );
     expect(levelFour.video?.codec).toBe("vp09.02.41.10");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The walk over the wire
+// ---------------------------------------------------------------------------
+
+/**
+ * What the walk asks a server for, by range.
+ *
+ * The walk opens a file by reading it in stretches rather than a header at a
+ * time: what matters to a cold preview is how many round trips stand between
+ * the ask and the index, so these tests hold the walk to its count.
+ */
+describe("reading a file's boxes over the wire", () => {
+  /** The ranges asked for, as requested — before any clamping at the file's end. */
+  let asked: { start: number; end: number }[] = [];
+
+  /** Serves a file's bytes by Range, recording each ask. */
+  function serve(raw: Uint8Array): void {
+    asked = [];
+    vi.stubGlobal(
+      "fetch",
+      (_input: string, init?: { headers?: Record<string, string> }) => {
+        const match = /bytes=(\d+)-(\d+)/.exec(init?.headers?.Range ?? "");
+        if (!match)
+          return Promise.resolve(
+            new Response(raw as unknown as BodyInit, { status: 200 }),
+          );
+        const start = Number(match[1]);
+        const last = Math.min(Number(match[2]), raw.byteLength - 1);
+        asked.push({ start, end: Number(match[2]) });
+        return Promise.resolve(
+          new Response(raw.subarray(start, last + 1) as unknown as BodyInit, {
+            status: 206,
+            headers: {
+              "Content-Range": `bytes ${start}-${last}/${raw.byteLength}`,
+            },
+          }),
+        );
+      },
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("opens a small faststart file in one window", async () => {
+    serve(bytes(ftyp(), moov(videoTrak()), mdat()));
+    const at = await openMp4("https://moka.test/faststart.mp4");
+    // One read covers ftyp, the moov, and everything else a small file holds.
+    expect(asked).toHaveLength(1);
+    expect(asked[0].start).toBe(0);
+    expect(at.video?.codec).toBe("avc1.64001f");
+    expect(at.durationMs).toBe(3000);
+  });
+
+  it("jumps a data box larger than the window, then reads the moov", async () => {
+    const data = mdat(68 * 1024);
+    const head = bytes(ftyp(), data);
+    serve(bytes(ftyp(), data, moov(videoTrak())));
+    const at = await openMp4("https://moka.test/moov-at-end.mp4");
+    // The head window carries the boxes before the data; the jump lands where
+    // the moov stands, which the second window reads.
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toEqual({ start: 0, end: 65535 });
+    expect(asked[1].start).toBe(head.byteLength);
+    expect(at.video?.samples).toHaveLength(3);
   });
 });
 

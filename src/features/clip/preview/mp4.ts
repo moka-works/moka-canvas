@@ -759,27 +759,39 @@ export async function readRange(
   return { bytes, total: contentRangeTotal(range) };
 }
 
-/** How many bytes the walk asks for at a time: a box header and its 64-bit size. */
+/** The bytes a box header can take at most: a 32-bit size, a type, and a 64-bit size. */
 const HEAD_BYTES = 16;
+
+/** How much of a file one walk window holds: a small file's boxes, moov and all. */
+const WALK_WINDOW_BYTES = 64 * 1024;
 
 async function walk(url: string, signal?: AbortSignal): Promise<Mp4Index> {
   let at = 0;
   let total: number | null = null;
+  let windowStart = 0;
+  let window = new Uint8Array(0);
   for (;;) {
     if (total !== null && at >= total) break;
-    const window = await readRange(url, at, at + HEAD_BYTES, signal);
-    total = window.total ?? total;
-    if (window.bytes.byteLength < 8) break;
+    // One read covers a stretch of boxes: a header at the window's edge, or a
+    // box that jumped past it, is what asks for the next window.
+    if (at + HEAD_BYTES > windowStart + window.byteLength) {
+      const read = await readRange(url, at, at + WALK_WINDOW_BYTES, signal);
+      window = read.bytes;
+      windowStart = at;
+      total = read.total ?? total;
+    }
+    const inside = at - windowStart;
+    if (window.byteLength - inside < 8) break;
     const head = new DataView(
-      window.bytes.buffer,
-      window.bytes.byteOffset,
-      window.bytes.byteLength,
+      window.buffer,
+      window.byteOffset + inside,
+      window.byteLength - inside,
     );
     let size = u32(head, 0);
     const type = fourcc(head, 4);
     let headerSize = 8;
     if (size === 1) {
-      if (window.bytes.byteLength < 16)
+      if (window.byteLength - inside < 16)
         throw invalid("A box header is cut short");
       size = u64(head, 8);
       headerSize = 16;
@@ -798,13 +810,14 @@ async function walk(url: string, signal?: AbortSignal): Promise<Mp4Index> {
     if (type === "moov") {
       if (size > MAX_MOOV_BYTES)
         throw invalid("The moov is larger than this preview reads");
-      const box = await readRange(url, at, at + size, signal);
+      // A moov standing whole in the window is parsed from it; one that runs
+      // past the window's edge is read on its own, as it always was.
+      const bytes =
+        size <= window.byteLength - inside
+          ? window.subarray(inside, inside + size)
+          : (await readRange(url, at, at + size, signal)).bytes;
       return parseMoov(
-        new DataView(
-          box.bytes.buffer,
-          box.bytes.byteOffset,
-          box.bytes.byteLength,
-        ),
+        new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
       );
     }
     at += size;
