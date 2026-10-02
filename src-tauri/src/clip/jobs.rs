@@ -326,13 +326,26 @@ mod tests {
     #[cfg(unix)]
     fn write_script(directory: &Path, name: &str, body: &str) -> PathBuf {
         use std::io::Write;
+        // Written by a helper process so no descriptor of this process is
+        // ever open on the file: a fork in any other thread would copy one,
+        // and the exec that follows could answer ETXTBSY while the copy
+        // lives.
         let path = directory.join(name);
-        let mut file = std::fs::File::create(&path).expect("script");
-        file.write_all(body.as_bytes()).expect("script body");
-        drop(file);
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("script is executable");
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("cat > \"$1\" && chmod 755 \"$1\"")
+            .arg("sh")
+            .arg(&path)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .expect("script");
+        child
+            .stdin
+            .take()
+            .expect("script body")
+            .write_all(body.as_bytes())
+            .expect("script body");
+        assert!(child.wait().expect("script").success(), "script is written");
         path
     }
 

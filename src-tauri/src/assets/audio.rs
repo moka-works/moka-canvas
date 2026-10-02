@@ -248,11 +248,26 @@ mod tests {
     #[cfg(unix)]
     fn write_script(root: &Path, name: &str, body: &str) -> PathBuf {
         use std::io::Write;
-        use std::os::unix::fs::PermissionsExt;
+        // Written by a helper process so no descriptor of this process is
+        // ever open on the file: a fork in any other thread would copy one,
+        // and the exec that follows could answer ETXTBSY while the copy
+        // lives.
         let path = root.join(name);
-        let mut file = std::fs::File::create(&path).unwrap();
-        file.write_all(body.as_bytes()).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("cat > \"$1\" && chmod 755 \"$1\"")
+            .arg("sh")
+            .arg(&path)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .expect("script");
+        child
+            .stdin
+            .take()
+            .expect("script body")
+            .write_all(body.as_bytes())
+            .expect("script body");
+        assert!(child.wait().expect("script").success(), "script is written");
         path
     }
 
@@ -392,11 +407,7 @@ mod tests {
         );
 
         let started = std::time::Instant::now();
-        // Executed through sh rather than its own shebang: a script this test
-        // has just written can answer ETXTBSY while a fork in another test
-        // still holds a copy of its writer, and sh is never the file at risk.
-        let script = program.to_string_lossy().into_owned();
-        let error = run_with_timeout(Path::new("/bin/sh"), &[script], Duration::from_millis(500))
+        let error = run_with_timeout(&program, &[], Duration::from_millis(500))
             .await
             .unwrap_err();
         assert!(error.contains("took longer"), "{error}");
