@@ -15,10 +15,11 @@
 //! answered with the file itself — the same bytes the voice read before any of
 //! this existed.
 
-use crate::clip::runner::{tail_message, MESSAGE_LIMIT};
+use crate::clip::runner::{read_stderr, stop, tail_message, GroupGuard, MESSAGE_LIMIT};
 use crate::domain::ResourceEntry;
 use crate::project::ProjectError;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::Duration;
 
 /// How long one rendition may take: a copy of minutes of sound with the demux
@@ -94,24 +95,70 @@ pub async fn audio_for(
 
 /// Runs one rendition and waits for it, or gives up on the clock.
 async fn run(program: &Path, args: &[String]) -> Result<(), String> {
-    let ran = tokio::time::timeout(
-        RENDITION_TIMEOUT,
-        tokio::process::Command::new(program)
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .map_err(|_| format!("took longer than {} seconds", RENDITION_TIMEOUT.as_secs()))?
-    .map_err(|error| format!("could not run it: {error}"))?;
-    if ran.status.success() {
+    run_with_timeout(program, args, RENDITION_TIMEOUT).await
+}
+
+/// One run of the renderer, followed to its end or its budget.
+///
+/// The program gets a process group of its own and is stopped by killing the
+/// group, not just the child: a renderer that is a wrapper — a shell script
+/// around ffmpeg — would otherwise leave its own children holding the pipes
+/// and encoding on, with nothing left following them.
+async fn run_with_timeout(
+    program: &Path,
+    args: &[String],
+    timeout: Duration,
+) -> Result<(), String> {
+    let mut command = tokio::process::Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        // A server that goes away must not leave an encoder behind.
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("could not run it: {error}"))?;
+    let mut group = GroupGuard::new(&child);
+
+    // Both pipes are read to their end: a renderer blocked on a full pipe
+    // would otherwise sit there until the clock gives up on it.
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let drained = tokio::spawn(async move {
+        if let Some(mut stdout) = stdout {
+            let _ = tokio::io::copy(&mut stdout, &mut tokio::io::sink()).await;
+        }
+    });
+    let errors = tokio::spawn(async move {
+        match stderr {
+            Some(stderr) => read_stderr(stderr).await,
+            None => String::new(),
+        }
+    });
+
+    let status = tokio::select! {
+        status = child.wait() => status,
+        _ = tokio::time::sleep(timeout) => {
+            stop(&mut child).await;
+            group.disarm();
+            let _ = drained.await;
+            let _ = errors.await;
+            return Err(format!("took longer than {} seconds", timeout.as_secs()));
+        }
+    };
+    group.disarm();
+    let _ = drained.await;
+    let message = errors.await.unwrap_or_default();
+
+    let status = status.map_err(|error| format!("could not run it: {error}"))?;
+    if status.success() {
         return Ok(());
     }
-    Err(tail_message(
-        String::from_utf8_lossy(&ran.stderr).trim(),
-        MESSAGE_LIMIT,
-    ))
+    Err(tail_message(message.trim(), MESSAGE_LIMIT))
 }
 
 /// The command a sound is taken out with when the copy may work.
@@ -162,6 +209,11 @@ mod tests {
     use super::{aac_args, audio_for, cache_dir, cached_path, copy_args};
     use crate::domain::ResourceEntry;
     use std::path::{Path, PathBuf};
+    #[cfg(target_os = "linux")]
+    use std::time::Duration;
+
+    #[cfg(target_os = "linux")]
+    use super::run_with_timeout;
 
     fn entry(id: &str, sha: Option<&str>) -> ResourceEntry {
         ResourceEntry {
@@ -316,6 +368,54 @@ mod tests {
                 .unwrap_or(0),
             0,
             "a run that failed leaves nothing behind"
+        );
+    }
+
+    /// The whole group is stopped when the clock runs out.
+    ///
+    /// The stand-in is the wrapper case: it starts a child of its own and
+    /// waits on it, so only a kill of the whole group ends both. The child's
+    /// pid is read from /proc after the run, where a killed process is gone —
+    /// or a moment's un-reaped zombie — but a survivor is still there.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_run_that_ends_on_the_clock_leaves_nothing_running() {
+        let root = tempfile::tempdir().unwrap();
+        let pid_file = root.path().join("sleeper.pid");
+        let program = write_script(
+            root.path(),
+            "ffmpeg",
+            &format!(
+                "#!/bin/sh\nsleep 30 &\necho $! > {}\nwait\n",
+                pid_file.display()
+            ),
+        );
+
+        let started = std::time::Instant::now();
+        let error = run_with_timeout(&program, &[], Duration::from_millis(500))
+            .await
+            .unwrap_err();
+        assert!(error.contains("took longer"), "{error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the run should end by the clock, not by waiting the child out"
+        );
+
+        let pid: i32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let state = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .map(|stat| stat.rsplit(')').next().unwrap_or(" ").trim().to_string());
+        let alive = matches!(
+            state.as_deref().and_then(|rest| rest.chars().next()),
+            Some('R' | 'S' | 'D' | 'T')
+        );
+        assert!(
+            !alive,
+            "the renderer's own child outlived the run: {state:?}"
         );
     }
 }

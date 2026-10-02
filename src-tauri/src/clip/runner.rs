@@ -264,7 +264,7 @@ pub async fn run_command(
 }
 
 /// Kills the process and waits for it, so nothing is left running or half-read.
-async fn stop(child: &mut tokio::process::Child) {
+pub(crate) async fn stop(child: &mut tokio::process::Child) {
     // The whole group, not just the child: the pipes close for good when
     // everything the renderer started is gone.
     #[cfg(unix)]
@@ -283,13 +283,13 @@ async fn stop(child: &mut tokio::process::Child) {
 /// live on, holding the pipes and running an encoder the server no longer
 /// follows. Disarmed once the child has been reaped, since from then on
 /// nothing in the group is this run's to end — and the id may yet be reused.
-struct GroupGuard {
+pub(crate) struct GroupGuard {
     #[cfg(unix)]
     pgid: Option<i32>,
 }
 
 impl GroupGuard {
-    fn new(child: &tokio::process::Child) -> Self {
+    pub(crate) fn new(child: &tokio::process::Child) -> Self {
         #[cfg(unix)]
         {
             Self {
@@ -303,7 +303,7 @@ impl GroupGuard {
         }
     }
 
-    fn disarm(&mut self) {
+    pub(crate) fn disarm(&mut self) {
         #[cfg(unix)]
         {
             self.pgid = None;
@@ -348,7 +348,7 @@ async fn read_progress<R: AsyncRead + Unpin>(
 
 /// Collects the renderer's own words, bounded: an encoder can be extremely
 /// talkative and a log is not a message.
-async fn read_stderr<R: AsyncRead + Unpin>(mut reader: R) -> String {
+pub(crate) async fn read_stderr<R: AsyncRead + Unpin>(mut reader: R) -> String {
     let mut bytes = Vec::new();
     let mut buffer = [0u8; 4_096];
     loop {
