@@ -210,9 +210,9 @@ and are exported as `.moka` packages; see the release checklist.
 
 `meta.json` records a schema version. Only the version this build reads opens:
 a directory stamped otherwise exits the process with
-`METADATA_SCHEMA_UNSUPPORTED` and a message naming the version it found. Nothing
-is migrated, downgraded, or overwritten in place — set the directory aside and
-configure it anew.
+`METADATA_SCHEMA_UNSUPPORTED` and a message naming the directory and the version
+it found. Nothing is migrated, downgraded, or overwritten in place — set the
+directory aside and configure it anew.
 
 Before rolling back the application version, back up the metadata directory
 (whole-directory copy, as above). The rolled-back build refuses the directory

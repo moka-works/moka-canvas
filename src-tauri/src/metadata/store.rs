@@ -142,7 +142,7 @@ impl FileMetadataStore {
 
         let mut recovered = Vec::new();
         let meta = load_meta(root, &mut recovered)?;
-        check_schema(meta.schema_version)?;
+        check_schema(root, meta.schema_version)?;
 
         let recent = load_or_reset(root, RECENT_DOC, &mut recovered);
         let (models, secrets) = load_models_and_secrets(root, &mut recovered)?;
@@ -912,11 +912,15 @@ fn load_models_and_secrets(
 
 /// Only this build's document format is read. A directory stamped otherwise is
 /// refused whole rather than half-read through rules that no longer exist, and
-/// the error names the version it holds so the way forward — setting the
-/// directory aside — is a choice the user can make.
-fn check_schema(found: u32) -> Result<(), MetadataError> {
+/// the error names the directory and the version it holds so the way forward —
+/// setting it aside — is a choice the user can make.
+fn check_schema(root: &Path, found: u32) -> Result<(), MetadataError> {
     if found != SCHEMA_VERSION {
-        return Err(MetadataError::schema_unsupported(found, SCHEMA_VERSION));
+        return Err(MetadataError::schema_unsupported(
+            root,
+            found,
+            SCHEMA_VERSION,
+        ));
     }
     Ok(())
 }
@@ -1036,7 +1040,7 @@ mod tests {
     }
 
     /// A directory stamped with another schema version is refused whole, with
-    /// the version it holds named.
+    /// the directory and the version it holds named.
     ///
     /// This build reads one document format; reading an older one would mean
     /// half-reading it through rules that no longer exist, and rewriting it
@@ -1057,6 +1061,11 @@ mod tests {
             .expect("a directory from another schema must be refused");
         assert_eq!(error.code(), "METADATA_SCHEMA_UNSUPPORTED");
         assert!(error.to_string().contains("version 2"), "{error}");
+        // The directory itself is named, so setting it aside needs no search.
+        assert!(
+            error.to_string().contains(&*root.path().to_string_lossy()),
+            "{error}"
+        );
 
         // Nothing was rewritten or moved aside: the directory is left exactly
         // as it was, for the user to set aside or keep.

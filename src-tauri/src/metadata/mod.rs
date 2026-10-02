@@ -41,8 +41,8 @@ pub const FILE_STORE: &str = "file";
 /// The one document format version this build reads, recorded in `meta.json`.
 ///
 /// There are no upgrades between versions: a directory stamped otherwise is
-/// refused at startup with the schema it holds named, and starting fresh means
-/// setting the directory aside.
+/// refused at startup with the directory and the schema it holds named, and
+/// starting fresh means setting the directory aside.
 pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Error)]
@@ -52,11 +52,16 @@ pub enum MetadataError {
     #[error("metadata could not be written: {0}")]
     WriteFailed(String),
     #[error(
-        "this metadata directory was written by schema version {found}; \
+        "the metadata directory {} was written by schema version {found}; \
          this build reads version {expected} and does not migrate, \
-         so set the directory aside to start fresh"
+         so set it aside to start fresh",
+        dir.display()
     )]
-    SchemaUnsupported { found: u32, expected: u32 },
+    SchemaUnsupported {
+        dir: std::path::PathBuf,
+        found: u32,
+        expected: u32,
+    },
     #[error(
         "{document} changed underneath this request (expected revision {expected}, found {actual})"
     )]
@@ -86,8 +91,12 @@ impl MetadataError {
         Self::WriteFailed(message.into())
     }
 
-    pub fn schema_unsupported(found: u32, expected: u32) -> Self {
-        Self::SchemaUnsupported { found, expected }
+    pub fn schema_unsupported(dir: &Path, found: u32, expected: u32) -> Self {
+        Self::SchemaUnsupported {
+            dir: dir.to_path_buf(),
+            found,
+            expected,
+        }
     }
 
     pub fn key_missing(message: impl Into<String>) -> Self {
