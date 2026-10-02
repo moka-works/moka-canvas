@@ -16,7 +16,9 @@ Moka Canvas brings no AI of its own. You connect the model services you already 
 
 What is generated stays in the project: images, sound, and video are filed into the asset shelf by themselves, ready to be referenced from the canvas again, or to be cut into a film in the Clip module; the Story module, in turn, takes "telling a story" apart into five steps that walk from a premise all the way to a film ready to export.
 
-If Moka Canvas is helpful to you, a **Star** on the repository is a welcome way to support it; if you run into a problem while using it, please open an **Issue** and tell us.
+View detail document: [https://moka-canvas.art](https://moka-canvas.art)
+
+**If Moka Canvas is helpful to you, a Star :star: on the repository is a welcome way to support it; if you run into a problem while using it, please open an [Issue](https://github.com/moka-works/moka-canvas/issues/new) to tell us**
 
 ## Main features
 
