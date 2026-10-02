@@ -392,7 +392,11 @@ mod tests {
         );
 
         let started = std::time::Instant::now();
-        let error = run_with_timeout(&program, &[], Duration::from_millis(500))
+        // Executed through sh rather than its own shebang: a script this test
+        // has just written can answer ETXTBSY while a fork in another test
+        // still holds a copy of its writer, and sh is never the file at risk.
+        let script = program.to_string_lossy().into_owned();
+        let error = run_with_timeout(Path::new("/bin/sh"), &[script], Duration::from_millis(500))
             .await
             .unwrap_err();
         assert!(error.contains("took longer"), "{error}");
