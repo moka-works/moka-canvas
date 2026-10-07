@@ -227,7 +227,7 @@ deb 与 rpm 交给系统包管理器安装，它们的运行期依赖由 Tauri �
 
 AppImage 由 linuxdeploy 生成：Tauri 从 GitHub 取 linuxdeploy、AppRun 与 gtk 插件，放在 `~/.cache/tauri/` 下，所以打包 AppImage 需要联网。那份缓存不在 `make clean` 的范围内——它是跨项目共用的工具，不是本仓库的产物。
 
-每种包各起一次 `npm run tauri build -- --bundles <kind>`，而不是把三种写进同一次运行：tauri-bundler 2.11 的一个进程被打包两种以上时，会在打完最后一种之后空转——CPU 满载、不再输出、也不落任何文件——而只要一种就总能收尾。两次运行的差别仅在这个分组，产物完全一致。
+每种包各起一次 `npm run tauri build -- --bundles <kind>`，而不是把三种写进同一次运行：`@tauri-apps/cli` 2.11.4 内置的 tauri-bundler 2.9.4 进程被打包两种以上时，会在打完最后一种之后空转——CPU 满载、不再输出、也不落任何文件——而只要一种就总能收尾。两次运行的差别仅在这个分组，产物完全一致。
 
 ### 更新应用图标
 
