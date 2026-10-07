@@ -227,7 +227,7 @@ The deb and the rpm are installed by the system package manager, and their runti
 
 The AppImage is produced by linuxdeploy: Tauri fetches linuxdeploy, AppRun, and the gtk plugin from GitHub and keeps them in `~/.cache/tauri/`, so packaging an AppImage needs network. That cache is outside `make clean` — it is tooling shared across projects, not an artifact of this repository.
 
-Each kind gets its own `npm run tauri build -- --bundles <kind>` rather than sharing one run: a single tauri-bundler 2.11 process asked for two or more kinds stalls after its last bundle — CPU pegged, no further output, no files written — while a process asked for exactly one always finishes. The grouping is the only difference; the artifacts are identical.
+Each kind gets its own `npm run tauri build -- --bundles <kind>` rather than sharing one run: a single tauri-bundler 2.9.4 process (the version `@tauri-apps/cli` 2.11.4 vendors) asked for two or more kinds stalls after its last bundle — CPU pegged, no further output, no files written — while a process asked for exactly one always finishes. The grouping is the only difference; the artifacts are identical.
 
 ### Updating app icons
 
