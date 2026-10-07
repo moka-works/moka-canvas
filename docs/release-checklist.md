@@ -374,6 +374,34 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
 8. Uninstall in either language: the programs-list entry and both name
    variants of the shortcuts are removed, none left as a dead link.
 
+## Linux (`make package-linux`)
+
+1. Build from the checkout; the `.deb`, `.rpm`, and `.AppImage` land in
+   `release/`. Packaging the AppImage needs network on a first run — Tauri
+   fetches linuxdeploy into `~/.cache/tauri/` (see `BUILD.md` ›
+   Linux 安装包).
+2. Install the `.deb` (`sudo apt install ./release/Moka*.deb`): the
+   applications menu lists Moka Canvas under **Graphics**, with its icon
+   and comment, and `desktop-file-validate` passes on
+   `/usr/share/applications/Moka Canvas.desktop` — in particular
+   `Categories=` is filled rather than empty.
+3. Check the installed paths (`dpkg -L moka-canvas`): the icons sit under
+   `hicolor/{32x32,128x128,256x256}/apps/`. A `256x256@2` directory means
+   the retina-named icon found its way back into the set.
+4. Launch from the menu: the app's icon — window, alt-tab, taskbar — is
+   sharp at large sizes. The runtime icon is the first `.png` in
+   `bundle.icon` (256×256); a blurry upscaled 32×32 means the list order
+   changed.
+5. Repeat the web checklist items 3–6 inside the desktop app, including
+   native directory pickers (Browse…).
+6. Run the AppImage directly (`chmod +x`, then launch): it starts, and
+   `--appimage-extract` shows the desktop entry with the same populated
+   `Categories=` and the icons under `hicolor/256x256/apps/`.
+7. Where an rpm-based distribution is at hand, install the `.rpm`
+   (`sudo dnf install ./release/Moka*.rpm`) and confirm the same menu
+   entry; otherwise `rpm -qpl` shows the same icon paths inside the
+   package.
+
 ## Metadata store (all platforms)
 
 Configuration, recent projects, model configurations, and encrypted credentials
@@ -486,3 +514,4 @@ Intended behaviour, recorded here so a tester does not file it as a defect.
 | Web      |       |      |        |       |
 | macOS    |       |      |        |       |
 | Windows  |       |      |        |       |
+| Linux    |       |      |        |       |

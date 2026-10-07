@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128@2x.png" alt="Moka Canvas" width="140" />
+  <img src="src-tauri/icons/256x256.png" alt="Moka Canvas" width="140" />
 </p>
 
 <h1 align="center">摩卡画布</h1>

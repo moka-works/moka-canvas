@@ -244,6 +244,8 @@ touch src-tauri/src/lib.rs
 
 或运行一次 `make clean`。之后 Windows 可能仍从其 shell 图标缓存显示旧图标——在 Windows 机器上刷新它：从任务栏取消固定应用、重新安装、重新固定，然后运行 `ie4uinit.exe -show`（或重启 explorer.exe）以刷新图标缓存。
 
+Linux 与其他 Unix 的运行时窗口图标同样取自编译期嵌入的这份 RGBA 副本，且固定取 `bundle.icon` 里的**第一个 `.png`**——本仓库因此把 `icons/256x256.png` 排在首位，窗口图标不再是被拉大的 32×32。这个文件没有沿用上游模板的 `128x128@2x.png` 命名：tauri-bundler 会把名字以 `@2x` 结尾的 PNG 装进 `hicolor/256x256@2/`，那是 freedesktop 主题不识别的非标准目录；命名为 `256x256.png` 后落在标准的 `hicolor/256x256/`。用 `tauri icon` 之类工具重新生成图标集时请保持这两点，并同步更新 README 徽标里引用的文件名。
+
 ### `.moka` 文件关联
 
 `*.moka` 文档注册为用本应用打开，并使用自己的文档图标（上一版应用图标设计），构建为 `src-tauri/icons/moka-file.icns` / `moka-file.ico`，并通过 `src-tauri/tauri.conf.json` 的 `bundle.resources` 随附：
