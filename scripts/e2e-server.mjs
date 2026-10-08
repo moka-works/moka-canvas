@@ -5,8 +5,10 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  copyFileSync,
   createWriteStream,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   writeFileSync,
@@ -58,6 +60,20 @@ const serverLog = join(home, "server.log");
 const log = (line) => process.stdout.write(`[e2e-server] ${line}\n`);
 log(`home: ${home}`);
 log(`server log: ${serverLog}`);
+
+// A converter the suite can read a reference recording off the wire with: the
+// registry is files under the models tree, so dropping one in the throwaway
+// home's is enough for the server to find it, and the directory's name is the
+// protocol id the specs configure their models with.
+const modelsRoot = join(home, "models", "speech", "e2eCloneSpeech");
+mkdirSync(modelsRoot, { recursive: true });
+for (const name of ["model.json", "clone-speech.lua"]) {
+  copyFileSync(
+    join(repoRoot, "e2e", "fixtures", "cloneSpeech", name),
+    join(modelsRoot, name),
+  );
+}
+log(`fixture converter: e2eCloneSpeech deployed under ${modelsRoot}`);
 
 // Server mode will not invent a master key, so without one a channel could
 // hold no credential and nothing could reach a provider. Generated per boot
