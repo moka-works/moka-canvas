@@ -1,0 +1,17 @@
+{
+  "displayName": "Alibaba Cloud · Bailian Speech (CosyVoice, voice clone)",
+  "labels": {
+    "zh": "阿里云百炼 · 语音合成（CosyVoice 声音复刻）"
+  },
+  "urlExample": "https://{workspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+  "script": "bailian-clone-speech.lua",
+  "order": 21,
+  "auth": {
+    "header": "Authorization",
+    "scheme": "Bearer"
+  },
+  "features": {
+    "needsReferenceAudio": true
+  },
+  "version": 1
+}

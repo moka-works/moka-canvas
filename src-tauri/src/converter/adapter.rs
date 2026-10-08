@@ -401,8 +401,10 @@ impl ProviderAdapter for LuaAdapter {
 ///
 /// The runtime lives for the whole call rather than for one exchange, because
 /// building one is the same work every time and a stream is an exchange per
-/// event. Nothing is asked of it that one thread could not do: a runtime is
-/// created, used, and dropped inside the call that made it.
+/// event. It is built for the protocol it runs, so what the script remembers
+/// in the memo is this converter's alone. Nothing is asked of it that one
+/// thread could not do: a runtime is created, used, and dropped inside the
+/// call that made it.
 struct Session {
     entry: ProtocolEntry,
     runtime: LuaRuntime,
@@ -422,7 +424,7 @@ impl Session {
             .ok_or_else(|| {
                 ProviderError::invalid(format!("no converter script for protocol '{name}'"))
             })?;
-        let runtime = LuaRuntime::new()
+        let runtime = LuaRuntime::for_protocol(name)
             .map_err(|e| ProviderError::invalid(format!("Lua runtime failed: {e}")))?;
         let script = runtime.load(&root.join(&entry.script)).map_err(|e| {
             ProviderError::invalid(format!("failed to load script '{}': {e}", entry.script))
@@ -1055,8 +1057,13 @@ fn request_json(request: &GenerateRequest) -> Value {
     })
 }
 
-/// The reference media, each with its name, its type, and its bytes inside a
-/// data URL.
+/// The reference media, each with its name, its type, its bytes inside a data
+/// URL, and the digest of those bytes.
+///
+/// The digest is a name for the file rather than for the request: a script
+/// that builds something once out of a recording — a voice copied, reused by
+/// the next line — keys its memo by it, so two asks carrying the same file
+/// agree on the key.
 fn inputs_json(inputs: &[MediaInput]) -> Value {
     let list: Vec<Value> = inputs
         .iter()
@@ -1066,8 +1073,14 @@ fn inputs_json(inputs: &[MediaInput]) -> Value {
                 "filename": input.filename(),
                 "mime": input.mime,
                 "data_url": input.data_url(),
+                "sha256": sha256_hex(&input.bytes),
             })
         })
         .collect();
     Value::Array(list)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(bytes))
 }

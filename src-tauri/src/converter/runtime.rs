@@ -21,8 +21,10 @@
 //!   provider's own name for the model.
 //! - `req` is `{prompt, system, capability, params}`, where `system` is the
 //!   instruction that frames the prompt rather than forming part of it.
-//! - `inputs[i]` is `{role, filename, mime, data_url}`: one piece of reference
-//!   media, with its bytes inside the data URL.
+//! - `inputs[i]` is `{role, filename, mime, data_url, sha256}`: one piece of
+//!   reference media, with its bytes inside the data URL and the digest of
+//!   those bytes beside them — a name for the file that two calls carrying
+//!   the same file agree on, which is what a memo key needs.
 //! - `headers` is the answer's headers as a table, lowercased, a name sent
 //!   twice joined by `", "`.
 //! - `body` is the answer as text, and `raw` is the answer as it arrived —
@@ -48,7 +50,9 @@
 //! never wrote is refused rather than sending an upload nobody will read. What
 //! one step learns is what it wrote into `state`: a runtime lives for one call
 //! rather than one step, but a chain says what it means to say through `state`
-//! and not through a global. A chain is capped, so a reply that asks for itself
+//! and not through a global. What one call means to say to the next is what it
+//! leaves in the memo (`memo_get`/`memo_set`), which outlives the runtime and
+//! dies with the process. A chain is capped, so a reply that asks for itself
 //! again is an error rather than a loop.
 //!
 //! A `body` is text, or a form whose file parts are inputs the request carried
@@ -113,8 +117,16 @@ pub struct LuaRuntime {
 }
 
 impl LuaRuntime {
-    /// Creates a new runtime with the standard API registered.
+    /// Creates a new runtime with the standard API registered, its memo
+    /// scoped to no protocol in particular — which is what a runtime built
+    /// for its own sake, as a test does, gets.
     pub fn new() -> Result<Self, mlua::Error> {
+        Self::for_protocol("")
+    }
+
+    /// A runtime for one protocol, whose memo (`memo_get`/`memo_set`) is that
+    /// protocol's alone: two converters cannot read each other's keys.
+    pub fn for_protocol(protocol: &str) -> Result<Self, mlua::Error> {
         let lua = Lua::new();
         // Safety sandbox: restrict dangerous functions
         lua.globals().set("os", mlua::Value::Nil)?;
@@ -123,6 +135,7 @@ impl LuaRuntime {
         lua.globals().set("loadfile", mlua::Value::Nil)?;
 
         api::register(&lua)?;
+        api::register_memo(&lua, protocol)?;
 
         Ok(Self { lua })
     }
@@ -326,6 +339,8 @@ mod tests {
         assert!(lua.globals().get::<mlua::Value>("base64").is_ok());
         assert!(lua.globals().get::<mlua::Value>("log").is_ok());
         assert!(lua.globals().get::<mlua::Value>("util").is_ok());
+        assert!(lua.globals().get::<mlua::Value>("memo_get").is_ok());
+        assert!(lua.globals().get::<mlua::Value>("memo_set").is_ok());
     }
 
     #[test]
@@ -668,6 +683,208 @@ mod tests {
                 .contains("the key is not one of ours"),
             "{refused}"
         );
+    }
+
+    /// The clone script as the host runs it: the recording goes to voice
+    /// enrollment as a data URL, the id that comes back rides the synthesis
+    /// request, and that request's answer is read like any CosyVoice one.
+    #[test]
+    fn the_bailian_clone_script_enrolls_a_recording_then_speaks_in_its_voice() {
+        // Built for a protocol of its own so the memo this test leaves behind
+        // is nobody else's to read, whatever runs beside it.
+        let rt = LuaRuntime::for_protocol("clone-chain-test").expect("runtime builds");
+        let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");
+        let clone = rt
+            .load(&scripts.join("models/speech/bailianCloneSpeech/bailian-clone-speech.lua"))
+            .unwrap();
+        let endpoint = "https://ws.test/api/v1/services/audio/tts/SpeechSynthesizer";
+        let recording = "data:audio/wav;base64,UklGRiQAAABXQVZF";
+
+        // The ask carries a recording and names no voice: the first exchange
+        // builds the voice from the recording itself, which travels inside
+        // the document — nothing needs hosting anywhere for the service to
+        // read it.
+        let asked = rt
+            .call_json_value(
+                &clone,
+                "build_request",
+                vec![
+                    serde_json::json!({"url": endpoint, "model": "cosyvoice-v3.5-flash"}),
+                    serde_json::json!({"prompt": "hello", "params": {
+                        "speed": 1.2, "instructions": "平稳地念"
+                    }}),
+                    serde_json::json!([{
+                        "role": "reference", "filename": "take.wav", "mime": "audio/wav",
+                        "data_url": recording, "sha256": "a".repeat(64),
+                    }]),
+                ],
+            )
+            .unwrap();
+        assert_eq!(asked["handler"], "after_enroll");
+        assert_eq!(
+            asked["request"]["url"],
+            "https://ws.test/api/v1/services/audio/tts/customization"
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(asked["request"]["body"].as_str().unwrap()).expect("a JSON body");
+        assert_eq!(body["model"], "voice-enrollment");
+        assert_eq!(body["input"]["action"], "create_voice");
+        // The id a voice is forged as is per the family, so the model the ask
+        // was configured for is what the voice is built for.
+        assert_eq!(body["input"]["target_model"], "cosyvoice-v3.5-flash");
+        assert_eq!(body["input"]["url"], recording);
+
+        // The id the enrollment answered with is spoken with, and the room's
+        // settings travel to the synthesis under this service's own names.
+        let enrolled = rt
+            .call_json_value(
+                &clone,
+                "after_enroll",
+                vec![
+                    serde_json::json!(200),
+                    serde_json::json!(""),
+                    serde_json::Value::String(
+                        serde_json::json!({
+                            "output": {"voice_id": "cosyvoice-v3.5-flash-moka-deadbeef"}
+                        })
+                        .to_string(),
+                    ),
+                    asked["state"].clone(),
+                ],
+            )
+            .unwrap();
+        assert_eq!(enrolled["next"]["handler"], "parse_speech");
+        assert_eq!(enrolled["next"]["request"]["url"], endpoint);
+        let body: serde_json::Value = serde_json::from_str(
+            enrolled["next"]["request"]["body"]
+                .as_str()
+                .expect("a JSON body"),
+        )
+        .unwrap();
+        assert_eq!(body["model"], "cosyvoice-v3.5-flash");
+        assert_eq!(body["input"]["voice"], "cosyvoice-v3.5-flash-moka-deadbeef");
+        assert_eq!(body["input"]["text"], "hello");
+        assert_eq!(body["input"]["rate"], 1.2);
+        assert_eq!(body["input"]["instruction"], "平稳地念");
+
+        // And that answer is read the way every CosyVoice one is: a link,
+        // whose extension names what the audio is.
+        let spoke = rt
+            .call_json_value(
+                &clone,
+                "parse_speech",
+                vec![
+                    serde_json::json!(200),
+                    serde_json::json!(""),
+                    serde_json::json!(
+                        r#"{"output":{"audio":{"url":"https://oss.test/voice.mp3?sig=x"}}}"#
+                    ),
+                ],
+            )
+            .unwrap();
+        assert_eq!(spoke["items"][0]["url"], "https://oss.test/voice.mp3?sig=x");
+        assert_eq!(spoke["items"][0]["mime"], "audio/mpeg");
+    }
+
+    /// A recording enrolls a voice once: the id is remembered under a key the
+    /// recording's digest built, so the next line in the same voice — the
+    /// next ask carrying the same file — speaks straight with it, and a
+    /// different file is a different voice.
+    #[test]
+    fn the_bailian_clone_script_enrolls_a_recording_once() {
+        let rt = LuaRuntime::for_protocol("clone-memo-test").expect("runtime builds");
+        let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");
+        let clone = rt
+            .load(&scripts.join("models/speech/bailianCloneSpeech/bailian-clone-speech.lua"))
+            .unwrap();
+        let endpoint = "https://ws.test/api/v1/services/audio/tts/SpeechSynthesizer";
+        let ask = |sha: String| {
+            rt.call_json_value(
+                &clone,
+                "build_request",
+                vec![
+                    serde_json::json!({"url": endpoint, "model": "cosyvoice-v3.5-flash"}),
+                    serde_json::json!({"prompt": "hello", "params": {}}),
+                    serde_json::json!([{
+                        "role": "reference", "filename": "take.wav", "mime": "audio/wav",
+                        "data_url": "data:audio/wav;base64,UklGRiQAAABXQVZF", "sha256": sha,
+                    }]),
+                ],
+            )
+            .unwrap()
+        };
+
+        // Nothing was remembered for this recording: it enrolls.
+        let first = ask("b".repeat(64));
+        assert_eq!(first["handler"], "after_enroll");
+        assert_eq!(
+            first["request"]["url"],
+            "https://ws.test/api/v1/services/audio/tts/customization"
+        );
+        let enrolled = rt
+            .call_json_value(
+                &clone,
+                "after_enroll",
+                vec![
+                    serde_json::json!(200),
+                    serde_json::json!(""),
+                    serde_json::Value::String(
+                        serde_json::json!({"output": {"voice_id": "cosyvoice-v3.5-flash-moka-one"}})
+                            .to_string(),
+                    ),
+                    first["state"].clone(),
+                ],
+            )
+            .unwrap();
+        assert_eq!(enrolled["next"]["handler"], "parse_speech");
+
+        // The same recording again: the remembered voice is spoken with, and
+        // no second voice is built on the account.
+        let second = ask("b".repeat(64));
+        assert_eq!(second["handler"], "parse_speech");
+        assert_eq!(second["request"]["url"], endpoint);
+        let body: serde_json::Value =
+            serde_json::from_str(second["request"]["body"].as_str().unwrap()).expect("a JSON body");
+        assert_eq!(body["input"]["voice"], "cosyvoice-v3.5-flash-moka-one");
+
+        // A different recording is a different voice: nothing is remembered
+        // for it, so it enrolls before it speaks.
+        let other = ask("c".repeat(64));
+        assert_eq!(other["handler"], "after_enroll");
+    }
+
+    /// A voice named on the card needs no recording read: the ask synthesizes
+    /// straight under that name, with nothing built on the account.
+    #[test]
+    fn the_bailian_clone_script_speaks_a_named_voice_without_enrolling() {
+        let rt = test_runtime();
+        let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");
+        let clone = rt
+            .load(&scripts.join("models/speech/bailianCloneSpeech/bailian-clone-speech.lua"))
+            .unwrap();
+        let endpoint = "https://ws.test/api/v1/services/audio/tts/SpeechSynthesizer";
+
+        let asked = rt
+            .call_json_value(
+                &clone,
+                "build_request",
+                vec![
+                    serde_json::json!({"url": endpoint, "model": "cosyvoice-v3-flash"}),
+                    serde_json::json!({"prompt": "hello", "params": {"voice": "longxiaochun_v2"}}),
+                    serde_json::json!([{
+                        "role": "reference", "filename": "take.wav", "mime": "audio/wav",
+                        "data_url": "data:audio/wav;base64,UklGRiQAAABXQVZF",
+                        "sha256": "d".repeat(64),
+                    }]),
+                ],
+            )
+            .unwrap();
+        assert_eq!(asked["handler"], "parse_speech");
+        assert_eq!(asked["request"]["url"], endpoint);
+        let body: serde_json::Value =
+            serde_json::from_str(asked["request"]["body"].as_str().unwrap()).expect("a JSON body");
+        assert_eq!(body["model"], "cosyvoice-v3-flash");
+        assert_eq!(body["input"]["voice"], "longxiaochun_v2");
     }
 
     /// The video scripts whose names the built-in protocols also answer to, so
