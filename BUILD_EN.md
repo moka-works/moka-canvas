@@ -171,9 +171,17 @@ make package-macos
 
 Produces `Moka Canvas_<version>_<arch>.dmg` (`aarch64` on Apple Silicon, `x64` on Intel), copied into `release/` (the tauri-bundler output remains under `src-tauri/target/release/bundle/dmg/`), with the branded background and app/Applications drop slots configured via `bundle.macOS.dmg` in `src-tauri/tauri.conf.json`. The `.app` bundle is ad-hoc signed (`bundle.macOS.signingIdentity` = `"-"`); the DMG itself is left unsigned, which Tauri does deliberately for self-signed identities. Gatekeeper still warns on first launch because ad-hoc signatures are not notarized — right-click and choose Open.
 
+The Intel bundle comes out of the same flow with the Rust target named explicitly:
+
+```sh
+make package-macos-x86
+```
+
+It cross-compiles on Apple Silicon and builds natively on Intel, producing `Moka Canvas_<version>_x64.dmg` with the tauri-bundler output kept under `src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/`; when the Rust target is missing the task runs `rustup target add x86_64-apple-darwin` first. Signing, localized names, and the Gatekeeper behavior are the same as above.
+
 The bundle keeps its English name — the `.app` folder, the executable, and the DMG file name. On a Chinese system Finder, the Dock, and the menu bar show 摩卡画布 instead: `bundle.macOS.files` ships `Contents/Resources/zh-Hans.lproj/InfoPlist.strings` (and `zh-Hant` beside it), and macOS reads the localized `CFBundleDisplayName`/`CFBundleName` from there; every other language falls back to the bundle's own name. The files are copied before the bundle is signed, so the ad-hoc signature still verifies.
 
-> Rebuilding deletes the previous DMG, so eject any mounted copy before running `make package-macos` again — otherwise the DMG stays mounted as a leftover volume and the Finder styling step fails with a generic `error running bundle_dmg.sh`.
+> Rebuilding deletes the previous DMG, so eject any mounted copy before running the same package task again — otherwise the DMG stays mounted as a leftover volume and the Finder styling step fails with a generic `error running bundle_dmg.sh`.
 
 ### Windows installers (Windows host)
 
