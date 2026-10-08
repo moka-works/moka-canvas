@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { isApiError } from "../../../api/client";
+import {
+  errorText,
+  isApiError,
+  isConfigurationTrouble,
+} from "../../../api/client";
 import { generateApi } from "../../../api/generate";
 import type {
   StoryDocument,
   StoryVoiceProfile,
 } from "../../../shared/domain/types";
 import { useAppStore } from "../../editor/stores/appStore";
+import { useModelStore } from "../../settings/modelStore";
 import { voiceParamsFor } from "../jobs/plan";
 
 /**
@@ -41,6 +46,7 @@ export function VoiceTryout({
   tone,
   testId,
   disabledReason,
+  onVoiceMissing,
 }: {
   story: StoryDocument;
   /** The voice as the chain resolves it, not as the card alone holds it. */
@@ -51,6 +57,8 @@ export function VoiceTryout({
   testId: string;
   /** Why the button cannot be pressed, when it cannot. */
   disabledReason?: string;
+  /** Takes the reader to the field that answers a voiceless refusal. */
+  onVoiceMissing: () => void;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -86,14 +94,42 @@ export function VoiceTryout({
       }
       setUrl(bytesToObjectUrl(made.data, made.mime));
     } catch (error) {
-      useAppStore
-        .getState()
-        .pushToast(
+      if (isApiError(error, "MODEL_VOICE_REQUIRED")) {
+        // The voice chain runs character → narrator → machine, and the first
+        // link is the field on this card: a refusal for want of a voice is
+        // answered here rather than by sending the reader to Settings.
+        useAppStore.getState().pushToast(
           "error",
-          t("story:elements.voiceTryFailed"),
-          undefined,
-          isApiError(error) ? error.message : undefined,
+          t("story:elements.voiceTryNoVoice"),
+          {
+            label: t("story:elements.voiceTryFillVoice"),
+            go: onVoiceMissing,
+          },
+          errorText(error).detail,
         );
+      } else if (isConfigurationTrouble(error)) {
+        // Any other missing piece of a speech ask — the model, its key —
+        // lives in Settings, on the page that holds the speech models.
+        const trouble = errorText(error);
+        useAppStore.getState().pushToast(
+          "error",
+          trouble.message,
+          {
+            label: t("story:elements.voiceTryOpenSettings"),
+            go: () => useModelStore.getState().openSettings("speech"),
+          },
+          trouble.detail,
+        );
+      } else {
+        useAppStore
+          .getState()
+          .pushToast(
+            "error",
+            t("story:elements.voiceTryFailed"),
+            undefined,
+            isApiError(error) ? error.message : undefined,
+          );
+      }
     } finally {
       setBusy(false);
     }

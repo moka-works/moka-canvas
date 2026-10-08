@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use crate::config::GenerateConfig;
 use crate::domain::Capability;
-use crate::metadata::{Preferences, Scene};
+use crate::metadata::{Preferences, Protocol, Scene};
 use crate::project::store::FsProjectStore;
 use crate::project::ProjectStore;
 use crate::telemetry::GenerationNote;
@@ -398,6 +398,7 @@ impl Gateway {
         // mode is "reference" is saying what its pictures mean.
         let scene = scene_of(&request);
         let resolved = resolve_within(&snapshot, &request.model, capability, scene)?;
+        voiced(&resolved, &request)?;
         let inputs = load_inputs(
             session.as_ref(),
             &request,
@@ -566,6 +567,45 @@ fn offer_value(params: &mut Map<String, Value>, key: &str, value: impl Into<Valu
     if !params.contains_key(key) {
         params.insert(key.to_string(), value.into());
     }
+}
+
+/// Refuses a speech ask the converter behind it cannot make a sound for.
+///
+/// A converter that declares `needsVoice` has no voice of its own to fall
+/// back on: asked without one, it hears back an engine error that names
+/// neither the missing setting nor where it lives. Refused here instead,
+/// before a credential is fetched or a provider is bothered, in the shape a
+/// client repairs: which model, and that what it wants is a voice.
+fn voiced(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), ProviderError> {
+    if request.capability != Capability::Speech || !needs_voice(&resolved.protocol) {
+        return Ok(());
+    }
+    let named = request
+        .params
+        .get("voice")
+        .and_then(Value::as_str)
+        .is_some_and(|voice| !voice.trim().is_empty());
+    if named {
+        return Ok(());
+    }
+    Err(ProviderError::VoiceRequired {
+        model: resolved.config_id.clone(),
+    })
+}
+
+/// Whether the converter behind a protocol declares that its asks need a
+/// voice. A protocol with no converter on this machine — or one read before
+/// the models tree was deployed — declares nothing, and the ask goes on to
+/// fail the way it would have.
+fn needs_voice(protocol: &Protocol) -> bool {
+    let Some(root) = crate::converter::converter_root() else {
+        return false;
+    };
+    crate::converter::ConverterRegistry::load(root)
+        .find(protocol.wire_name())
+        .and_then(|entry| entry.features.get("needsVoice"))
+        .copied()
+        .unwrap_or(false)
 }
 
 /// One answer, in the shape everything above this module expects.

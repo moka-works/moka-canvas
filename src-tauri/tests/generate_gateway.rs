@@ -832,6 +832,65 @@ async fn a_model_with_no_stored_key_is_reported_before_anything_is_sent() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_speech_model_that_needs_a_voice_is_refused_without_one() {
+    let watched = Watch::default();
+    let answering = watched.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/audio/speech",
+        post(move |body: Bytes| {
+            let watched = answering.clone();
+            async move {
+                watched.note(Some(body));
+                (
+                    [(header::CONTENT_TYPE, "audio/mpeg")],
+                    b"mp3-bytes".to_vec(),
+                )
+            }
+        }),
+    ))
+    .await;
+
+    let rig = rig().await;
+    // The default speech protocol of this file is the OpenAI-shaped one, whose
+    // converter declares that its asks need a voice.
+    rig.serving(&base_url, vec![model("a-voice-model", Capability::Speech)])
+        .await;
+    rig.default(Capability::Speech, "a-voice-model").await;
+
+    let error = rig
+        .gateway
+        .speech(
+            &rig.assets,
+            request(Capability::Speech, "read this aloud", json!({})),
+            &Cancel::new(),
+        )
+        .await
+        .expect_err("the converter is asked for a voice and none was sent");
+    assert_eq!(error.code(), "MODEL_VOICE_REQUIRED");
+    let details = error.details().expect("which model, behind the message");
+    assert_eq!(details["model"], json!("a-voice-model"));
+    assert_eq!(watched.times(), 0, "nothing was sent to the provider");
+
+    // The same ask with a voice goes through, which is what the refusal is
+    // sparing: an engine error that names neither the setting nor its home.
+    let answer = rig
+        .gateway
+        .speech(
+            &rig.assets,
+            request(
+                Capability::Speech,
+                "read this aloud",
+                json!({ "voice": "alloy" }),
+            ),
+            &Cancel::new(),
+        )
+        .await
+        .expect("a voiced ask is placed");
+    assert_eq!(answer.items[0].bytes, b"mp3-bytes");
+    assert_eq!(watched.times(), 1, "the voiced ask reached the provider");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancelled_generation_never_reaches_the_provider() {
     let watched = Watch::default();
     let answering = watched.clone();

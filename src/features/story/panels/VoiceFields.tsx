@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -60,6 +60,7 @@ export function VoiceFields({
   const tone = useField(held.voice, (value) =>
     write({ ...held, voice: value }),
   );
+  const toneField = useRef<HTMLInputElement>(null);
   const manner = useField(held.instructions ?? "", (value) =>
     write(withManner(held, value)),
   );
@@ -89,6 +90,7 @@ export function VoiceFields({
           <input
             data-testid={`${testId}-tone`}
             onBlur={tone.commit}
+            ref={toneField}
             onChange={(event) => tone.set(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
@@ -154,6 +156,10 @@ export function VoiceFields({
           disabledReason={
             orphan ? t("story:elements.voiceOrphanNote") : undefined
           }
+          // A try-out refused for want of a voice is answered where it was
+          // raised: the field on this very card is the first link of the
+          // chain the refusal is about.
+          onVoiceMissing={() => toneField.current?.focus()}
           sample={line?.text.trim() ?? t("story:voice.sample")}
           story={story}
           testId={`${testId}-try`}

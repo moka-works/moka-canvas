@@ -439,8 +439,13 @@ test("a speech model with no voice set is said out loud", async ({ page }) => {
   await dialog.getByRole("tab", { name: "Speech", exact: true }).click();
   await expect(dialog.getByTestId("speech-voice-gap")).toHaveCount(0);
 
+  // Put the voice back as it was, unless it was the "alloy" this test set for
+  // itself: the specs after this one are owed the voice a configured speech
+  // model is given, so that same value is left standing rather than re-saved.
   await dialog.getByRole("tab", { name: "Preferences" }).click();
-  await voice.fill(was);
-  await save.click();
+  if (was !== "alloy") {
+    await voice.fill(was);
+    await save.click();
+  }
   await expect(save).toBeDisabled();
 });

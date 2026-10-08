@@ -120,6 +120,18 @@ describe("problemMessage in Chinese", () => {
     );
   });
 
+  it("says which speech model has no voice to speak in", () => {
+    expect(
+      problemMessage(
+        "MODEL_VOICE_REQUIRED",
+        "the model a-voice has no voice set, and its speech converter needs one",
+        { model: "a-voice" },
+      ),
+    ).toBe(
+      "模型「a-voice」还没有可用的音色：语音合成必须指定音色，请先设置音色后再试",
+    );
+  });
+
   it("falls back to the server's English for a code nobody translated", () => {
     expect(problemMessage("VALIDATION_FAILED", "Duplicate node id n-1")).toBe(
       "Duplicate node id n-1",

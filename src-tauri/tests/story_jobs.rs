@@ -922,18 +922,17 @@ async fn a_batch_of_sound_is_filed_as_voice_on_the_shelf_and_as_music_beside_it(
     harness.project("Story Sound").await;
 
     // A line of an act read aloud: audio like any other answer, filed under the
-    // one category a sniffer cannot settle on its own.
-    let spoken = harness
-        .start_ok(batch(
-            "voice",
-            vec![piece(
-                "voice:1",
-                act_voice_target("act-1"),
-                "speech",
-                "「我们到站了。」他轻声说。",
-            )],
-        ))
-        .await;
+    // one category a sniffer cannot settle on its own. The voice travels in the
+    // piece's parameters, as a telling's own planning sends it — a voiceless
+    // ask is refused before it leaves.
+    let mut spoken_piece = piece(
+        "voice:1",
+        act_voice_target("act-1"),
+        "speech",
+        "「我们到站了。」他轻声说。",
+    );
+    spoken_piece["params"] = json!({ "voice": "alloy" });
+    let spoken = harness.start_ok(batch("voice", vec![spoken_piece])).await;
     let spoken_id = spoken["id"].as_str().unwrap().to_string();
     let settled = harness.settled(&spoken_id).await;
     assert_eq!(settled["status"], "succeeded", "{settled}");

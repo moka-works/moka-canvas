@@ -499,9 +499,14 @@ async fn speech_comes_back_as_sound_rather_than_as_text() {
     )
     .await;
 
+    // The voice is part of the ask: a speech converter this build deploys is
+    // asked for one, and a voiceless ask is refused before it leaves.
     let (status, body) = send_json(
         &harness.app,
-        generation("speech", json!({ "prompt": "read this aloud" })),
+        generation(
+            "speech",
+            json!({ "prompt": "read this aloud", "params": { "voice": "alloy" } }),
+        ),
     )
     .await;
 
