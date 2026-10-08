@@ -489,9 +489,14 @@
       "usedByMany": "被 {{count}} 个节点使用。删除它还会移除这些节点及其连线。",
       "keepsDrawingOne": "它还是{{place}}的旧图；删除时这张旧图也会从故事里撤下",
       "keepsDrawingMany": "它还是故事里 {{count}} 处的旧图：{{places}}；删除时这些旧图也会从故事里撤下",
-      "removeAndDelete": "移除节点并删除",
-      "removeDrawingAndDelete": "撤下旧图并删除",
-      "removeBothAndDelete": "移除并删除"
+      "removesVoiceOne": "它还是{{who}}的声音参考；删除时这段参考也会清空",
+      "removesVoiceMany": "它还是 {{count}} 处声音参考：{{whos}}；删除时这些参考也会清空",
+      "removeWhatAndDelete": "移除{{what}}并删除",
+      "parts": {
+        "nodes": "节点",
+        "drawings": "旧图",
+        "references": "声音参考"
+      }
     },
     "preview": {
       "close": "关闭预览"
@@ -712,6 +717,7 @@
     "join": "、",
     "storyPlace": "《{{story}}》「{{place}}」",
     "aPlace": "故事的某一处",
+    "narrator": "旁白",
     "drawingInUse": "它是{{place}}正在用的图",
     "clip": "时间线「{{timeline}}」的片段「{{clip}}」在用它",
     "manuscript": "它是《{{story}}》的剧本"

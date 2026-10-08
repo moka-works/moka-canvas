@@ -352,10 +352,14 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
   }
   // A story's pictures are its own: the frames drawn for a shot, the clip
   // made of an act, and the manuscript a premise was lifted from are all in
-  // use, however little of a canvas or a timeline they appear on.
+  // use, however little of a canvas or a timeline they appear on. A voice's
+  // reference recording is a use the same way — the file is kept alive by the
+  // card naming it.
   for (const story of moka.stories ?? []) {
     add(story.brief.sourceAssetId, story.id);
+    add(story.narrator?.referenceAssetId, story.id);
     for (const element of story.elements) {
+      add(element.voice?.referenceAssetId, element.id);
       for (const take of element.main.takes) files(take, element.id);
       for (const take of element.turnaround?.takes ?? [])
         files(take, element.id);
@@ -454,11 +458,11 @@ function storySlots(
  *
  * The same pointing-at that `collectAssetReferences` gathers, kept as whole
  * holders rather than ids, because what a delete does with each is different:
- * a card and a place's old drawing are taken out of what holds them, and the
- * rest are named. A place is one answer per place and not per take — dropping
- * a file from a slot lets every take holding it go at once — and the place
- * that is using the file is told from the ones that are not, since only the
- * latter may be emptied.
+ * a card, a place's old drawing, and a voice's reference recording are taken
+ * out of what holds them, and the rest are named. A place is one answer per
+ * place and not per take — dropping a file from a slot lets every take holding
+ * it go at once — and the place that is using the file is told from the ones
+ * that are not, since only the latter may be emptied.
  */
 export function assetHolders(moka: MokaFile, assetId: AssetId): AssetHolder[] {
   const holders: AssetHolder[] = [];
@@ -486,6 +490,18 @@ export function assetHolders(moka: MokaFile, assetId: AssetId): AssetHolder[] {
     const where = { storyId: story.id, storyName: story.name };
     if (story.brief.sourceAssetId === assetId) {
       holders.push({ ...where, kind: "storyFile", what: "manuscript" });
+    }
+    if (story.narrator?.referenceAssetId === assetId) {
+      holders.push({ ...where, kind: "voiceReference" });
+    }
+    for (const element of story.elements) {
+      if (element.voice?.referenceAssetId === assetId) {
+        holders.push({
+          ...where,
+          kind: "voiceReference",
+          elementId: element.id,
+        });
+      }
     }
     for (const place of storySlots(story)) {
       const held = place.slot.takes.some((take) =>

@@ -121,6 +121,32 @@ describe("going to the thing that holds a file", () => {
     expect(useStoryStore.getState().step).toBe("idea");
   });
 
+  it("opens a story on the cast step a voice's recording is written in", () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0];
+    story.narrator = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-narrator-voice",
+    };
+    story.elements.find((element) => element.id === storyIds().hero)!.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    openProject(moka);
+
+    // The character's card is where the recording is picked.
+    openUse(onlyUse(moka, "asset-hero-voice"));
+    expect(useAppStore.getState().phase).toBe("story");
+    expect(useStoryStore.getState().storyId).toBe(storyIds().story);
+    expect(useStoryStore.getState().step).toBe("elements");
+
+    // A narrator's lands on the same step, with no card to stand on.
+    openUse(onlyUse(moka, "asset-narrator-voice"));
+    expect(useStoryStore.getState().step).toBe("elements");
+  });
+
   it("finds the card's board when the caller does not name it", () => {
     openProject(buildStoryMokaFile());
 

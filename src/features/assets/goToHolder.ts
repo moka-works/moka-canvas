@@ -46,6 +46,17 @@ export function openUse(use: AssetUse): void {
     case "drawing":
     case "drawingInUse":
       openStoryPlace(holder.storyId, holder.target);
+      return;
+    case "voiceReference":
+      // A voice is written on the cast step, narrator and characters alike:
+      // there is no place in the chapters to land on, only the card.
+      openStoryPlace(
+        holder.storyId,
+        holder.elementId === undefined
+          ? null
+          : { kind: "element", elementId: holder.elementId, view: "main" },
+        "elements",
+      );
   }
 }
 
@@ -99,7 +110,9 @@ function stepFor(target: StorySlotTarget): StoryStep {
 
 /**
  * Opens a story on the place that holds the file — a manuscript's story opens
- * at the step the manuscript is read in, which is where the file itself is.
+ * at the step the manuscript is read in, which is where the file itself is —
+ * or on the step named outright, for a holder with no place among the
+ * chapters, like a voice written on the cast.
  *
  * The step is asked of the story's own progress before it is stood on: a place
  * can hold a file while the work around it was undone, and a door onto nothing
@@ -107,20 +120,23 @@ function stepFor(target: StorySlotTarget): StoryStep {
  * regardless, so a reader who walks the steps afterwards finds the episode
  * waiting for them.
  */
-function openStoryPlace(storyId: string, target: StorySlotTarget | null): void {
+function openStoryPlace(
+  storyId: string,
+  target: StorySlotTarget | null,
+  wanted?: StoryStep,
+): void {
   const moka = useProjectStore.getState().moka;
   const story = (moka?.stories ?? []).find((held) => held.id === storyId);
   if (!story) return;
   const storyStore = useStoryStore.getState();
   if (storyStore.storyId !== storyId) storyStore.select(storyId);
-  const wanted: StoryStep = target === null ? "idea" : stepFor(target);
+  const step: StoryStep =
+    wanted ?? (target === null ? "idea" : stepFor(target));
   const progress = storyProgress(story);
   useStoryStore
     .getState()
     .goStep(
-      stepReachable(progress, wanted)
-        ? wanted
-        : storyCurrentStep(progress).step,
+      stepReachable(progress, step) ? step : storyCurrentStep(progress).step,
     );
   if (target && "chapterId" in target) {
     useStoryStore.getState().openChapter(target.chapterId);

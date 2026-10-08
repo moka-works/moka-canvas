@@ -1,15 +1,20 @@
 import type { AssetHolder, AssetId, MokaFile } from "../../shared/domain";
 import { assetHolders } from "../../shared/domain";
 import { i18n } from "../../shared/i18n";
-import { blocksDelete, placeName } from "../editor/interactions/actions";
+import {
+  blocksDelete,
+  placeName,
+  referenceWho,
+} from "../editor/interactions/actions";
 
 /**
  * Where a file is used, told as the room a reader would go to.
  *
  * A use is a holder said in the reader's words: what points at the file — a
- * card, a clip, a story place, a manuscript — and which room that thing lives
- * in. Nothing here decides what points at what; that is `assetHolders`'s one
- * answer, and this only translates it for a list that has to lead somewhere.
+ * card, a clip, a story place, a manuscript, a voice naming it — and which
+ * room that thing lives in. Nothing here decides what points at what; that is
+ * `assetHolders`'s one answer, and this only translates it for a list that has
+ * to lead somewhere.
  */
 export type UseRoom = "canvas" | "clip" | "story";
 
@@ -30,6 +35,7 @@ const ROOM_OF: Record<AssetHolder["kind"], UseRoom> = {
   drawing: "story",
   drawingInUse: "story",
   storyFile: "story",
+  voiceReference: "story",
 };
 
 /** Which room a holder lives in, for the heading that gathers it. */
@@ -77,6 +83,11 @@ function titleOf(moka: MokaFile, holder: AssetHolder): string {
     case "storyFile":
       return i18n.t("assets:uses.manuscriptTitle", {
         story: holder.storyName,
+      });
+    case "voiceReference":
+      return i18n.t("assets:uses.storyVoice", {
+        story: holder.storyName,
+        who: referenceWho(moka, holder),
       });
   }
 }

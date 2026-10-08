@@ -3,6 +3,7 @@ import type {
   AssetDrawing,
   AssetId,
   AssetKind,
+  AssetVoiceReference,
   CanvasId,
   EdgeId,
   NodeId,
@@ -190,14 +191,16 @@ interface EditorState {
   /**
    * Confirmation for deleting an asset something still holds.
    *
-   * The two holders a delete can empty, listed whole: the cards to take the
-   * file out of, and the story places keeping it as a drawing they are not
-   * using. A file held by nothing opens no prompt.
+   * What a delete can empty, listed whole: the cards to take the file out of,
+   * the story places keeping it as a drawing they are not using, and the
+   * voices naming it as their reference recording. A file held by nothing
+   * opens no prompt.
    */
   assetDeletePrompt: {
     assetId: AssetId;
     nodeIds: NodeId[];
     drawings: AssetDrawing[];
+    references: AssetVoiceReference[];
   } | null;
   /** Full-preview dialog for an asset (image/video). */
   previewAssetId: AssetId | null;
@@ -277,6 +280,7 @@ interface EditorState {
     assetId: AssetId;
     nodeIds: NodeId[];
     drawings: AssetDrawing[];
+    references: AssetVoiceReference[];
   }) => void;
   closeAssetDeletePrompt: () => void;
   openPreview: (assetId: AssetId) => void;

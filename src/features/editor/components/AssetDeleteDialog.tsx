@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { confirmDeleteAsset, drawingName } from "../interactions/actions";
+import {
+  confirmDeleteAsset,
+  drawingName,
+  referenceWho,
+} from "../interactions/actions";
 import { buildResourceIndex } from "../canvas/mediaCards";
 import { useEditorStore } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
@@ -8,10 +12,11 @@ import { useProjectStore } from "../stores/projectStore";
 /**
  * Confirmation shown when deleting an asset something still holds.
  *
- * Both ways a file is held and can be let go are said out loud — the cards
- * that show it, and the story places keeping it as an old drawing — since
- * confirming does both: the cards go (edges cascade), the old drawings are
- * thrown away, and then the file.
+ * Every way a file is held and can be let go is said out loud — the cards
+ * that show it, the story places keeping it as an old drawing, and the voices
+ * naming it as their reference recording — since confirming does all of them:
+ * the cards go (edges cascade), the old drawings are thrown away, the voices
+ * stop naming the file, and then the file.
  */
 export function AssetDeleteDialog() {
   const { t } = useTranslation();
@@ -33,13 +38,22 @@ export function AssetDeleteDialog() {
   const entry = moka ? buildResourceIndex(moka).get(prompt.assetId) : undefined;
   const count = prompt.nodeIds.length;
   const drawings = prompt.drawings.map(drawingName);
+  const whos = prompt.references.map((reference) =>
+    referenceWho(moka, reference),
+  );
   const close = () => useEditorStore.getState().closeAssetDeletePrompt();
-  const confirm =
-    count > 0 && drawings.length > 0
-      ? t("editor:dialogs.assetDelete.removeBothAndDelete")
-      : drawings.length > 0
-        ? t("editor:dialogs.assetDelete.removeDrawingAndDelete")
-        : t("editor:dialogs.assetDelete.removeAndDelete");
+  const removed = [
+    ...(count > 0 ? [t("editor:dialogs.assetDelete.parts.nodes")] : []),
+    ...(drawings.length > 0
+      ? [t("editor:dialogs.assetDelete.parts.drawings")]
+      : []),
+    ...(whos.length > 0
+      ? [t("editor:dialogs.assetDelete.parts.references")]
+      : []),
+  ];
+  const confirm = t("editor:dialogs.assetDelete.removeWhatAndDelete", {
+    what: removed.join(t("editor:holders.join")),
+  });
 
   return (
     <div className="dialog-backdrop" onClick={close} role="presentation">
@@ -73,6 +87,18 @@ export function AssetDeleteDialog() {
               : t("editor:dialogs.assetDelete.keepsDrawingMany", {
                   count: drawings.length,
                   places: drawings.join(t("editor:holders.join")),
+                })}
+          </p>
+        )}
+        {whos.length > 0 && (
+          <p>
+            {whos.length === 1
+              ? t("editor:dialogs.assetDelete.removesVoiceOne", {
+                  who: whos[0],
+                })
+              : t("editor:dialogs.assetDelete.removesVoiceMany", {
+                  count: whos.length,
+                  whos: whos.join(t("editor:holders.join")),
                 })}
           </p>
         )}
