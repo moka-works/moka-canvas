@@ -6,6 +6,7 @@ release/
 src-tauri/target/
 src-tauri/gen/
 .DS_Store
+.idea/
 data/
 test-results*/
 playwright-report/

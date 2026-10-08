@@ -329,7 +329,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
     it on Follow system and confirm the choice survives a reload. The
     automated equivalent is `npx playwright test e2e/i18n.spec.ts`.
 
-## macOS (`make package-macos`)
+## macOS (`make package-macos`, Intel: `make package-macos-x86`)
 
 1. Build the DMG; eject any previously mounted copy first (a leftover
    mount makes the bundler fail with a generic `bundle_dmg.sh` error).
@@ -350,6 +350,9 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
    Moka Canvas. The bundle folder itself keeps its English name
    ("Moka Canvas.app") in both cases, and
    `codesign --verify --strict` still passes.
+9. Intel bundle (`make package-macos-x86`): `lipo -archs` on the mounted
+   app's `Contents/MacOS/moka-canvas` prints `x86_64`, and the app
+   launches — under Rosetta 2 when the host is Apple Silicon.
 
 ## Windows (`make package-windows` on Windows, or
 

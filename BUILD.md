@@ -171,9 +171,17 @@ make package-macos
 
 生成 `Moka Canvas_<version>_<arch>.dmg`（Apple Silicon 上 `aarch64`，Intel 上 `x64`），复制进 `release/`（tauri-bundler 的输出保留在 `src-tauri/target/release/bundle/dmg/` 下），带品牌背景与 app/Applications 投放槽，通过 `src-tauri/tauri.conf.json` 的 `bundle.macOS.dmg` 配置。`.app` 包为 ad-hoc 签名（`bundle.macOS.signingIdentity` = `"-"`）；DMG 自身不签名，这是 Tauri 对自签名身份的刻意做法。首次启动时 Gatekeeper 仍会警告，因为 ad-hoc 签名未公证——右键选择「打开」。
 
+Intel 包由显式指定 Rust 目标的同一条流程产出：
+
+```sh
+make package-macos-x86
+```
+
+在 Apple Silicon 上交叉编译、在 Intel 上原生编译，生成 `Moka Canvas_<version>_x64.dmg`，tauri-bundler 的输出保留在 `src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/` 下；缺少 Rust 目标时任务会先执行 `rustup target add x86_64-apple-darwin`。签名、本地化名与 Gatekeeper 行为与上一条相同。
+
 包保留英文名——`.app` 文件夹、可执行文件与 DMG 文件名。在中文系统上，访达、程序坞与菜单栏显示的是摩卡画布：`bundle.macOS.files` 随附 `Contents/Resources/zh-Hans.lproj/InfoPlist.strings`（以及旁边的 `zh-Hant`），macOS 从那里读取本地化的 `CFBundleDisplayName`/`CFBundleName`；其他语言回退到包自身的名字。这些文件在包签名之前复制，因此 ad-hoc 签名仍然可验证。
 
-> 重新构建会删除上一个 DMG，所以在再次运行 `make package-macos` 之前先弹出任何已挂载的副本——否则 DMG 会作为残留卷保持挂载，Finder 样式化步骤会以通用的 `error running bundle_dmg.sh` 失败。
+> 重新构建会删除上一个 DMG，所以在再次运行同一个打包任务之前先弹出任何已挂载的副本——否则 DMG 会作为残留卷保持挂载，Finder 样式化步骤会以通用的 `error running bundle_dmg.sh` 失败。
 
 ### Windows 安装器（Windows 主机）
 

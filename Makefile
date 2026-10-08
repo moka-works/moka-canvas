@@ -1,8 +1,9 @@
 SHELL := /bin/sh
 CARGO_MANIFEST := src-tauri/Cargo.toml
+MACOS_X86_TARGET := x86_64-apple-darwin
 WINDOWS_CROSS_TARGET := x86_64-pc-windows-gnu
 
-.PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-windows package-linux cross-package-windows set-version clean
+.PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows set-version clean
 
 ifeq (set-version,$(firstword $(MAKECMDGOALS)))
 SET_VERSION_ARG := $(word 2,$(MAKECMDGOALS))
@@ -61,6 +62,14 @@ package-web: web-build
 package-macos: web-build
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos must run on macOS.' >&2; exit 1)
 	npm run tauri build -- --bundles dmg
+	node scripts/collect-release.mjs
+
+# The target is named explicitly so one command covers both hosts: Apple
+# Silicon cross-compiles the Intel bundle, Intel builds it natively.
+package-macos-x86: web-build
+	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos-x86 must run on macOS.' >&2; exit 1)
+	@rustup target list --installed | grep -q "$(MACOS_X86_TARGET)" || rustup target add $(MACOS_X86_TARGET)
+	npm run tauri build -- --target $(MACOS_X86_TARGET) --bundles dmg
 	node scripts/collect-release.mjs
 
 package-windows: web-build
