@@ -1156,6 +1156,43 @@ describe("the assets a package would leave behind", () => {
   it("has nothing to leave out when every asset is placed", () => {
     expect(unreferencedAssets(buildGoldenMokaFile())).toEqual([]);
   });
+
+  it("keeps a voice's recording as used, narrator and character alike", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    moka.resources.voice.push(
+      shelf(
+        "asset-hero-voice",
+        "assets/voice/asset-hero-voice-00000000.wav",
+        6,
+      ),
+      shelf(
+        "asset-narrator-voice",
+        "assets/voice/asset-narrator-voice-00000000.wav",
+        7,
+      ),
+      shelf(
+        "asset-left-voice",
+        "assets/voice/asset-left-voice-00000000.wav",
+        8,
+      ),
+    );
+    const story = moka.stories![0];
+    story.narrator = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-narrator-voice",
+    };
+    story.elements.find((element) => element.id === ids.hero)!.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    const left = unreferencedAssets(moka).map((entry) => entry.id);
+    expect(left).toContain("asset-left-voice");
+    expect(left).not.toContain("asset-hero-voice");
+    expect(left).not.toContain("asset-narrator-voice");
+  });
 });
 
 describe("what holds an asset", () => {
@@ -1235,6 +1272,33 @@ describe("what holds an asset", () => {
         storyName: "雨夜列车",
         what: "manuscript",
       },
+    ]);
+  });
+
+  it("holds the voice naming a file as its reference, cast and narrator alike", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const story = moka.stories![0];
+    story.narrator = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-narrator-voice",
+    };
+    story.elements.find((element) => element.id === ids.hero)!.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    expect(assetHolders(moka, "asset-hero-voice")).toEqual([
+      {
+        kind: "voiceReference",
+        storyId: ids.story,
+        storyName: "雨夜列车",
+        elementId: ids.hero,
+      },
+    ]);
+    expect(assetHolders(moka, "asset-narrator-voice")).toEqual([
+      { kind: "voiceReference", storyId: ids.story, storyName: "雨夜列车" },
     ]);
   });
 

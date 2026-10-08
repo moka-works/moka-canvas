@@ -40,6 +40,8 @@ function holderKey(use: AssetUse): string {
     case "drawing":
     case "drawingInUse":
       return `story:${holder.storyId}:${JSON.stringify(holder.target)}`;
+    case "voiceReference":
+      return `story:${holder.storyId}:voice:${holder.elementId ?? "narrator"}`;
   }
 }
 

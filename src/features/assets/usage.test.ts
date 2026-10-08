@@ -144,6 +144,46 @@ describe("where a file is used", () => {
     ]);
   });
 
+  it("names the voice wearing a recording, character and narrator alike", () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0];
+    story.narrator = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-narrator-voice",
+    };
+    story.elements.find((element) => element.id === storyIds().hero)!.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    expect(assetUses(moka, "asset-hero-voice")).toEqual([
+      {
+        room: "story",
+        holder: {
+          kind: "voiceReference",
+          storyId: storyIds().story,
+          storyName: "雨夜列车",
+          elementId: storyIds().hero,
+        },
+        title: "雨夜列车 · 林",
+        blocking: false,
+      },
+    ]);
+    expect(assetUses(moka, "asset-narrator-voice")).toEqual([
+      {
+        room: "story",
+        holder: {
+          kind: "voiceReference",
+          storyId: storyIds().story,
+          storyName: "雨夜列车",
+        },
+        title: "雨夜列车 · the narrator",
+        blocking: false,
+      },
+    ]);
+  });
+
   it("gathers a file's uses under their rooms, boards first", () => {
     const uses = assetUses(heldEverywhere(), storyIds().heroMain);
     expect(uses.map((use) => use.room)).toEqual(["canvas", "clip", "story"]);

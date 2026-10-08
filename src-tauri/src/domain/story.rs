@@ -686,10 +686,19 @@ pub struct StoryEditPatch {
 }
 
 impl StoryDocument {
-    /// Every asset this telling points at: its manuscript, its drawings, and
-    /// the clips it made.
+    /// Every asset this telling points at: its manuscript, its drawings, the
+    /// clips it made, and the recordings its voices name.
     pub fn asset_references(&self) -> Vec<AssetId> {
-        let mut found: Vec<AssetId> = Vec::new();
+        let mut found: Vec<AssetId> = self
+            .narrator
+            .iter()
+            .chain(
+                self.elements
+                    .iter()
+                    .filter_map(|element| element.voice.as_ref()),
+            )
+            .filter_map(|voice| voice.reference_asset_id.clone())
+            .collect();
         let mut add = |asset_id: &Option<AssetId>| {
             if let Some(asset_id) = asset_id {
                 found.push(asset_id.clone());

@@ -19,9 +19,11 @@ import {
   slotAt,
   slotWithoutTake,
   validateEdgeCandidate,
+  voiceNamed,
   type AssetDrawing,
   type AssetHolder,
   type AssetId,
+  type AssetVoiceReference,
   type BackgroundMode,
   type CanvasDocument,
   type CanvasId,
@@ -38,6 +40,7 @@ import {
   type ResourceEntry,
   type StoryDocument,
   type StorySlotTarget,
+  type StoryVoiceProfile,
   type WorkflowNode,
 } from "../../../shared/domain";
 import {
@@ -1152,14 +1155,15 @@ export async function fileNodeAsAsset(
 
 /**
  * Delete flow: a file nothing holds goes straight to the server; one held by
- * cards or by a story's old drawings opens a confirmation that lets those go
- * too; one held by something a delete cannot empty is refused by name.
+ * cards, by a story's old drawings, or by a voice naming it as a reference
+ * opens a confirmation that lets those go too; one held by something a delete
+ * cannot empty is refused by name.
  *
  * What holds a file is read across the whole document, not off the board being
  * looked at: a file whose only holder is a story drawing looks unreferenced on
  * the canvas, and the server would refuse the delete for a reason the reader
- * was never told. The two halves of what can be emptied are gathered here and
- * emptied together on confirmation, so the ask and the act say the same thing.
+ * was never told. What a delete can empty is gathered here and emptied
+ * together on confirmation, so the ask and the act say the same thing.
  */
 export async function requestDeleteAsset(assetId: string) {
   const { moka } = useProjectStore.getState();
@@ -1178,10 +1182,13 @@ export async function requestDeleteAsset(assetId: string) {
     .filter((holder) => holder.kind === "node")
     .map((holder) => holder.nodeId);
   const drawings = holders.filter((holder) => holder.kind === "drawing");
-  if (nodeIds.length > 0 || drawings.length > 0) {
+  const references = holders.filter(
+    (holder) => holder.kind === "voiceReference",
+  );
+  if (nodeIds.length > 0 || drawings.length > 0 || references.length > 0) {
     useEditorStore
       .getState()
-      .openAssetDeletePrompt({ assetId, nodeIds, drawings });
+      .openAssetDeletePrompt({ assetId, nodeIds, drawings, references });
     return;
   }
   await removeAssetNow(assetId);
@@ -1250,6 +1257,29 @@ export function drawingName(drawing: {
         ? i18n.t("editor:holders.aPlace")
         : placeName(story, drawing.target),
   });
+}
+
+/**
+ * The voice a reference recording belongs to, as a reader knows it: the
+ * character's name beside the narrator's word.
+ *
+ * Read off the document at the moment it is said, like `drawingName`: a name
+ * is the document's to change, and the holder only carries what the delete
+ * has to find again — the element by its id, the narrator by nothing.
+ */
+export function referenceWho(
+  moka: MokaFile | null | undefined,
+  reference: { storyId: string; elementId?: string },
+): string {
+  if (reference.elementId === undefined) {
+    return i18n.t("editor:holders.narrator");
+  }
+  const story = moka?.stories?.find((held) => held.id === reference.storyId);
+  const element =
+    story === undefined ? undefined : elementOf(story, reference.elementId);
+  return element === undefined || element.name === ""
+    ? i18n.t("editor:holders.aPlace")
+    : element.name;
 }
 
 /** What a place is called within its own story: its owner, and which part it is. */
@@ -1340,7 +1370,8 @@ async function removeAssetNow(assetId: string) {
 
 /**
  * Confirmed delete: what holds the file lets it go — the cards that show it,
- * and the story places keeping it as an old drawing — and then the file.
+ * the story places keeping it as an old drawing, and the voices naming it as
+ * their reference — and then the file.
  *
  * The drawings are emptied off the live document rather than off the ask, one
  * write per place: a place is written whole, and a slot computed from what the
@@ -1369,6 +1400,7 @@ export async function confirmDeleteAsset() {
     }
   }
   commands.push(...dropDrawings(moka, prompt.assetId, prompt.drawings));
+  commands.push(...dropVoiceReferences(moka, prompt.references));
   if (
     commands.length > 0 &&
     !execute(i18n.t("editor:history.removeReferencingNodes"), commands)
@@ -1406,6 +1438,55 @@ function dropDrawings(
     });
   }
   return commands;
+}
+
+/**
+ * The writes that take a file out of the voices naming it as their
+ * reference. A profile left holding nothing at all is taken off the element,
+ * the same rule the card's own fields write by (`voiceNamed`).
+ */
+function dropVoiceReferences(
+  moka: MokaFile,
+  references: AssetVoiceReference[],
+): DocumentCommand[] {
+  const commands: DocumentCommand[] = [];
+  for (const reference of references) {
+    const story = (moka.stories ?? []).find(
+      (held) => held.id === reference.storyId,
+    );
+    if (story === undefined) continue;
+    if (reference.elementId === undefined) {
+      commands.push({
+        type: "updateStoryNarrator",
+        storyId: story.id,
+        narrator: withoutReference(story.narrator),
+      });
+      continue;
+    }
+    const element = elementOf(story, reference.elementId);
+    if (element?.voice === undefined) continue;
+    commands.push({
+      type: "updateStoryElement",
+      storyId: story.id,
+      elementId: element.id,
+      patch: { voice: withoutReference(element.voice) },
+    });
+  }
+  return commands;
+}
+
+/**
+ * A voice with the recording taken off. A voice left saying nothing else — a
+ * recording was the only thing it said — is taken off whole rather than kept
+ * as a shell, so what the delete leaves is what the card itself would write.
+ */
+function withoutReference(
+  voice: StoryVoiceProfile | undefined,
+): StoryVoiceProfile | null {
+  if (voice === undefined) return null;
+  const next: StoryVoiceProfile = { ...voice };
+  delete next.referenceAssetId;
+  return voiceNamed(next) ? next : null;
 }
 
 /** The kind of node a registered asset becomes, read from where it is filed. */

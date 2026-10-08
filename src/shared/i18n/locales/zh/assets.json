@@ -39,6 +39,7 @@
     "boardCard": "{{board}} · {{card}}",
     "cutClip": "{{timeline}} · {{clip}}",
     "storyPlace": "{{story}} · {{place}}",
+    "storyVoice": "{{story}} · {{who}}",
     "manuscriptTitle": "{{story}} · 剧本"
   },
   "words": {

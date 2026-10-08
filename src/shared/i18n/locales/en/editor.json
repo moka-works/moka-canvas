@@ -489,9 +489,14 @@
       "usedByMany": "is used by {{count}} nodes. Deleting it also removes those nodes and their connections.",
       "keepsDrawingOne": "It is also an old drawing of {{place}}; that drawing is thrown away too",
       "keepsDrawingMany": "It is also kept as an old drawing in {{count}} places of the story: {{places}}; those drawings are thrown away too",
-      "removeAndDelete": "Remove nodes and delete",
-      "removeDrawingAndDelete": "Throw the drawing away and delete",
-      "removeBothAndDelete": "Remove and delete"
+      "removesVoiceOne": "It is also the voice reference of {{who}}; that reference is cleared too",
+      "removesVoiceMany": "It is also kept as a voice reference in {{count}} places: {{whos}}; those references are cleared too",
+      "removeWhatAndDelete": "Remove {{what}} and delete",
+      "parts": {
+        "nodes": "its nodes",
+        "drawings": "its old drawings",
+        "references": "their voice references"
+      }
     },
     "preview": {
       "close": "Close preview"
@@ -712,6 +717,7 @@
     "join": ", ",
     "storyPlace": "{{place}} in “{{story}}”",
     "aPlace": "a place in the story",
+    "narrator": "the narrator",
     "drawingInUse": "it is the drawing {{place}} is using",
     "clip": "clip “{{clip}}” on the timeline “{{timeline}}” is using it",
     "manuscript": "it is {{story}}'s manuscript"

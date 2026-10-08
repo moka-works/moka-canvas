@@ -1479,6 +1479,29 @@ fn counts_every_drawing_and_the_manuscript_as_in_use() {
     }
 }
 
+#[test]
+fn counts_a_recording_a_voice_names_as_in_use() {
+    let mut moka = story_document();
+    let story = &mut moka.stories.as_mut().unwrap()[0];
+    story.narrator = Some(story::StoryVoiceProfile {
+        reference_asset_id: Some("asset-narrator-voice".into()),
+        ..voice("", "")
+    });
+    story.elements[0].voice = Some(story::StoryVoiceProfile {
+        reference_asset_id: Some("asset-hero-voice".into()),
+        ..voice("", "")
+    });
+    let refs = moka.asset_references();
+    assert!(
+        refs.contains_key("asset-hero-voice"),
+        "the character's recording is pointed at by the story"
+    );
+    assert!(
+        refs.contains_key("asset-narrator-voice"),
+        "the narrator's recording is pointed at by the story"
+    );
+}
+
 // -----------------------------------------------------------------------------
 // What a document carries
 // -----------------------------------------------------------------------------

@@ -367,6 +367,18 @@ describe("asset deletion", () => {
     };
   }
 
+  function recording(id: string) {
+    return {
+      id,
+      name: `${id}.wav`,
+      path: `assets/voice/${id}-00000000.wav`,
+      mime: "audio/wav",
+      bytes: 10,
+      createdAt: WHEN,
+      updatedAt: WHEN,
+    };
+  }
+
   function deleted(assetId: string) {
     return fetchMock.mock.calls.some(
       ([url, init]) =>
@@ -383,6 +395,7 @@ describe("asset deletion", () => {
       assetId: ids.assetImage,
       nodeIds: [ids.image],
       drawings: [],
+      references: [],
     });
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining("/assets/"),
@@ -408,6 +421,7 @@ describe("asset deletion", () => {
           target: { kind: "element", elementId: storyIds().hero, view: "main" },
         },
       ],
+      references: [],
     });
     render(<AssetDeleteDialog />);
     const dialog = screen.getByRole("alertdialog");
@@ -417,7 +431,7 @@ describe("asset deletion", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Throw the drawing away and delete",
+        name: "Remove its old drawings and delete",
       }),
     );
     await act(() => Promise.resolve());
@@ -455,6 +469,7 @@ describe("asset deletion", () => {
           target: { kind: "element", elementId: storyIds().hero, view: "main" },
         },
       ],
+      references: [],
     });
     await confirmDeleteAsset();
     const after = useProjectStore.getState().moka!;
@@ -467,6 +482,131 @@ describe("asset deletion", () => {
         .main.takes.map((take) => take.assetIds[0]),
     ).toEqual(["asset-hero-redrawn"]);
     expect(deleted(storyIds().heroMain)).toBe(true);
+  });
+
+  it("asks before a voice's recording goes, and the voice stops naming it", async () => {
+    const moka = buildStoryMokaFile();
+    const hero = moka.stories![0].elements.find(
+      (element) => element.id === storyIds().hero,
+    )!;
+    hero.voice = {
+      model: "voice-model",
+      voice: "longxiaochun",
+      referenceAssetId: "asset-hero-voice",
+    };
+    moka.resources.voice.push(recording("asset-hero-voice"));
+    hydrate(moka);
+    await requestDeleteAsset("asset-hero-voice");
+    // The ask is about the voice, in the voice's own words: nothing on a
+    // canvas holds this file, and a card count would have said nothing.
+    expect(useEditorStore.getState().assetDeletePrompt).toEqual({
+      assetId: "asset-hero-voice",
+      nodeIds: [],
+      drawings: [],
+      references: [
+        {
+          kind: "voiceReference",
+          storyId: storyIds().story,
+          storyName: "雨夜列车",
+          elementId: storyIds().hero,
+        },
+      ],
+    });
+    render(<AssetDeleteDialog />);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain(
+      "It is also the voice reference of 林",
+    );
+    expect(deleted("asset-hero-voice")).toBe(false);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove their voice references and delete",
+      }),
+    );
+    await act(() => Promise.resolve());
+    const after = useProjectStore.getState().moka!;
+    const voice = after.stories![0].elements.find(
+      (element) => element.id === storyIds().hero,
+    )!.voice;
+    // The other fields stay: a recording was one thing the voice said.
+    expect(voice).toEqual({ model: "voice-model", voice: "longxiaochun" });
+    expect(deleted("asset-hero-voice")).toBe(true);
+  });
+
+  it("takes a voice off whole when the recording was all it said", async () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].narrator = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-narrator-voice",
+    };
+    moka.resources.voice.push(recording("asset-narrator-voice"));
+    hydrate(moka);
+    await requestDeleteAsset("asset-narrator-voice");
+    expect(useEditorStore.getState().assetDeletePrompt).toEqual({
+      assetId: "asset-narrator-voice",
+      nodeIds: [],
+      drawings: [],
+      references: [
+        {
+          kind: "voiceReference",
+          storyId: storyIds().story,
+          storyName: "雨夜列车",
+        },
+      ],
+    });
+    await confirmDeleteAsset();
+    const after = useProjectStore.getState().moka!;
+    expect(after.stories![0].narrator).toBeUndefined();
+    expect(deleted("asset-narrator-voice")).toBe(true);
+  });
+
+  it("empties a card and a voice in one act, one history entry", async () => {
+    const moka = buildStoryMokaFile();
+    const ids = goldenNodeIds();
+    const node = activeCanvasOf(moka).nodes.find(
+      (held) => held.id === ids.image,
+    )!;
+    (node.data as MediaNodeData).assetId = "asset-hero-voice";
+    const hero = moka.stories![0].elements.find(
+      (element) => element.id === storyIds().hero,
+    )!;
+    hero.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    moka.resources.voice.push(recording("asset-hero-voice"));
+    hydrate(moka);
+    await requestDeleteAsset("asset-hero-voice");
+    expect(useEditorStore.getState().assetDeletePrompt).toEqual({
+      assetId: "asset-hero-voice",
+      nodeIds: [ids.image],
+      drawings: [],
+      references: [
+        {
+          kind: "voiceReference",
+          storyId: storyIds().story,
+          storyName: "雨夜列车",
+          elementId: storyIds().hero,
+        },
+      ],
+    });
+    const before = useHistoryStore.getState().undoStack.length;
+    await confirmDeleteAsset();
+    const after = useProjectStore.getState().moka!;
+    expect(
+      activeCanvasOf(after).nodes.some((held) => held.id === ids.image),
+    ).toBe(false);
+    expect(
+      after.stories![0].elements.find(
+        (element) => element.id === storyIds().hero,
+      )!.voice,
+    ).toBeUndefined();
+    // Both writes are one act on the history, so one undo brings both back.
+    expect(useHistoryStore.getState().undoStack.length).toBe(before + 1);
+    expect(deleted("asset-hero-voice")).toBe(true);
   });
 
   it("refuses the drawing a place is using, naming the place", async () => {
@@ -776,7 +916,7 @@ describe("editor shell integration", () => {
     expect(dialog.textContent).toContain("lake.png");
     expect(dialog.textContent).toContain("1 node");
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove nodes and delete" }),
+      screen.getByRole("button", { name: "Remove its nodes and delete" }),
     );
     await act(() => Promise.resolve());
     const state = useProjectStore.getState();

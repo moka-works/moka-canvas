@@ -928,10 +928,11 @@ export interface StoryVoiceTake {
  * Something pointing at a file, told apart by what letting the file go would
  * take.
  *
- * A card and a place's old drawing are the two a delete can take out of what
- * holds them; the drawing a place is using, a clip cut into a timeline, and a
- * story's manuscript are the ones it cannot — those are named to the reader
- * instead, since the way out of them is a change somewhere else.
+ * A card, a place's old drawing, and a voice's reference recording are the
+ * three a delete can take out of what holds them; the drawing a place is
+ * using, a clip cut into a timeline, and a story's manuscript are the ones it
+ * cannot — those are named to the reader instead, since the way out of them is
+ * a change somewhere else.
  */
 export type AssetHolder =
   | { kind: "node"; canvasId: CanvasId; nodeId: NodeId }
@@ -963,10 +964,24 @@ export type AssetHolder =
       storyId: string;
       storyName: string;
       what: "manuscript";
+    }
+  /** A voice profile's reference recording, which a delete may take away. */
+  | {
+      kind: "voiceReference";
+      storyId: string;
+      storyName: string;
+      /** The element whose voice names it; absent means the story's narrator. */
+      elementId?: string;
     };
 
 /** A story place keeping a file only as a drawing it is not using. */
 export type AssetDrawing = Extract<AssetHolder, { kind: "drawing" }>;
+
+/** A story voice naming a file as the recording it is copied from. */
+export type AssetVoiceReference = Extract<
+  AssetHolder,
+  { kind: "voiceReference" }
+>;
 
 /** The fields a caller may move on an element, for `updateStoryElement`. */
 export interface StoryElementPatch {
