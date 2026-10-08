@@ -529,6 +529,38 @@ mod tests {
         )
     }
 
+    /// An asset-only sound card: where a recording sits, and the kind of node
+    /// a speech ask wires its voice from.
+    fn audio(name: &str, asset_id: &str) -> WorkflowNode {
+        node(
+            NodeKind::Audio,
+            name,
+            NodeData {
+                asset_id: Some(asset_id.to_string()),
+                ..NodeData::default()
+            },
+        )
+    }
+
+    /// The node being resolved: a sound card asking to speak, with the input
+    /// mode and prompt under test.
+    fn speaking(prompt: &str) -> WorkflowNode {
+        node(
+            NodeKind::Audio,
+            "speech",
+            NodeData {
+                generation: Some(GenerationSpec {
+                    capability: Capability::Speech,
+                    input_mode: GenerationInputMode::Upstream,
+                    prompt: prompt.to_string(),
+                    updated_at: now_iso(),
+                    ..GenerationSpec::default()
+                }),
+                ..NodeData::default()
+            },
+        )
+    }
+
     /// The node being resolved: an image node asking for a poster, with the
     /// input mode and prompt under test.
     fn asking(mode: GenerationInputMode, prompt: &str) -> WorkflowNode {
@@ -671,6 +703,34 @@ mod tests {
         assert_eq!(
             resolved.used_node_ids,
             [id("brief"), id("subject"), id("stencil")]
+        );
+    }
+
+    /// A recording wired into the sound card's audio port is the voice a
+    /// voice-copying converter reads; words wired into its prompt port fold
+    /// into the ask the way they always have.
+    #[test]
+    fn a_recording_wired_into_the_sound_card_travels_as_a_reference() {
+        let asked = speaking("Say it warmly.");
+        let document = canvas(
+            vec![
+                audio("recording", "asset-recording"),
+                text("brief", "In a low voice."),
+                asked.clone(),
+            ],
+            vec![
+                (&id("recording"), "audio", &id("speech")),
+                (&id("brief"), "prompt", &id("speech")),
+            ],
+        );
+
+        let resolved = collect_generation_inputs(&document, &asked);
+        assert_eq!(roles(&resolved.inputs), ["reference"]);
+        assert_eq!(assets(&resolved.inputs), ["asset-recording"]);
+        assert_eq!(resolved.used_node_ids, [id("recording"), id("brief")]);
+        assert_eq!(
+            resolved.prompt,
+            "Say it warmly.\n\n[Text 1]\nIn a low voice."
         );
     }
 

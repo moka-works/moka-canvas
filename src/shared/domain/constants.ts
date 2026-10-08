@@ -502,6 +502,7 @@ export const NODE_PORTS: Record<NodeKind, PortDefinition[]> = {
     port("prompt", "input", ["text"], "domain:port.prompt", {
       cardinality: "many",
     }),
+    port("audio", "input", ["audio"], "domain:port.audio"),
     port("out", "output", ["audio"], "domain:port.audio"),
   ],
   video: [

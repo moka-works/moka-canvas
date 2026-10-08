@@ -94,7 +94,20 @@ const PICTURE: ResourceEntry = {
   },
 };
 
-const RESOURCES = new Map<AssetId, ResourceEntry>([[PICTURE.id, PICTURE]]);
+const RECORDING: ResourceEntry = {
+  id: "asset-voice",
+  name: "voice.wav",
+  path: "assets/audios/voice.wav",
+  mime: "audio/wav",
+  bytes: 40960,
+  createdAt: T,
+  updatedAt: T,
+};
+
+const RESOURCES = new Map<AssetId, ResourceEntry>([
+  [PICTURE.id, PICTURE],
+  [RECORDING.id, RECORDING],
+]);
 const ISSUES = new Map<AssetId, "missing">();
 
 const BRIEF = card("text", "n-brief", "Brief", {
@@ -104,6 +117,8 @@ const PLATE = card("image", "n-plate", "Plate", { assetId: PICTURE.id });
 const SHOT = card("image", "n-shot", "Shot", { assetId: PICTURE.id });
 const TARGET = asked("image", "n-target", "Target");
 const FILM = asked("video", "n-film", "Film");
+const VOICE = card("audio", "n-voice", "Voice", { assetId: RECORDING.id });
+const SPEAKER = asked("audio", "n-speaker", "Speaker");
 
 /** Two arrivals at the target: words on its prompt, a picture on its images. */
 const SHEET = sheet(
@@ -262,6 +277,17 @@ describe("what is wired in", () => {
       expect.objectContaining({ id: "e-subject" }),
       "lastFrame",
     );
+  });
+
+  it("shows a recording wired into the sound card's audio input", () => {
+    const spoken = sheet(
+      [VOICE, SPEAKER],
+      [wire("n-voice", "n-speaker", "e-voice", "audio")],
+    );
+    render(<Bar canvas={spoken} node={SPEAKER} />);
+    const [recording] = rows();
+    expect(recording.textContent).toContain("Voice");
+    expect(recording.textContent).toContain("Audio");
   });
 });
 
