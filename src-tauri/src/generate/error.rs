@@ -33,6 +33,13 @@ pub enum ProviderError {
     #[error("model {model} has no stored API key")]
     KeyMissing { model: String },
 
+    /// A speech ask whose converter cannot make a sound without a voice, and
+    /// none is configured. Refused here rather than sent on: the engines that
+    /// declare the need answer a voiceless ask with an error of their own that
+    /// names neither the missing setting nor where it lives.
+    #[error("the model {model} has no voice set, and its speech converter needs one")]
+    VoiceRequired { model: String },
+
     #[error("{reference} generates {found}, not {capability}")]
     CapabilityMismatch {
         reference: String,
@@ -129,6 +136,7 @@ impl ProviderError {
             // holds no credential is another, and says which model.
             Self::NotConfigured { .. } => "PROVIDER_NOT_CONFIGURED",
             Self::KeyMissing { .. } => "PROVIDER_KEY_MISSING",
+            Self::VoiceRequired { .. } => "MODEL_VOICE_REQUIRED",
             Self::CapabilityMismatch { .. } => "MODEL_CAPABILITY_MISMATCH",
             Self::SceneUnconfigured { .. } => "MODEL_SCENE_UNCONFIGURED",
             Self::Auth(_) => "PROVIDER_AUTH",
@@ -172,7 +180,9 @@ impl ProviderError {
                 "capability": capability,
                 "reason": reason,
             })),
-            Self::KeyMissing { model } => Some(serde_json::json!({ "model": model })),
+            Self::KeyMissing { model } | Self::VoiceRequired { model } => {
+                Some(serde_json::json!({ "model": model }))
+            }
             Self::CapabilityMismatch {
                 reference,
                 capability,
@@ -275,6 +285,22 @@ mod tests {
         assert!(ProviderError::not_configured("text", "nothing is set")
             .code()
             .eq("PROVIDER_NOT_CONFIGURED"));
+    }
+
+    #[test]
+    fn a_voice_a_speech_model_was_never_given_is_its_own_trouble_too() {
+        // The model is configured and holds a key; what it lacks is the voice
+        // its converter is asked for. A second ask is refused the same way, so
+        // the client offers the setting rather than another try.
+        let error = ProviderError::VoiceRequired {
+            model: "a-voice".into(),
+        };
+        assert_eq!(error.code(), "MODEL_VOICE_REQUIRED");
+        assert_eq!(
+            error.details(),
+            Some(serde_json::json!({ "model": "a-voice" }))
+        );
+        assert!(!error.retryable());
     }
 
     #[test]

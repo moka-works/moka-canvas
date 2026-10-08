@@ -442,7 +442,10 @@ function protocolOf(capability: Capability): string {
  * default for its category.
  *
  * An upsert replaces rather than appends, so two specs configuring the same
- * model never race over a revision.
+ * model never race over a revision. A speech entry also gives the machine a
+ * voice: every speech converter this build deploys is asked for one, and a
+ * voiceless ask is refused before it leaves — the stand-in deployment speaks
+ * in "alloy" so that a spec about dubbing is about dubbing.
  */
 export async function configureModels(
   models: readonly {
@@ -493,6 +496,29 @@ export async function configureModels(
   if (!patched.ok) {
     throw new Error(
       `setting the default: ${patched.status} ${await patched.text()}`,
+    );
+  }
+  if (models.some((model) => model.capability === "speech")) {
+    await setMachineVoice("alloy");
+  }
+}
+
+/**
+ * What the machine reads lines in, as the preferences form would say it.
+ *
+ * An empty voice is a machine that has set none, which is the state a speech
+ * ask is refused in — reachable here, and not by pressing anything on the
+ * steps a spec walks.
+ */
+export async function setMachineVoice(voice: string): Promise<void> {
+  const set = await fetch(`${APP}/api/v1/models/preferences`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ speech: { voice } }),
+  });
+  if (!set.ok) {
+    throw new Error(
+      `setting the machine voice: ${set.status} ${await set.text()}`,
     );
   }
 }

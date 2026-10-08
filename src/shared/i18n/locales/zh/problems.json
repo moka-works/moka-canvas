@@ -32,6 +32,7 @@
   "metadataWriteFailed": "配置写入失败，请检查磁盘后重试",
   "modelCapabilityMismatch": "{{reference}} 生成的是 {{actual}}，不是 {{requested}}",
   "modelSceneUnconfigured": "模型「{{reference}}」没有为「{{scene}}」场景配置分组，请到设置里补充后再试",
+  "modelVoiceRequired": "模型「{{model}}」还没有可用的音色：语音合成必须指定音色，请先设置音色后再试",
   "mokaBsonInvalid": "canvas.moka 内容损坏，无法解析",
   "mokaFieldMissing": "canvas.moka 缺少必需字段，可能已损坏",
   "mokaMagicInvalid": "canvas.moka 文件头无效，可能不是摩卡画布文档",

@@ -40,6 +40,7 @@ import { useModelStore } from "../../settings/modelStore";
 import { applyJobResults } from "../jobs/apply";
 import { itemsForTargets, jobKey } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
+import { useStoryStore } from "./storyStore";
 
 /** How often a batch that is running is looked at. It runs for minutes. */
 export const POLL_MS = 1500;
@@ -397,26 +398,37 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
               .getState()
               .moka?.stories?.find((held) => held.id === record.storyId);
             const trouble = failedTrouble(failedItems, record);
+            // A batch that lost every piece to a missing voice is repaired on
+            // the character cards the voices are written on — a step back
+            // into the telling, not a page of Settings.
+            const voiceless = failedItems.every(
+              (item) => item.errorCode === "MODEL_VOICE_REQUIRED",
+            );
             toast(
               "error",
-              trouble.message,
-              trouble.blockedByConfiguration === true
+              voiceless ? i18n.t("story:jobs.voiceMissing") : trouble.message,
+              voiceless
                 ? {
-                    // Every one of them failed at its own model, and a batch
-                    // is one step's worth of one capability, so the first
-                    // failure names the page that holds the fix.
-                    label: i18n.t("story:jobs.openSettings"),
-                    go: () =>
-                      useModelStore
-                        .getState()
-                        .openSettings(failedItems[0].capability),
+                    label: i18n.t("story:jobs.voiceMissingGo"),
+                    go: () => useStoryStore.getState().goStep("elements"),
                   }
-                : story === undefined
-                  ? undefined
-                  : {
-                      label: i18n.t("story:jobs.retryFailed"),
-                      go: () => void retryFailed(story, record),
-                    },
+                : trouble.blockedByConfiguration === true
+                  ? {
+                      // Every one of them failed at its own model, and a batch
+                      // is one step's worth of one capability, so the first
+                      // failure names the page that holds the fix.
+                      label: i18n.t("story:jobs.openSettings"),
+                      go: () =>
+                        useModelStore
+                          .getState()
+                          .openSettings(failedItems[0].capability),
+                    }
+                  : story === undefined
+                    ? undefined
+                    : {
+                        label: i18n.t("story:jobs.retryFailed"),
+                        go: () => void retryFailed(story, record),
+                      },
               trouble.detail,
             );
           }

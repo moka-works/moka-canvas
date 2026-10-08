@@ -17,6 +17,7 @@ import {
   useStoryJobStore,
   watchedStepFailure,
 } from "./storyJobStore";
+import { useStoryStore } from "./storyStore";
 
 const ids = storyIds();
 
@@ -492,6 +493,49 @@ describe("a batch coming back", () => {
     said?.choice?.go();
     expect(open).toHaveBeenCalledWith("video");
     open.mockRestore();
+    apply.mockRestore();
+  });
+
+  it("answers a voiceless batch where the voices live rather than in the settings", async () => {
+    const held = job({ kind: "voice", model: "a-speaker", status: "failed" });
+    const spoken: StoryJobRecord = {
+      ...held,
+      items: [
+        {
+          ...held.items[0],
+          id: `voice:${ids.chapterFirst}:${ids.act}`,
+          target: {
+            kind: "voice",
+            chapterId: ids.chapterFirst,
+            actId: ids.act,
+          },
+          capability: "speech",
+          status: "failed",
+          error:
+            "the model a-speaker has no voice set, and its speech converter needs one",
+          errorCode: "MODEL_VOICE_REQUIRED",
+          errorDetails: { model: "a-speaker" },
+        },
+      ],
+    };
+    serving({ "/api/v1/projects/current/story/jobs": [spoken] });
+    const apply = vi.spyOn(useProjectStore.getState(), "applyLocal");
+
+    await useStoryJobStore.getState().load(ids.story);
+
+    const said = useAppStore.getState().toasts.at(-1);
+    expect(said?.kind).toBe("error");
+    // The characters' own voices are the repair, so the line says where they
+    // are written and the press steps back into the telling — the settings
+    // page offers only the machine default, which is the last link of the
+    // chain rather than the one a cast is given.
+    expect(said?.message).toContain("Some characters have no voice yet");
+    expect(said?.message).toContain("Elements");
+    expect(said?.choice?.label).toBe("Set the voices");
+    const step = vi.spyOn(useStoryStore.getState(), "goStep");
+    said?.choice?.go();
+    expect(step).toHaveBeenCalledWith("elements");
+    step.mockRestore();
     apply.mockRestore();
   });
 

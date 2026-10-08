@@ -106,6 +106,7 @@ describe("what a reader repairs in settings", () => {
     expect(isConfigurationTrouble(thrown("MODEL_SCENE_UNCONFIGURED"))).toBe(
       true,
     );
+    expect(isConfigurationTrouble(thrown("MODEL_VOICE_REQUIRED"))).toBe(true);
   });
 
   it("leaves a trouble that time or a second ask might fix alone", () => {
