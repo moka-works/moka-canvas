@@ -9,10 +9,21 @@
 //! - `log.info(msg)`                   — tracing::info!
 //! - `log.warn(msg)`                   — tracing::warn!
 //! - `util.default_table()` → table    — empty table with safe __index
+//! - `memo_get(key)` → string?         — what was remembered, nil when nothing
+//! - `memo_set(key, value)`            — remember a string for a later call
 //!
 //! Base64 works on bytes rather than on text, because the things it is for —
 //! a recording that arrived, a picture that has to travel inside a document —
 //! are not text.
+//!
+//! The memo is where a script leaves something for its later calls — a voice
+//! built once from a recording, under a key the recording's digest built. It
+//! is the process's memory rather than the project's: nothing is written
+//! down, a restart forgets, and each protocol reads only what it wrote
+//! itself, so two converters cannot collide.
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use mlua::{Lua, Result as LuaResult, Value};
 
@@ -116,6 +127,44 @@ fn base64_encode(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+/// What converters have left for their later calls, one table per protocol.
+fn memo() -> &'static Mutex<HashMap<String, HashMap<String, String>>> {
+    static MEMO: OnceLock<Mutex<HashMap<String, HashMap<String, String>>>> = OnceLock::new();
+    MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Registers `memo_get` / `memo_set`, scoped to one protocol: what a
+/// converter remembers is between it and its own later calls.
+pub fn register_memo(lua: &Lua, protocol: &str) -> LuaResult<()> {
+    let scope = protocol.to_string();
+    lua.globals().set(
+        "memo_get",
+        lua.create_function(move |_, key: String| {
+            let remembered = memo()
+                .lock()
+                .expect("memo poisoned")
+                .get(&scope)
+                .and_then(|mine| mine.get(&key))
+                .cloned();
+            Ok(remembered)
+        })?,
+    )?;
+    let scope = protocol.to_string();
+    lua.globals().set(
+        "memo_set",
+        lua.create_function(move |_, (key, value): (String, String)| {
+            memo()
+                .lock()
+                .expect("memo poisoned")
+                .entry(scope.clone())
+                .or_default()
+                .insert(key, value);
+            Ok(())
+        })?,
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +238,43 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    fn a_memo_remembers_within_its_own_scope_and_nowhere_else() {
+        // Two scopes, as two protocols have: each is its own Lua state, as
+        // each call builds its own runtime.
+        let one = Lua::new();
+        register(&one).unwrap();
+        register_memo(&one, "memo-scope-test-one").unwrap();
+        let two = Lua::new();
+        register(&two).unwrap();
+        register_memo(&two, "memo-scope-test-two").unwrap();
+
+        let remembered = |lua: &Lua, key: &str| -> Option<String> {
+            let get: mlua::Function = lua.globals().get("memo_get").unwrap();
+            get.call(key).unwrap()
+        };
+        let remember = |lua: &Lua, key: &str, value: &str| {
+            let set: mlua::Function = lua.globals().get("memo_set").unwrap();
+            set.call::<()>((key, value)).unwrap();
+        };
+
+        // A key nobody wrote reads as nothing rather than failing: most calls
+        // look and find nothing.
+        assert_eq!(remembered(&one, "voice"), None);
+        remember(&one, "voice", "cosyvoice-v3.5-flash-moka-1");
+        assert_eq!(
+            remembered(&one, "voice").as_deref(),
+            Some("cosyvoice-v3.5-flash-moka-1")
+        );
+        // Another protocol's key is not this one's to read.
+        assert_eq!(remembered(&two, "voice"), None);
+        // And a later write replaces the earlier one.
+        remember(&one, "voice", "cosyvoice-v3.5-flash-moka-2");
+        assert_eq!(
+            remembered(&one, "voice").as_deref(),
+            Some("cosyvoice-v3.5-flash-moka-2")
+        );
     }
 }

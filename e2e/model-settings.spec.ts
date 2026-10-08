@@ -277,14 +277,20 @@ test("each sound capability offers the shapes deployed under it", async ({
   const dialog = page.getByRole("dialog", { name: "Settings" });
 
   // A voice is asked of the speech converters this build deploys, and of no
-  // other: the composer's shape is not on offer here.
+  // other: the composer's shape is not on offer here. The suite's own clone
+  // fixture is deployed under this capability too — it is a directory in the
+  // throwaway models tree like any other — and is dropped here: what is
+  // asserted is the list this build ships.
   await dialog.getByRole("tab", { name: "Speech", exact: true }).click();
   await dialog.getByRole("button", { name: "New speech model" }).click();
   const protocol = dialog.getByLabel("Protocol");
   await expect(protocol).toHaveValue("openaiSpeech");
-  await expect(protocol.locator("option")).toHaveText([
+  await expect(
+    protocol.locator("option").filter({ hasNotText: /^E2E · / }),
+  ).toHaveText([
     "OpenAI-compatible · Speech API",
     "Alibaba Cloud · Bailian Speech (CosyVoice TTS)",
+    "Alibaba Cloud · Bailian Speech (CosyVoice, voice clone)",
     "MiniMax · Speech (T2A)",
   ]);
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
