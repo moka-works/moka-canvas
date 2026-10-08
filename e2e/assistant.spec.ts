@@ -13,9 +13,9 @@ import {
 import {
   PAINTER,
   PROVIDER_ORIGIN,
+  providerCalls,
   SENTENCE,
   STORYTELLER,
-  type ProviderCall,
 } from "./mock-provider";
 
 interface ServedLine {
@@ -145,12 +145,6 @@ async function reaskTheCard(nodeId: string, prompt: string): Promise<void> {
   if (!written.ok) {
     throw new Error(`reasking the card: ${written.status}`);
   }
-}
-
-async function providerCalls(): Promise<ProviderCall[]> {
-  const response = await fetch(`${PROVIDER_ORIGIN}/__calls`);
-  if (!response.ok) throw new Error(`reading the stand-in: ${response.status}`);
-  return ((await response.json()) as { calls: ProviderCall[] }).calls;
 }
 
 /**

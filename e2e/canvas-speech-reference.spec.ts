@@ -13,7 +13,7 @@ import {
   projectHome,
   showAssets,
 } from "./helpers";
-import { PROVIDER_ORIGIN, type ProviderCall } from "./mock-provider";
+import { PROVIDER_ORIGIN, providerCalls } from "./mock-provider";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -80,14 +80,6 @@ async function served(): Promise<Served> {
     "reading the project",
   );
   return (await response.json()) as Served;
-}
-
-async function providerCalls(): Promise<ProviderCall[]> {
-  const response = await json(
-    `${PROVIDER_ORIGIN}/__calls`,
-    "reading what the stand-in was asked",
-  );
-  return ((await response.json()) as { calls: ProviderCall[] }).calls;
 }
 
 /** The id the document filed a file under, whichever shelf it landed on. */

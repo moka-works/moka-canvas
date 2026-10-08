@@ -16,9 +16,9 @@ import {
   PAINTER,
   PROVIDER_ADDRESS,
   PROVIDER_ORIGIN,
+  providerCalls,
   SENTENCE,
   STORYTELLER,
-  type ProviderCall,
 } from "./mock-provider";
 
 interface ServedAsset {
@@ -77,14 +77,6 @@ async function served(): Promise<Served> {
     "reading the project",
   );
   return (await response.json()) as Served;
-}
-
-async function providerCalls(): Promise<ProviderCall[]> {
-  const response = await json(
-    `${PROVIDER_ORIGIN}/__calls`,
-    "reading what the stand-in was asked",
-  );
-  return ((await response.json()) as { calls: ProviderCall[] }).calls;
 }
 
 /**

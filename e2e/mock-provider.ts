@@ -136,6 +136,18 @@ export interface ProviderCall {
   credentialed: boolean;
 }
 
+/**
+ * Every ask the stand-in was handed, in the order it was handed them.
+ *
+ * The log lives in the stand-in's own process, so it is read over the wire
+ * from the bookkeeping route beside the ones the stand-in serves.
+ */
+export async function providerCalls(): Promise<ProviderCall[]> {
+  const response = await fetch(`${PROVIDER_ORIGIN}/__calls`);
+  if (!response.ok) throw new Error(`reading the stand-in: ${response.status}`);
+  return ((await response.json()) as { calls: ProviderCall[] }).calls;
+}
+
 export interface MockProvider {
   stop: () => Promise<void>;
 }
