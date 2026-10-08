@@ -5867,12 +5867,16 @@ body.is-dragging-split {
 }
 
 .story-new {
+  align-items: center;
   background: none;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   color: var(--muted);
+  display: inline-flex;
   height: 24px;
+  justify-content: center;
   line-height: 1;
+  padding: 0;
   width: 24px;
 }
 
