@@ -7481,6 +7481,11 @@ button > .story-spin {
   color: var(--muted);
 }
 
+.story-ref.is-followed {
+  border-style: dashed;
+  color: var(--muted);
+}
+
 .story-ref-off {
   background: none;
   border: none;

@@ -55,6 +55,7 @@ import {
   targetKey,
   timelineSizeForAspect,
   voiceFor,
+  voiceNamed,
   withTake,
   type ActDraft,
   type StoryChapterDraft,
@@ -1452,6 +1453,65 @@ describe("the voice a character speaks in", () => {
     expect(voiceFor(story, "gone")).toEqual({
       model: "",
       voice: "旁白的音色",
+    });
+  });
+
+  it("counts a recording alone as a voice said, and carries it down the chain", () => {
+    const ids = storyIds();
+    // A recording with nothing else named is still a voice: the reader heard
+    // it rather than named it.
+    expect(
+      voiceNamed({
+        model: "",
+        voice: "",
+        referenceAssetId: "asset-hero-voice",
+      }),
+    ).toBe(true);
+    expect(voiceNamed({ model: "", voice: "" })).toBe(false);
+
+    // The narrator is heard from a recording; a character that names none
+    // follows it the way it follows a tone.
+    const held = storyOfFile(buildStoryMokaFile());
+    const story: StoryDocument = {
+      ...held,
+      narrator: { model: "", voice: "", rate: 1.2 },
+    };
+    const followed: StoryDocument = {
+      ...story,
+      narrator: {
+        ...story.narrator!,
+        referenceAssetId: "asset-narrator-voice",
+      },
+    };
+    expect(voiceFor(followed, ids.partner)).toEqual({
+      model: "",
+      voice: "",
+      rate: 1.2,
+      referenceAssetId: "asset-narrator-voice",
+    });
+
+    // The hero's own recording stands over the narrator's, and what the hero
+    // leaves empty — the pace, here — still falls through to it.
+    const hero: StoryDocument = {
+      ...followed,
+      elements: followed.elements.map((element) =>
+        element.id === ids.hero
+          ? {
+              ...element,
+              voice: {
+                model: "",
+                voice: "",
+                referenceAssetId: "asset-hero-voice",
+              },
+            }
+          : element,
+      ),
+    };
+    expect(voiceFor(hero, ids.hero)).toEqual({
+      model: "",
+      voice: "",
+      rate: 1.2,
+      referenceAssetId: "asset-hero-voice",
     });
   });
 

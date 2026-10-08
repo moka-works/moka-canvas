@@ -786,6 +786,12 @@ export interface StoryVoiceProfile {
   pitch?: number;
   /** How this one reads, on top of the telling's own direction. */
   instructions?: string;
+  /**
+   * A recording this voice is copied from, when it is heard rather than
+   * named. A voice has two ways of being said — a name the provider knows
+   * and a piece of sound to imitate — and this is the second.
+   */
+  referenceAssetId?: AssetId;
 }
 
 /** Something the story is made of: a character, a place, a thing. */

@@ -400,35 +400,49 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             const trouble = failedTrouble(failedItems, record);
             // A batch that lost every piece to a missing voice is repaired on
             // the character cards the voices are written on — a step back
-            // into the telling, not a page of Settings.
+            // into the telling, not a page of Settings — and one that lost
+            // every piece for want of a recording the same way: the row the
+            // recording is picked on is on those cards too.
             const voiceless = failedItems.every(
               (item) => item.errorCode === "MODEL_VOICE_REQUIRED",
             );
+            const unreferenced = failedItems.every(
+              (item) => item.errorCode === "MODEL_REFERENCE_AUDIO_REQUIRED",
+            );
             toast(
               "error",
-              voiceless ? i18n.t("story:jobs.voiceMissing") : trouble.message,
+              voiceless
+                ? i18n.t("story:jobs.voiceMissing")
+                : unreferenced
+                  ? i18n.t("story:jobs.referenceMissing")
+                  : trouble.message,
               voiceless
                 ? {
                     label: i18n.t("story:jobs.voiceMissingGo"),
                     go: () => useStoryStore.getState().goStep("elements"),
                   }
-                : trouble.blockedByConfiguration === true
+                : unreferenced
                   ? {
-                      // Every one of them failed at its own model, and a batch
-                      // is one step's worth of one capability, so the first
-                      // failure names the page that holds the fix.
-                      label: i18n.t("story:jobs.openSettings"),
-                      go: () =>
-                        useModelStore
-                          .getState()
-                          .openSettings(failedItems[0].capability),
+                      label: i18n.t("story:jobs.referenceMissingGo"),
+                      go: () => useStoryStore.getState().goStep("elements"),
                     }
-                  : story === undefined
-                    ? undefined
-                    : {
-                        label: i18n.t("story:jobs.retryFailed"),
-                        go: () => void retryFailed(story, record),
-                      },
+                  : trouble.blockedByConfiguration === true
+                    ? {
+                        // Every one of them failed at its own model, and a batch
+                        // is one step's worth of one capability, so the first
+                        // failure names the page that holds the fix.
+                        label: i18n.t("story:jobs.openSettings"),
+                        go: () =>
+                          useModelStore
+                            .getState()
+                            .openSettings(failedItems[0].capability),
+                      }
+                    : story === undefined
+                      ? undefined
+                      : {
+                          label: i18n.t("story:jobs.retryFailed"),
+                          go: () => void retryFailed(story, record),
+                        },
               trouble.detail,
             );
           }

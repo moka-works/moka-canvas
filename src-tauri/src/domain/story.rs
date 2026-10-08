@@ -377,6 +377,11 @@ pub struct StoryVoiceProfile {
     pub pitch: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
+    /// A recording this voice is copied from, when it is heard rather than
+    /// named. A voice has two ways of being said — a name the provider knows
+    /// and a piece of sound to imitate — and this is the second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_asset_id: Option<AssetId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

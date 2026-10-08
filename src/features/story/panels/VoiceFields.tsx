@@ -14,6 +14,7 @@ import type {
 } from "../../../shared/domain/types";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelOptionsFor, useModelStore } from "../../settings/modelStore";
+import { VoiceReferencePicker } from "./VoiceReferencePicker";
 import { VoiceTryout } from "./VoiceTryout";
 import { useField } from "./useField";
 
@@ -22,7 +23,8 @@ const NO_VOICE: StoryVoiceProfile = { model: "", voice: "" };
 
 /**
  * The voice one speaking part of the telling is read in: a model, a tone, a
- * pace, a pitch, and the manner of the character saying it.
+ * recording to copy, a pace, a pitch, and the manner of the character
+ * saying it.
  *
  * Every field left empty is handed to the next layer of the chain — the
  * story's narrator, this machine's own pick, the deployment's default — which
@@ -61,6 +63,7 @@ export function VoiceFields({
     write({ ...held, voice: value }),
   );
   const toneField = useRef<HTMLInputElement>(null);
+  const referenceButton = useRef<HTMLButtonElement>(null);
   const manner = useField(held.instructions ?? "", (value) =>
     write(withManner(held, value)),
   );
@@ -101,6 +104,15 @@ export function VoiceFields({
             value={tone.value}
           />
         </label>
+      </div>
+      <div className="story-voice-row">
+        <VoiceReferencePicker
+          buttonRef={referenceButton}
+          fallbackVoice={fallbackVoice}
+          onWrite={write}
+          testId={`${testId}-reference`}
+          voice={held}
+        />
       </div>
       <div className="story-voice-row">
         <NumberField
@@ -158,8 +170,9 @@ export function VoiceFields({
           }
           // A try-out refused for want of a voice is answered where it was
           // raised: the field on this very card is the first link of the
-          // chain the refusal is about.
+          // chain the refusal is about, and so is the recording row.
           onVoiceMissing={() => toneField.current?.focus()}
+          onReferenceMissing={() => referenceButton.current?.click()}
           sample={line?.text.trim() ?? t("story:voice.sample")}
           story={story}
           testId={`${testId}-try`}

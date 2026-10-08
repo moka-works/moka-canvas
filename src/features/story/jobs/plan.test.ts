@@ -20,9 +20,11 @@ import {
   planElements,
   planKeyframeArt,
   planKeyframeVideos,
+  planLineVoiceAsks,
   planOutline,
   planStoryboard,
   settledRoleFrames,
+  voiceParamsFor,
 } from "./plan";
 
 const ids = storyIds();
@@ -1008,5 +1010,90 @@ describe("the sound of an act", () => {
       `actVoice:${ids.chapterFirst}:${ids.act}`,
       `actMusic:${ids.chapterFirst}:${ids.act}`,
     ]);
+  });
+});
+
+describe("the record a voice is copied from", () => {
+  /** The fixture with the hero's voice copied from a recording. */
+  function copied(): StoryDocument {
+    const held = story();
+    return {
+      ...held,
+      elements: held.elements.map((element) =>
+        element.id === ids.hero
+          ? {
+              ...element,
+              voice: {
+                model: "",
+                voice: "",
+                referenceAssetId: "asset-hero-voice",
+              },
+            }
+          : element,
+      ),
+    };
+  }
+
+  it("carries the recording with every line the speaker reads", () => {
+    const waves = planLineVoiceAsks(copied(), ids.chapterFirst, ids.act);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].items).toHaveLength(1);
+    const item = waves[0].items[0];
+    expect(item.target.kind).toBe("lineVoice");
+    expect(item.inputs).toEqual([
+      { role: "reference", assetId: "asset-hero-voice" },
+    ]);
+
+    // A reading aimed at one line carries it the same way: standing in for a
+    // speaker who was given a recording is the same ask, not a different one.
+    const one = planLineVoiceAsks(copied(), ids.chapterFirst, ids.act, [
+      ids.lineFirst,
+    ]);
+    expect(one[0]?.items[0]?.inputs).toEqual([
+      { role: "reference", assetId: "asset-hero-voice" },
+    ]);
+
+    // A voice that names no recording travels with no inputs at all.
+    const plain = planLineVoiceAsks(story(), ids.chapterFirst, ids.act);
+    expect(plain[0]?.items[0]?.inputs).toEqual([]);
+  });
+
+  it("sends no voice name beside a recording: the two are one voice said twice", () => {
+    const view = settingsWithVideoSeconds(6);
+    useModelStore.setState({
+      view: {
+        ...view,
+        preferences: {
+          ...view.preferences,
+          speech: {
+            ...view.preferences.speech,
+            voice: "machine-tone",
+            speed: 1.2,
+          },
+        },
+      },
+    });
+    const held = story();
+
+    // Without a recording, the machine's own tone travels as it always has.
+    const named = voiceParamsFor(held, { model: "", voice: "" });
+    expect(named.voice).toBe("machine-tone");
+    expect(named.speed).toBe(1.2);
+
+    // With one, every name stands aside — the machine's and the speaker's
+    // alike — while the pace, the pitch, and the direction stay: they are
+    // how something is said, not whose voice says it.
+    const params = voiceParamsFor(held, {
+      model: "",
+      voice: "longxiaochun",
+      rate: 1.1,
+      pitch: 0.9,
+      referenceAssetId: "asset-hero-voice",
+    });
+    expect("voice" in params).toBe(false);
+    expect(params.rate).toBe(1.1);
+    expect(params.pitch).toBe(0.9);
+    expect(typeof params.instructions).toBe("string");
+    expect((params.instructions as string).length).toBeGreaterThan(0);
   });
 });

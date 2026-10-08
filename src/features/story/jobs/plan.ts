@@ -829,6 +829,13 @@ export interface LineVoiceWave {
   items: StoryJobItemDraft[];
 }
 
+/** The recording a voice is copied from, as the input an ask carries. */
+function referenceInputFor(voice: StoryVoiceProfile): StoryJobInput[] {
+  return voice.referenceAssetId === undefined
+    ? []
+    : [{ role: "reference", assetId: voice.referenceAssetId }];
+}
+
 /**
  * Every line of an act read aloud, in the voice its speaker is given.
  *
@@ -873,7 +880,7 @@ export function planLineVoiceAsks(
         // all. The tone and the act ride in the params' direction instead,
         // which is the parameter a speech model reads as how to say things.
         prompt: text,
-        inputs: [],
+        inputs: referenceInputFor(voice),
         params: voiceParamsFor(story, voice, {
           act: act.summary,
           ...(tone === "" ? {} : { tone }),
@@ -1006,8 +1013,10 @@ export function spokenLine(line: StoryDialogueLine): string {
  * The acting direction rides in `instructions` because that is the parameter
  * a speech model reads as how to say something; a protocol that has never
  * heard of it drops it rather than failing, which is the gateway's standing
- * rule. The try-out and every ask it stands for are assembled here, so what a
- * reader hears is what the telling will say.
+ * rule. Where the voice travels as a recording, no name is sent beside it:
+ * the two are two ways of saying one voice. The try-out and every ask it
+ * stands for are assembled here, so what a reader hears is what the telling
+ * will say.
  */
 export function voiceParamsFor(
   story: StoryDocument,
@@ -1026,13 +1035,17 @@ export function voiceParamsFor(
   ]
     .filter((part) => part !== "")
     .join(" ");
-  return {
+  const params: Record<string, unknown> = {
     ...audioParams(),
     ...(voice.voice !== "" ? { voice: voice.voice } : {}),
     ...(voice.rate !== undefined ? { rate: voice.rate } : {}),
     ...(voice.pitch !== undefined ? { pitch: voice.pitch } : {}),
     instructions,
   };
+  // A recorded voice and a named one are two ways of saying one voice: where
+  // a recording travels, the name it would have been said by stands aside.
+  if (voice.referenceAssetId !== undefined) delete params.voice;
+  return params;
 }
 
 /** The same, for a reader who has named no voice: the machine speaks alone. */

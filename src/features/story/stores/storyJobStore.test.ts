@@ -539,6 +539,47 @@ describe("a batch coming back", () => {
     apply.mockRestore();
   });
 
+  it("answers a batch waiting on a recording where the recordings are picked", async () => {
+    const held = job({ kind: "voice", model: "a-cloner", status: "failed" });
+    const spoken: StoryJobRecord = {
+      ...held,
+      items: [
+        {
+          ...held.items[0],
+          id: `voice:${ids.chapterFirst}:${ids.act}`,
+          target: {
+            kind: "voice",
+            chapterId: ids.chapterFirst,
+            actId: ids.act,
+          },
+          capability: "speech",
+          status: "failed",
+          error: "the model a-cloner reads only a voice it hears",
+          errorCode: "MODEL_REFERENCE_AUDIO_REQUIRED",
+          errorDetails: { model: "a-cloner" },
+        },
+      ],
+    };
+    serving({ "/api/v1/projects/current/story/jobs": [spoken] });
+    const apply = vi.spyOn(useProjectStore.getState(), "applyLocal");
+
+    await useStoryJobStore.getState().load(ids.story);
+
+    const said = useAppStore.getState().toasts.at(-1);
+    expect(said?.kind).toBe("error");
+    // The recordings are picked on the character cards, so the line says
+    // where they are and the press steps back into the telling — not to the
+    // settings, which hold no recording at all.
+    expect(said?.message).toContain("still need a reference recording");
+    expect(said?.message).toContain("Elements");
+    expect(said?.choice?.label).toBe("Pick the recordings");
+    const step = vi.spyOn(useStoryStore.getState(), "goStep");
+    said?.choice?.go();
+    expect(step).toHaveBeenCalledWith("elements");
+    step.mockRestore();
+    apply.mockRestore();
+  });
+
   it("lays the reasons out under the line when pieces fell to different ones", async () => {
     const held = filming();
     serving({
