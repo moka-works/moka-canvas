@@ -408,11 +408,11 @@ fn result_nodes(
 /// The edge joining a node to the card that took its answer's place, or `None`
 /// when there is nowhere to put one.
 ///
-/// A kind with no input that can take what the node makes — an audio card cannot
-/// be fed audio — is left unjoined rather than joined wrongly, and so is a card
-/// an earlier run made, which has the edge already or had it taken away on
-/// purpose. Both matter because a batch is applied as one: an edge the document
-/// refuses would cost the answers beside it.
+/// A kind with no input that can take what the node makes is left unjoined
+/// rather than joined wrongly, and so is a card an earlier run made, which has
+/// the edge already or had it taken away on purpose. Both matter because a
+/// batch is applied as one: an edge the document refuses would cost the answers
+/// beside it.
 fn joined_back(
     canvas: &CanvasDocument,
     made: &[DocumentCommand],
@@ -2208,18 +2208,30 @@ mod tests {
     }
 
     #[test]
-    fn a_card_a_node_has_nowhere_to_feed_is_left_unjoined() {
+    fn a_sound_card_is_joined_at_the_input_a_recording_lands_on() {
         let mut voice = asking(NodeKind::Audio, "voice");
         voice.data.asset_id = Some("asset-kept".to_string());
         let moka = document(vec![voice]);
         let commands = written(&moka, "voice", &beside(media(&["asset-new"])));
         assert_eq!(
             commands.len(),
-            2,
-            "a card and the node: an audio node takes no audio in, and an edge the document refuses would cost the answer beside it"
+            3,
+            "a card, the edge into it, and the node: the sound card takes audio in, so the card its answer stands in is joined to it the way every other kind's is"
         );
-        assert!(matches!(commands[0], DocumentCommand::AddNode { .. }));
-        assert_eq!(id_of(&commands[1]), "node-voice");
+        let DocumentCommand::AddNode { node: card, .. } = &commands[0] else {
+            panic!("checked above");
+        };
+        let DocumentCommand::AddEdge { edge, .. } = &commands[1] else {
+            panic!("the card is joined back");
+        };
+        assert_eq!(edge.source.node_id, "node-voice");
+        assert_eq!(edge.source.port_id, "out");
+        assert_eq!(edge.target.node_id, card.id);
+        assert_eq!(
+            edge.target.port_id, "audio",
+            "a recording of the node lands where the voice the card copies is taken from"
+        );
+        assert_eq!(id_of(&commands[2]), "node-voice");
     }
 
     #[test]

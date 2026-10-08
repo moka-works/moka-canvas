@@ -498,6 +498,7 @@ pub fn derive_ports(kind: NodeKind) -> Vec<PortDefinition> {
         ],
         NodeKind::Audio => vec![
             input("prompt", vec![DataType::Text], "Prompt", Cardinality::Many),
+            input("audio", vec![DataType::Audio], "Audio", Cardinality::One),
             output("out", vec![DataType::Audio], "Audio"),
         ],
         NodeKind::Video => vec![
@@ -1762,4 +1763,24 @@ pub fn new_id() -> String {
 pub fn id_tag(id: &str, keep: usize) -> String {
     let chars: Vec<char> = id.chars().collect();
     chars[chars.len().saturating_sub(keep)..].iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sound card's input ports, pinned so the two tables stay in
+    /// lockstep: `NODE_PORTS.audio` in `src/shared/domain/constants.ts` reads
+    /// the same list, and the second one is where a recording wired in hands a
+    /// voice-copying converter the voice it copies.
+    #[test]
+    fn the_sound_card_takes_words_and_one_recording() {
+        let ports = derive_ports(NodeKind::Audio);
+        let inputs: Vec<&str> = ports
+            .iter()
+            .filter(|port| port.direction == PortDirection::Input)
+            .map(|port| port.id.as_str())
+            .collect();
+        assert_eq!(inputs, ["prompt", "audio"]);
+    }
 }

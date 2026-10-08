@@ -23,7 +23,7 @@ import type {
   NodeData,
   SelfCheckReport,
 } from "../../shared/domain";
-import { createNode } from "../../shared/domain";
+import { createCanvas, createNode } from "../../shared/domain";
 import {
   mediaInfoForNode,
   buildIssueIndex,
@@ -282,6 +282,22 @@ describe("pickSourceCandidates / resolveInputPick", () => {
     ).toBe(true);
     expect(useEditorStore.getState().inputPick).toBeNull();
     void moka;
+  });
+
+  it("offers only sound cards for the voice input of a sound card", () => {
+    const canvas = createCanvas("Canvas");
+    const recording = createNode("audio", { x: 0, y: 0 });
+    recording.data = { ...recording.data, assetId: "asset-recording" };
+    const brief = createNode("text", { x: 0, y: 240 });
+    brief.data = { ...brief.data, content: "Say it warmly." };
+    const speaker = createNode("audio", { x: 320, y: 0 });
+    canvas.nodes = [recording, brief, speaker];
+
+    const candidates = pickSourceCandidates(canvas, {
+      nodeId: speaker.id,
+      portId: "audio",
+    });
+    expect([...candidates]).toEqual([recording.id]);
   });
 
   it("rejects a picked node with no compatible output", () => {
