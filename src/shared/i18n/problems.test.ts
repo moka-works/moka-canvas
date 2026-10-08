@@ -132,6 +132,18 @@ describe("problemMessage in Chinese", () => {
     );
   });
 
+  it("says which speech model is waiting for a reference recording", () => {
+    expect(
+      problemMessage(
+        "MODEL_REFERENCE_AUDIO_REQUIRED",
+        "the model cloner reads a voice from a reference recording, and none was sent",
+        { model: "cloner" },
+      ),
+    ).toBe(
+      "模型「cloner」需要一段参考音频才能出声：请先把录音连到卡片的音频输入，或从素材里挑一段",
+    );
+  });
+
   it("falls back to the server's English for a code nobody translated", () => {
     expect(problemMessage("VALIDATION_FAILED", "Duplicate node id n-1")).toBe(
       "Duplicate node id n-1",

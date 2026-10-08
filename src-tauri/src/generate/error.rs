@@ -40,6 +40,13 @@ pub enum ProviderError {
     #[error("the model {model} has no voice set, and its speech converter needs one")]
     VoiceRequired { model: String },
 
+    /// A speech ask whose converter copies a voice from a recording, and none
+    /// travelled with it. Refused here rather than sent on: an engine that
+    /// needs a reference answers its absence with an error of its own that
+    /// names neither the missing piece nor where a reader keeps one.
+    #[error("the model {model} reads a voice from a reference recording, and none was sent")]
+    ReferenceAudioRequired { model: String },
+
     #[error("{reference} generates {found}, not {capability}")]
     CapabilityMismatch {
         reference: String,
@@ -137,6 +144,7 @@ impl ProviderError {
             Self::NotConfigured { .. } => "PROVIDER_NOT_CONFIGURED",
             Self::KeyMissing { .. } => "PROVIDER_KEY_MISSING",
             Self::VoiceRequired { .. } => "MODEL_VOICE_REQUIRED",
+            Self::ReferenceAudioRequired { .. } => "MODEL_REFERENCE_AUDIO_REQUIRED",
             Self::CapabilityMismatch { .. } => "MODEL_CAPABILITY_MISMATCH",
             Self::SceneUnconfigured { .. } => "MODEL_SCENE_UNCONFIGURED",
             Self::Auth(_) => "PROVIDER_AUTH",
@@ -180,9 +188,9 @@ impl ProviderError {
                 "capability": capability,
                 "reason": reason,
             })),
-            Self::KeyMissing { model } | Self::VoiceRequired { model } => {
-                Some(serde_json::json!({ "model": model }))
-            }
+            Self::KeyMissing { model }
+            | Self::VoiceRequired { model }
+            | Self::ReferenceAudioRequired { model } => Some(serde_json::json!({ "model": model })),
             Self::CapabilityMismatch {
                 reference,
                 capability,

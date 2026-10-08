@@ -398,7 +398,7 @@ impl Gateway {
         // mode is "reference" is saying what its pictures mean.
         let scene = scene_of(&request);
         let resolved = resolve_within(&snapshot, &request.model, capability, scene)?;
-        voiced(&resolved, &request)?;
+        speakable(&resolved, &request)?;
         let inputs = load_inputs(
             session.as_ref(),
             &request,
@@ -573,11 +573,22 @@ fn offer_value(params: &mut Map<String, Value>, key: &str, value: impl Into<Valu
 ///
 /// A converter that declares `needsVoice` has no voice of its own to fall
 /// back on: asked without one, it hears back an engine error that names
-/// neither the missing setting nor where it lives. Refused here instead,
+/// neither the missing setting nor where it lives. A converter that declares
+/// `needsReferenceAudio` copies the voice from a recording instead of naming
+/// it, and its asks are refused the same way when no recording travelled.
+///
+/// A recording is a voice the same way a name is, so it satisfies
+/// `needsVoice` too — and it is the harder of the two requirements, checked
+/// first so a converter that insists on one is told about the recording
+/// rather than about a name it can do without. Both refusals happen here,
 /// before a credential is fetched or a provider is bothered, in the shape a
-/// client repairs: which model, and that what it wants is a voice.
-fn voiced(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), ProviderError> {
-    if request.capability != Capability::Speech || !needs_voice(&resolved.protocol) {
+/// client repairs: which model, and what it wants.
+fn speakable(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), ProviderError> {
+    if request.capability != Capability::Speech {
+        return Ok(());
+    }
+    let features = converter_features(&resolved.protocol);
+    if !features.needs_voice && !features.needs_reference_audio {
         return Ok(());
     }
     let named = request
@@ -585,27 +596,48 @@ fn voiced(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), Pro
         .get("voice")
         .and_then(Value::as_str)
         .is_some_and(|voice| !voice.trim().is_empty());
-    if named {
-        return Ok(());
+    let recorded = request.inputs_in(InputRole::Reference).next().is_some();
+    if features.needs_reference_audio && !recorded {
+        return Err(ProviderError::ReferenceAudioRequired {
+            model: resolved.config_id.clone(),
+        });
     }
-    Err(ProviderError::VoiceRequired {
-        model: resolved.config_id.clone(),
-    })
+    if features.needs_voice && !named && !recorded {
+        return Err(ProviderError::VoiceRequired {
+            model: resolved.config_id.clone(),
+        });
+    }
+    Ok(())
 }
 
-/// Whether the converter behind a protocol declares that its asks need a
-/// voice. A protocol with no converter on this machine — or one read before
-/// the models tree was deployed — declares nothing, and the ask goes on to
-/// fail the way it would have.
-fn needs_voice(protocol: &Protocol) -> bool {
+/// What the converter behind a protocol declares about the asks it can make a
+/// sound for.
+///
+/// A protocol with no converter on this machine — or one read before the
+/// models tree was deployed — declares nothing, and the ask goes on to fail
+/// the way it would have.
+#[derive(Default)]
+struct Features {
+    needs_voice: bool,
+    needs_reference_audio: bool,
+}
+
+fn converter_features(protocol: &Protocol) -> Features {
     let Some(root) = crate::converter::converter_root() else {
-        return false;
+        return Features::default();
     };
-    crate::converter::ConverterRegistry::load(root)
-        .find(protocol.wire_name())
-        .and_then(|entry| entry.features.get("needsVoice"))
-        .copied()
-        .unwrap_or(false)
+    let registry = crate::converter::ConverterRegistry::load(root);
+    let Some(entry) = registry.find(protocol.wire_name()) else {
+        return Features::default();
+    };
+    Features {
+        needs_voice: entry.features.get("needsVoice").copied().unwrap_or(false),
+        needs_reference_audio: entry
+            .features
+            .get("needsReferenceAudio")
+            .copied()
+            .unwrap_or(false),
+    }
 }
 
 /// One answer, in the shape everything above this module expects.

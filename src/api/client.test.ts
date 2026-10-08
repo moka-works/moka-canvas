@@ -112,6 +112,11 @@ describe("what a reader repairs in settings", () => {
   it("leaves a trouble that time or a second ask might fix alone", () => {
     expect(isConfigurationTrouble(thrown("PROVIDER_RATE_LIMIT"))).toBe(false);
     expect(isConfigurationTrouble(thrown("PROVIDER_TIMEOUT"))).toBe(false);
+    // A recording is picked on the card that asks for it, not in Settings:
+    // the repair is beside the ask rather than in a configuration page.
+    expect(
+      isConfigurationTrouble(thrown("MODEL_REFERENCE_AUDIO_REQUIRED")),
+    ).toBe(false);
     expect(isConfigurationTrouble(new Error("nope"))).toBe(false);
     expect(isConfigurationTrouble(undefined)).toBe(false);
   });
@@ -121,6 +126,12 @@ describe("isApiError", () => {
   it("still tells a problem apart from anything else thrown", () => {
     expect(isApiError(thrown("CONFLICT"), "CONFLICT")).toBe(true);
     expect(isApiError(thrown("CONFLICT"), "NOT_FOUND")).toBe(false);
+    expect(
+      isApiError(
+        thrown("MODEL_REFERENCE_AUDIO_REQUIRED"),
+        "MODEL_REFERENCE_AUDIO_REQUIRED",
+      ),
+    ).toBe(true);
     expect(isApiError(new Error("conflict"))).toBe(false);
   });
 });

@@ -33,6 +33,7 @@
   "modelCapabilityMismatch": "{{reference}} generates {{actual}}, not {{requested}}",
   "modelSceneUnconfigured": "The model {{reference}} has no group answering the {{scene}} scenario; add one in Settings",
   "modelVoiceRequired": "The model {{model}} has no voice set, and its speech converter needs one",
+  "modelReferenceAudioRequired": "The model {{model}} needs a reference recording to speak: wire one into the card's audio input, or pick one from the assets",
   "mokaBsonInvalid": "canvas.moka contains invalid BSON",
   "mokaFieldMissing": "canvas.moka is missing a required field",
   "mokaMagicInvalid": "canvas.moka does not start with the MOKA magic bytes",
