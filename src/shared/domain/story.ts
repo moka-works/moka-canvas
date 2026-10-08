@@ -808,6 +808,7 @@ export function voiceNamed(voice: StoryVoiceProfile | undefined): boolean {
     voice !== undefined &&
     (voice.model !== "" ||
       voice.voice !== "" ||
+      voice.referenceAssetId !== undefined ||
       voice.rate !== undefined ||
       voice.pitch !== undefined ||
       (voice.instructions ?? "") !== "")
@@ -850,9 +851,11 @@ export function voiceFor(
   const rate = pick("rate");
   const pitch = pick("pitch");
   const instructions = pick("instructions");
+  const reference = pick("referenceAssetId");
   if (rate !== undefined) voice.rate = rate;
   if (pitch !== undefined) voice.pitch = pitch;
   if (instructions !== undefined) voice.instructions = instructions;
+  if (reference !== undefined) voice.referenceAssetId = reference;
   return voice;
 }
 

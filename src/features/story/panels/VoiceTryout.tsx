@@ -47,6 +47,7 @@ export function VoiceTryout({
   testId,
   disabledReason,
   onVoiceMissing,
+  onReferenceMissing,
 }: {
   story: StoryDocument;
   /** The voice as the chain resolves it, not as the card alone holds it. */
@@ -59,6 +60,8 @@ export function VoiceTryout({
   disabledReason?: string;
   /** Takes the reader to the field that answers a voiceless refusal. */
   onVoiceMissing: () => void;
+  /** Takes the reader to the picker that answers a recording-less refusal. */
+  onReferenceMissing: () => void;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -77,6 +80,13 @@ export function VoiceTryout({
         capability: "speech",
         ...(voice.model !== "" ? { model: voice.model } : {}),
         prompt: sample,
+        ...(voice.referenceAssetId === undefined
+          ? {}
+          : {
+              inputs: [
+                { role: "reference" as const, assetId: voice.referenceAssetId },
+              ],
+            }),
         params: voiceParamsFor(
           story,
           voice,
@@ -104,6 +114,18 @@ export function VoiceTryout({
           {
             label: t("story:elements.voiceTryFillVoice"),
             go: onVoiceMissing,
+          },
+          errorText(error).detail,
+        );
+      } else if (isApiError(error, "MODEL_REFERENCE_AUDIO_REQUIRED")) {
+        // This model only reads in a voice it hears: the repair is the
+        // recording row on this very card, so the refusal opens its picker.
+        useAppStore.getState().pushToast(
+          "error",
+          t("story:elements.voiceTryNoReference"),
+          {
+            label: t("story:elements.voiceTryPickReference"),
+            go: onReferenceMissing,
           },
           errorText(error).detail,
         );

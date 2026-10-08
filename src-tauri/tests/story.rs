@@ -707,7 +707,34 @@ fn voice(model: &str, tone: &str) -> story::StoryVoiceProfile {
         rate: None,
         pitch: None,
         instructions: None,
+        reference_asset_id: None,
     }
+}
+
+#[test]
+fn reads_a_voices_recording_out_of_a_stored_voice_and_writes_none_that_none_names() {
+    // A voice stored before recordings existed does not hold the field at
+    // all, and reads back as promising no recording.
+    let before: story::StoryVoiceProfile =
+        serde_json::from_str(r#"{"model":"voice-model","voice":"longxiaochun"}"#).unwrap();
+    assert_eq!(before.reference_asset_id, None);
+
+    // One stored with a recording reads it out, under the name the wire uses.
+    let copied: story::StoryVoiceProfile =
+        serde_json::from_str(r#"{"model":"","voice":"","referenceAssetId":"asset-recording"}"#)
+            .unwrap();
+    assert_eq!(
+        copied.reference_asset_id.as_deref(),
+        Some("asset-recording")
+    );
+
+    // And a voice that names none is written without the field: what was not
+    // said is not written, the way a slot with no takes holds none.
+    assert!(
+        !serde_json::to_string(&voice("voice-model", "longxiaochun"))
+            .unwrap()
+            .contains("referenceAssetId")
+    );
 }
 
 #[test]
@@ -719,6 +746,7 @@ fn gives_a_character_a_voice_takes_it_away_and_keeps_the_round_trip() {
         rate: Some(1.2),
         pitch: None,
         instructions: Some("低沉、慢".into()),
+        reference_asset_id: None,
     };
     let next = round_trip(
         &moka,

@@ -262,6 +262,7 @@ describe("moka codec", () => {
       voice: "longxiaochun",
       rate: 1.2,
       instructions: "低沉、慢",
+      referenceAssetId: "asset-hero-voice",
     };
     moka.stories![0].narrator = { model: "", voice: "旁白的音色", pitch: 0.9 };
 
@@ -271,12 +272,16 @@ describe("moka codec", () => {
       voice: "longxiaochun",
       rate: 1.2,
       instructions: "低沉、慢",
+      referenceAssetId: "asset-hero-voice",
     });
     expect(read.stories![0].narrator).toEqual({
       model: "",
       voice: "旁白的音色",
       pitch: 0.9,
     });
+    // A voice that names no recording carries none, and none is written for
+    // it: the second way of saying a voice is left off rather than emptied.
+    expect("referenceAssetId" in read.stories![0].narrator!).toBe(false);
     // The other characters never said anything about a voice, and none is
     // written for them: a voice holding nothing is not a voice.
     expect("voice" in read.stories![0].elements[1]).toBe(false);

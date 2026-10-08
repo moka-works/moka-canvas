@@ -494,7 +494,7 @@ function encodeStoryChapter(chapter: StoryChapter): Record<string, unknown> {
  * Both words are written even when one is empty — an empty voice is a voice
  * handed to the next one, and leaving it off would say the profile was never
  * there — while a number nobody set is left off rather than written as
- * nothing.
+ * nothing, and so is a recording nobody named.
  */
 function encodeStoryVoiceProfile(
   profile: StoryVoiceProfile,
@@ -507,6 +507,8 @@ function encodeStoryVoiceProfile(
   if (profile.pitch !== undefined) doc.pitch = profile.pitch;
   if (profile.instructions !== undefined)
     doc.instructions = profile.instructions;
+  if (profile.referenceAssetId !== undefined)
+    doc.referenceAssetId = profile.referenceAssetId;
   return doc;
 }
 
@@ -1432,7 +1434,9 @@ function decodeStoryElement(value: unknown): StoryElement {
  * The two words that say who reads and in what voice are read as written — a
  * voice left out is handed to the next one, which is a different answer from a
  * voice holding nothing — while the two numbers are read only when they are
- * numbers: a pace nobody could measure is not a pace to read at.
+ * numbers: a pace nobody could measure is not a pace to read at. A recording
+ * is read only when it is named, and a voice that names none is handed on
+ * with nothing to copy.
  */
 function decodeStoryVoiceProfile(
   value: unknown,
@@ -1449,6 +1453,8 @@ function decodeStoryVoiceProfile(
     profile.pitch = doc.pitch;
   const instructions = optionalString(doc.instructions);
   if (instructions !== undefined) profile.instructions = instructions;
+  const reference = optionalString(doc.referenceAssetId);
+  if (reference !== undefined) profile.referenceAssetId = reference;
   return profile;
 }
 
