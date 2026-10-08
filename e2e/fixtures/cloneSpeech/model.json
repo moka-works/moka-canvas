@@ -1,0 +1,10 @@
+{
+  "displayName": "E2E · Clone speech",
+  "labels": { "zh": "E2E · 声音复刻" },
+  "urlExample": "https://provider.test/v1/audio/speech",
+  "script": "clone-speech.lua",
+  "order": 9000,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "needsReferenceAudio": true },
+  "version": 1
+}

@@ -125,6 +125,12 @@ export interface ProviderCall {
   path: string;
   model: string;
   prompt: string;
+  /**
+   * The voice a speech ask named. A cloned voice has no name to send, so the
+   * converter puts the reference recording's file name here instead, which is
+   * how a spec reads which recording the ask carried.
+   */
+  voice: string;
   count: number;
   /** Whether a request arrived carrying a credential, never what it was. */
   credentialed: boolean;
@@ -440,6 +446,7 @@ export async function startMockProvider(): Promise<MockProvider> {
       path,
       model: multipart ? "" : String(body.model ?? ""),
       prompt,
+      voice: multipart ? "" : String(body.voice ?? ""),
       count: multipart ? 1 : Number(body.n ?? 1),
       credentialed: Boolean(request.headers.authorization),
     });
