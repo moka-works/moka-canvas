@@ -14,8 +14,8 @@ import {
 import {
   PAINTER,
   PROVIDER_ORIGIN,
+  providerCalls,
   STORYTELLER,
-  type ProviderCall,
 } from "./mock-provider";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -27,13 +27,6 @@ const CLONER = "clone-speaker";
 // The whole telling is walked in one test — three steps, a cast, a board, two
 // runs of the batch — which needs longer than the suite's own budget.
 test.describe.configure({ timeout: 90_000 });
-
-/** Every ask the stand-in was handed, in the order it was handed them. */
-async function providerCalls(): Promise<ProviderCall[]> {
-  const response = await fetch(`${PROVIDER_ORIGIN}/__calls`);
-  if (!response.ok) throw new Error(`reading the stand-in: ${response.status}`);
-  return ((await response.json()) as { calls: ProviderCall[] }).calls;
-}
 
 /**
  * A telling read aloud by a voice copied from a recording, end to end.

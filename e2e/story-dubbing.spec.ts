@@ -12,12 +12,11 @@ import {
 import {
   MUSICIAN,
   PAINTER,
-  PROVIDER_ORIGIN,
+  providerCalls,
   READER,
   SPEAKER,
   STORYTELLER,
   VIDEOGRAPHER,
-  type ProviderCall,
 } from "./mock-provider";
 
 // The whole telling is walked in one test — five steps, every ask through a
@@ -33,13 +32,6 @@ test.describe.configure({ timeout: 90_000 });
  * every reading laid down inside the shot it is said in — how long it is, how
  * fast it has to be read to fit, and where the words on screen begin.
  */
-
-/** Every ask the stand-in was handed, in the order it was handed them. */
-async function providerCalls(): Promise<ProviderCall[]> {
-  const response = await fetch(`${PROVIDER_ORIGIN}/__calls`);
-  if (!response.ok) throw new Error(`reading the stand-in: ${response.status}`);
-  return ((await response.json()) as { calls: ProviderCall[] }).calls;
-}
 
 /** The voices the story carries, by the name of the character wearing them. */
 async function persistedVoices(
