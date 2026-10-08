@@ -890,6 +890,148 @@ async fn a_speech_model_that_needs_a_voice_is_refused_without_one() {
     assert_eq!(watched.times(), 1, "the voiced ask reached the provider");
 }
 
+/// A converter script for a speech model that copies its voice from a
+/// recording: the reference's filename stands in for the name a plain voice
+/// would have travelled as, so a test can say which piece of sound was asked
+/// for. The answer is read back the way the OpenAI-shaped converter reads it,
+/// since it is the same kind of answer.
+const CLONE_SPEECH: &str = r#"
+local function trimmed(text)
+  return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function reference_filename(inputs)
+  for _, input in ipairs(inputs or {}) do
+    if input.role == "reference" then
+      return input.filename
+    end
+  end
+  return nil
+end
+
+function build_request(call, req, inputs)
+  local body = {model = call.model, input = req.prompt or ""}
+  local recorded = reference_filename(inputs)
+  if recorded then
+    body.voice = "ref:" .. recorded
+  elseif type(req.params.voice) == "string" and trimmed(req.params.voice) ~= "" then
+    body.voice = req.params.voice
+  end
+  return {
+    method = "POST",
+    url = call.url,
+    headers = {["Content-Type"] = "application/json"},
+    body = json.encode(body),
+  }
+end
+
+function parse_response(status, headers, body)
+  local announced = headers["content-type"]
+  local claimed = nil
+  if type(announced) == "string" then
+    claimed = trimmed(announced:match("^[^;]+") or announced)
+    if claimed == "" then
+      claimed = nil
+    end
+  end
+  return {items = {{raw = true, mime = claimed}}}
+end
+"#;
+
+/// A converter that declares `needsReferenceAudio` is asked for a recording
+/// and none was sent: refused before a credential is fetched or a provider is
+/// bothered, and a name — even one the machine prefers — does not stand in
+/// for it. With the recording attached the ask travels, and what reaches the
+/// converter is the recording's own name.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_speech_model_that_copies_a_recording_is_refused_without_one() {
+    deploy_scripts().await;
+    place_script(
+        "speech",
+        "cloneSpeech",
+        CLONE_SPEECH,
+        Some(json!({ "needsReferenceAudio": true })),
+    )
+    .await;
+
+    let watched = Watch::default();
+    let answering = watched.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/lua/cloner",
+        post(move |body: Bytes| {
+            let watched = answering.clone();
+            async move {
+                watched.note(Some(body));
+                ([(header::CONTENT_TYPE, "audio/wav")], recorded())
+            }
+        }),
+    ))
+    .await;
+
+    let rig = rig().await;
+    rig.serving(
+        &base_url,
+        vec![model_via(
+            "cloner",
+            Capability::Speech,
+            Protocol::from_wire_name("cloneSpeech"),
+        )],
+    )
+    .await;
+    rig.default(Capability::Speech, "cloner").await;
+
+    let error = rig
+        .gateway
+        .speech(
+            &rig.assets,
+            request(Capability::Speech, "read this aloud", json!({})),
+            &Cancel::new(),
+        )
+        .await
+        .expect_err("the converter copies a voice and no recording was sent");
+    assert_eq!(error.code(), "MODEL_REFERENCE_AUDIO_REQUIRED");
+    let details = error.details().expect("which model, behind the message");
+    assert_eq!(details["model"], json!("cloner"));
+    assert_eq!(watched.times(), 0, "nothing was sent to the provider");
+
+    // A voice the machine prefers is still just a name, and a name is not the
+    // recording this converter reads: the refusal stands.
+    let error = rig
+        .gateway
+        .speech(
+            &rig.assets,
+            request(
+                Capability::Speech,
+                "read this aloud",
+                json!({ "voice": "alloy" }),
+            ),
+            &Cancel::new(),
+        )
+        .await
+        .expect_err("a name does not stand in for the recording");
+    assert_eq!(error.code(), "MODEL_REFERENCE_AUDIO_REQUIRED");
+    assert_eq!(watched.times(), 0, "the named ask did not travel either");
+
+    // The recording that was missing, attached as the reference it is: the
+    // ask travels, and the converter reads the recording's own name off it —
+    // which is the piece of evidence the whole path exists to carry.
+    let asset_id = rig.upload("voice.wav", "audio/wav", &recorded()).await;
+    let mut with_recording = request(Capability::Speech, "read this aloud", json!({}));
+    with_recording.inputs = vec![GenerateInput {
+        role: InputRole::Reference,
+        asset_id,
+        window: None,
+    }];
+    let answer = rig
+        .gateway
+        .speech(&rig.assets, with_recording, &Cancel::new())
+        .await
+        .expect("a recorded ask is placed");
+    assert!(!answer.items.is_empty(), "the recording came back");
+    assert_eq!(watched.times(), 1, "the recorded ask reached the provider");
+    assert_eq!(watched.body(0)["voice"], json!("ref:voice.wav"));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancelled_generation_never_reaches_the_provider() {
     let watched = Watch::default();
@@ -1863,7 +2005,7 @@ end
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_script_backed_answer_is_served_whole_to_a_caller_who_is_not_reading_the_pieces() {
     deploy_scripts().await;
-    place_script("text", "scriptedWords", SCRIPTED).await;
+    place_script("text", "scriptedWords", SCRIPTED, None).await;
 
     let base_url = serve(Router::new().route(
         "/v1/lua/scripted",
@@ -1954,18 +2096,23 @@ end
 
 /// Writes a converter directory of the test's own into the models tree the
 /// adapter reads, the way a converter somebody added by hand would be: a
-/// script and the self-contained document that names it.
-async fn place_script(capability: &str, protocol: &str, source: &str) {
+/// script and the self-contained document that names it. What the document
+/// declares as its features — what the asks behind it need — is the test's to
+/// say; `None` declares nothing.
+async fn place_script(capability: &str, protocol: &str, source: &str, features: Option<Value>) {
     let root = moka_canvas::converter::converter_root().expect("the scripts are deployed");
     let dir = root.join(capability).join(protocol);
     std::fs::create_dir_all(&dir).expect("the converter directory is created");
     let name = format!("{protocol}.lua");
     std::fs::write(dir.join(&name), source).expect("the script is written");
-    let document = serde_json::json!({
+    let mut document = serde_json::json!({
         "displayName": protocol,
         "urlExample": "https://provider.test/transcription",
         "script": name,
     });
+    if let Some(features) = features {
+        document["features"] = features;
+    }
     std::fs::write(
         dir.join("model.json"),
         serde_json::to_string_pretty(&document).unwrap(),
@@ -1979,7 +2126,7 @@ async fn place_script(capability: &str, protocol: &str, source: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_script_naming_a_handler_it_never_wrote_is_refused_before_anything_is_sent() {
     deploy_scripts().await;
-    place_script("asr", "orphanHandlers", ORPHANED).await;
+    place_script("asr", "orphanHandlers", ORPHANED, None).await;
 
     let watched = Watch::default();
     let seen = watched.clone();
@@ -2030,7 +2177,7 @@ async fn a_script_naming_a_handler_it_never_wrote_is_refused_before_anything_is_
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_step_that_never_ends_is_stopped_at_the_ceiling() {
     deploy_scripts().await;
-    place_script("asr", "endlessExchanges", ENDLESS).await;
+    place_script("asr", "endlessExchanges", ENDLESS, None).await;
 
     let watched = Watch::default();
     let seen = watched.clone();
