@@ -270,6 +270,10 @@ fn apply_one(
                     "Node title is too long",
                 ));
             }
+            if node.kind == NodeKind::Extension {
+                extension_node_valid(node)
+                    .map_err(|reason| CommandError::new("VALIDATION_FAILED", reason))?;
+            }
             let mut next = moka.clone();
             next.canvas_mut(canvas_id)
                 .expect("canvas checked above")
@@ -311,6 +315,9 @@ fn apply_one(
             if patch.data.is_some() {
                 inverse_patch.data = Some(node.data.clone());
             }
+            if patch.ports.is_some() {
+                inverse_patch.ports = Some(node.ports.clone());
+            }
             let mut next = moka.clone();
             let target = next
                 .canvas_mut(canvas_id)
@@ -327,6 +334,9 @@ fn apply_one(
             }
             if let Some(data) = &patch.data {
                 target.data = data.clone();
+            }
+            if let Some(ports) = &patch.ports {
+                target.ports = ports.clone();
             }
             Ok((
                 next,
@@ -1371,9 +1381,85 @@ pub fn default_node_data(kind: NodeKind) -> NodeData {
             data.format = Some("mp4".into());
             data.parameters = Some(serde_json::json!({}));
         }
+        // An extension node is made by the client from an installed
+        // definition: its ports, its state and its parameters all come from
+        // there. This default is only reachable from server-side construction,
+        // which never makes one, and says so by leaving it unusable.
+        NodeKind::Extension => {}
         _ => {}
     }
     data
+}
+
+/// What an extension node must carry before a client may add it.
+///
+/// The full semantic check — ports paired with the installed definition,
+/// outputs naming assets this node owns — happens when the canvas is validated
+/// and again before a run. This is the part that keeps a malformed node out of
+/// the document in the first place: no state to run against, an id no
+/// directory could have, or parameters large enough to make every save pay.
+fn extension_node_valid(node: &WorkflowNode) -> Result<(), String> {
+    use super::validate::{
+        extension_id_shaped, extension_identifier_shaped, MAX_EXTENSION_BINDINGS,
+        MAX_EXTENSION_PARAM_BYTES,
+    };
+    let state = node
+        .data
+        .extension
+        .as_ref()
+        .ok_or_else(|| "An extension node needs its extension state".to_string())?;
+    if !extension_id_shaped(&state.extension_id) {
+        return Err(format!(
+            "\"{}\" is not an installed extension id",
+            state.extension_id
+        ));
+    }
+    if state.api_version == 0 || state.contract_hash.trim().is_empty() {
+        return Err("An extension node needs the contract it was inserted against".into());
+    }
+    if state.bindings.len() > MAX_EXTENSION_BINDINGS {
+        return Err(format!(
+            "An extension node may bind at most {MAX_EXTENSION_BINDINGS} model slots"
+        ));
+    }
+    for (slot, model) in &state.bindings {
+        if !extension_identifier_shaped(slot) || model.trim().is_empty() {
+            return Err(format!("The binding for slot \"{slot}\" is not usable"));
+        }
+    }
+    if let Some(parameters) = &node.data.parameters {
+        if !parameters.is_object() {
+            return Err("Extension parameters must be an object".into());
+        }
+        let bytes = serde_json::to_vec(parameters)
+            .map(|held| held.len())
+            .unwrap_or(usize::MAX);
+        if bytes > MAX_EXTENSION_PARAM_BYTES {
+            return Err(format!(
+                "Extension parameters exceed {MAX_EXTENSION_PARAM_BYTES} bytes"
+            ));
+        }
+    }
+    let mut outputs = 0;
+    let mut seen = std::collections::HashSet::new();
+    for port in &node.ports {
+        if !extension_identifier_shaped(&port.id) {
+            return Err(format!("Port id \"{}\" is not usable", port.id));
+        }
+        if !seen.insert(port.id.as_str()) {
+            return Err(format!("Port id \"{}\" is declared twice", port.id));
+        }
+        if port.data_types.is_empty() || port.data_types.contains(&super::DataType::Timeline) {
+            return Err(format!("Port \"{}\" declares unusable data types", port.id));
+        }
+        if port.direction == super::PortDirection::Output {
+            outputs += 1;
+        }
+    }
+    if outputs == 0 {
+        return Err("An extension node needs at least one output port".into());
+    }
+    Ok(())
 }
 
 pub fn make_node(kind: NodeKind, title: String, x: f64, y: f64) -> WorkflowNode {

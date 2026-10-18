@@ -1,6 +1,8 @@
 use crate::domain::story::STORY_SCHEMA_VERSION;
 use crate::domain::validate::resource_path_valid;
-use crate::domain::{reconcile_ports, MokaFile, CANVAS_SCHEMA_VERSION, MOKA_FILE_VERSION};
+use crate::domain::{
+    reconcile_ports, MokaFile, CANVAS_SCHEMA_VERSION, CANVAS_SCHEMA_VERSION_MIN, MOKA_FILE_VERSION,
+};
 use thiserror::Error;
 
 pub const MOKA_MAGIC: [u8; 4] = [0x4d, 0x4f, 0x4b, 0x41];
@@ -84,13 +86,15 @@ pub fn decode_moka_file(bytes: &[u8]) -> Result<MokaFile, CodecError> {
         }
     }
     for canvas in moka.canvas.iter_mut() {
-        // One schema version is read. An older document would have to be read
-        // through rules this build no longer carries, and rewriting it would
-        // destroy what an older build still understands; a newer one says the
+        // The current schema and the one before it are read. A v3 canvas holds
+        // no extension node, so upgrading it is one number: what it holds was
+        // already decodable under this build's rules. Anything older would
+        // need rules this build no longer carries, and anything newer says the
         // app was rolled back over a document this build cannot know.
-        if canvas.schema_version != CANVAS_SCHEMA_VERSION {
+        if !(CANVAS_SCHEMA_VERSION_MIN..=CANVAS_SCHEMA_VERSION).contains(&canvas.schema_version) {
             return Err(CodecError::SchemaUnsupported(canvas.schema_version));
         }
+        canvas.schema_version = CANVAS_SCHEMA_VERSION;
         for node in canvas.nodes.iter_mut() {
             let stored = std::mem::take(&mut node.ports);
             node.ports = reconcile_ports(node.kind, &stored);
@@ -252,8 +256,8 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_canvas_schema_that_is_not_the_current_one() {
-        for version in [CANVAS_SCHEMA_VERSION - 1, CANVAS_SCHEMA_VERSION + 1] {
+    fn refuses_a_canvas_schema_that_is_not_the_current_one_or_the_one_before() {
+        for version in [CANVAS_SCHEMA_VERSION_MIN - 1, CANVAS_SCHEMA_VERSION + 1] {
             let mut moka = decode_moka_file(GOLDEN).unwrap();
             moka.canvas[0].schema_version = version;
             let bytes = encode_moka_file(&moka, None).unwrap();
@@ -262,5 +266,14 @@ mod tests {
                 "MOKA_VERSION_UNSUPPORTED"
             );
         }
+    }
+
+    #[test]
+    fn a_canvas_of_the_previous_schema_is_read_and_written_as_the_current_one() {
+        let mut moka = decode_moka_file(GOLDEN).unwrap();
+        moka.canvas[0].schema_version = CANVAS_SCHEMA_VERSION_MIN;
+        let bytes = encode_moka_file(&moka, None).unwrap();
+        let read = decode_moka_file(&bytes).unwrap();
+        assert_eq!(read.canvas[0].schema_version, CANVAS_SCHEMA_VERSION);
     }
 }

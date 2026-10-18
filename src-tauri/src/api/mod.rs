@@ -98,9 +98,15 @@ impl ApiState {
             )))),
         ));
         let provider = Arc::new(ProviderExecutor::new(Arc::clone(&gateway)));
+        let extensions = Arc::new(crate::extension::ExtensionExecutor::new(
+            nodes_root.clone(),
+            Arc::clone(&gateway),
+            Arc::clone(&models),
+        ));
         let executors: Vec<Arc<dyn WorkflowExecutor>> = vec![
             Arc::new(DeterministicExecutor::new()),
             Arc::clone(&provider) as Arc<dyn WorkflowExecutor>,
+            extensions,
         ];
         let runs = RunManager::new(
             executors,

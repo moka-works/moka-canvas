@@ -388,6 +388,7 @@ impl WorkflowExecutor for ProviderExecutor {
             text: result.text,
             items: result.items,
             task: None,
+            ..ExecutionOutput::default()
         })
     }
 
@@ -439,6 +440,7 @@ impl WorkflowExecutor for ProviderExecutor {
             text: result.text,
             items: result.items,
             task: None,
+            ..ExecutionOutput::default()
         })
     }
 
@@ -459,11 +461,15 @@ mod tests {
     fn step(operation_type: &str, prompt: &str) -> ExecutionRequest {
         ExecutionRequest {
             run_id: "run-1".to_string(),
+            canvas_id: "canvas-1".to_string(),
             node_id: "node-1".to_string(),
             operation_type: operation_type.to_string(),
             parameters: serde_json::Value::Null,
             inputs: BTreeMap::new(),
             deltas: DeltaSink::default(),
+            extension: None,
+            resumed: false,
+            logs: crate::workflow::LogSink::default(),
             generation: Some(GenerateRequest {
                 capability: Capability::Image,
                 prompt: prompt.to_string(),

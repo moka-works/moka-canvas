@@ -54,6 +54,16 @@ pub struct Progress {
     pub fraction: f64,
 }
 
+/// One line an extension script wrote while it worked.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Log {
+    pub run_id: RunId,
+    pub node_id: NodeId,
+    pub level: String,
+    pub message: String,
+}
+
 /// The last thing a run says.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +79,7 @@ pub struct Done {
 pub enum RunEvent {
     Delta(Delta),
     Progress(Progress),
+    Log(Log),
     Done(Done),
 }
 
@@ -90,6 +101,15 @@ impl RunEvent {
         })
     }
 
+    pub fn log(run_id: RunId, node_id: NodeId, level: &str, message: String) -> Self {
+        Self::Log(Log {
+            run_id,
+            node_id,
+            level: level.to_string(),
+            message,
+        })
+    }
+
     pub fn done(run_id: RunId, status: RunStatus, error: Option<String>) -> Self {
         Self::Done(Done {
             run_id,
@@ -102,6 +122,7 @@ impl RunEvent {
         match self {
             Self::Delta(event) => &event.run_id,
             Self::Progress(event) => &event.run_id,
+            Self::Log(event) => &event.run_id,
             Self::Done(event) => &event.run_id,
         }
     }
@@ -121,6 +142,7 @@ impl RunEvent {
         match self {
             Self::Delta(event) => ("delta", serde_json::to_value(event).unwrap_or_default()),
             Self::Progress(event) => ("progress", serde_json::to_value(event).unwrap_or_default()),
+            Self::Log(event) => ("log", serde_json::to_value(event).unwrap_or_default()),
             Self::Done(event) => ("done", serde_json::to_value(event).unwrap_or_default()),
         }
     }

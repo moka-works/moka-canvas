@@ -15,14 +15,14 @@ use crate::domain::commands::make_node;
 use crate::domain::validate::{MAX_RESULT_SLOTS, MAX_TITLE_LENGTH};
 use crate::domain::{
     new_id, now_iso, AssetId, CanvasDocument, Capability, DataType, DocumentCommand, EdgeEndpoint,
-    MokaFile, NodeData, NodeId, NodeKind, NodePatch, PortDirection, ResultSlot, ResultSlotStatus,
-    RunId, RunRecord, RunStatus, RunStepRecord, SessionId, ValidationIssue, WorkflowEdge,
-    WorkflowNode,
+    ExtensionCallRecord, ExtensionLogRecord, ExtensionOutputValue, MokaFile, NodeData, NodeId,
+    NodeKind, NodePatch, PortDirection, ResultSlot, ResultSlotStatus, RunId, RunRecord, RunStatus,
+    RunStepRecord, SessionId, StepPortRecord, ValidationIssue, WorkflowEdge, WorkflowNode,
 };
 use crate::generate::{ingest_generated, GenerateResult};
 use crate::project::store::FsProjectStore;
 use crate::project::{ProjectError, ProjectStore};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 pub struct RunManager {
@@ -62,16 +62,41 @@ struct StepArtifacts {
     /// The upstream job the step went through, for the ones that are a job
     /// rather than an answer waited out.
     task: Option<PlacedJob>,
+    /// The values an extension handed each output port, and what it left on
+    /// the node. `None` for every executor that answers with one value.
+    ports: Option<BTreeMap<String, Vec<WorkflowValue>>>,
+    extension: Option<super::ExtensionStep>,
+    logs: Vec<ExtensionLogRecord>,
+    calls: Vec<ExtensionCallRecord>,
 }
+
+impl StepArtifacts {
+    fn empty() -> Self {
+        Self {
+            text: None,
+            assets: None,
+            task: None,
+            ports: None,
+            extension: None,
+            logs: Vec::new(),
+            calls: Vec::new(),
+        }
+    }
+}
+
+/// node id → port id → values, in edge order. A static node has one value on
+/// `"out"`; an extension has as many as its ports say.
+type StepValues = BTreeMap<NodeId, BTreeMap<String, Vec<WorkflowValue>>>;
 
 /// What one scheduled node turned out to be.
 ///
 /// Decided before anything is run, because the two answers need different
 /// things done to them: one is written down and waited out in two halves, and
 /// the other has nothing to wait for.
+#[allow(clippy::large_enum_variant)]
 enum StepPlan {
     /// Nothing an executor could do, so the node passes on what it already had.
-    Passthrough(Option<WorkflowValue>, StepArtifacts),
+    Passthrough(BTreeMap<String, Vec<WorkflowValue>>, StepArtifacts),
     /// An executor takes it.
     Scheduled {
         executor: Arc<dyn WorkflowExecutor>,
@@ -130,16 +155,35 @@ fn remembered(
     snapshot: &RunSnapshot,
     node_id: &str,
     step: &RunStepRecord,
-) -> Option<WorkflowValue> {
+) -> Option<BTreeMap<String, Vec<WorkflowValue>>> {
     let node = snapshot.nodes.get(node_id)?;
+    if node.kind == NodeKind::Extension {
+        // An extension recorded its whole answer on the node, by port. The
+        // record's own summary is only the primary port, which is not enough
+        // for a step downstream that reads another one.
+        let mut ports = BTreeMap::new();
+        for port in node
+            .ports
+            .iter()
+            .filter(|port| port.direction == PortDirection::Output)
+        {
+            let values = snapshot.source_values(node_id, &port.id);
+            if !values.is_empty() {
+                ports.insert(port.id.clone(), values);
+            }
+        }
+        return Some(ports);
+    }
     if executor_key_for(node).is_none() {
-        return snapshot.source_value(node_id);
+        return snapshot
+            .source_value(node_id, "out")
+            .map(|value| BTreeMap::from([("out".to_string(), vec![value])]));
     }
     let source = ValueProvenance {
         node_id: node.id.clone(),
         port_id: "out".to_string(),
     };
-    match step.output_asset_ids.clone().unwrap_or_default().first() {
+    let value = match step.output_asset_ids.clone().unwrap_or_default().first() {
         // A picture, a voice or a shot travelled as the asset it became; words
         // travelled as words.
         Some(asset_id) if data_type_for(node.kind) != DataType::Text => {
@@ -153,7 +197,8 @@ fn remembered(
             .output_text
             .clone()
             .map(|text| WorkflowValue::Text { text, source }),
-    }
+    };
+    value.map(|value| BTreeMap::from([("out".to_string(), vec![value])]))
 }
 
 /// What a finished step leaves on the node that made it.
@@ -167,6 +212,15 @@ enum Promotion {
     Answered {
         answers: Vec<Answer>,
         placement: Placement,
+    },
+    /// What an extension handed back, by port, and the slots a reader chooses
+    /// from. An extension makes no cards of its own.
+    Extension {
+        /// Filled in by the driver, which is the only side that knows which
+        /// run the answer belongs to.
+        run_id: Option<RunId>,
+        outputs: BTreeMap<String, Vec<ExtensionOutputValue>>,
+        slots: Vec<ResultSlot>,
     },
     /// Nothing worth keeping, and why.
     Failed(String),
@@ -246,6 +300,15 @@ impl Answer {
 /// A text node is made holding an empty string rather than nothing, so what it
 /// says has to be read rather than merely looked for.
 fn was_empty(node: &WorkflowNode) -> bool {
+    if node.kind == NodeKind::Extension {
+        return node
+            .data
+            .extension
+            .as_ref()
+            .and_then(|extension| extension.outputs.as_ref())
+            .map(|outputs| outputs.values().all(|values| values.is_empty()))
+            .unwrap_or(true);
+    }
     node.data.asset_id.is_none()
         && node
             .data
@@ -284,6 +347,14 @@ fn promotion_for(
     executor_key_for(node)?;
     if !is_asked(node, requested) {
         return None;
+    }
+    if node.kind == NodeKind::Extension {
+        let step = artifacts.extension.as_ref()?;
+        return Some(Promotion::Extension {
+            run_id: None,
+            outputs: step.outputs.clone(),
+            slots: step.slots.clone(),
+        });
     }
     let assets = artifacts.assets.clone().unwrap_or_default();
     let answers = match node.kind {
@@ -367,6 +438,7 @@ fn result_nodes(
                         title: None,
                         z_index: None,
                         data: Some(data),
+                        ports: None,
                     },
                 });
                 child.id.clone()
@@ -601,6 +673,9 @@ impl RunManager {
                     error_details: None,
                     output_asset_ids: None,
                     output_text: None,
+                    outputs: None,
+                    extension_logs: None,
+                    extension_calls: None,
                     task_id: None,
                     task_created_at: None,
                     progress: None,
@@ -863,7 +938,7 @@ impl RunManager {
         // and the order is the one thing about the walk that must not change.
         let mut snapshot = snapshot;
         let order = snapshot.order.clone();
-        let mut outputs: HashMap<NodeId, WorkflowValue> = HashMap::new();
+        let mut outputs: StepValues = BTreeMap::new();
         let mut halt: Option<Halt> = None;
 
         for (position, node_id) in order.iter().enumerate() {
@@ -875,9 +950,13 @@ impl RunManager {
             // than run again: what the steps after it need is the answer, and
             // asking a provider for it a second time would pay twice for one.
             if run.steps[position].status == RunStatus::Succeeded {
-                if let Some(value) = remembered(&snapshot, node_id, &run.steps[position]) {
-                    snapshot.record_output(node_id, &value);
-                    outputs.insert(node_id.clone(), value);
+                if let Some(ports) = remembered(&snapshot, node_id, &run.steps[position]) {
+                    for (port, values) in &ports {
+                        for value in values {
+                            snapshot.record_output(node_id, port, value);
+                        }
+                    }
+                    outputs.insert(node_id.clone(), ports);
                 }
                 continue;
             }
@@ -894,7 +973,11 @@ impl RunManager {
                         .clone()
                         .unwrap_or_else(now_iso),
                 });
-            if run.steps[position].status != RunStatus::Running {
+            // Read before the record is marked running: a step already running
+            // is one a previous process started, and an extension does not
+            // replay a script that may already have paid for calls.
+            let resumed = run.steps[position].status == RunStatus::Running;
+            if !resumed {
                 run.steps[position].status = RunStatus::Running;
                 run.steps[position].started_at = Some(now_iso());
                 run.updated_at = now_iso();
@@ -904,28 +987,51 @@ impl RunManager {
             }
 
             let outcome = self
-                .run_step(&store, &mut run, &snapshot, position, &outputs, placed)
+                .run_step(
+                    &store, &mut run, &snapshot, position, &outputs, placed, resumed,
+                )
                 .await;
             run.steps[position].finished_at = Some(now_iso());
             match outcome {
-                Ok((value, artifacts)) => {
+                Ok((ports, artifacts)) => {
                     // Decided before the artifacts are moved into the record.
                     let requested = run.requested_node_ids.iter().any(|id| id == node_id);
-                    let promotion = promotion_for(&snapshot.nodes[node_id], &artifacts, requested);
+                    let promotion = promotion_for(&snapshot.nodes[node_id], &artifacts, requested)
+                        .map(|promotion| match promotion {
+                            Promotion::Extension { outputs, slots, .. } => Promotion::Extension {
+                                run_id: Some(run.id.clone()),
+                                outputs,
+                                slots,
+                            },
+                            other => other,
+                        });
                     let step = &mut run.steps[position];
                     step.status = RunStatus::Succeeded;
                     step.output_text = artifacts.text;
                     step.output_asset_ids = artifacts.assets;
+                    step.outputs = artifacts.ports.as_ref().map(port_records);
+                    step.extension_logs = if artifacts.logs.is_empty() {
+                        None
+                    } else {
+                        Some(artifacts.logs)
+                    };
+                    step.extension_calls = if artifacts.calls.is_empty() {
+                        None
+                    } else {
+                        Some(artifacts.calls)
+                    };
                     step.task_id = artifacts.task.as_ref().map(|job| job.task_id.clone());
                     step.task_created_at = artifacts.task.map(|job| job.created_at);
                     if let Some(promotion) = promotion {
                         self.promote_result(&store, &snapshot, node_id, promotion)
                             .await;
                     }
-                    if let Some(value) = value {
-                        snapshot.record_output(node_id, &value);
-                        outputs.insert(node_id.clone(), value);
+                    for (port, values) in &ports {
+                        for value in values {
+                            snapshot.record_output(node_id, port, value);
+                        }
                     }
+                    outputs.insert(node_id.clone(), ports);
                 }
                 Err(error) => {
                     if error.cancelled {
@@ -1026,7 +1132,8 @@ impl RunManager {
         run: &RunRecord,
         snapshot: &RunSnapshot,
         node_id: &str,
-        outputs: &HashMap<NodeId, WorkflowValue>,
+        outputs: &StepValues,
+        resumed: bool,
     ) -> Result<StepPlan, ExecutionError> {
         let node = &snapshot.nodes[node_id];
         let requested = run.requested_node_ids.iter().any(|id| id == node_id);
@@ -1036,26 +1143,34 @@ impl RunManager {
         // so the two cannot come apart.
         let executor_key = executor_key_for(node).filter(|_| is_asked(node, requested));
         let Some(executor_key) = executor_key else {
-            let value = snapshot.source_value(&node.id);
-            let artifacts = match &value {
-                Some(WorkflowValue::Text { text, .. }) => StepArtifacts {
-                    text: Some(text.clone()),
-                    assets: None,
-                    task: None,
+            let mut ports = BTreeMap::new();
+            for port in node
+                .ports
+                .iter()
+                .filter(|port| port.direction == PortDirection::Output)
+            {
+                let values = snapshot.source_values(&node.id, &port.id);
+                if !values.is_empty() {
+                    ports.insert(port.id.clone(), values);
+                }
+            }
+            let primary = ports.values().flatten().next();
+            let artifacts = StepArtifacts {
+                text: match primary {
+                    Some(WorkflowValue::Text { text, .. }) => Some(text.clone()),
+                    _ => None,
                 },
-                Some(WorkflowValue::Media { asset_id, .. })
-                | Some(WorkflowValue::Artifact { asset_id, .. }) => StepArtifacts {
-                    text: None,
-                    assets: Some(vec![asset_id.clone()]),
-                    task: None,
+                assets: match primary {
+                    Some(WorkflowValue::Media { asset_id, .. })
+                    | Some(WorkflowValue::Artifact { asset_id, .. }) => {
+                        Some(vec![asset_id.clone()])
+                    }
+                    _ => None,
                 },
-                None => StepArtifacts {
-                    text: None,
-                    assets: None,
-                    task: None,
-                },
+                ports: Some(ports.clone()),
+                ..StepArtifacts::empty()
             };
-            return Ok(StepPlan::Passthrough(value, artifacts));
+            return Ok(StepPlan::Passthrough(ports, artifacts));
         };
 
         let operation_type = operation_type_for(node);
@@ -1076,56 +1191,120 @@ impl RunManager {
 
         let mut inputs: BTreeMap<String, Vec<WorkflowValue>> = BTreeMap::new();
         for edge in snapshot.edges_for_target(&node.id) {
-            if let Some(value) = outputs.get(&edge.source.node_id) {
+            if let Some(values) = outputs
+                .get(&edge.source.node_id)
+                .and_then(|ports| ports.get(&edge.source.port_id))
+            {
                 inputs
                     .entry(edge.target.port_id.clone())
                     .or_default()
-                    .push(value.clone());
+                    .extend(values.iter().cloned());
             }
         }
         for port in &node.ports {
-            if port.direction == PortDirection::Input {
-                inputs.entry(port.id.clone()).or_default();
+            if port.direction != PortDirection::Input {
+                continue;
+            }
+            let arrived = inputs.entry(port.id.clone()).or_default();
+            if port.required && arrived.is_empty() {
+                return Err(ExecutionError {
+                    code: if node.kind == NodeKind::Extension {
+                        "EXTENSION_INPUT_MISSING"
+                    } else {
+                        "INPUT_MISSING"
+                    },
+                    message: format!(
+                        "\"{}\": the input \"{}\" is required and nothing is connected",
+                        node.title, port.label
+                    ),
+                    details: Some(serde_json::json!({ "port": port.id })),
+                    retryable: false,
+                    cancelled: false,
+                });
+            }
+            if port.cardinality == crate::domain::Cardinality::One && arrived.len() > 1 {
+                return Err(ExecutionError {
+                    code: if node.kind == NodeKind::Extension {
+                        "EXTENSION_INPUT_CARDINALITY"
+                    } else {
+                        "CARDINALITY_VIOLATION"
+                    },
+                    message: format!(
+                        "\"{}\": the input \"{}\" takes one value and {} are connected",
+                        node.title,
+                        port.label,
+                        arrived.len()
+                    ),
+                    details: Some(serde_json::json!({ "port": port.id })),
+                    retryable: false,
+                    cancelled: false,
+                });
             }
         }
 
-        let request = ExecutionRequest {
-            run_id: run.id.clone(),
-            node_id: node.id.clone(),
-            operation_type,
-            parameters: node
-                .data
-                .parameters
-                .clone()
-                .unwrap_or(serde_json::Value::Null),
-            inputs,
-            generation: node
-                .data
-                .generation
-                .as_ref()
-                // Resolved once here rather than in the executor: the same
-                // reading of the graph builds the request and stamps the answer
-                // that comes back, so the two cannot disagree about what fed it.
-                .map(|spec| snapshot.generation_inputs(&node.id).request_for(spec)),
-            // Words are the only answer that arrives a piece at a time, so the
-            // only one worth a stream of its own. Where they will land is known
-            // now, and saying so lets a listener show them there rather than
-            // somewhere it has to move them from later.
-            deltas: node
-                .data
-                .generation
-                .as_ref()
-                .filter(|spec| spec.capability == Capability::Text)
-                .map(|_| {
-                    streamed_words(
-                        self.events.clone(),
-                        run.id.clone(),
-                        node.id.clone(),
-                        slot_id(0),
-                    )
-                })
-                .unwrap_or_default(),
-        };
+        let events = self.events.clone();
+        let log_run = run.id.clone();
+        let log_node = node.id.clone();
+        let logs = super::LogSink::new(Arc::new(move |level: &str, message: &str| {
+            events.publish(RunEvent::log(
+                log_run.clone(),
+                log_node.clone(),
+                level,
+                message.to_string(),
+            ));
+        }));
+        let request =
+            ExecutionRequest {
+                run_id: run.id.clone(),
+                canvas_id: snapshot.canvas_id.clone(),
+                node_id: node.id.clone(),
+                operation_type,
+                parameters: node
+                    .data
+                    .parameters
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                inputs,
+                generation: node
+                    .data
+                    .generation
+                    .as_ref()
+                    // Resolved once here rather than in the executor: the same
+                    // reading of the graph builds the request and stamps the answer
+                    // that comes back, so the two cannot disagree about what fed it.
+                    .map(|spec| snapshot.generation_inputs(&node.id).request_for(spec)),
+                extension: node.data.extension.as_ref().map(|extension| {
+                    super::ExtensionInvocation {
+                        extension_id: extension.extension_id.clone(),
+                        definition_version: extension.definition_version,
+                        api_version: extension.api_version,
+                        contract_hash: extension.contract_hash.clone(),
+                        bindings: extension.bindings.clone(),
+                        node_title: node.title.clone(),
+                        ports: node.ports.clone(),
+                    }
+                }),
+                resumed,
+                // Words are the only answer that arrives a piece at a time, so the
+                // only one worth a stream of its own. Where they will land is known
+                // now, and saying so lets a listener show them there rather than
+                // somewhere it has to move them from later.
+                deltas: node
+                    .data
+                    .generation
+                    .as_ref()
+                    .filter(|spec| spec.capability == Capability::Text)
+                    .map(|_| {
+                        streamed_words(
+                            self.events.clone(),
+                            run.id.clone(),
+                            node.id.clone(),
+                            slot_id(0),
+                        )
+                    })
+                    .unwrap_or_default(),
+                logs,
+            };
         Ok(StepPlan::Scheduled {
             executor: Arc::clone(executor),
             request,
@@ -1138,17 +1317,19 @@ impl RunManager {
     /// the handle is written onto the record the moment a job exists, because a
     /// shot takes minutes and a process that stops in the middle of one has to
     /// leave enough behind to ask again rather than pay for a second shot.
+    #[allow(clippy::too_many_arguments)]
     async fn run_step(
         &self,
         store: &Arc<FsProjectStore>,
         run: &mut RunRecord,
         snapshot: &RunSnapshot,
         position: usize,
-        outputs: &HashMap<NodeId, WorkflowValue>,
+        outputs: &StepValues,
         placed: Option<PlacedJob>,
-    ) -> Result<(Option<WorkflowValue>, StepArtifacts), ExecutionError> {
+        resumed: bool,
+    ) -> Result<(BTreeMap<String, Vec<WorkflowValue>>, StepArtifacts), ExecutionError> {
         let node_id = run.steps[position].node_id.clone();
-        let plan = self.plan_step(run, snapshot, &node_id, outputs)?;
+        let plan = self.plan_step(run, snapshot, &node_id, outputs, resumed)?;
         match plan {
             StepPlan::Passthrough(value, artifacts) => Ok((value, artifacts)),
             StepPlan::Scheduled { executor, request } => {
@@ -1213,23 +1394,82 @@ impl RunManager {
         snapshot: &RunSnapshot,
         node_id: &str,
         output: ExecutionOutput,
-    ) -> Result<(Option<WorkflowValue>, StepArtifacts), ExecutionError> {
+    ) -> Result<(BTreeMap<String, Vec<WorkflowValue>>, StepArtifacts), ExecutionError> {
         let node = &snapshot.nodes[node_id];
         let source = ValueProvenance {
             node_id: node.id.clone(),
             port_id: "out".to_string(),
         };
-        let ExecutionOutput { text, items, task } = output;
+        let ExecutionOutput {
+            text,
+            items,
+            task,
+            ports,
+            extension,
+            created_assets,
+            logs,
+            calls,
+        } = output;
+        let referenced: HashSet<AssetId> = ports
+            .iter()
+            .flatten()
+            .flat_map(|(_, values)| values.iter())
+            .filter_map(|value| match value {
+                WorkflowValue::Media { asset_id, .. }
+                | WorkflowValue::Artifact { asset_id, .. } => Some(asset_id.clone()),
+                WorkflowValue::Text { .. } => None,
+            })
+            .collect();
+        for asset_id in created_assets {
+            if !referenced.contains(&asset_id) {
+                if let Err(error) = store.remove_asset(&asset_id).await {
+                    tracing::warn!(
+                        "run step on {node_id} left an intermediate asset {asset_id}: {error}"
+                    );
+                }
+            }
+        }
+        if let Some(ports) = ports {
+            let assets: Vec<AssetId> = ports
+                .values()
+                .flatten()
+                .filter_map(|value| match value {
+                    WorkflowValue::Media { asset_id, .. }
+                    | WorkflowValue::Artifact { asset_id, .. } => Some(asset_id.clone()),
+                    WorkflowValue::Text { .. } => None,
+                })
+                .collect();
+            return Ok((
+                ports.clone(),
+                StepArtifacts {
+                    text,
+                    assets: if assets.is_empty() {
+                        None
+                    } else {
+                        Some(assets)
+                    },
+                    task,
+                    ports: Some(ports),
+                    extension,
+                    logs,
+                    calls,
+                },
+            ));
+        }
         if node.data.generation.is_none() {
             let value = text
                 .clone()
                 .map(|text| WorkflowValue::Text { text, source });
+            let ports = value
+                .map(|value| BTreeMap::from([("out".to_string(), vec![value])]))
+                .unwrap_or_default();
             return Ok((
-                value,
+                ports,
                 StepArtifacts {
                     text,
                     assets: None,
-                    task: None,
+                    task,
+                    ..StepArtifacts::empty()
                 },
             ));
         }
@@ -1268,8 +1508,11 @@ impl RunManager {
                 .clone()
                 .map(|text| WorkflowValue::Text { text, source }),
         };
+        let ports = value
+            .map(|value| BTreeMap::from([("out".to_string(), vec![value])]))
+            .unwrap_or_default();
         Ok((
-            value,
+            ports,
             StepArtifacts {
                 text,
                 assets: if assets.is_empty() {
@@ -1278,6 +1521,7 @@ impl RunManager {
                     Some(assets)
                 },
                 task,
+                ..StepArtifacts::empty()
             },
         ))
     }
@@ -1353,10 +1597,31 @@ fn promotion_commands(
     let mut data = live.data.clone();
     let (answers, placement) = match promotion {
         Promotion::Answered { answers, placement } => (answers.as_slice(), *placement),
+        Promotion::Extension {
+            run_id,
+            outputs,
+            slots,
+        } => {
+            let extension = data.extension.as_mut()?;
+            extension.outputs = Some(outputs.clone());
+            extension.run_id = run_id.clone();
+            extension.outputs_updated_at = Some(now_iso());
+            data.result_slots = Some(slots.clone());
+            // An extension keeps its results on itself; v1 makes no cards for
+            // them, so the list of cards is emptied rather than left pointing
+            // at cards some earlier answer made.
+            data.result_node_ids = Some(Vec::new());
+            return Some(vec![write_back(canvas_id, node_id, data)]);
+        }
         // What the node held before is left where it was: a failed attempt says
         // why it failed, it does not take the last answer that worked away. It
         // gets no card either, since there is nothing for one to hold.
         Promotion::Failed(message) => {
+            // An extension's outputs and slots are its last successful answer.
+            // A failed run is recorded on the run, not written over them.
+            if live.kind == NodeKind::Extension {
+                return None;
+            }
             data.result_slots = Some(vec![failed(message)]);
             return Some(vec![write_back(canvas_id, node_id, data)]);
         }
@@ -1485,6 +1750,33 @@ fn preserved(node: &WorkflowNode, kept: &[ResultSlot]) -> Option<ResultSlot> {
 
 /// The node that asked, written last: a crash on the way leaves cards nothing
 /// points at rather than slots pointing at cards that were never made.
+/// The per-port summary a run record keeps, flattened from values that
+/// otherwise only exist while the run is in memory.
+fn port_records(ports: &BTreeMap<String, Vec<WorkflowValue>>) -> BTreeMap<String, StepPortRecord> {
+    ports
+        .iter()
+        .map(|(port, values)| {
+            (
+                port.clone(),
+                StepPortRecord {
+                    text: values.iter().find_map(|value| match value {
+                        WorkflowValue::Text { text, .. } => Some(text.clone()),
+                        _ => None,
+                    }),
+                    asset_ids: values
+                        .iter()
+                        .filter_map(|value| match value {
+                            WorkflowValue::Media { asset_id, .. }
+                            | WorkflowValue::Artifact { asset_id, .. } => Some(asset_id.clone()),
+                            WorkflowValue::Text { .. } => None,
+                        })
+                        .collect(),
+                },
+            )
+        })
+        .collect()
+}
+
 fn write_back(canvas_id: &str, node_id: &str, data: NodeData) -> DocumentCommand {
     DocumentCommand::UpdateNode {
         canvas_id: canvas_id.to_string(),
@@ -1493,6 +1785,7 @@ fn write_back(canvas_id: &str, node_id: &str, data: NodeData) -> DocumentCommand
             title: None,
             z_index: None,
             data: Some(data),
+            ports: None,
         },
     }
 }
@@ -1672,6 +1965,7 @@ mod tests {
             text: Some("words".to_string()),
             assets: Some(vec!["asset-2".to_string()]),
             task: None,
+            ..StepArtifacts::empty()
         };
         for node in &nodes {
             assert!(
@@ -1689,6 +1983,7 @@ mod tests {
             text: Some("a caption".to_string()),
             assets: None,
             task: None,
+            ..StepArtifacts::empty()
         };
         assert!(promotion_for(&poster, &artifacts, true).is_none());
     }
@@ -1699,6 +1994,7 @@ mod tests {
             text: Some("An answer.".to_string()),
             assets: Some(vec!["asset-1".to_string()]),
             task: None,
+            ..StepArtifacts::empty()
         };
         // A node made and never written in holds an empty string rather than
         // nothing, and is still a node with nothing to lose.
@@ -1753,6 +2049,7 @@ mod tests {
             text: Some("A fresh answer.".to_string()),
             assets: Some(vec!["asset-1".to_string()]),
             task: None,
+            ..StepArtifacts::empty()
         };
         // Dragged in because something below reads it, and already holding an
         // answer: the run passes that answer down, and there is nothing to
@@ -2356,6 +2653,7 @@ mod tests {
                             title: Some("Renamed while it ran".to_string()),
                             z_index: None,
                             data: None,
+                            ports: None,
                         },
                     };
                     let store = Arc::clone(&competing);

@@ -26,6 +26,11 @@ use std::sync::Arc;
 /// spec's business, not the node's.
 pub const PROVIDER_EXECUTOR_KEY: &str = "provider";
 
+/// The executor an extension node is handed to. Every extension, whatever its
+/// definition, runs through the same machinery: which script is loaded and
+/// which models it may call comes from the node's own data.
+pub const EXTENSION_EXECUTOR_KEY: &str = "extension";
+
 /// Which node/port produced a value, recorded for audit.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ValueProvenance {
@@ -74,6 +79,10 @@ pub fn executor_key_for(node: &WorkflowNode) -> Option<&str> {
         NodeKind::Text | NodeKind::Image | NodeKind::Audio | NodeKind::Video => {
             node.data.generation.as_ref().map(|_| PROVIDER_EXECUTOR_KEY)
         }
+        // An extension node is runnable even when its definition has been
+        // taken away: the refusal says the definition is missing, which is
+        // more useful than the node not being offered a run at all.
+        NodeKind::Extension => Some(EXTENSION_EXECUTOR_KEY),
         _ => None,
     }
 }
@@ -84,6 +93,7 @@ pub fn executor_key_for(node: &WorkflowNode) -> Option<&str> {
 pub fn operation_type_for(node: &WorkflowNode) -> String {
     match node.kind {
         NodeKind::Operation => node.data.operation_type.clone().unwrap_or_default(),
+        NodeKind::Extension => EXTENSION_EXECUTOR_KEY.to_string(),
         _ => node
             .data
             .generation
@@ -104,11 +114,33 @@ pub fn data_type_for(kind: NodeKind) -> DataType {
     }
 }
 
+/// What an extension step needs that no other step does.
+///
+/// The executor never sees the node, so the definition it was inserted from,
+/// the models the reader bound to its slots, and the ports it was drawn with
+/// travel here. Nothing in it is a credential: a binding is a configuration id,
+/// and the credential that goes with it is attached by the gateway.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtensionInvocation {
+    pub extension_id: String,
+    pub definition_version: u32,
+    pub api_version: u32,
+    pub contract_hash: String,
+    pub bindings: BTreeMap<String, String>,
+    /// The node's title, which a box of logs and a prompt may say.
+    pub node_title: String,
+    /// The node's port snapshot, which is what its required inputs and
+    /// cardinalities are checked against.
+    pub ports: Vec<crate::domain::PortDefinition>,
+}
+
 /// Everything an executor needs for one node step — resolved values and a
 /// sanitized parameter model, never raw HTTP data or filesystem handles.
 #[derive(Debug, Clone)]
 pub struct ExecutionRequest {
     pub run_id: RunId,
+    /// The canvas the run is on, which an answer's provenance records.
+    pub canvas_id: crate::domain::CanvasId,
     pub node_id: NodeId,
     pub operation_type: String,
     pub parameters: serde_json::Value,
@@ -120,6 +152,12 @@ pub struct ExecutionRequest {
     /// read in one place and an executor never needs a canvas to do its job.
     /// `None` for every other step.
     pub generation: Option<GenerateRequest>,
+    /// What an extension step needs, and `None` for every other step.
+    pub extension: Option<ExtensionInvocation>,
+    /// True when the run record says this step was already under way in a
+    /// process that is gone. An extension step does not replay: its script may
+    /// already have paid for calls it cannot prove were made.
+    pub resumed: bool,
     /// Where an answer that arrives a piece at a time puts each piece.
     ///
     /// Carried by the request rather than handed to `execute` beside the
@@ -127,6 +165,42 @@ pub struct ExecutionRequest {
     /// decide and the sink has to travel with the request it belongs to. A
     /// default one is not watched, which is what makes a provider answer whole.
     pub deltas: DeltaSink,
+    /// Where an extension script's logs go as it writes them.
+    pub logs: LogSink,
+}
+
+/// What a caller does with one log line: its level and its text.
+pub type LogHandler = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
+/// Where an extension script's log lines go while it runs.
+///
+/// The same shape as [`DeltaSink`] and for the same reason: a display only
+/// needs a shortcut to what the record will say anyway, and one nobody is
+/// watching costs a dropped callback rather than a queue.
+#[derive(Clone, Default)]
+pub struct LogSink {
+    sink: Option<LogHandler>,
+}
+
+impl LogSink {
+    pub fn new(sink: LogHandler) -> Self {
+        Self { sink: Some(sink) }
+    }
+
+    pub fn push(&self, level: &str, message: &str) {
+        if let Some(sink) = &self.sink {
+            sink(level, message);
+        }
+    }
+}
+
+impl std::fmt::Debug for LogSink {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LogSink")
+            .field("open", &self.sink.is_some())
+            .finish()
+    }
 }
 
 /// A step that answers later, in the run's hands.
@@ -153,6 +227,28 @@ pub struct ExecutionOutput {
     /// an answer waited out, and recording which one produced the result is what
     /// lets a run say so afterwards.
     pub task: Option<PlacedJob>,
+    /// What an extension step hands each output port. `None` for every other
+    /// executor, whose answer is a single value the runner wraps in `"out"`.
+    pub ports: Option<BTreeMap<String, Vec<WorkflowValue>>>,
+    /// The extension's own record of what it produced: the snapshot written
+    /// onto the node and the result slots a reader selects from.
+    pub extension: Option<ExtensionStep>,
+    /// Every file this step made, including the ones no output referenced.
+    /// The runner removes the unreferenced ones once the answer has landed.
+    pub created_assets: Vec<AssetId>,
+    /// What the script wrote down while it worked, in the order it said it.
+    pub logs: Vec<crate::domain::ExtensionLogRecord>,
+    /// One line per model call, for the panel to say what was asked and what
+    /// it cost in time.
+    pub calls: Vec<crate::domain::ExtensionCallRecord>,
+}
+
+/// What an extension step leaves on its node, besides the values travelling
+/// downstream.
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionStep {
+    pub outputs: BTreeMap<String, Vec<crate::domain::ExtensionOutputValue>>,
+    pub slots: Vec<crate::domain::ResultSlot>,
 }
 
 /// Validation failure from the executor's own operation schema.

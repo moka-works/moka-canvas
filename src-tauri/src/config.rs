@@ -347,7 +347,11 @@ fn default_max_document_bytes() -> u64 {
     33_554_432
 }
 fn default_enabled_executors() -> Vec<String> {
-    vec!["deterministic".to_string(), "provider".to_string()]
+    vec![
+        "deterministic".to_string(),
+        "provider".to_string(),
+        "extension".to_string(),
+    ]
 }
 fn default_allowed_media_types() -> Vec<String> {
     vec![
@@ -526,7 +530,10 @@ impl AppConfig {
         self.workflow
             .enabled_executors
             .iter()
-            .filter(|key| key.as_str() != crate::workflow::PROVIDER_EXECUTOR_KEY)
+            .filter(|key| {
+                key.as_str() != crate::workflow::PROVIDER_EXECUTOR_KEY
+                    && key.as_str() != crate::workflow::EXTENSION_EXECUTOR_KEY
+            })
             .cloned()
             .collect()
     }
@@ -737,11 +744,15 @@ mod tests {
         let config = parse_config(raw).expect("example config must parse");
         assert_eq!(config.server.bind, "127.0.0.1:3000");
         assert_eq!(config.public.product_name, "Moka Canvas");
-        // Both, because an example that named only the local one would refuse
-        // every generation node the moment somebody copied it.
+        // All three, because an example that left one out would refuse every
+        // node of that kind the moment somebody copied it.
         assert_eq!(
             config.workflow.enabled_executors,
-            vec!["deterministic".to_string(), "provider".to_string()]
+            vec![
+                "deterministic".to_string(),
+                "provider".to_string(),
+                "extension".to_string()
+            ]
         );
     }
 
@@ -937,7 +948,11 @@ generate:
         let mut config = parse_test_config(root.path());
         assert_eq!(
             config.active_executors(),
-            vec!["deterministic".to_string(), "provider".to_string()]
+            vec![
+                "deterministic".to_string(),
+                "provider".to_string(),
+                "extension".to_string()
+            ]
         );
 
         config.generate.offline = true;
@@ -948,7 +963,7 @@ generate:
         );
         // What was configured is left alone: switching back on restores the list
         // rather than needing it written again.
-        assert_eq!(config.workflow.enabled_executors.len(), 2);
+        assert_eq!(config.workflow.enabled_executors.len(), 3);
     }
 
     #[test]

@@ -289,6 +289,11 @@ pub enum NodeKind {
     Operation,
     Group,
     Export,
+    /// A node the machine defines: its ports and model slots come from a
+    /// directory under `nodes/`, and its own script decides what it asks for.
+    /// The kind is static so every older exhaustiveness point still compiles;
+    /// what differs between one extension and another lives in its data.
+    Extension,
 }
 
 impl NodeKind {
@@ -301,11 +306,12 @@ impl NodeKind {
             NodeKind::Operation => "operation",
             NodeKind::Group => "group",
             NodeKind::Export => "export",
+            NodeKind::Extension => "extension",
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataType {
     Text,
@@ -314,6 +320,19 @@ pub enum DataType {
     Video,
     Timeline,
     Artifact,
+}
+
+impl DataType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DataType::Text => "text",
+            DataType::Image => "image",
+            DataType::Audio => "audio",
+            DataType::Video => "video",
+            DataType::Timeline => "timeline",
+            DataType::Artifact => "artifact",
+        }
+    }
 }
 
 /// The generation modality a provider model serves. Narrower than
@@ -377,7 +396,7 @@ pub fn generation_capability_for(kind: NodeKind) -> Option<Capability> {
         NodeKind::Image => Some(Capability::Image),
         NodeKind::Audio => Some(Capability::Speech),
         NodeKind::Video => Some(Capability::Video),
-        NodeKind::Operation | NodeKind::Group | NodeKind::Export => None,
+        NodeKind::Operation | NodeKind::Group | NodeKind::Export | NodeKind::Extension => None,
     }
 }
 
@@ -425,9 +444,10 @@ pub enum PortDirection {
     Output,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Cardinality {
+    #[default]
     One,
     Many,
 }
@@ -544,6 +564,10 @@ pub fn derive_ports(kind: NodeKind) -> Vec<PortDefinition> {
             input("audio", vec![DataType::Audio], "Audio", Cardinality::One),
             output("out", vec![DataType::Artifact], "Artifact"),
         ],
+        // An extension's ports are the definition's, copied onto the node when
+        // it is inserted. A derived table would overwrite them with nothing;
+        // an empty one leaves every stored port standing.
+        NodeKind::Extension => Vec::new(),
     }
 }
 
@@ -583,6 +607,50 @@ pub struct ResultSlot {
     pub is_primary: bool,
 }
 
+/// What one extension node holds beyond the common node fields.
+///
+/// The definition a node was inserted from, the models the reader bound to its
+/// slots, and the outputs the last successful run left on it. The definition
+/// itself is never copied here: the id, the version and the contract hash say
+/// which installed definition the node was made against, and the bound models
+/// live in the metadata store.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionState {
+    /// The definition id, which is the name of its directory under `nodes/`.
+    pub extension_id: String,
+    /// The definition's own version when the node was inserted or refreshed.
+    pub definition_version: u32,
+    /// The host contract version the definition declared.
+    pub api_version: u32,
+    /// The contract the node was inserted against; a run compares it with the
+    /// installed definition so a changed contract is never run silently.
+    pub contract_hash: String,
+    /// Slot id → model configuration id. An unbound slot has no key.
+    #[serde(default)]
+    pub bindings: BTreeMap<String, String>,
+    /// The last successful run's values, by output port.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs: Option<BTreeMap<String, Vec<ExtensionOutputValue>>>,
+    /// The run those outputs came from, for the panel to say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<RunId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs_updated_at: Option<IsoTimestamp>,
+}
+
+/// One value an extension left on an output port.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionOutputValue {
+    #[serde(rename = "type")]
+    pub data_type: DataType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<AssetId>,
+}
+
 /// Flat node payload; which fields are meaningful is determined by `kind`.
 /// Field declaration order must match the TypeScript codec key order so
 /// both languages produce byte-identical BSON.
@@ -609,6 +677,11 @@ pub struct NodeData {
     pub parameters: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_key: Option<String>,
+    /// What an extension node was made from and what it last produced. Sits
+    /// after `executor_key` and before the common result fields because the
+    /// TypeScript encoder writes the same order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension: Option<ExtensionState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_slots: Option<Vec<ResultSlot>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1042,9 +1115,13 @@ pub struct MokaFile {
 }
 
 pub const MOKA_FILE_VERSION: &str = "v1";
-/// Version 3 split the audio capability into speech and music; the codec
-/// rewrites a v2 canvas's generation specs on decode.
-pub const CANVAS_SCHEMA_VERSION: i32 = 3;
+/// Version 4 added extension nodes. The codec reads 3 and 4 and writes 4: a
+/// v3 canvas holds no extension node, so its upgrade is lossless, while an
+/// older build opening a v4 document is told the version is too new rather
+/// than failing to decode the node kind it has never heard of.
+pub const CANVAS_SCHEMA_VERSION: i32 = 4;
+/// The previous canvas schema this build still reads.
+pub const CANVAS_SCHEMA_VERSION_MIN: i32 = 3;
 pub const PACKAGE_MANIFEST_VERSION: u32 = 2;
 
 impl MokaFile {
@@ -1079,6 +1156,20 @@ impl MokaFile {
                         add(&slot.asset_id, &node.id);
                     }
                 }
+                // An extension's output snapshot is what its panel and its
+                // downstream readers show. The slots above carry the same
+                // media, but a port the reader removed from the definition can
+                // outlive its slot, and a file held only there is still in use.
+                if let Some(extension) = &node.data.extension {
+                    for value in extension
+                        .outputs
+                        .iter()
+                        .flatten()
+                        .flat_map(|(_, values)| values)
+                    {
+                        add(&value.asset_id, &node.id);
+                    }
+                }
             }
         }
         for timeline in self.timelines.iter().flatten() {
@@ -1108,6 +1199,11 @@ pub struct NodePatch {
     pub z_index: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<NodeData>,
+    /// Replaces the node's port snapshot. Only an extension refresh sends
+    /// one: every static kind's ports are derived from its table, and a patch
+    /// that rewrote them would only drift from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<PortDefinition>>,
 }
 
 /// A change to a timeline's own frame; only what is named moves, so a reader
@@ -1670,6 +1766,47 @@ pub enum RunStatus {
     Cancelled,
 }
 
+/// One line an extension script wrote while it ran.
+///
+/// Kept on the run record rather than on the node: it says what this attempt
+/// did, and an attempt that failed should not overwrite the words of one that
+/// worked. The message is bounded before it gets here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionLogRecord {
+    pub level: String,
+    pub message: String,
+    pub at: IsoTimestamp,
+}
+
+/// One model call an extension script made, as the panel lists them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCallRecord {
+    pub slot: String,
+    /// The bound configuration's display name, never its credential or URL.
+    pub model: String,
+    pub capability: Capability,
+    pub duration_ms: u64,
+    /// How many files the answer was filed as.
+    pub produced: u32,
+    pub failed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What one output port of an extension step handed back, flattened for the
+/// run record. The node keeps the same values in its own snapshot; this is so
+/// a run read later can still say what came out of which port.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StepPortRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asset_ids: Vec<AssetId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunStepRecord {
@@ -1692,6 +1829,16 @@ pub struct RunStepRecord {
     pub output_asset_ids: Option<Vec<AssetId>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_text: Option<String>,
+    /// What an extension step handed each of its output ports. Absent for
+    /// every other step, and for one that produced nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs: Option<BTreeMap<String, StepPortRecord>>,
+    /// The lines an extension script wrote, bounded by its definition's limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension_logs: Option<Vec<ExtensionLogRecord>>,
+    /// The model calls an extension script made, in the order it made them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension_calls: Option<Vec<ExtensionCallRecord>>,
     /// The handle a step that runs as an upstream job is polled by. Absent for
     /// a step that was waited out, which is most of them.
     ///

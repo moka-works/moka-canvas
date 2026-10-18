@@ -18,9 +18,11 @@ metadata:
 workflow:
   # Which step executors a run may use. "deterministic" answers the operations
   # that need nothing but the document; "provider" answers a generation node by
-  # calling a model. Leaving out "provider" does not degrade generation, it
-  # refuses it: every such node fails validation as EXECUTOR_DISABLED.
-  enabledExecutors: ["deterministic", "provider"]
+  # calling a model; "extension" runs a node whose definition lives under nodes/.
+  # Leaving out "provider" does not degrade generation, it refuses it: every
+  # such node fails validation as EXECUTOR_DISABLED. The same is true of
+  # "extension", which also calls models.
+  enabledExecutors: ["deterministic", "provider", "extension"]
 generate:
   # How long one provider request may take, per capability. Video is a job:
   # the first budget covers creating it, the second covers a single poll.

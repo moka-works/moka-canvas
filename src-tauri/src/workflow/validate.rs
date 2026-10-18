@@ -3,13 +3,13 @@
 //! run-specific phases from the execution contract.
 
 use super::{
-    data_type_for, executor_key_for, operation_type_for, ExecutionRequest, ValueProvenance,
-    WorkflowExecutor, WorkflowValue,
+    data_type_for, executor_key_for, operation_type_for, ExecutionRequest, ExtensionInvocation,
+    LogSink, ValueProvenance, WorkflowExecutor, WorkflowValue,
 };
 use crate::domain::validate::topological_order;
 use crate::domain::{
-    CanvasDocument, CanvasId, MokaFile, NodeId, NodeKind, ValidationIssue, WorkflowEdge,
-    WorkflowNode,
+    CanvasDocument, CanvasId, DataType, MokaFile, NodeId, NodeKind, PortDirection, ValidationIssue,
+    WorkflowEdge, WorkflowNode,
 };
 use crate::generate::{
     collect_generation_inputs, context_node_ids, DeltaSink, GenerateRequest, ResolvedInputs,
@@ -75,10 +75,20 @@ impl RunSnapshot {
     }
 
     /// The snapshot-time value a source node emits on its output port.
-    pub fn source_value(&self, node_id: &str) -> Option<WorkflowValue> {
-        self.nodes
-            .get(node_id)
-            .map(|node| snapshot_value(node, "out"))
+    pub fn source_value(&self, node_id: &str, port_id: &str) -> Option<WorkflowValue> {
+        self.source_values(node_id, port_id).into_iter().next()
+    }
+
+    /// Every snapshot-time value a source node emits on one port. A static
+    /// node has at most one; an extension may have left several.
+    pub fn source_values(&self, node_id: &str, port_id: &str) -> Vec<WorkflowValue> {
+        let Some(node) = self.nodes.get(node_id) else {
+            return Vec::new();
+        };
+        if node.kind == NodeKind::Extension {
+            return extension_values(node, port_id);
+        }
+        vec![snapshot_value(node, port_id)]
     }
 
     /// What one scheduled node will ask a provider for. Resolved against the
@@ -108,7 +118,7 @@ impl RunSnapshot {
     /// the closure and the hash stay frozen, because they are what the run
     /// record claims was run and changing them mid-run would make that claim
     /// false.
-    pub fn record_output(&mut self, node_id: &str, value: &WorkflowValue) {
+    pub fn record_output(&mut self, node_id: &str, port_id: &str, value: &WorkflowValue) {
         let Some(node) = self
             .readable
             .nodes
@@ -117,6 +127,38 @@ impl RunSnapshot {
         else {
             return;
         };
+        if node.kind == NodeKind::Extension {
+            if let Some(extension) = node.data.extension.as_mut() {
+                let held = extension.outputs.get_or_insert_with(Default::default);
+                let values = match value {
+                    WorkflowValue::Text { text, .. } => vec![crate::domain::ExtensionOutputValue {
+                        data_type: DataType::Text,
+                        text: Some(text.clone()),
+                        asset_id: None,
+                    }],
+                    WorkflowValue::Media {
+                        media_type,
+                        asset_id,
+                        ..
+                    } => vec![crate::domain::ExtensionOutputValue {
+                        data_type: *media_type,
+                        text: None,
+                        asset_id: Some(asset_id.clone()),
+                    }],
+                    WorkflowValue::Artifact {
+                        asset_id,
+                        media_type,
+                        ..
+                    } => vec![crate::domain::ExtensionOutputValue {
+                        data_type: media_type.unwrap_or(DataType::Artifact),
+                        text: None,
+                        asset_id: Some(asset_id.clone()),
+                    }],
+                };
+                held.insert(port_id.to_string(), values);
+            }
+            return;
+        }
         match value {
             WorkflowValue::Text { text, .. } => node.data.content = Some(text.clone()),
             WorkflowValue::Media { asset_id, .. } | WorkflowValue::Artifact { asset_id, .. } => {
@@ -143,8 +185,78 @@ fn snapshot_value(node: &WorkflowNode, port_id: &str) -> WorkflowValue {
             asset_id: node.data.asset_id.clone().unwrap_or_default(),
             source,
         },
+        NodeKind::Extension => placeholder_value(node, port_id),
         _ => WorkflowValue::Text {
             text: String::new(),
+            source,
+        },
+    }
+}
+
+/// The values an extension left on one port, as they travel.
+fn extension_values(node: &WorkflowNode, port_id: &str) -> Vec<WorkflowValue> {
+    let source = ValueProvenance {
+        node_id: node.id.clone(),
+        port_id: port_id.to_string(),
+    };
+    let Some(held) = node
+        .data
+        .extension
+        .as_ref()
+        .and_then(|extension| extension.outputs.as_ref())
+        .and_then(|outputs| outputs.get(port_id))
+    else {
+        return Vec::new();
+    };
+    held.iter()
+        .map(|value| match value.data_type {
+            DataType::Text => WorkflowValue::Text {
+                text: value.text.clone().unwrap_or_default(),
+                source: source.clone(),
+            },
+            DataType::Artifact => WorkflowValue::Artifact {
+                asset_id: value.asset_id.clone().unwrap_or_default(),
+                media_type: None,
+                source: source.clone(),
+            },
+            media_type => WorkflowValue::Media {
+                media_type,
+                asset_id: value.asset_id.clone().unwrap_or_default(),
+                source: source.clone(),
+            },
+        })
+        .collect()
+}
+
+/// A shape for an extension port nobody has run yet. Preflight only needs to
+/// know what kind of value would arrive; the script, not the placeholder, is
+/// what can say whether it is there.
+fn placeholder_value(node: &WorkflowNode, port_id: &str) -> WorkflowValue {
+    let source = ValueProvenance {
+        node_id: node.id.clone(),
+        port_id: port_id.to_string(),
+    };
+    let kind = node
+        .ports
+        .iter()
+        .find(|port| port.id == port_id && port.direction == PortDirection::Output)
+        .or_else(|| node.ports.iter().find(|port| port.id == port_id))
+        .and_then(|port| port.data_types.first())
+        .copied()
+        .unwrap_or(DataType::Text);
+    match kind {
+        DataType::Text => WorkflowValue::Text {
+            text: String::new(),
+            source,
+        },
+        DataType::Artifact => WorkflowValue::Artifact {
+            asset_id: String::new(),
+            media_type: None,
+            source,
+        },
+        media_type => WorkflowValue::Media {
+            media_type,
+            asset_id: String::new(),
             source,
         },
     }
@@ -289,6 +401,7 @@ fn kind_label(kind: NodeKind) -> &'static str {
         NodeKind::Operation => "Operation",
         NodeKind::Group => "Group",
         NodeKind::Export => "Export",
+        NodeKind::Extension => "Extension",
     }
 }
 
@@ -428,6 +541,7 @@ async fn validate_step(
 
     let request = ExecutionRequest {
         run_id: String::new(),
+        canvas_id: snapshot.canvas_id.clone(),
         node_id: node.id.clone(),
         operation_type,
         parameters: node
@@ -437,9 +551,24 @@ async fn validate_step(
             .unwrap_or(serde_json::Value::Null),
         inputs: snapshot.resolved_inputs(&node.id),
         generation: snapshot.generation_request(&node.id),
+        extension: node
+            .data
+            .extension
+            .as_ref()
+            .map(|extension| ExtensionInvocation {
+                extension_id: extension.extension_id.clone(),
+                definition_version: extension.definition_version,
+                api_version: extension.api_version,
+                contract_hash: extension.contract_hash.clone(),
+                bindings: extension.bindings.clone(),
+                node_title: node.title.clone(),
+                ports: node.ports.clone(),
+            }),
+        resumed: false,
         // Unwatched: nothing has been asked for yet, so there are no words to
         // send anywhere and a provider must not be asked to stream them.
         deltas: DeltaSink::default(),
+        logs: LogSink::default(),
     };
     if let Err(error) = executor.validate(&request).await {
         issues.extend(error.issues.into_iter().map(|mut item| {

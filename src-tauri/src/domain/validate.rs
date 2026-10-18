@@ -24,6 +24,15 @@ pub const MAX_FOLDER_NAME_LENGTH: usize = 80;
 pub const MAX_FOLDER_DEPTH: usize = 8;
 pub const MAX_PROMPT_LENGTH: usize = 20_000;
 pub const MAX_RESULT_SLOTS: usize = 16;
+/// How many model slots one extension node may bind.
+pub const MAX_EXTENSION_BINDINGS: usize = 16;
+/// How large an extension node's parameters may be, serialized. A canvas is a
+/// document, and a node that carried an essay in one field would make every
+/// save and every read pay for it.
+pub const MAX_EXTENSION_PARAM_BYTES: usize = 64 * 1024;
+/// How many characters a definition id and a port or slot id may hold.
+pub const MAX_EXTENSION_IDENTIFIER: usize = 64;
+pub const MAX_EXTENSION_PORT_ID: usize = 32;
 pub const ZOOM_MIN: f64 = 0.05;
 pub const ZOOM_MAX: f64 = 5.0;
 /// How many conversations one canvas carries.
@@ -467,6 +476,173 @@ fn generation_issues(
 /// kept that card's title and kind for exactly this case, so what it says is
 /// still what was asked about; only the card is gone, and saying so is the
 /// reader's job rather than a fault in the document.
+/// Whether a string is a definition id: what a directory under `nodes/` may be
+/// called, which is also what a node stores.
+pub fn extension_id_shaped(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_EXTENSION_IDENTIFIER
+        && !id.starts_with('.')
+        && !id.contains("..")
+        && id.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || matches!(character, '.' | '_' | '-')
+        })
+        && id.starts_with(|character: char| {
+            character.is_ascii_lowercase() || character.is_ascii_digit()
+        })
+}
+
+/// Whether a string is a port or slot id: a letter, then letters, digits and
+/// underscores.
+pub fn extension_identifier_shaped(id: &str) -> bool {
+    let mut characters = id.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    id.len() <= MAX_EXTENSION_PORT_ID
+        && first.is_ascii_alphabetic()
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+/// What is wrong with an extension node as the document holds it.
+///
+/// A definition may be gone, in which case the node keeps its ports and its
+/// outputs and simply cannot run; nothing here asks the disk. What is checked
+/// is that the node itself is shaped like one: an installed definition, a
+/// contract it was inserted against, bounds-sized parameters, and port/output
+/// values that a run and a panel can read.
+fn extension_issues(canvas: &CanvasDocument, node: &WorkflowNode) -> Vec<ValidationIssue> {
+    let Some(extension) = node.data.extension.as_ref() else {
+        return vec![ValidationIssue {
+            code: "EXTENSION_NODE_INVALID".into(),
+            message: format!(
+                "Extension node \"{}\" carries no extension state",
+                node.title
+            ),
+            canvas_id: Some(canvas.id.clone()),
+            node_id: Some(node.id.clone()),
+            port_id: None,
+            edge_id: None,
+            timeline_id: None,
+            track_id: None,
+            clip_id: None,
+            transition_id: None,
+        }];
+    };
+    let mut issues = Vec::new();
+    let mut issue = |message: String| {
+        issues.push(ValidationIssue {
+            code: "EXTENSION_NODE_INVALID".into(),
+            message: format!("Node \"{}\": {message}", node.title),
+            canvas_id: Some(canvas.id.clone()),
+            node_id: Some(node.id.clone()),
+            port_id: None,
+            edge_id: None,
+            timeline_id: None,
+            track_id: None,
+            clip_id: None,
+            transition_id: None,
+        });
+    };
+
+    if !extension_id_shaped(&extension.extension_id) {
+        issue(format!(
+            "the extension id \"{}\" is not a directory name",
+            extension.extension_id
+        ));
+    }
+    if extension.api_version == 0 {
+        issue("the extension contract version is missing".into());
+    }
+    if extension.contract_hash.trim().is_empty() {
+        issue("the extension contract hash is empty".into());
+    }
+    if extension.bindings.len() > MAX_EXTENSION_BINDINGS {
+        issue(format!(
+            "more than {MAX_EXTENSION_BINDINGS} model slots are bound"
+        ));
+    }
+    for (slot, model) in &extension.bindings {
+        if !extension_identifier_shaped(slot) {
+            issue(format!("slot id \"{slot}\" is not shaped like one"));
+        }
+        if model.trim().is_empty() || model.chars().count() > 128 {
+            issue(format!(
+                "the model bound to slot \"{slot}\" is not a configuration id"
+            ));
+        }
+    }
+    if let Some(parameters) = &node.data.parameters {
+        if !parameters.is_object() {
+            issue("the node's parameters are not an object".into());
+        }
+        let bytes = serde_json::to_vec(parameters)
+            .map(|held| held.len())
+            .unwrap_or(usize::MAX);
+        if bytes > MAX_EXTENSION_PARAM_BYTES {
+            issue(format!(
+                "the node's parameters exceed {MAX_EXTENSION_PARAM_BYTES} bytes"
+            ));
+        }
+    }
+
+    let mut outputs = 0;
+    let mut port_ids = HashSet::new();
+    for port in &node.ports {
+        if !extension_identifier_shaped(&port.id) {
+            issue(format!("port id \"{}\" is not shaped like one", port.id));
+        }
+        if !port_ids.insert(port.id.as_str()) {
+            issue(format!("port id \"{}\" is declared twice", port.id));
+        }
+        if port.data_types.is_empty() || port.data_types.contains(&DataType::Timeline) || {
+            let mut seen = HashSet::new();
+            !port.data_types.iter().all(|kind| seen.insert(*kind))
+        } {
+            issue(format!("port \"{}\" declares unusable data types", port.id));
+        }
+        if port.direction == PortDirection::Output {
+            outputs += 1;
+        }
+    }
+    if outputs == 0 {
+        issue("an extension node needs at least one output port".into());
+    }
+
+    let output_port = |port_id: &str| {
+        node.ports
+            .iter()
+            .any(|port| port.id == port_id && port.direction == PortDirection::Output)
+    };
+    for (port_id, values) in extension.outputs.iter().flatten() {
+        if !output_port(port_id) {
+            issue(format!(
+                "stored output port \"{port_id}\" is not an output of this node"
+            ));
+        }
+        for value in values {
+            let text = value.data_type == DataType::Text;
+            if value.data_type == DataType::Timeline {
+                issue(format!("output port \"{port_id}\" holds a timeline"));
+            }
+            if text && (value.text.is_none() || value.asset_id.is_some()) {
+                issue(format!("a text value on port \"{port_id}\" has no words"));
+            }
+            if !text
+                && (value.asset_id.as_deref().unwrap_or_default().is_empty()
+                    || value.text.is_some())
+            {
+                issue(format!(
+                    "a media value on port \"{port_id}\" names no asset"
+                ));
+            }
+        }
+    }
+
+    issues
+}
+
 fn session_issues(canvas: &CanvasDocument) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let issue = |message: String| ValidationIssue {
@@ -590,6 +766,9 @@ pub fn validate_canvas(canvas: &CanvasDocument) -> Vec<ValidationIssue> {
 
     for node in &canvas.nodes {
         issues.extend(generation_issues(canvas, node, &node_ids));
+        if node.kind == NodeKind::Extension {
+            issues.extend(extension_issues(canvas, node));
+        }
     }
 
     let mut edge_ids = HashSet::new();

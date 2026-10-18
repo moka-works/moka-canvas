@@ -14,11 +14,14 @@
 //! bound to the definition's slots.
 
 pub mod deploy;
+pub mod executor;
 pub mod manifest;
 pub mod registry;
+pub mod runtime;
 
 use crate::domain::AssetId;
 
+pub use executor::ExtensionExecutor;
 pub use manifest::{LoadProblem, NodeDefinition};
 pub use registry::ExtensionRegistry;
 

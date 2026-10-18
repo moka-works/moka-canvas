@@ -254,6 +254,15 @@ impl Gateway {
         serde_json::from_value(record).ok()
     }
 
+    /// Forgets a job the caller waited out itself.
+    ///
+    /// A run records its handle and the runner drops the note when the run
+    /// ends. An extension's job is internal to one step, so the step says when
+    /// it is done with it rather than leaving a note nobody will collect.
+    pub async fn settle_job(&self, session: &Arc<FsProjectStore>, task: &str) {
+        self.settled(session, task).await;
+    }
+
     /// A job that will not answer again, dropped from the table and from the
     /// note that outlived the request which started it.
     async fn settled(&self, session: &Arc<FsProjectStore>, task: &str) {
