@@ -94,6 +94,8 @@ make web-serve   # 构建前端，在 http://127.0.0.1:8080 提供 dist/ + API
 make tauri-dev   # 构建前端，运行 Tauri 桌面应用
 ```
 
+服务器与 Vite 开发服务器读同一个 `PORT`，默认 8080，所以端口只有一个说法：`make web-serve PORT=9000` 让服务器监听 9000，`PORT=9000 npm run dev` 让开发服务器（1420）把 `/api` 代理到 9000。两条命令各给一次——`make` 的变量不会流到另一个终端里的 `npm run dev`——否则代理会指向一个没人启动的端口。
+
 ## 版本号
 
 ```sh

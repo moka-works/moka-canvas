@@ -2,6 +2,7 @@ SHELL := /bin/sh
 CARGO_MANIFEST := src-tauri/Cargo.toml
 MACOS_X86_TARGET := x86_64-apple-darwin
 WINDOWS_CROSS_TARGET := x86_64-pc-windows-gnu
+PORT ?= 8080
 
 .PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows set-version clean
 
@@ -50,7 +51,7 @@ web-build:
 	npm run build
 
 web-serve: web-build
-	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --port 8080
+	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --port $(PORT)
 
 tauri-dev: web-build
 	npm run tauri dev

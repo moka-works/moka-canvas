@@ -26,7 +26,8 @@ export default defineConfig({
     port: 1420,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8080",
+        // The same PORT the server started by `make web-serve` listens on.
+        target: `http://127.0.0.1:${process.env.PORT ?? 8080}`,
         changeOrigin: false,
       },
     },
