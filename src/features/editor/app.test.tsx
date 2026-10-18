@@ -162,7 +162,7 @@ describe("app boot", () => {
     expect(screen.queryByTestId("canvas-host")).toBeNull();
   });
 
-  it("lands a new project in the story room", async () => {
+  it("asks where a new project starts and lands in the chosen room", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "New project" }));
 
@@ -178,8 +178,16 @@ describe("app boot", () => {
       within(dialog).getByRole("button", { name: "New project" }),
     );
 
-    // A project made here starts with a telling rather than a board to fill:
-    // the story room is the room it lands in.
+    // A project made here is saved before it is opened; where it opens is a
+    // question of its own, and a telling is one of the answers to it.
+    const picker = await screen.findByTestId("room-picker");
+    expect(
+      within(picker).getByRole("heading", {
+        name: "Where would you like to start?",
+      }),
+    ).toBeTruthy();
+    fireEvent.click(within(picker).getByRole("button", { name: "Story" }));
+
     expect(await screen.findByTestId("story-page")).toBeTruthy();
     expect(useAppStore.getState().phase).toBe("story");
     expect(useProjectStore.getState().moka).not.toBeNull();

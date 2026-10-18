@@ -56,12 +56,15 @@ export async function forgetProjects(): Promise<void> {
   );
 }
 
-/** Open the launcher's create dialog and scaffold a new project. */
-export async function createProject(
+/**
+ * Fill the create dialog and scaffold a new project, stopping at the question
+ * of which room it should open onto. Answers that question in `createProject`.
+ */
+export async function beginProject(
   page: Page,
   directory: string,
   name: string,
-) {
+): Promise<Locator> {
   await page.getByRole("button", { name: "New project" }).click();
   const dialog = page.locator(".dialog");
   await dialog.getByLabel("Folder").fill(directory);
@@ -69,25 +72,40 @@ export async function createProject(
   await dialog.getByRole("button", { name: "New project" }).click();
   // A folder that already holds something is asked about before the project
   // goes into a subfolder of its own; answer the question if it is there.
-  const opened = page.getByRole("banner").getByText(name, { exact: true });
+  const picker = page.getByTestId("room-picker");
   const confirm = dialog.getByRole("button", { name: "Create", exact: true });
   const asked = await Promise.race([
     confirm.waitFor({ state: "visible", timeout: 15_000 }).then(() => true),
-    opened.waitFor({ state: "visible", timeout: 15_000 }).then(() => false),
+    picker.waitFor({ state: "visible", timeout: 15_000 }).then(() => false),
   ]).catch(() => false);
   if (asked) {
     await confirm.click();
   }
-  await expect(opened).toBeVisible({ timeout: 10_000 });
-  // A new project opens onto its story room, which is the room it was made
-  // for; the board is where a suite that says nothing else starts and is what
-  // this helper has always left the reader on, so step there rather than leave
-  // every canvas spec to find its own way back.
-  await page.getByRole("button", { name: "Projects menu" }).click();
-  await page.getByRole("menuitem", { name: "Canvas" }).click();
-  await expect(page.getByTestId("canvas-surface")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(picker).toBeVisible({ timeout: 15_000 });
+  return picker;
+}
+
+/**
+ * Create a project and land on the room asked for, the board by default —
+ * which is where a suite that says nothing else starts.
+ */
+export async function createProject(
+  page: Page,
+  directory: string,
+  name: string,
+  room: "Story" | "Canvas" | "Clip" = "Canvas",
+) {
+  const picker = await beginProject(page, directory, name);
+  await picker.getByTestId(`room-choice-${room.toLowerCase()}`).click();
+  const landing = {
+    Story: "story-page",
+    Canvas: "canvas-surface",
+    Clip: "clip-page",
+  }[room];
+  await expect(page.getByTestId(landing)).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("banner").getByText(name, { exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
 }
 
 /** Double-click empty canvas and add a node of the given kind. */

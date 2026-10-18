@@ -77,6 +77,37 @@
     "checkedLaterOne": "1 file changed on disk after the project was opened; the node using it shows the new material.",
     "checkedLaterMany": "{{count}} files changed on disk after the project was opened; the nodes using them show the new material."
   },
+  "roomPicker": {
+    "status": "Project created",
+    "title": "Where would you like to start?",
+    "subtitle": "“{{name}}” is ready. Pick a room to begin; you can switch anytime from the project menu in the top-left.",
+    "hoverHint": "Hover or focus a card to see when that room fits.",
+    "back": "Back to launcher",
+    "kept": "Project created. It is waiting in recent projects.",
+    "rooms": {
+      "story": {
+        "name": "Story",
+        "kicker": "Idea to film",
+        "line": "From one line of idea to a finished film",
+        "enter": "Enter Story",
+        "detail": "Best when you start with a sentence, a synopsis or a script. AI helps you break it into chapters, design characters and scenes, draw storyboards, add voices and music, and compose the film."
+      },
+      "canvas": {
+        "name": "Canvas",
+        "kicker": "Free-form generation",
+        "line": "Lay ideas out as nodes and wire your own flow",
+        "enter": "Enter Canvas",
+        "detail": "Best for experimenting and fine control. Text, images, audio and video are cards; draw wires to pass results on. Choose a model and tune the prompt per node — for a single image or clip, character studies, or a multi-step pipeline."
+      },
+      "clip": {
+        "name": "Clip",
+        "kicker": "Post-production",
+        "line": "Cut what you have into a film you can export",
+        "enter": "Enter Clip",
+        "detail": "Best when you already have picture and sound. Put files from the canvas, the story room or the asset shelf on a timeline, then cut, add transitions, subtitles, color and music, and export."
+      }
+    }
+  },
   "homeMenu": {
     "button": "Projects menu",
     "hint": "Projects, canvas, story, clip, and assets",

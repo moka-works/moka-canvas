@@ -14,6 +14,7 @@ import { useAppStore, type AppPhase } from "../stores/appStore";
 import { useProjectStore } from "../stores/projectStore";
 import { MissingAssetsDialog } from "./MissingAssetsDialog";
 import { ProjectDialog, type DialogMode } from "./ProjectDialog";
+import { RoomPickerDialog, type StartRoom } from "./RoomPickerDialog";
 
 /**
  * The rooms a recent project can be opened onto, in telling order.
@@ -56,6 +57,12 @@ export function LauncherPage() {
   const [dialog, setDialog] = useState<DialogMode | null>(null);
   // Which row stands open over its rooms, if any.
   const [roomsFor, setRoomsFor] = useState<string | null>(null);
+  // A project made here and not yet opened onto a room. Its self-check waits
+  // with it, so the room chosen is the one the check is answered for.
+  const [newProject, setNewProject] = useState<{
+    name: string;
+    selfCheck: SelfCheckReport;
+  } | null>(null);
   const [pendingCheck, setPendingCheck] = useState<{
     report: SelfCheckReport;
     onto: AppPhase;
@@ -106,6 +113,21 @@ export function LauncherPage() {
     [enterProject, t],
   );
 
+  /**
+   * Steps away from the room question, leaving the project made.
+   *
+   * The folder is already on disk and in the recent list, so stepping out is
+   * not a cancellation; the toast says where the project can be found rather
+   * than leaving an empty folder to be discovered later.
+   */
+  const dismissNewProject = useCallback(() => {
+    setNewProject(null);
+    useProjectStore.getState().close();
+    useAppStore.getState().setPhase("launcher");
+    refreshRecents();
+    useAppStore.getState().pushToast("info", t("app:roomPicker.kept"));
+  }, [refreshRecents, t]);
+
   const removeRecent = useCallback(
     async (id: string) => {
       try {
@@ -119,6 +141,8 @@ export function LauncherPage() {
   );
 
   const busy = phase === "opening" && pendingCheck === null;
+  // The launcher's own controls stand behind a question that is still open.
+  const locked = busy || newProject !== null;
 
   return (
     <div className="launcher">
@@ -155,7 +179,7 @@ export function LauncherPage() {
                     <button
                       aria-expanded={roomsOpen}
                       className="launcher-recent"
-                      disabled={busy}
+                      disabled={locked}
                       onClick={() => setRoomsFor(roomsOpen ? null : project.id)}
                       type="button"
                     >
@@ -183,7 +207,7 @@ export function LauncherPage() {
                         const Icon = ROOM_ICON[room];
                         return (
                           <button
-                            disabled={busy}
+                            disabled={locked}
                             key={room}
                             onClick={() =>
                               void openRecent(project.path, ROOM_PHASE[room])
@@ -206,17 +230,21 @@ export function LauncherPage() {
 
       <div className="launcher-actions">
         <button
-          disabled={busy}
+          disabled={locked}
           onClick={() => setDialog("create")}
           type="button"
         >
           {t("app:newProject")}
         </button>
-        <button disabled={busy} onClick={() => setDialog("open")} type="button">
+        <button
+          disabled={locked}
+          onClick={() => setDialog("open")}
+          type="button"
+        >
           {t("app:openProject")}
         </button>
         <button
-          disabled={busy}
+          disabled={locked}
           onClick={() => setDialog("import")}
           type="button"
         >
@@ -224,7 +252,7 @@ export function LauncherPage() {
         </button>
         <button
           data-testid="launcher-settings"
-          disabled={busy}
+          disabled={locked}
           onClick={() => useModelStore.getState().openSettings()}
           type="button"
         >
@@ -239,13 +267,34 @@ export function LauncherPage() {
           mode={dialog}
           nativePickers={mode === "tauri"}
           onClose={() => setDialog(null)}
-          // A project made here begins with a telling: its board holds nothing
-          // to look at yet, while the story room is where the work starts, so
-          // that is the room a new project opens onto. Opening and importing
-          // bring work of their own and land on the board as before.
-          onDone={(selfCheck) =>
-            enterProject(selfCheck, dialog === "create" ? "story" : "editing")
-          }
+          // A project made here is saved before it is opened. Which room it
+          // opens onto is a question of its own, asked over the launcher once
+          // the form is done. Opening and importing bring work of their own
+          // and land on the board as before.
+          onDone={(selfCheck) => {
+            if (dialog === "create") {
+              setDialog(null);
+              setNewProject({
+                name: useProjectStore.getState().moka?.metadata.name ?? "",
+                selfCheck,
+              });
+              return;
+            }
+            enterProject(selfCheck, "editing");
+          }}
+        />
+      )}
+
+      {newProject && (
+        <RoomPickerDialog
+          onChoose={(room: StartRoom) => {
+            if (!newProject) return;
+            const held = newProject;
+            setNewProject(null);
+            enterProject(held.selfCheck, ROOM_PHASE[room]);
+          }}
+          onDismiss={dismissNewProject}
+          projectName={newProject.name}
         />
       )}
 

@@ -41,7 +41,7 @@ View detail document: [https://moka-canvas.art](https://moka-canvas.art)
 
 ### 2. Create a project
 
-When it starts, press **New project** in the launcher: fill in a project name and choose a folder, and that is all it takes. A project is an ordinary folder — the canvas documents and the assets live inside it. A new project opens straight into the **Story module**; to begin from the canvas instead, switch to it with the projects menu in the top-left corner. The **Recent projects** list in the launcher also leads straight into any of the four modules.
+When it starts, press **New project** in the launcher: fill in a project name and choose a folder, and that is all it takes. A project is an ordinary folder — the canvas documents and the assets live inside it. Once it is created, choose whether to begin in **Story, Canvas or Clip**; you can switch anytime with the projects menu in the top-left corner. The **Recent projects** list in the launcher also leads straight into any of the four modules.
 
 ### 3. Connect a model
 
