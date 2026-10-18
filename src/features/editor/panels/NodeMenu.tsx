@@ -1,4 +1,4 @@
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ExtensionDefinition, NodeKind } from "../../../shared/domain";
 import { extensionPorts } from "../../../shared/domain";
@@ -36,9 +36,18 @@ const GROUPS: {
   },
 ];
 
+/** Space kept between a submenu and the window edge. */
+const EDGE_GAP = 8;
+
 /**
  * Quick-add menu: double-click on blank canvas, or the tail of a connection
  * dropped on blank space (then only compatible kinds are enabled).
+ *
+ * Installed extension nodes live one level down rather than in the first menu:
+ * a machine may carry any number of definitions, and a first menu that grows
+ * with every directory is a menu that has to be scrolled to find Text or Image.
+ * The submenu is bounded by the window and scrolls inside that bound, so the
+ * last definition is as reachable as the first.
  */
 export function NodeMenu() {
   const { t, i18n } = useTranslation();
@@ -52,12 +61,27 @@ export function NodeMenu() {
     menu?.y ?? 0,
   );
   const locale = (i18n.language || "en").split("-")[0];
+  const [extensionsOpen, setExtensionsOpen] = useState(false);
+  const [submenuPos, setSubmenuPos] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+  /** Whether the submenu was asked for with the keyboard and owes it focus. */
+  const focusOnOpen = useRef(false);
 
   // Read when the menu opens, so a directory added since the last opening is
   // there without a restart and without watching a machine-level directory.
   useEffect(() => {
     if (menu) void load();
   }, [menu, load]);
+
+  useEffect(() => {
+    if (menu) return;
+    setExtensionsOpen(false);
+    setSubmenuPos(null);
+  }, [menu]);
 
   useEffect(() => {
     if (!menu) return;
@@ -73,6 +97,36 @@ export function NodeMenu() {
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [menu, listRef]);
+
+  // The submenu opens beside its trigger, flips to the other side when the
+  // right edge would cut it off, and is pulled into the window vertically. Its
+  // own height is already bounded by the stylesheet, so what is measured here
+  // is what will actually be on screen.
+  useLayoutEffect(() => {
+    if (!extensionsOpen) return;
+    const trigger = triggerRef.current;
+    const submenu = submenuRef.current;
+    if (!trigger || !submenu) return;
+    const anchor = trigger.getBoundingClientRect();
+    const box = submenu.getBoundingClientRect();
+    let left = anchor.right + 2;
+    if (left + box.width > window.innerWidth - EDGE_GAP) {
+      left = anchor.left - box.width - 2;
+    }
+    setSubmenuPos({
+      left: Math.max(
+        EDGE_GAP,
+        Math.min(left, window.innerWidth - box.width - EDGE_GAP),
+      ),
+      top: Math.max(
+        EDGE_GAP,
+        Math.min(anchor.top - 6, window.innerHeight - box.height - EDGE_GAP),
+      ),
+    });
+    if (!focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    submenu.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+  }, [extensionsOpen, catalog, loading, error]);
 
   if (!menu) return null;
   const canvas = activeCanvas();
@@ -96,8 +150,41 @@ export function NodeMenu() {
       extensionPorts(definition, locale),
     );
 
+  const rootItems = () =>
+    listRef.current?.querySelectorAll<HTMLElement>(
+      ":scope > button:not(:disabled), :scope > .menu-submenu-entry > button:not(:disabled)",
+    );
+
   const onKeyDown = (event: React.KeyboardEvent) => {
-    const items = listRef.current?.querySelectorAll("button:not(:disabled)");
+    // Keys inside the submenu are its own: they move through its list and
+    // close it before the menu behind them hears anything.
+    if (
+      submenuRef.current &&
+      event.target instanceof Node &&
+      submenuRef.current.contains(event.target)
+    ) {
+      return;
+    }
+    if (event.key === "Escape" && extensionsOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      setExtensionsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key === "ArrowRight" && event.target === triggerRef.current) {
+      event.preventDefault();
+      focusOnOpen.current = true;
+      setExtensionsOpen(true);
+      return;
+    }
+    if (event.key === "ArrowLeft" && extensionsOpen) {
+      event.preventDefault();
+      setExtensionsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    const items = rootItems();
     if (!items || items.length === 0) return;
     const index = [...items].findIndex(
       (item) => item === document.activeElement,
@@ -109,6 +196,44 @@ export function NodeMenu() {
       event.preventDefault();
       (items[(index - 1 + items.length) % items.length] as HTMLElement).focus();
     }
+  };
+
+  const onSubmenuKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      setExtensionsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const items = submenuRef.current?.querySelectorAll<HTMLElement>(
+      "button:not(:disabled)",
+    );
+    if (!items || items.length === 0) return;
+    const index = [...items].findIndex(
+      (item) => item === document.activeElement,
+    );
+    const next =
+      event.key === "ArrowDown"
+        ? (index + 1) % items.length
+        : (index - 1 + items.length) % items.length;
+    event.preventDefault();
+    items[next].focus();
+    items[next].scrollIntoView({ block: "nearest" });
+  };
+
+  const openExtensions = () => {
+    if (extensionsOpen) {
+      // Hover may already have opened it; a click then means the reader wants
+      // to be in the list, not that they want it taken away again.
+      submenuRef.current
+        ?.querySelector<HTMLElement>("button:not(:disabled)")
+        ?.focus();
+      return;
+    }
+    setSubmenuPos(null);
+    setExtensionsOpen(true);
   };
 
   return (
@@ -145,49 +270,88 @@ export function NodeMenu() {
           })}
         </Fragment>
       ))}
-      <p className="menu-title">{t("editor:nodeMenu.extensionNodes")}</p>
-      {catalog?.nodes.map((definition) => (
+      <div className="menu-submenu-entry" role="none">
         <button
-          disabled={!extensionCompatible(definition)}
-          key={definition.id}
-          onClick={() => pickExtension(definition)}
+          aria-controls="extension-node-submenu"
+          aria-expanded={extensionsOpen}
+          aria-haspopup="menu"
+          className="menu-submenu-trigger"
+          onClick={openExtensions}
+          onPointerEnter={() => {
+            if (extensionsOpen) return;
+            openExtensions();
+          }}
+          ref={triggerRef}
           role="menuitem"
-          title={definition.description}
           type="button"
         >
-          {definition.labels[locale]?.trim() || definition.displayName}
+          <span>{t("editor:nodeMenu.extensionNodes")}</span>
+          <span aria-hidden="true" className="menu-chevron">
+            ▸
+          </span>
         </button>
-      ))}
-      {!loading && (catalog?.nodes.length ?? 0) === 0 && (
-        <p className="menu-note">{t("editor:nodeMenu.noExtensions")}</p>
-      )}
-      {error && <p className="menu-note menu-note-error">{error}</p>}
-      {catalog && catalog.problems.length > 0 && (
-        <details className="menu-problems">
-          <summary>
-            {t("editor:nodeMenu.extensionProblems", {
-              count: catalog.problems.length,
-            })}
-          </summary>
-          <ul>
-            {catalog.problems.map((problem) => (
-              <li key={`${problem.id}-${problem.code}`}>
-                <strong>{problem.id}</strong> {problem.message}
-              </li>
+        {extensionsOpen && (
+          <div
+            aria-label={t("editor:nodeMenu.extensionNodes")}
+            className="menu node-submenu"
+            id="extension-node-submenu"
+            onKeyDown={onSubmenuKeyDown}
+            ref={submenuRef}
+            role="menu"
+            style={{
+              left: submenuPos?.left ?? 0,
+              top: submenuPos?.top ?? 0,
+              visibility: submenuPos ? "visible" : "hidden",
+            }}
+          >
+            {catalog?.nodes.map((definition) => (
+              <button
+                disabled={!extensionCompatible(definition)}
+                key={definition.id}
+                onClick={() => pickExtension(definition)}
+                role="menuitem"
+                title={definition.description}
+                type="button"
+              >
+                {definition.labels[locale]?.trim() || definition.displayName}
+              </button>
             ))}
-          </ul>
-        </details>
-      )}
-      <button
-        disabled={loading}
-        onClick={() => void load(true)}
-        role="menuitem"
-        type="button"
-      >
-        {loading
-          ? t("editor:nodeMenu.rescanning")
-          : t("editor:nodeMenu.rescanExtensions")}
-      </button>
+            {loading && !catalog && (
+              <p className="menu-note">{t("editor:nodeMenu.rescanning")}</p>
+            )}
+            {!loading && (catalog?.nodes.length ?? 0) === 0 && (
+              <p className="menu-note">{t("editor:nodeMenu.noExtensions")}</p>
+            )}
+            {error && <p className="menu-note menu-note-error">{error}</p>}
+            {catalog && catalog.problems.length > 0 && (
+              <details className="menu-problems">
+                <summary>
+                  {t("editor:nodeMenu.extensionProblems", {
+                    count: catalog.problems.length,
+                  })}
+                </summary>
+                <ul>
+                  {catalog.problems.map((problem) => (
+                    <li key={`${problem.id}-${problem.code}`}>
+                      <strong>{problem.id}</strong> {problem.message}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            <button
+              disabled={loading}
+              onClick={() => void load(true)}
+              role="menuitem"
+              type="button"
+            >
+              {loading
+                ? t("editor:nodeMenu.rescanning")
+                : t("editor:nodeMenu.rescanExtensions")}
+            </button>
+          </div>
+        )}
+      </div>
       <p className="menu-title">{t("editor:nodeMenu.fromTheShelf")}</p>
       <button
         // A menu opened to finish a connection promises the node it makes will

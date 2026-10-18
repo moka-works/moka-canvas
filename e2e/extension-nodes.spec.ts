@@ -95,7 +95,11 @@ test("an installed extension node expands a text through its own model slot", as
   // is offered without a restart.
   await page.mouse.dblclick(blank.x, blank.y);
   const menu = page.getByRole("menu", { name: "Add node" });
-  await menu
+  // Definitions live one level down so a growing directory cannot stretch the
+  // first menu past the window.
+  await menu.getByRole("menuitem", { name: "Extension nodes" }).click();
+  const submenu = page.getByRole("menu", { name: "Extension nodes" });
+  await submenu
     .getByRole("menuitem", { name: "Expand image prompt", exact: true })
     .click({ timeout: 10_000 });
 

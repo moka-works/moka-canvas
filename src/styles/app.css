@@ -2684,6 +2684,66 @@ button.danger:hover:not(:disabled) {
   padding: 6px 8px;
 }
 
+/* A menu entry that opens a second level, with its chevron on the far side. */
+.menu-submenu-entry {
+  display: grid;
+  gap: 2px;
+}
+
+.menu-submenu-trigger {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.menu-chevron {
+  color: var(--muted);
+  flex: none;
+  font-size: 10px;
+}
+
+.menu-submenu-trigger:hover:not(:disabled) .menu-chevron {
+  color: var(--on-primary);
+}
+
+/* A second-level menu is bounded by the window and scrolls inside that bound,
+   so a growing definition directory cannot push the last entry off screen. */
+.node-submenu {
+  max-height: calc(100vh - 16px);
+  max-width: min(340px, calc(100vw - 16px));
+  min-width: 200px;
+  overscroll-behavior: contain;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  z-index: 61;
+}
+
+.menu-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 2px 8px;
+}
+
+.menu-note-error {
+  color: var(--danger);
+}
+
+.menu-problems {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 2px 8px;
+}
+
+.menu-problems summary {
+  cursor: pointer;
+}
+
+.menu-problems ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
 .rename-overlay {
   position: absolute;
   z-index: 30;
