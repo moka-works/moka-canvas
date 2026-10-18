@@ -1,12 +1,16 @@
 import { Fragment, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import type { NodeKind } from "../../../shared/domain";
+import type { ExtensionDefinition, NodeKind } from "../../../shared/domain";
+import { extensionPorts } from "../../../shared/domain";
 import {
+  addExtensionNodeAt,
   addNodeAt,
   kindAcceptsConnection,
+  portsAcceptConnection,
   activeCanvas,
 } from "../interactions/actions";
 import { useEditorStore } from "../stores/editorStore";
+import { useExtensionStore } from "../stores/extensionStore";
 import { useClampedMenuPosition } from "./useClampedMenuPosition";
 
 const GROUPS: {
@@ -37,12 +41,23 @@ const GROUPS: {
  * dropped on blank space (then only compatible kinds are enabled).
  */
 export function NodeMenu() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const menu = useEditorStore((state) => state.nodeMenu);
+  const catalog = useExtensionStore((state) => state.catalog);
+  const loading = useExtensionStore((state) => state.loading);
+  const error = useExtensionStore((state) => state.error);
+  const load = useExtensionStore((state) => state.load);
   const { ref: listRef, pos } = useClampedMenuPosition(
     menu?.x ?? 0,
     menu?.y ?? 0,
   );
+  const locale = (i18n.language || "en").split("-")[0];
+
+  // Read when the menu opens, so a directory added since the last opening is
+  // there without a restart and without watching a machine-level directory.
+  useEffect(() => {
+    if (menu) void load();
+  }, [menu, load]);
 
   useEffect(() => {
     if (!menu) return;
@@ -66,6 +81,20 @@ export function NodeMenu() {
     useEditorStore.getState().closeNodeMenu();
     addNodeAt(menu.world, kind, menu.connectFrom);
   };
+
+  const pickExtension = (definition: ExtensionDefinition) => {
+    useEditorStore.getState().closeNodeMenu();
+    addExtensionNodeAt(definition, menu.world, menu.connectFrom);
+  };
+
+  const extensionCompatible = (definition: ExtensionDefinition) =>
+    menu.connectFrom === null ||
+    canvas === null ||
+    portsAcceptConnection(
+      canvas,
+      menu.connectFrom,
+      extensionPorts(definition, locale),
+    );
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const items = listRef.current?.querySelectorAll("button:not(:disabled)");
@@ -116,6 +145,49 @@ export function NodeMenu() {
           })}
         </Fragment>
       ))}
+      <p className="menu-title">{t("editor:nodeMenu.extensionNodes")}</p>
+      {catalog?.nodes.map((definition) => (
+        <button
+          disabled={!extensionCompatible(definition)}
+          key={definition.id}
+          onClick={() => pickExtension(definition)}
+          role="menuitem"
+          title={definition.description}
+          type="button"
+        >
+          {definition.labels[locale]?.trim() || definition.displayName}
+        </button>
+      ))}
+      {!loading && (catalog?.nodes.length ?? 0) === 0 && (
+        <p className="menu-note">{t("editor:nodeMenu.noExtensions")}</p>
+      )}
+      {error && <p className="menu-note menu-note-error">{error}</p>}
+      {catalog && catalog.problems.length > 0 && (
+        <details className="menu-problems">
+          <summary>
+            {t("editor:nodeMenu.extensionProblems", {
+              count: catalog.problems.length,
+            })}
+          </summary>
+          <ul>
+            {catalog.problems.map((problem) => (
+              <li key={`${problem.id}-${problem.code}`}>
+                <strong>{problem.id}</strong> {problem.message}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <button
+        disabled={loading}
+        onClick={() => void load(true)}
+        role="menuitem"
+        type="button"
+      >
+        {loading
+          ? t("editor:nodeMenu.rescanning")
+          : t("editor:nodeMenu.rescanExtensions")}
+      </button>
       <p className="menu-title">{t("editor:nodeMenu.fromTheShelf")}</p>
       <button
         // A menu opened to finish a connection promises the node it makes will

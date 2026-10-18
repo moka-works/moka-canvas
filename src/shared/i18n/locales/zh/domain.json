@@ -29,7 +29,8 @@
     "image": "图像",
     "operation": "操作",
     "text": "文本",
-    "video": "视频"
+    "video": "视频",
+    "extension": "扩展节点"
   },
   "port": {
     "artifact": "产物",

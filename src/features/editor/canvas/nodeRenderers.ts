@@ -137,6 +137,7 @@ const KIND_GLYPH: Record<NodeKind, string> = {
   operation: "⚙",
   group: "▦",
   export: "⇪",
+  extension: "✦",
 };
 
 function summarize(node: WorkflowNode): string {
@@ -166,6 +167,15 @@ function summarize(node: WorkflowNode): string {
     }
     case "export":
       return String(data.format ?? "export").toUpperCase();
+    case "extension": {
+      const slots = Array.isArray(data.resultSlots) ? data.resultSlots : [];
+      const primary = slots[0] as
+        { text?: string; assetId?: string } | undefined;
+      if (primary?.text?.trim()) return primary.text.slice(0, 120);
+      if (primary?.assetId) return i18n.t("editor:canvas.assetLinked");
+      const state = data.extension as { extensionId?: string } | undefined;
+      return state?.extensionId ?? "extension";
+    }
   }
 }
 
@@ -249,7 +259,11 @@ function syncMedia(
   view.media.bars = [];
   if (!media) return;
 
-  if (media.state === "ready" && node.kind === "audio") {
+  if (
+    media.state === "ready" &&
+    (node.kind === "audio" ||
+      (node.kind === "extension" && media.entry?.mime?.startsWith("audio/")))
+  ) {
     const accent = canvasTheme.kindAccent.audio;
     view.media.bars = waveformPeaks(media.entry?.sha256).map((peak) => {
       const bar = new Rect({

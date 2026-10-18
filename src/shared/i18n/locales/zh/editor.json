@@ -404,7 +404,12 @@
     "generationNodes": "生成节点",
     "structure": "结构",
     "fromTheShelf": "从素材架",
-    "fromAssets": "从素材…"
+    "fromAssets": "从素材…",
+    "extensionNodes": "扩展节点",
+    "noExtensions": "当前机器还没有安装扩展节点。把定义目录放到运行服务器的 nodes/ 下即可出现。",
+    "extensionProblems": "有 {{count}} 个定义无法读取",
+    "rescanExtensions": "重新读取定义",
+    "rescanning": "正在读取定义…"
   },
   "nodeBar": {
     "aria": "{{name}} 的图片工具",
@@ -832,7 +837,9 @@
     "clearGeneration": "清除生成设置",
     "showThisResult": "显示此结果",
     "moveNodes": "移动节点",
-    "resizeNode": "调整节点尺寸"
+    "resizeNode": "调整节点尺寸",
+    "configureExtension": "配置扩展节点",
+    "refreshExtension": "刷新扩展节点"
   },
   "shortcuts": {
     "groupEditing": "编辑",
@@ -887,5 +894,35 @@
     "localProcessUnreachable": "无法连接本地进程",
     "saveConflict": "项目已在别处被修改——请重新加载，或放弃这次更改",
     "stillSaving": "更改仍在保存中——请稍后重试"
+  },
+  "extension": {
+    "title": "扩展节点",
+    "definition": "定义",
+    "statusLabel": "状态",
+    "state": {
+      "loading": "正在读取定义…",
+      "ready": "可用",
+      "missing": "未安装",
+      "changed": "契约已变更",
+      "version": "契约版本已变更"
+    },
+    "loading": "正在读取已安装的定义…",
+    "missingNote": "当前机器上没有安装定义「{{id}}」。节点会保留端口与上次输出，但在定义放回之前无法运行。",
+    "changedNote": "已安装的定义与插入节点时的契约不一致。刷新后节点会采用当前定义的端口；被移除端口的输出会被丢弃。",
+    "refresh": "按当前定义刷新",
+    "models": "模型",
+    "noModels": "该定义不需要模型。",
+    "bindRequired": "选择模型（必填）",
+    "unbound": "未绑定",
+    "parameters": "参数",
+    "chooseOption": "请选择",
+    "outputs": "输出",
+    "noValues": "还没有输出",
+    "emptyText": "空文本",
+    "missingAsset": "素材缺失",
+    "logs": "日志",
+    "calls": "模型调用",
+    "callFailed": "失败：{{error}}",
+    "callProduced": "{{count}} 个文件"
   }
 }

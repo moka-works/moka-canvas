@@ -212,6 +212,7 @@
     "storyShotDurationOutOfRange": "某一格时长超出范围",
     "storyTimelineMissing": "故事指向的时间线 {{id}} 已不存在",
     "storyLimitReached": "项目里的故事数量超过上限",
-    "duplicateStoryId": "重复的故事 id {{id}}"
+    "duplicateStoryId": "重复的故事 id {{id}}",
+    "extensionInvalid": "扩展节点“{{title}}”的数据无效：{{reason}}"
   }
 }

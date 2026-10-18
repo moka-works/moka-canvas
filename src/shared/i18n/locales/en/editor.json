@@ -404,7 +404,12 @@
     "generationNodes": "Generation nodes",
     "structure": "Structure",
     "fromTheShelf": "From the shelf",
-    "fromAssets": "From assets…"
+    "fromAssets": "From assets…",
+    "extensionNodes": "Extension nodes",
+    "noExtensions": "No extension nodes are installed. Put a definition directory under nodes/ on the machine running the app.",
+    "extensionProblems": "{{count}} definition(s) could not be read",
+    "rescanExtensions": "Rescan definitions",
+    "rescanning": "Reading definitions…"
   },
   "nodeBar": {
     "aria": "Picture tools for {{name}}",
@@ -832,7 +837,9 @@
     "clearGeneration": "Clear generation",
     "showThisResult": "Show this result",
     "moveNodes": "Move nodes",
-    "resizeNode": "Resize node"
+    "resizeNode": "Resize node",
+    "configureExtension": "Configure extension node",
+    "refreshExtension": "Refresh extension node"
   },
   "shortcuts": {
     "groupEditing": "Editing",
@@ -887,5 +894,35 @@
     "panelSideColumnName": "the column beside the canvas",
     "saveConflict": "The project changed elsewhere — reload it, or give this change up",
     "stillSaving": "Changes are still being saved — try again in a moment"
+  },
+  "extension": {
+    "title": "Extension node",
+    "definition": "Definition",
+    "statusLabel": "Status",
+    "state": {
+      "loading": "Reading definitions…",
+      "ready": "Ready",
+      "missing": "Not installed",
+      "changed": "Contract changed",
+      "version": "Contract version changed"
+    },
+    "loading": "Reading the installed definitions…",
+    "missingNote": "The definition \"{{id}}\" is not installed on this machine. The node keeps its ports and its last output, but it cannot run until the definition is put back.",
+    "changedNote": "The installed definition no longer matches what this node was inserted against. Refresh the node to use the definition as it stands now; its ports and any outputs for removed ports will be replaced.",
+    "refresh": "Refresh from definition",
+    "models": "Models",
+    "noModels": "This definition asks no model of its own.",
+    "bindRequired": "Choose a model (required)",
+    "unbound": "Not bound",
+    "parameters": "Parameters",
+    "chooseOption": "Choose one",
+    "outputs": "Outputs",
+    "noValues": "No value yet",
+    "emptyText": "Empty text",
+    "missingAsset": "Missing asset",
+    "logs": "Logs",
+    "calls": "Model calls",
+    "callFailed": "failed: {{error}}",
+    "callProduced": "{{count}} file(s)"
   }
 }

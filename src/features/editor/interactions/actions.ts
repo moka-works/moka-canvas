@@ -6,8 +6,12 @@ import {
   MAX_TEXT_CONTENT_LENGTH,
   MOKA_FRAGMENT_MIME,
   assetHolders,
+  createExtensionNode,
   createNode,
   defaultGenerationSpec,
+  extensionPorts,
+  type ExtensionDefinition,
+  type ExtensionNodeData,
   elementOf,
   findNode,
   findResource,
@@ -834,11 +838,24 @@ export function kindAcceptsConnection(
   source: PortRef,
   kind: NodeKind,
 ): boolean {
+  if (kind === "extension") return false;
+  const candidate = createNode(kind, { x: 0, y: 0 });
+  return portsAcceptConnection(canvas, source, candidate.ports);
+}
+
+/**
+ * The same question asked of ports rather than of a kind, for a definition
+ * whose inputs are not in the static table.
+ */
+export function portsAcceptConnection(
+  canvas: CanvasDocument,
+  source: PortRef,
+  ports: WorkflowNode["ports"],
+): boolean {
   const sourceNode = findNode(canvas, source.nodeId);
   const sourcePort = sourceNode?.ports.find((p) => p.id === source.portId);
   if (!sourcePort) return false;
-  const candidate = createNode(kind, { x: 0, y: 0 });
-  return candidate.ports.some(
+  return ports.some(
     (p) =>
       p.direction === "input" &&
       portTypesIntersect(sourcePort.dataTypes, p.dataTypes),
@@ -2232,24 +2249,12 @@ export async function dropFileOnNode(
   }
 }
 
-export function addNodeAt(
-  world: Point,
-  kind: NodeKind,
+/** Puts a built node on the canvas, wired to the port a menu was opened from. */
+function insertNode(
+  canvas: CanvasDocument,
+  node: WorkflowNode,
   connectFrom: PortRef | null,
-  textContent?: string,
 ): NodeId | null {
-  const canvas = activeCanvas();
-  if (!canvas) return null;
-  const node = createNode(
-    kind,
-    unoccupiedPosition(canvas, {
-      x: world.x - NODE_DROP_OFFSET.x,
-      y: world.y - NODE_DROP_OFFSET.y,
-    }),
-  );
-  if (textContent !== undefined && node.kind === "text") {
-    node.data = { ...node.data, content: textContent };
-  }
   const commands: DocumentCommand[] = [
     { type: "addNode", canvasId: canvas.id, node },
   ];
@@ -2299,6 +2304,52 @@ export function addNodeAt(
       : i18n.t("editor:interactions.addedOne", { title: node.title }),
   );
   return node.id;
+}
+
+export function addNodeAt(
+  world: Point,
+  kind: NodeKind,
+  connectFrom: PortRef | null,
+  textContent?: string,
+): NodeId | null {
+  const canvas = activeCanvas();
+  if (!canvas) return null;
+  // An extension node must come from an installed definition; the generic
+  // factory has no ports to give it.
+  if (kind === "extension") return null;
+  const node = createNode(
+    kind,
+    unoccupiedPosition(canvas, {
+      x: world.x - NODE_DROP_OFFSET.x,
+      y: world.y - NODE_DROP_OFFSET.y,
+    }),
+  );
+  if (textContent !== undefined && node.kind === "text") {
+    node.data = { ...node.data, content: textContent };
+  }
+  return insertNode(canvas, node, connectFrom);
+}
+
+/**
+ * Inserts a node from an installed definition. The ports are copied from the
+ * definition now; what the definition says later does not rewrite this node.
+ */
+export function addExtensionNodeAt(
+  definition: ExtensionDefinition,
+  world: Point,
+  connectFrom: PortRef | null,
+): NodeId | null {
+  const canvas = activeCanvas();
+  if (!canvas) return null;
+  const node = createExtensionNode(
+    definition,
+    unoccupiedPosition(canvas, {
+      x: world.x - NODE_DROP_OFFSET.x,
+      y: world.y - NODE_DROP_OFFSET.y,
+    }),
+    (i18n.language || "en").split("-")[0],
+  );
+  return insertNode(canvas, node, connectFrom);
 }
 
 /**
@@ -2388,6 +2439,119 @@ function asksTheSame(
  * Bounds may travel with the spec: asking a node for a shape and giving the node
  * that shape are one action, and undoing it should give back both.
  */
+/** Binds one of an extension node's slots to a model configuration. */
+export function setExtensionBinding(
+  canvasId: CanvasId,
+  nodeId: NodeId,
+  slot: string,
+  model: string | null,
+) {
+  const { moka } = useProjectStore.getState();
+  const canvas = moka?.canvas.find((entry) => entry.id === canvasId);
+  const node = canvas ? findNode(canvas, nodeId) : undefined;
+  if (!canvas || !node || node.kind !== "extension") return;
+  const data = node.data as ExtensionNodeData;
+  if (!data.extension) return;
+  const bindings = { ...data.extension.bindings };
+  if (model && model.trim()) bindings[slot] = model;
+  else delete bindings[slot];
+  execute(i18n.t("editor:history.configureExtension"), [
+    {
+      type: "updateNode",
+      canvasId,
+      nodeId,
+      patch: {
+        data: { ...data, extension: { ...data.extension, bindings } },
+      },
+    },
+  ]);
+}
+
+/** Sets one of an extension node's declared parameters. */
+export function setExtensionParameter(
+  canvasId: CanvasId,
+  nodeId: NodeId,
+  key: string,
+  value: unknown,
+) {
+  const { moka } = useProjectStore.getState();
+  const canvas = moka?.canvas.find((entry) => entry.id === canvasId);
+  const node = canvas ? findNode(canvas, nodeId) : undefined;
+  if (!canvas || !node || node.kind !== "extension") return;
+  const data = node.data as ExtensionNodeData;
+  execute(i18n.t("editor:history.configureExtension"), [
+    {
+      type: "updateNode",
+      canvasId,
+      nodeId,
+      patch: {
+        data: { ...data, parameters: { ...data.parameters, [key]: value } },
+      },
+    },
+  ]);
+}
+
+/**
+ * Takes a node onto the definition as it stands now.
+ *
+ * What the contract hash told a run to refuse becomes usable only when the
+ * reader says so. Ports are replaced by the definition's; outputs and result
+ * slots for ports that no longer exist are dropped; bindings for slots the
+ * definition no longer declares are dropped. Parameters stay whole, including
+ * keys the definition currently does not declare, so a temporarily removed
+ * parameter does not lose what was typed.
+ */
+export function refreshExtensionNode(
+  canvasId: CanvasId,
+  nodeId: NodeId,
+  definition: ExtensionDefinition,
+) {
+  const { moka } = useProjectStore.getState();
+  const canvas = moka?.canvas.find((entry) => entry.id === canvasId);
+  const node = canvas ? findNode(canvas, nodeId) : undefined;
+  if (!canvas || !node || node.kind !== "extension") return;
+  const data = node.data as ExtensionNodeData;
+  if (!data.extension) return;
+  const locale = (i18n.language || "en").split("-")[0];
+  const ports = extensionPorts(definition, locale);
+  const outputPorts = new Set(definition.outputs.map((port) => port.id));
+  const outputs = Object.fromEntries(
+    Object.entries(data.extension.outputs ?? {}).filter(([port]) =>
+      outputPorts.has(port),
+    ),
+  );
+  const slots = (data.resultSlots ?? []).filter((slot) =>
+    outputPorts.has(slot.id.split(":")[0]),
+  );
+  const bindings = Object.fromEntries(
+    Object.entries(data.extension.bindings).filter(([slot]) =>
+      definition.models.some((model) => model.id === slot),
+    ),
+  );
+  execute(i18n.t("editor:history.refreshExtension"), [
+    {
+      type: "updateNode",
+      canvasId,
+      nodeId,
+      patch: {
+        data: {
+          ...data,
+          extension: {
+            ...data.extension,
+            definitionVersion: definition.version,
+            apiVersion: definition.apiVersion,
+            contractHash: definition.contractHash,
+            bindings,
+            outputs,
+          },
+          resultSlots: slots,
+        },
+        ports,
+      },
+    },
+  ]);
+}
+
 export function setNodeGeneration(
   canvasId: CanvasId,
   nodeId: NodeId,

@@ -124,13 +124,39 @@ export function mediaInfoForNode(
   resources: ReadonlyMap<AssetId, ResourceEntry>,
   issues: ReadonlyMap<AssetId, MediaState>,
 ): MediaCardInfo | null {
-  if (node.kind !== "image" && node.kind !== "audio" && node.kind !== "video") {
+  let kind: "image" | "audio" | "video";
+  let assetId: AssetId | undefined;
+  const data = node.data as {
+    assetId?: AssetId;
+    posterAssetId?: AssetId;
+    resultSlots?: { assetId?: AssetId }[];
+    extension?: { outputs?: Record<string, { assetId?: AssetId }[]> };
+  };
+  if (node.kind === "image" || node.kind === "audio" || node.kind === "video") {
+    kind = node.kind;
+    assetId = data.assetId;
+  } else if (node.kind === "extension") {
+    // The card shows the first file the last answer left, by the slot list
+    // first and the port snapshot second. A node that produced only words has
+    // no file to draw and keeps its text summary.
+    assetId =
+      data.resultSlots?.find((slot) => slot.assetId)?.assetId ??
+      Object.values(data.extension?.outputs ?? {})
+        .flat()
+        .find((value) => value.assetId)?.assetId;
+    if (!assetId) return null;
+    const mime = resources.get(assetId)?.mime ?? "";
+    kind = mime.startsWith("video/")
+      ? "video"
+      : mime.startsWith("audio/")
+        ? "audio"
+        : "image";
+  } else {
     return null;
   }
-  const data = node.data as { assetId?: AssetId; posterAssetId?: AssetId };
-  if (!data.assetId) return null;
-  const issue = issues.get(data.assetId);
-  const entry = resources.get(data.assetId);
+  if (!assetId) return null;
+  const issue = issues.get(assetId);
+  const entry = resources.get(assetId);
   if (issue || !entry) {
     return {
       state: issue ?? "missing",
@@ -139,20 +165,20 @@ export function mediaInfoForNode(
     };
   }
   const posterId =
-    node.kind === "video"
+    kind === "video"
       ? (data.posterAssetId ?? entry.probe?.posterAssetId)
       : undefined;
   return {
     state: "ready",
     url:
-      node.kind === "video"
+      kind === "video"
         ? posterId
           ? assetThumbUrl(posterId, CARD_THUMB_WIDTH)
           : undefined
-        : assetThumbUrl(data.assetId, CARD_THUMB_WIDTH),
+        : assetThumbUrl(assetId, CARD_THUMB_WIDTH),
     // What a video card plays is the film, not a picture of it: the element
     // gets the file itself.
-    playable: node.kind === "video" ? assetUrl(data.assetId) : undefined,
+    playable: kind === "video" ? assetUrl(assetId) : undefined,
     label: labelFor(entry),
     entry,
   };

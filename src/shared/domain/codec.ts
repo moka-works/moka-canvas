@@ -1,6 +1,7 @@
 import { Double, Long, deserialize, serialize } from "bson";
 import {
   CANVAS_SCHEMA_VERSION,
+  CANVAS_SCHEMA_VERSION_MIN,
   MOKA_FILE_VERSION,
   MOKA_MAGIC,
   PROJECT_ASSET_CATEGORIES,
@@ -155,6 +156,12 @@ function encodeNodeData(kind: string, data: NodeData): Record<string, unknown> {
       put("operationType");
       put("parameters");
       put("executorKey");
+      break;
+    case "extension":
+      // The same order the Rust NodeData declares: extension state sits after
+      // the executor key and before the common result fields.
+      put("parameters");
+      put("extension");
       break;
     case "group":
       put("color");
@@ -945,20 +952,130 @@ function decodeSessions(value: unknown): AssistantSession[] | undefined {
 }
 
 function normalizeCanvas(canvas: CanvasDocument): CanvasDocument {
-  // One schema version is read. An older document would have to be read
-  // through rules this build no longer carries, and rewriting it would destroy
-  // what an older build still understands; a newer one says the app was rolled
-  // back over a document this build cannot know.
-  if (canvas.schemaVersion !== CANVAS_SCHEMA_VERSION) {
+  // The current schema and the one before it are read. A v3 canvas holds no
+  // extension node, so upgrading is one number; anything older would need
+  // rules this build no longer carries, and anything newer says the app was
+  // rolled back over a document this build cannot know.
+  if (
+    canvas.schemaVersion < CANVAS_SCHEMA_VERSION_MIN ||
+    canvas.schemaVersion > CANVAS_SCHEMA_VERSION
+  ) {
     throw new MokaCodecError(
       "MOKA_VERSION_UNSUPPORTED",
-      `canvas.moka schema version ${canvas.schemaVersion} is not supported (expected ${CANVAS_SCHEMA_VERSION})`,
+      `canvas.moka schema version ${canvas.schemaVersion} is not supported (expected ${CANVAS_SCHEMA_VERSION_MIN} or ${CANVAS_SCHEMA_VERSION})`,
     );
   }
+  canvas.schemaVersion = CANVAS_SCHEMA_VERSION;
   for (const node of canvas.nodes) {
     node.ports = reconcilePorts(node.kind, node.ports);
+    if (node.kind === "extension") {
+      decodeExtensionData(node.data as Record<string, unknown>);
+    }
   }
   return canvas;
+}
+
+/**
+ * Reads an extension node's own data rather than trusting the document.
+ *
+ * Structural damage is refused here; a semantic question — a binding to a
+ * model this machine no longer has, a port the definition dropped — belongs to
+ * the panel, which can say what to repair. What a cast would let through is a
+ * node with no definition id, a state that is not an object, or bindings whose
+ * values are not strings.
+ */
+function decodeExtensionData(data: Record<string, unknown>): void {
+  const fail = (field: string, why: string): never => {
+    throw new MokaCodecError(
+      "MOKA_BSON_INVALID",
+      `extension node data.${field} ${why}`,
+    );
+  };
+  const parameters = data.parameters;
+  if (
+    parameters !== undefined &&
+    (typeof parameters !== "object" ||
+      parameters === null ||
+      Array.isArray(parameters))
+  ) {
+    fail("parameters", "must be an object");
+  }
+  const extension = data.extension;
+  if (
+    typeof extension !== "object" ||
+    extension === null ||
+    Array.isArray(extension)
+  ) {
+    fail("extension", "must be an object");
+  }
+  const state = extension as Record<string, unknown>;
+  if (
+    typeof state.extensionId !== "string" ||
+    state.extensionId.trim() === ""
+  ) {
+    fail("extension.extensionId", "must be a non-empty string");
+  }
+  if (
+    typeof state.definitionVersion !== "number" ||
+    typeof state.apiVersion !== "number"
+  ) {
+    fail("extension", "must carry numeric versions");
+  }
+  if (
+    typeof state.contractHash !== "string" ||
+    state.contractHash.trim() === ""
+  ) {
+    fail("extension.contractHash", "must be a non-empty string");
+  }
+  if (
+    typeof state.bindings !== "object" ||
+    state.bindings === null ||
+    Array.isArray(state.bindings) ||
+    Object.values(state.bindings).some((value) => typeof value !== "string")
+  ) {
+    fail("extension.bindings", "must map slot ids to model configuration ids");
+  }
+  if (state.outputs !== undefined) {
+    if (
+      typeof state.outputs !== "object" ||
+      state.outputs === null ||
+      Array.isArray(state.outputs)
+    ) {
+      fail("extension.outputs", "must map port ids to values");
+    }
+    for (const [port, values] of Object.entries(
+      state.outputs as Record<string, unknown>,
+    )) {
+      if (!Array.isArray(values)) {
+        fail(`extension.outputs.${port}`, "must be a list");
+      }
+      for (const value of values as unknown[]) {
+        if (
+          typeof value !== "object" ||
+          value === null ||
+          Array.isArray(value)
+        ) {
+          fail(
+            `extension.outputs.${port}`,
+            "holds a value that is not an object",
+          );
+        }
+        const held = value as Record<string, unknown>;
+        if (typeof held.type !== "string") {
+          fail(`extension.outputs.${port}`, "holds a value with no type");
+        }
+        if (held.type === "text" && typeof held.text !== "string") {
+          fail(`extension.outputs.${port}`, "holds a text value with no words");
+        }
+        if (held.type !== "text" && typeof held.assetId !== "string") {
+          fail(
+            `extension.outputs.${port}`,
+            "holds a media value with no asset",
+          );
+        }
+      }
+    }
+  }
 }
 
 function decodeCanvas(value: unknown): CanvasDocument {

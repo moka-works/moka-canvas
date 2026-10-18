@@ -4,6 +4,7 @@ import { isApiError, runsApi } from "../../../api";
 import type {
   AssetCategory,
   CanvasId,
+  ExtensionLogRecord,
   NodeId,
   ResourceEntry,
   RunId,
@@ -106,6 +107,11 @@ interface RunState {
    * ends, which is why nothing decides from here.
    */
   streamText: Record<RunId, Record<NodeId, string>>;
+  /**
+   * What an extension script has written so far, by run and then by node.
+   * The record replaces it when the run ends, exactly as streamed words are.
+   */
+  streamLogs: Record<RunId, Record<NodeId, ExtensionLogRecord[]>>;
   load: () => Promise<void>;
   start: (
     canvasId: CanvasId,
@@ -306,10 +312,14 @@ export const useRunStore = create<RunState>()((set, get) => {
    */
   const adopt = async (runId: RunId) => {
     set((state) => {
-      if (!(runId in state.streamText)) return state;
+      if (!(runId in state.streamText) && !(runId in state.streamLogs)) {
+        return state;
+      }
       const streamText = { ...state.streamText };
       delete streamText[runId];
-      return { streamText };
+      const streamLogs = { ...state.streamLogs };
+      delete streamLogs[runId];
+      return { streamText, streamLogs };
     });
     try {
       const record = await runsApi.get(runId);
@@ -335,6 +345,7 @@ export const useRunStore = create<RunState>()((set, get) => {
     error: null,
     lastIssues: [],
     streamText: {},
+    streamLogs: {},
 
     async load() {
       if (get().loading) return;
@@ -423,6 +434,26 @@ export const useRunStore = create<RunState>()((set, get) => {
               },
             };
           }),
+        onLog: ({ nodeId, level, message }) =>
+          set((state) => {
+            const held = state.streamLogs[runId] ?? {};
+            const line: ExtensionLogRecord = {
+              level,
+              message,
+              at: new Date().toISOString(),
+            };
+            const lines = [...(held[nodeId] ?? []), line];
+            // A display shortcut, not the record: a runaway script's logs are
+            // bounded by the server, and the panel never needs more than the
+            // tail of them before the record arrives.
+            if (lines.length > 500) lines.splice(0, lines.length - 500);
+            return {
+              streamLogs: {
+                ...state.streamLogs,
+                [runId]: { ...held, [nodeId]: lines },
+              },
+            };
+          }),
         onEnded: () => {
           listening.delete(runId);
           void adopt(runId);
@@ -456,6 +487,7 @@ export const useRunStore = create<RunState>()((set, get) => {
         error: null,
         lastIssues: [],
         streamText: {},
+        streamLogs: {},
       });
     },
   };
@@ -703,6 +735,24 @@ export function useNodeStreamText(nodeId: NodeId): string {
     const found = runFor(state.byNode, nodeId);
     if (!found || !isActive(found.run.status)) return "";
     return state.streamText[found.run.id]?.[nodeId] ?? "";
+  });
+}
+
+const NO_LOGS: ExtensionLogRecord[] = [];
+
+/**
+ * What an extension step has written: the live lines while it runs, and the
+ * record's own lines once it has ended. The record wins, because a broken
+ * stream must not make a finished step look as though it said nothing.
+ */
+export function useNodeExtensionLogs(nodeId: NodeId): ExtensionLogRecord[] {
+  return useRunStore((state) => {
+    const found = runFor(state.byNode, nodeId);
+    if (!found) return NO_LOGS;
+    if (isActive(found.run.status)) {
+      return state.streamLogs[found.run.id]?.[nodeId] ?? NO_LOGS;
+    }
+    return found.step.extensionLogs ?? NO_LOGS;
   });
 }
 

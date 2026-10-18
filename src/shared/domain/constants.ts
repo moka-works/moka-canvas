@@ -8,9 +8,13 @@ import type {
 
 export const MOKA_MAGIC = [0x4d, 0x4f, 0x4b, 0x41] as const;
 export const MOKA_FILE_VERSION = "v1" as const;
-// Version 3 split the audio capability into speech and music; the codec
-// rewrites a v2 canvas's generation specs on decode.
-export const CANVAS_SCHEMA_VERSION = 3;
+// Version 4 added extension nodes. Version 3 is still read and is upgraded to
+// 4 on the way in: a v3 canvas holds no extension node, so nothing has to be
+// rewritten but the number. Version 3 split the audio capability into speech
+// and music; the codec rewrites a v2 canvas's generation specs on decode.
+export const CANVAS_SCHEMA_VERSION = 4;
+/** The previous canvas schema this build still reads. */
+export const CANVAS_SCHEMA_VERSION_MIN = 3;
 export const PACKAGE_FORMAT_VERSION = 2;
 
 export const ZOOM_MIN = 0.05;
@@ -303,6 +307,8 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
 
 /** The executor a generation node's step is handed to. */
 export const PROVIDER_EXECUTOR_KEY = "provider";
+/** The executor every extension node is handed to. */
+export const EXTENSION_EXECUTOR_KEY = "extension";
 
 export const MAX_MODEL_ID_LENGTH = 96;
 export const MAX_MODEL_NAME_LENGTH = 120;
@@ -547,6 +553,9 @@ export const NODE_PORTS: Record<NodeKind, PortDefinition[]> = {
     port("audio", "input", ["audio"], "domain:port.audio"),
     port("out", "output", ["artifact"], "domain:port.artifact"),
   ],
+  // An extension's ports are a snapshot copied from its definition when the
+  // node is inserted. An empty table leaves every stored port standing.
+  extension: [],
 };
 
 export const MOKA_FRAGMENT_MIME = "application/x-moka-canvas-fragment+json";
@@ -697,6 +706,28 @@ export const PROBLEM_CODES = [
   "GENERATION_OUTPUT_TOO_LARGE",
   "TASK_NOT_FOUND",
   "TASK_EXPIRED",
+  "INPUT_MISSING",
+  "EXTENSION_NOT_INSTALLED",
+  "EXTENSION_VERSION_INCOMPATIBLE",
+  "EXTENSION_CONTRACT_CHANGED",
+  "EXTENSION_MODEL_MISSING",
+  "EXTENSION_SLOT_CAPABILITY_MISMATCH",
+  "EXTENSION_INPUT_MISSING",
+  "EXTENSION_INPUT_CARDINALITY",
+  "EXTENSION_PARAMETER_INVALID",
+  "EXTENSION_SCRIPT_FAILED",
+  "EXTENSION_SCRIPT_MISSING",
+  "EXTENSION_SCRIPT_TOO_LARGE",
+  "EXTENSION_MANIFEST_INVALID",
+  "EXTENSION_API_VERSION_UNSUPPORTED",
+  "EXTENSION_MODEL_CALL_FAILED",
+  "EXTENSION_OUTPUT_INVALID",
+  "EXTENSION_LIMIT_EXCEEDED",
+  "EXTENSION_TIMEOUT",
+  "EXTENSION_INTERRUPTED",
+  "EXTENSION_CANCELLED",
+  "EXTENSION_PREFLIGHT_FAILED",
+  "EXTENSION_NODE_INVALID",
   "STORY_NOT_FOUND",
   "STORY_LIMIT_REACHED",
   "STORY_NAME_INVALID",

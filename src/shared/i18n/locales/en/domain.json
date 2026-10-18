@@ -29,7 +29,8 @@
     "image": "Image",
     "operation": "Operation",
     "text": "Text",
-    "video": "Video"
+    "video": "Video",
+    "extension": "Extension"
   },
   "port": {
     "artifact": "Artifact",

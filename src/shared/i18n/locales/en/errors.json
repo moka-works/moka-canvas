@@ -212,6 +212,7 @@
     "storyShotDurationOutOfRange": "A shot's duration is out of range",
     "storyTimelineMissing": "A story points at timeline {{id}}, which is not here",
     "storyLimitReached": "The project holds more stories than the limit",
-    "duplicateStoryId": "Duplicate story id {{id}}"
+    "duplicateStoryId": "Duplicate story id {{id}}",
+    "extensionInvalid": "Extension node \"{{title}}\" is invalid: {{reason}}"
   }
 }

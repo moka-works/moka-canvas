@@ -57,9 +57,17 @@ export interface RunWords {
   text: string;
 }
 
+/** One line an extension script wrote while it ran. */
+export interface RunLog {
+  nodeId: NodeId;
+  level: string;
+  message: string;
+}
+
 /** What a listener is told, and what to do when the stream stops being one. */
 export interface RunListener {
   onWords?: (words: RunWords) => void;
+  onLog?: (log: RunLog) => void;
   onEnded: (status: RunStatus) => void;
   /**
    * The stream broke, or there was never a way to hold one open.
@@ -98,6 +106,10 @@ function follow(id: RunId, listener: RunListener): () => void {
   hear("delta", (event) => {
     const { nodeId, slotId, text } = JSON.parse(event.data) as RunWords;
     listener.onWords?.({ nodeId, slotId, text });
+  });
+  hear("log", (event) => {
+    const { nodeId, level, message } = JSON.parse(event.data) as RunLog;
+    listener.onLog?.({ nodeId, level, message });
   });
   hear("done", (event) => {
     const { status } = JSON.parse(event.data) as { status: RunStatus };

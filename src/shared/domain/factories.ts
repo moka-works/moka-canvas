@@ -10,6 +10,7 @@ import {
   DEFAULT_STORY_ASPECT,
   DEFAULT_STORY_DURATION_MS,
   DEFAULT_TEXT_CLIP_MS,
+  EXTENSION_EXECUTOR_KEY,
   GENERATION_PARAM_KEYS,
   MIN_NODE_HEIGHT,
   MOKA_FILE_VERSION,
@@ -24,6 +25,8 @@ import type { Capability, TransitionKind } from "./constants";
 import type {
   AssistantSession,
   CanvasDocument,
+  ExtensionDefinition,
+  ExtensionNodeData,
   GenerationInputMode,
   GenerationMode,
   GenerationSpec,
@@ -291,6 +294,7 @@ const NODE_TITLES: Record<NodeKind, string> = {
   operation: "domain:nodeTitle.operation",
   group: "domain:nodeTitle.group",
   export: "domain:nodeTitle.export",
+  extension: "domain:nodeTitle.extension",
 };
 
 export function defaultDataForKind(kind: NodeKind): WorkflowNode["data"] {
@@ -314,6 +318,22 @@ export function defaultDataForKind(kind: NodeKind): WorkflowNode["data"] {
       return { color: "#3b82f6", childNodeIds: [] };
     case "export":
       return { format: "mp4", parameters: {} };
+    case "extension":
+      // A real extension node is made by `createExtensionNode`, which has a
+      // definition to read. This placeholder only keeps the exhaustive switch
+      // honest and is never inserted by the menu.
+      return {
+        extension: {
+          extensionId: "",
+          definitionVersion: 0,
+          apiVersion: 0,
+          contractHash: "",
+          bindings: {},
+        },
+        parameters: {},
+        resultSlots: [],
+        resultNodeIds: [],
+      };
   }
 }
 
@@ -325,7 +345,12 @@ export function defaultDataForKind(kind: NodeKind): WorkflowNode["data"] {
  * fresh ask is made in, and an ask already made carries its own.
  */
 export function generationCapabilityFor(kind: NodeKind): Capability | null {
-  if (kind === "operation" || kind === "group" || kind === "export") {
+  if (
+    kind === "operation" ||
+    kind === "group" ||
+    kind === "export" ||
+    kind === "extension"
+  ) {
     return null;
   }
   return kind === "audio" ? "speech" : kind;
@@ -444,6 +469,8 @@ export function executorKeyForNode(node: WorkflowNode): string | null {
     case "audio":
     case "video":
       return data.generation ? PROVIDER_EXECUTOR_KEY : null;
+    case "extension":
+      return EXTENSION_EXECUTOR_KEY;
     default:
       return null;
   }
@@ -511,6 +538,89 @@ export function generationSpecFromSnapshot(
     params: words(snapshot.params),
     referenceNodeIds: identifiers(snapshot.referenceNodeIds),
     updatedAt: nowIso(),
+  };
+}
+
+/** A label in the reader's language, or the definition's own name. */
+function localizedLabel(
+  labels: Record<string, string>,
+  fallback: string,
+  locale: string,
+): string {
+  const chosen = labels[locale];
+  return chosen && chosen.trim() ? chosen : fallback;
+}
+
+/** The ports an extension node copies from its definition when inserted. */
+export function extensionPorts(
+  definition: ExtensionDefinition,
+  locale = "en",
+): PortDefinition[] {
+  return [...definition.inputs, ...definition.outputs].map((port) => ({
+    id: port.id,
+    direction: port.direction,
+    dataTypes: [...port.dataTypes],
+    required: port.required,
+    cardinality: port.cardinality,
+    label: localizedLabel(port.labels, port.label, locale),
+  }));
+}
+
+/** The parameter values a node is born with: each declared default. */
+export function extensionParameterDefaults(
+  definition: ExtensionDefinition,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const parameter of definition.parameters) {
+    if (parameter.default !== undefined) {
+      values[parameter.key] = parameter.default;
+    }
+  }
+  return values;
+}
+
+/**
+ * A node inserted from an installed definition.
+ *
+ * The ports are copied onto the node here, once, because the canvas draws and
+ * wires from the node's own snapshot: a definition that is removed or upgraded
+ * afterwards leaves the old node looking and wiring the way it did. Bindings
+ * start empty rather than being filled with defaults silently; the panel
+ * offers the models and the reader chooses.
+ */
+export function createExtensionNode(
+  definition: ExtensionDefinition,
+  at: { x: number; y: number },
+  locale = "en",
+): WorkflowNode {
+  const now = nowIso();
+  const data: ExtensionNodeData = {
+    extension: {
+      extensionId: definition.id,
+      definitionVersion: definition.version,
+      apiVersion: definition.apiVersion,
+      contractHash: definition.contractHash,
+      bindings: {},
+    },
+    parameters: extensionParameterDefaults(definition),
+    resultSlots: [],
+    resultNodeIds: [],
+  };
+  return {
+    id: newId(),
+    kind: "extension",
+    title: localizedLabel(definition.labels, definition.displayName, locale),
+    bounds: {
+      x: at.x,
+      y: at.y,
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
+    },
+    zIndex: 0,
+    ports: extensionPorts(definition, locale),
+    data,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 

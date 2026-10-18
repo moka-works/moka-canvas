@@ -396,7 +396,14 @@ export interface AssistantSession {
 }
 
 export type NodeKind =
-  "text" | "image" | "audio" | "video" | "operation" | "group" | "export";
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "operation"
+  | "group"
+  | "export"
+  | "extension";
 
 export type DataType =
   "text" | "image" | "audio" | "video" | "timeline" | "artifact";
@@ -484,12 +491,143 @@ export interface ExportNodeData {
   parameters: Record<string, unknown>;
 }
 
+/** One value an extension left on an output port. */
+export interface ExtensionOutputValue {
+  type: DataType;
+  text?: string;
+  assetId?: AssetId;
+}
+
+/**
+ * What one extension node holds beyond the common node fields.
+ *
+ * The definition a node was inserted from, the models the reader bound to its
+ * slots, and the last successful run's values. The definition itself is never
+ * copied into the document.
+ */
+export interface ExtensionState {
+  /** The definition id, which is its directory under `nodes/`. */
+  extensionId: string;
+  definitionVersion: number;
+  apiVersion: number;
+  /** The contract the node was inserted against. */
+  contractHash: string;
+  /** Slot id → model configuration id. An unbound slot has no key. */
+  bindings: Record<string, string>;
+  /** The last successful run's values, by output port. */
+  outputs?: Record<string, ExtensionOutputValue[]>;
+  runId?: RunId;
+  outputsUpdatedAt?: IsoTimestamp;
+}
+
+export interface ExtensionNodeData {
+  extension: ExtensionState;
+  parameters: Record<string, unknown>;
+  resultSlots?: ResultSlot[];
+  resultNodeIds?: NodeId[];
+  metadata?: Record<string, unknown>;
+}
+
+/** A port as an installed definition states it. */
+export interface ExtensionPort {
+  id: string;
+  direction: "input" | "output";
+  dataTypes: DataType[];
+  required: boolean;
+  cardinality: "one" | "many";
+  label: string;
+  labels: Record<string, string>;
+  description?: string;
+  descriptionLabels: Record<string, string>;
+  primary: boolean;
+}
+
+/** One model slot an extension definition declares. */
+export interface ExtensionSlot {
+  id: string;
+  capability: Capability;
+  required: boolean;
+  label: string;
+  labels: Record<string, string>;
+  description?: string;
+  descriptionLabels: Record<string, string>;
+}
+
+export type ExtensionParameterType =
+  "string" | "number" | "integer" | "boolean" | "enum";
+
+/** One parameter an extension definition declares, for the generated form. */
+export interface ExtensionParameter {
+  key: string;
+  type: ExtensionParameterType;
+  required: boolean;
+  default?: unknown;
+  label: string;
+  labels: Record<string, string>;
+  description?: string;
+  descriptionLabels: Record<string, string>;
+  multiline: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  options: string[];
+  maxLength?: number;
+}
+
+/** The step limits a definition applies, already clamped by the server. */
+export interface ExtensionLimits {
+  timeoutSeconds: number;
+  maxModelCalls: number;
+  maxOutputBytes: number;
+  maxOutputItemsPerPort: number;
+  maxTextBytes: number;
+  maxLogBytes: number;
+}
+
+/**
+ * One installed extension definition, as `GET /api/v1/extensions/nodes`
+ * returns it. Scripts and model configurations are deliberately absent: the
+ * client is shown what the node looks like and needs, not how it is run.
+ */
+export interface ExtensionDefinition {
+  id: string;
+  version: number;
+  apiVersion: number;
+  displayName: string;
+  labels: Record<string, string>;
+  description?: string;
+  descriptionLabels: Record<string, string>;
+  order: number;
+  icon: string;
+  accent: string;
+  inputs: ExtensionPort[];
+  outputs: ExtensionPort[];
+  models: ExtensionSlot[];
+  parameters: ExtensionParameter[];
+  contractHash: string;
+  limits: ExtensionLimits;
+}
+
+/** A directory under `nodes/` that could not become a definition. */
+export interface ExtensionProblem {
+  id: string;
+  code: string;
+  message: string;
+}
+
+export interface ExtensionCatalog {
+  root: string;
+  nodes: ExtensionDefinition[];
+  problems: ExtensionProblem[];
+}
+
 export type NodeData =
   | TextNodeData
   | MediaNodeData
   | OperationNodeData
   | GroupNodeData
-  | ExportNodeData;
+  | ExportNodeData
+  | ExtensionNodeData;
 
 export interface WorkflowNode {
   id: NodeId;
@@ -1057,6 +1195,8 @@ export interface NodePatch {
   title?: string;
   zIndex?: number;
   data?: NodeData;
+  /** Only an extension refresh sends one: the node's port snapshot. */
+  ports?: PortDefinition[];
 }
 
 /**
@@ -1463,6 +1603,31 @@ export interface ValidationIssue {
 export type RunStatus =
   "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
+/** One output port of an extension step, flattened for the run record. */
+export interface StepPortRecord {
+  text?: string;
+  assetIds?: AssetId[];
+}
+
+/** One line an extension script wrote while it ran. */
+export interface ExtensionLogRecord {
+  level: "debug" | "info" | "warn" | "error" | string;
+  message: string;
+  at: IsoTimestamp;
+}
+
+/** One model call an extension script made. */
+export interface ExtensionCallRecord {
+  slot: string;
+  /** The bound configuration's display name; never a credential or URL. */
+  model: string;
+  capability: Capability;
+  durationMs: number;
+  produced: number;
+  failed: boolean;
+  error?: string;
+}
+
 export interface RunStepRecord {
   nodeId: NodeId;
   status: RunStatus;
@@ -1474,6 +1639,10 @@ export interface RunStepRecord {
   errorDetails?: Record<string, unknown>;
   outputAssetIds?: AssetId[];
   outputText?: string;
+  /** What an extension step handed each of its output ports. */
+  outputs?: Record<string, StepPortRecord>;
+  extensionLogs?: ExtensionLogRecord[];
+  extensionCalls?: ExtensionCallRecord[];
   /**
    * The handle a step that runs as an upstream job is polled by. This process
    * issued it, so it names no provider.

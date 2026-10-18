@@ -66,6 +66,7 @@ import {
   setNodeGeneration,
 } from "../interactions/actions";
 import { canvasNodesUsing } from "./canvasAssets";
+import { ExtensionSection } from "./ExtensionSection";
 import {
   AssetFileSection,
   AssetNoteSection,
@@ -769,6 +770,9 @@ function NodeInspector({
           <span>{t("editor:field.format")}</span>
           <span>{(node.data as { format?: string }).format ?? ""}</span>
         </div>
+      )}
+      {node.kind === "extension" && (
+        <ExtensionSection canvas={canvas} node={node} />
       )}
       <GenerationSection node={node} />
       <MediaAssetSection node={node} />

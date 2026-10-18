@@ -38,6 +38,7 @@ import type {
   CanvasDocument,
   DataType,
   EdgeEndpoint,
+  ExtensionState,
   GenerationSpec,
   MokaFile,
   NodeId,
@@ -689,6 +690,98 @@ function generationIssues(
   return issues;
 }
 
+/** What is wrong with an extension node as the document holds it. */
+function extensionIssues(
+  canvas: CanvasDocument,
+  node: WorkflowNode,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const at = (message: string) => {
+    issues.push({
+      code: "EXTENSION_NODE_INVALID",
+      message: i18n.t("errors:validate.extensionInvalid", {
+        title: node.title,
+        reason: message,
+      }),
+      canvasId: canvas.id,
+      nodeId: node.id,
+    });
+  };
+  const data = node.data as {
+    extension?: ExtensionState;
+    parameters?: unknown;
+    resultSlots?: ResultSlot[];
+  };
+  if ((data.resultSlots?.length ?? 0) > MAX_RESULT_SLOTS) {
+    at(
+      i18n.t("errors:validate.resultSlotLimit", {
+        title: node.title,
+        count: MAX_RESULT_SLOTS,
+      }),
+    );
+  }
+  const extension = data.extension;
+  if (!extension) {
+    at("the node carries no extension state");
+    return issues;
+  }
+  if (
+    !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(extension.extensionId) ||
+    extension.extensionId.includes("..")
+  ) {
+    at(`"${extension.extensionId}" is not a definition id`);
+  }
+  if (extension.apiVersion < 1 || extension.contractHash.trim() === "") {
+    at("the node does not say which contract it was inserted against");
+  }
+  const bindings = Object.entries(extension.bindings ?? {});
+  if (bindings.length > 16) {
+    at("more than 16 model slots are bound");
+  }
+  for (const [slot, model] of bindings) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(slot) || model.trim() === "") {
+      at(`the binding for slot "${slot}" is not usable`);
+    }
+  }
+  if (
+    data.parameters !== undefined &&
+    (typeof data.parameters !== "object" ||
+      data.parameters === null ||
+      Array.isArray(data.parameters))
+  ) {
+    at("the node's parameters are not an object");
+  } else if (data.parameters !== undefined) {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify(data.parameters),
+    ).length;
+    if (bytes > 64 * 1024) {
+      at("the node's parameters are too large");
+    }
+  }
+  const outputPorts = new Set(
+    node.ports
+      .filter((port) => port.direction === "output")
+      .map((port) => port.id),
+  );
+  if (outputPorts.size === 0) {
+    at("an extension node needs at least one output port");
+  }
+  for (const [port, values] of Object.entries(extension.outputs ?? {})) {
+    if (!outputPorts.has(port)) {
+      at(`stored output port "${port}" is not an output of this node`);
+    }
+    for (const value of values) {
+      if (value.type === "text" && typeof value.text !== "string") {
+        at(`a text value on "${port}" has no words`);
+      }
+      if (value.type !== "text" && !value.assetId) {
+        at(`a media value on "${port}" names no asset`);
+      }
+    }
+  }
+  return issues;
+}
+
 /**
  * What is wrong with the conversations a canvas carries.
  *
@@ -801,6 +894,9 @@ export function validateCanvas(canvas: CanvasDocument): ValidationIssue[] {
 
   for (const node of canvas.nodes) {
     issues.push(...generationIssues(canvas, node, nodeIds));
+    if (node.kind === "extension") {
+      issues.push(...extensionIssues(canvas, node));
+    }
   }
 
   const edgeIds = new Set<string>();

@@ -224,6 +224,18 @@ export function instantiateFragment(
     }
     const spec = data.generation as GenerationSpec | undefined;
     if (spec) data.generation = carriedSpec(spec, idMap);
+    if (node.kind === "extension" && data.extension) {
+      // Bindings are model ids on this machine and travel with the copy; what
+      // the copied node produced did not. A pasted node starts empty so its
+      // panel cannot point at files in the project it was copied out of.
+      const extension = { ...(data.extension as Record<string, unknown>) };
+      delete extension.outputs;
+      delete extension.runId;
+      delete extension.outputsUpdatedAt;
+      data.extension = extension;
+      data.resultSlots = [];
+      data.resultNodeIds = [];
+    }
     return {
       ...node,
       id: idMap.get(node.id)!,

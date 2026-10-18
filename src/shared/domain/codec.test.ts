@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { deserialize, serialize } from "bson";
 import {
   CANVAS_SCHEMA_VERSION,
+  CANVAS_SCHEMA_VERSION_MIN,
   MOKA_MAGIC,
   REFERENCE_IMAGES_MAX,
 } from "./constants";
@@ -134,9 +135,9 @@ describe("moka codec", () => {
     }
   });
 
-  it("refuses a canvas schema that is not the one this build reads", () => {
+  it("refuses a canvas schema that is not the current one or the one before", () => {
     for (const version of [
-      CANVAS_SCHEMA_VERSION - 1,
+      CANVAS_SCHEMA_VERSION_MIN - 1,
       CANVAS_SCHEMA_VERSION + 1,
     ]) {
       const golden = buildGoldenMokaFile();
@@ -148,6 +149,57 @@ describe("moka codec", () => {
         expect((error as MokaCodecError).code).toBe("MOKA_VERSION_UNSUPPORTED");
       }
     }
+  });
+
+  it("reads the previous schema and writes it as the current one", () => {
+    const golden = buildGoldenMokaFile();
+    golden.canvas[0].schemaVersion = CANVAS_SCHEMA_VERSION_MIN;
+    const decoded = decodeMokaFile(encodeMokaFile(golden));
+    expect(decoded.canvas[0].schemaVersion).toBe(CANVAS_SCHEMA_VERSION);
+  });
+
+  it("writes an extension node's state in the order the other language reads", () => {
+    const golden = buildGoldenMokaFile();
+    const node = golden.canvas[0].nodes[0];
+    node.kind = "extension";
+    node.ports = [
+      {
+        id: "text",
+        direction: "input",
+        dataTypes: ["text"],
+        required: true,
+        cardinality: "one",
+        label: "Text",
+      },
+      {
+        id: "out",
+        direction: "output",
+        dataTypes: ["text"],
+        required: true,
+        cardinality: "one",
+        label: "Text",
+      },
+    ];
+    node.data = {
+      extension: {
+        extensionId: "expander",
+        definitionVersion: 1,
+        apiVersion: 1,
+        contractHash: "sha256:abc",
+        bindings: { writer: "model-1" },
+      },
+      parameters: { style: "ink" },
+      resultSlots: [],
+      resultNodeIds: [],
+    } as never;
+    const decoded = decodeMokaFile(encodeMokaFile(golden));
+    const read = decoded.canvas[0].nodes[0].data as {
+      extension: { extensionId: string; bindings: Record<string, string> };
+      parameters: Record<string, unknown>;
+    };
+    expect(read.extension.extensionId).toBe("expander");
+    expect(read.extension.bindings.writer).toBe("model-1");
+    expect(read.parameters.style).toBe("ink");
   });
 
   it("round-trips generation specs", () => {

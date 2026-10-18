@@ -84,6 +84,7 @@ export const CANVAS_THEMES: Record<CanvasThemeName, CanvasPalette> = {
       operation: "#b7a3e8",
       group: "#9a9aa4",
       export: "#8fd0a8",
+      extension: "#c9a7f0",
     },
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -130,6 +131,7 @@ export const CANVAS_THEMES: Record<CanvasThemeName, CanvasPalette> = {
       operation: "#6a4fa8",
       group: "#71717a",
       export: "#2e7d55",
+      extension: "#7a4fa8",
     },
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
