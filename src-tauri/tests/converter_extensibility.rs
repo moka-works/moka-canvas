@@ -130,6 +130,7 @@ async fn harness() -> Harness {
         RuntimeMode::Web,
         store,
         models_root().await.to_path_buf(),
+        tmp.path().join("nodes"),
     );
     // A generation belongs to a project, so the harness opens one the way the
     // launcher does before anything generates.

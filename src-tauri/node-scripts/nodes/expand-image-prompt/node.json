@@ -1,0 +1,97 @@
+{
+  "apiVersion": 1,
+  "version": 1,
+  "displayName": "Expand image prompt",
+  "labels": { "zh": "扩写图像生成提示词" },
+  "description": "Turns a short text into a detailed prompt for an image model.",
+  "descriptionLabels": {
+    "zh": "把一段简短文字扩写成可直接交给图像模型的详细提示词。"
+  },
+  "script": "main.lua",
+  "order": 10,
+  "icon": "sparkles",
+  "accent": "violet",
+  "inputs": [
+    {
+      "id": "text",
+      "dataTypes": ["text"],
+      "required": true,
+      "cardinality": "one",
+      "label": "Text",
+      "labels": { "zh": "文本" },
+      "description": "The idea, scene or caption to expand.",
+      "descriptionLabels": { "zh": "要扩写的想法、场景或说明。" }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "prompt",
+      "dataTypes": ["text"],
+      "required": true,
+      "cardinality": "one",
+      "primary": true,
+      "label": "Image prompt",
+      "labels": { "zh": "图像提示词" },
+      "description": "A ready-to-use prompt for an image model.",
+      "descriptionLabels": { "zh": "可直接交给图像模型的提示词。" }
+    }
+  ],
+  "models": [
+    {
+      "id": "writer",
+      "capability": "text",
+      "required": true,
+      "label": "Writer",
+      "labels": { "zh": "改写模型" },
+      "description": "The text model that expands the input.",
+      "descriptionLabels": { "zh": "负责扩写输入的文本模型。" }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "style",
+      "type": "enum",
+      "label": "Style",
+      "labels": { "zh": "风格" },
+      "default": "photographic",
+      "options": [
+        "photographic",
+        "illustration",
+        "cinematic",
+        "watercolor",
+        "3d",
+        "anime"
+      ]
+    },
+    {
+      "key": "detail",
+      "type": "enum",
+      "label": "Detail",
+      "labels": { "zh": "细节程度" },
+      "default": "rich",
+      "options": ["concise", "balanced", "rich"]
+    },
+    {
+      "key": "language",
+      "type": "enum",
+      "label": "Output language",
+      "labels": { "zh": "输出语言" },
+      "default": "en",
+      "options": ["en", "zh"]
+    },
+    {
+      "key": "instructions",
+      "type": "string",
+      "label": "Direction",
+      "labels": { "zh": "额外要求" },
+      "description": "Anything the expanded prompt must keep or avoid.",
+      "descriptionLabels": { "zh": "扩写时必须保留或避免的内容。" },
+      "multiline": true,
+      "maxLength": 2000
+    }
+  ],
+  "limits": {
+    "timeoutSeconds": 300,
+    "maxModelCalls": 2
+  }
+}

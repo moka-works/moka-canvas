@@ -55,6 +55,14 @@ impl LocalServer {
             .unwrap_or_else(|error| {
                 tracing::warn!(target: "moka::converter", "deploy error: {error}");
             });
+        // The built-in extension definitions are read from the same machine
+        // tree a reader adds one to. A failure here leaves whatever is already
+        // deployed, and the directory endpoint reports what it can read.
+        crate::extension::deploy::ensure_deployed(state.nodes_root())
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(target: "moka::extension", "deploy error: {error}");
+            });
         let listener = TcpListener::bind(address)
             .await
             .context("failed to bind the local HTTP server")?;
@@ -261,7 +269,13 @@ mod tests {
             .expect("the test configuration always sets a metadata directory");
         let metadata = crate::metadata::open(&dir, &config.metadata, RuntimeMode::Web)
             .expect("the metadata store opens inside a temporary directory");
-        ApiState::with_metadata(config, RuntimeMode::Web, metadata, root.join("converter"))
+        ApiState::with_metadata(
+            config,
+            RuntimeMode::Web,
+            metadata,
+            root.join("converter"),
+            root.join("nodes"),
+        )
     }
 
     async fn body_json(response: Response) -> serde_json::Value {
@@ -330,6 +344,7 @@ mod tests {
             RuntimeMode::Web,
             metadata,
             root.path().join("converter"),
+            root.path().join("nodes"),
         );
 
         let scratch = dir.join("tmp");

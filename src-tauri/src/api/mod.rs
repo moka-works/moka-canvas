@@ -43,6 +43,9 @@ pub struct ApiState {
     /// Root directory of the models tree: one directory per converter, each
     /// carrying its own `model.json`.
     converter_root: PathBuf,
+    /// Root directory of the node definitions: one directory per extension,
+    /// each carrying its own `node.json` and scripts.
+    nodes_root: PathBuf,
 }
 
 impl ApiState {
@@ -60,7 +63,17 @@ impl ApiState {
             .parent()
             .map(|p| p.join("models"))
             .unwrap_or_else(|| PathBuf::from("models"));
-        Ok(Self::with_metadata(config, mode, metadata, converter_root))
+        let nodes_root = root
+            .parent()
+            .map(|p| p.join("nodes"))
+            .unwrap_or_else(|| PathBuf::from("nodes"));
+        Ok(Self::with_metadata(
+            config,
+            mode,
+            metadata,
+            converter_root,
+            nodes_root,
+        ))
     }
 
     pub fn with_metadata(
@@ -68,6 +81,7 @@ impl ApiState {
         mode: RuntimeMode,
         metadata: Arc<dyn MetadataStore>,
         converter_root: PathBuf,
+        nodes_root: PathBuf,
     ) -> Self {
         let config = Arc::new(config);
         let store = Arc::new(ProjectRegistry::new(Arc::clone(&config)));
@@ -106,6 +120,7 @@ impl ApiState {
             clip_probe,
             exports: Arc::new(ExportRegistry::new()),
             converter_root,
+            nodes_root,
         }
     }
 
@@ -128,6 +143,12 @@ impl ApiState {
     /// available protocols.
     pub fn converter_root(&self) -> &Path {
         &self.converter_root
+    }
+
+    /// The nodes directory: where extension definitions live. Read afresh on
+    /// every request so a definition dropped in shows up without a restart.
+    pub fn nodes_root(&self) -> &Path {
+        &self.nodes_root
     }
 }
 
@@ -307,6 +328,7 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/converter/protocols",
             get(routes::converter_protocols),
         )
+        .route("/api/v1/extensions/nodes", get(routes::extension_nodes))
 }
 
 /// A generation request carries a prompt and references to assets already in

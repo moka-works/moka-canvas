@@ -1889,6 +1889,26 @@ pub async fn converter_protocols(
     Ok(Json(serde_json::json!({ "protocols": protocols })))
 }
 
+/// The extension node definitions installed on this machine, read fresh so a
+/// directory dropped in appears without a restart. A definition that cannot
+/// be read is listed under `problems` rather than making the menu empty.
+pub async fn extension_nodes(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    use crate::extension::ExtensionRegistry;
+    let registry = ExtensionRegistry::load(state.nodes_root());
+    let nodes: Vec<_> = registry
+        .definitions()
+        .iter()
+        .map(|definition| definition.view())
+        .collect();
+    Ok(Json(serde_json::json!({
+        "root": state.nodes_root().to_string_lossy(),
+        "nodes": nodes,
+        "problems": registry.problems(),
+    })))
+}
+
 // ---------------------------------------------------------------------------
 // The export pipeline: what the machine can do, and the three calls one
 // render is asked for, polled with, and stopped by.

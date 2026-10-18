@@ -4,6 +4,7 @@ pub mod clip;
 pub mod config;
 pub mod converter;
 pub mod domain;
+pub mod extension;
 pub mod generate;
 pub mod imaging;
 pub mod metadata;
