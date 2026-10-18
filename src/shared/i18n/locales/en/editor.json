@@ -383,6 +383,7 @@
   "menu": {
     "contextMenu": "Context menu",
     "generate": "Generate…",
+    "configureExtension": "Configure extension…",
     "generateTitle": "Generate",
     "imageFromWords": "Image from these words",
     "videoFromWords": "Video from these words",
@@ -897,6 +898,11 @@
   },
   "extension": {
     "title": "Extension node",
+    "panelAria": "Configure {{name}}",
+    "closePanel": "Close configuration",
+    "notRunnable": "The definition must be ready before this node can run",
+    "noConfiguration": "This definition asks for no settings.",
+    "running": "Running…",
     "definition": "Definition",
     "statusLabel": "Status",
     "state": {

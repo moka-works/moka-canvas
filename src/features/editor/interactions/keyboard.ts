@@ -134,10 +134,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 ];
 
 /** What Enter does to the one selected node. */
-export type EnterIntent = "edit" | "ask" | "rename";
+export type EnterIntent = "edit" | "ask" | "configure" | "rename";
 
 /**
- * Enter edits a text node that already has words in it, and otherwise asks the
+ * Enter edits a text node that already has words in it, configures a node
+ * whose inputs are declared by an installed definition, and otherwise asks the
  * node for something.
  *
  * A node with nothing in it is more often a request waiting to be typed than a
@@ -151,6 +152,7 @@ export function enterIntent(node: WorkflowNode | undefined): EnterIntent {
     const content = (node.data as { content?: string }).content ?? "";
     return content.trim() === "" ? "ask" : "edit";
   }
+  if (node.kind === "extension") return "configure";
   return generationCapabilityFor(node.kind) === null ? "rename" : "ask";
 }
 
@@ -200,6 +202,8 @@ export function useEditorKeyboard() {
           editor.stopEditingText();
         } else if (editor.promptPanel) {
           editor.closePromptPanel();
+        } else if (editor.extensionPanel) {
+          editor.closeExtensionPanel();
         } else if (editor.inputPick) {
           editor.stopInputPick();
         } else if (editor.gesture.kind !== "idle") {
@@ -283,6 +287,8 @@ export function useEditorKeyboard() {
           const intent = enterIntent(node);
           if (intent === "edit") editor.startEditingText(nodeId);
           else if (intent === "ask") editor.openPromptPanel(nodeId, true);
+          else if (intent === "configure")
+            editor.openExtensionPanel(nodeId, true);
           else editor.startRenaming(nodeId);
         }
         return;

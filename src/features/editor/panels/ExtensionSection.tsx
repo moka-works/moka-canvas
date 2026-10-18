@@ -5,17 +5,11 @@ import type {
   CanvasDocument,
   ExtensionCallRecord,
   ExtensionDefinition,
-  ExtensionParameter,
   ExtensionState,
   ResourceEntry,
   WorkflowNode,
 } from "../../../shared/domain";
-import { ModelPicker } from "../../settings/ModelPicker";
-import {
-  refreshExtensionNode,
-  setExtensionBinding,
-  setExtensionParameter,
-} from "../interactions/actions";
+import { refreshExtensionNode } from "../interactions/actions";
 import { useExtensionStore } from "../stores/extensionStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useLatestRunForNode, useNodeExtensionLogs } from "../stores/runStore";
@@ -28,99 +22,6 @@ function labelOf(
 ): string {
   const chosen = labels[locale];
   return chosen && chosen.trim() ? chosen : fallback;
-}
-
-function ParameterField({
-  parameter,
-  value,
-  onChange,
-}: {
-  parameter: ExtensionParameter;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const locale = (i18n.language || "en").split("-")[0];
-  const label = labelOf(parameter.labels, parameter.label, locale);
-  const name = parameter.required ? `${label} *` : label;
-  if (parameter.type === "boolean") {
-    return (
-      <label className="dialog-field dialog-field-check">
-        <input
-          checked={Boolean(value)}
-          onChange={(event) => onChange(event.target.checked)}
-          type="checkbox"
-        />
-        <span>{name}</span>
-        {parameter.description && <small>{parameter.description}</small>}
-      </label>
-    );
-  }
-  if (parameter.type === "enum") {
-    return (
-      <label className="dialog-field">
-        <span>{name}</span>
-        <select
-          onChange={(event) => onChange(event.target.value)}
-          value={typeof value === "string" ? value : ""}
-        >
-          <option disabled value="">
-            {t("editor:extension.chooseOption")}
-          </option>
-          {parameter.options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-        {parameter.description && <small>{parameter.description}</small>}
-      </label>
-    );
-  }
-  if (parameter.type === "number" || parameter.type === "integer") {
-    return (
-      <label className="dialog-field">
-        <span>{name}</span>
-        <input
-          max={parameter.max}
-          min={parameter.min}
-          onChange={(event) =>
-            onChange(
-              event.target.value === ""
-                ? undefined
-                : Number(event.target.value),
-            )
-          }
-          step={parameter.step ?? (parameter.type === "integer" ? 1 : "any")}
-          type="number"
-          value={typeof value === "number" ? value : ""}
-        />
-        {parameter.description && <small>{parameter.description}</small>}
-      </label>
-    );
-  }
-  const text = typeof value === "string" ? value : "";
-  return (
-    <label className="dialog-field">
-      <span>{name}</span>
-      {parameter.multiline ? (
-        <textarea
-          maxLength={parameter.maxLength}
-          onChange={(event) => onChange(event.target.value)}
-          rows={4}
-          value={text}
-        />
-      ) : (
-        <input
-          maxLength={parameter.maxLength}
-          onChange={(event) => onChange(event.target.value)}
-          type="text"
-          value={text}
-        />
-      )}
-      {parameter.description && <small>{parameter.description}</small>}
-    </label>
-  );
 }
 
 function Outputs({
@@ -172,14 +73,15 @@ function Outputs({
 }
 
 /**
- * The installed definition a node was made from, and everything the reader
- * configures on that node.
+ * The installed definition a node was made from, and what it last answered.
  *
- * The panel is generated from the definition rather than from a form written
- * per extension: slots become model pickers, declared parameters become fields,
- * and outputs are read from the node's last successful answer. When the
- * definition is gone or its contract has changed, the panel says so and offers
- * the repair rather than pretending the node is ready to run.
+ * What the reader configures — model slots and declared parameters — lives in
+ * the panel under the node, where the same kind of choice lives for every other
+ * runnable node. This section keeps the node's other attributes: which
+ * definition it was made from, whether that definition still matches, its last
+ * outputs, and what its runs logged. When the definition is gone or its contract
+ * has changed, the section says so and offers the repair rather than pretending
+ * the node is ready to run.
  */
 export function ExtensionSection({
   canvas,
@@ -263,49 +165,6 @@ export function ExtensionSection({
 
       {definition && (
         <>
-          <h3>{t("editor:extension.models")}</h3>
-          {definition.models.length === 0 && (
-            <p className="inspector-empty">{t("editor:extension.noModels")}</p>
-          )}
-          {definition.models.map((slot) => (
-            <ModelPicker
-              capability={slot.capability}
-              key={slot.id}
-              label={labelOf(slot.labels, slot.label, locale)}
-              noneLabel={
-                slot.required
-                  ? t("editor:extension.bindRequired")
-                  : t("editor:extension.unbound")
-              }
-              onChange={(model) =>
-                setExtensionBinding(canvas.id, node.id, slot.id, model)
-              }
-              value={state.bindings[slot.id] ?? null}
-            />
-          ))}
-          {definition.parameters.length > 0 && (
-            <>
-              <h3>{t("editor:extension.parameters")}</h3>
-              {definition.parameters.map((parameter) => (
-                <ParameterField
-                  key={parameter.key}
-                  onChange={(value) =>
-                    setExtensionParameter(
-                      canvas.id,
-                      node.id,
-                      parameter.key,
-                      value,
-                    )
-                  }
-                  parameter={parameter}
-                  value={
-                    (node.data as { parameters?: Record<string, unknown> })
-                      .parameters?.[parameter.key]
-                  }
-                />
-              ))}
-            </>
-          )}
           <Outputs
             definition={definition}
             resources={resources}

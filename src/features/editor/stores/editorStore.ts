@@ -186,6 +186,11 @@ interface EditorState {
    * the prompt and Delete would stop deleting the node.
    */
   promptPanel: { nodeId: NodeId; focus: boolean } | null;
+  /**
+   * The configuration panel open under an extension node, and whether it takes
+   * the keyboard, for the reason the generation panel remembers the same thing.
+   */
+  extensionPanel: { nodeId: NodeId; focus: boolean } | null;
   /** Inspector "replace input" pick mode: choosing a new source node. */
   inputPick: { nodeId: NodeId; portId: string } | null;
   /**
@@ -274,6 +279,8 @@ interface EditorState {
   stopEditingText: () => void;
   openPromptPanel: (nodeId: NodeId, focus?: boolean) => void;
   closePromptPanel: () => void;
+  openExtensionPanel: (nodeId: NodeId, focus?: boolean) => void;
+  closeExtensionPanel: () => void;
   startInputPick: (target: { nodeId: NodeId; portId: string }) => void;
   stopInputPick: () => void;
   openAssetDeletePrompt: (prompt: {
@@ -315,6 +322,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   renaming: null,
   textEditing: null,
   promptPanel: null,
+  extensionPanel: null,
   inputPick: null,
   assetDeletePrompt: null,
   previewAssetId: null,
@@ -385,6 +393,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   openPromptPanel: (nodeId, focus = false) =>
     set({ promptPanel: { nodeId, focus } }),
   closePromptPanel: () => set({ promptPanel: null }),
+  openExtensionPanel: (nodeId, focus = false) =>
+    set({ extensionPanel: { nodeId, focus } }),
+  closeExtensionPanel: () => set({ extensionPanel: null }),
   startInputPick: (target) => set({ inputPick: target }),
   stopInputPick: () => set({ inputPick: null }),
   openAssetDeletePrompt: (prompt) => set({ assetDeletePrompt: prompt }),

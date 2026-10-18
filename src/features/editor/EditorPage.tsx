@@ -51,6 +51,7 @@ import {
   HandIcon,
   SelectionIcon,
 } from "./components/ToolIcons";
+import { ExtensionPanel } from "./components/ExtensionPanel";
 import { PromptPanel } from "./components/PromptPanel";
 import { RunHint } from "./components/RunHint";
 import { NodeActionBar } from "./components/NodeActionBar";
@@ -299,6 +300,7 @@ export function EditorPage() {
           <RenameOverlay />
           <TextEditOverlay />
           <PromptPanel />
+          <ExtensionPanel />
           <RunHint />
           <p className="editor-canvas-hint">
             {activeCanvas

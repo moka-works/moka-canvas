@@ -383,6 +383,7 @@
   "menu": {
     "contextMenu": "右键菜单",
     "generate": "生成…",
+    "configureExtension": "配置扩展…",
     "generateTitle": "生成",
     "imageFromWords": "用这些文字生成图片",
     "videoFromWords": "用这些文字生成视频",
@@ -897,6 +898,11 @@
   },
   "extension": {
     "title": "扩展节点",
+    "panelAria": "配置 {{name}}",
+    "closePanel": "关闭配置",
+    "notRunnable": "定义就绪后才能运行此节点",
+    "noConfiguration": "该定义不需要填写设置。",
+    "running": "正在运行…",
     "definition": "定义",
     "statusLabel": "状态",
     "state": {

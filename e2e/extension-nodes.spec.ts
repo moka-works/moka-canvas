@@ -103,6 +103,10 @@ test("an installed extension node expands a text through its own model slot", as
     .getByRole("menuitem", { name: "Expand image prompt", exact: true })
     .click({ timeout: 10_000 });
 
+  // The configuration comes up under the node it configures, the way the
+  // generation panel does; the inspector keeps the node's other attributes.
+  const panel = page.getByTestId("extension-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
   const section = page
     .locator(".inspector-section")
     .filter({ has: page.getByRole("heading", { name: "Extension node" }) });
@@ -113,7 +117,7 @@ test("an installed extension node expands a text through its own model slot", as
 
   // One slot, one model: the reader's choice is saved onto the node, and the
   // script never sees which protocol or endpoint stands behind it.
-  await section.getByLabel("Writer").selectOption(STORYTELLER);
+  await panel.getByLabel("Writer").selectOption(STORYTELLER);
   await expect
     .poll(
       async () =>

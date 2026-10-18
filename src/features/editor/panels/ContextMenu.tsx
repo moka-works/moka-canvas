@@ -103,6 +103,12 @@ export function ContextMenu() {
         action: () => editor.openPromptPanel(targetId, true),
       });
     }
+    if (targetNode?.kind === "extension") {
+      items.push({
+        label: t("editor:menu.configureExtension"),
+        action: () => editor.openExtensionPanel(targetId, true),
+      });
+    }
     // Words are a place to start from rather than only a thing to ask about:
     // what is made of them sits beside them and is fed by them, with its own
     // panel opened and nothing asked for yet.

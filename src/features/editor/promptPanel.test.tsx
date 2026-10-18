@@ -355,6 +355,12 @@ describe("what Enter asks for", () => {
     expect(enterIntent(createNode("video", { x: 0, y: 0 }))).toBe("ask");
   });
 
+  it("configures an extension node under the node", () => {
+    expect(enterIntent(createNode("extension", { x: 0, y: 0 }))).toBe(
+      "configure",
+    );
+  });
+
   it("renames what no provider could make, and a selection gone stale", () => {
     expect(enterIntent(createNode("operation", { x: 0, y: 0 }))).toBe("rename");
     expect(enterIntent(createNode("group", { x: 0, y: 0 }))).toBe("rename");

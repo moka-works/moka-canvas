@@ -3057,6 +3057,45 @@ button.danger:hover:not(:disabled) {
   grid-column: span 2;
 }
 
+/* The name of the definition configuring this node, where a generation panel
+   puts its tabs: one page of fields, so the name is what the head says. */
+.extension-panel-title {
+  border-bottom: 1px solid var(--stroke);
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extension-panel-body {
+  gap: 14px;
+}
+
+.extension-panel-section {
+  display: grid;
+  gap: 6px;
+}
+
+.extension-panel-section h4 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.extension-panel-status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
 /* Which of the two sound capabilities this ask is in: one row, two halves. */
 .prompt-panel-sound {
   display: grid;
