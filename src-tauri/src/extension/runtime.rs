@@ -434,6 +434,24 @@ pub fn execute(context: ScriptContext) -> Result<ScriptOutcome, Failure> {
     if let Some(failure) = context.control.failure() {
         return Err(failure);
     }
+    // A script that swallowed a cancellation or reached its deadline without
+    // the hook firing is still a step the run gave up on.
+    if context.control.is_cancelled() {
+        return Err(Failure {
+            code: "EXTENSION_CANCELLED".into(),
+            message: "the run was cancelled".into(),
+            details: Json::Null,
+            cancelled: true,
+        });
+    }
+    if context.control.timed_out() {
+        return Err(Failure {
+            code: "EXTENSION_TIMEOUT".into(),
+            message: "the step exceeded its time limit".into(),
+            details: serde_json::json!({ "timeoutSeconds": context.control.timeout.as_secs() }),
+            cancelled: false,
+        });
+    }
     Ok(ScriptOutcome {
         value,
         logs: context.logs.snapshot(),
