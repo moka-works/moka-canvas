@@ -17,11 +17,12 @@ cd release/moka-canvas-web-<version>-<platform>-<arch>
 ./moka-server --static-dir dist --port 8080
 ```
 
-| Flag           | Default                            | Effect                                                 |
-| -------------- | ---------------------------------- | ------------------------------------------------------ |
-| `--config`     | `config/moka.yaml`, if it exists   | YAML configuration file                                |
-| `--static-dir` | `server.staticDir` from the config | Built frontend to serve                                |
-| `--port`       | `server.bind` from the config      | Overrides the port and pins the address to `127.0.0.1` |
+| Flag           | Default                            | Effect                                 |
+| -------------- | ---------------------------------- | -------------------------------------- |
+| `--config`     | `config/moka.yaml`, if it exists   | YAML configuration file                |
+| `--static-dir` | `server.staticDir` from the config | Built frontend to serve                |
+| `--host <IP>`  | `server.bind` from the config      | Overrides the address in `server.bind` |
+| `--port`       | `server.bind` from the config      | Overrides the port in `server.bind`    |
 
 The server starts from built-in defaults and reads nothing else, so a first run
 needs no file at all. To tune it, copy the tracked example, which says what every
@@ -38,11 +39,14 @@ startup fails rather than serving defaults nobody asked for, because a
 deployment that meant to be read should not be quietly unread. Relative paths
 inside a configuration file resolve against the working directory.
 
-`--port` always binds loopback. Exposing the server on another interface means
-editing `server.bind` in the configuration file, and means accepting that there
-is no authentication layer: anyone who can reach the port can read and write
-every project the process can open. Put it behind a reverse proxy that handles
-identity if you need that at all.
+`--host` and `--port` each name one part of the address and each beats the
+configuration file for that part alone, so `--host 0.0.0.0` listens on every
+interface and `--port 9000` moves the port without moving the address. Exposing
+the server on another interface means accepting that there is no authentication
+layer: anyone who can reach the port can read and write every project the
+process can open. A server that ends up listening on something other than
+loopback says so in a warning at startup. Put it behind a reverse proxy that
+handles identity if you need that at all.
 
 ## Metadata directory
 
@@ -114,8 +118,13 @@ docker run \
   -e MOKA_METADATA_KEY="$MOKA_METADATA_KEY" \
   -v moka-metadata:/data \
   -p 127.0.0.1:8080:8080 \
-  <your-image> --static-dir dist --port 8080
+  <your-image> --static-dir dist --host 0.0.0.0 --port 8080
 ```
+
+`--host 0.0.0.0` is what makes the container reachable at all: loopback inside a
+container is the container's own, so a port published to the host would have
+nothing to connect to. Keeping the service off the LAN is the host side's job,
+in the `-p 127.0.0.1:8080:8080` above.
 
 The volume must be local to the host, for the reasons given above — a network
 volume reintroduces the atomicity problem.

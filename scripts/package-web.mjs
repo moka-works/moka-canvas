@@ -32,6 +32,6 @@ await cp(
 );
 await writeFile(
   join(destination, "README.txt"),
-  `Moka Canvas ${pkg.version}\n\nRun ./moka-server${extension} --static-dir dist --port 8080, then open http://127.0.0.1:8080.\n\nTo change anything the server does — its address, what it waits for, what it refuses — copy config/moka.example.yaml to config/moka.yaml and edit that; with no such file every value stays at its default.\n`,
+  `Moka Canvas ${pkg.version}\n\nRun ./moka-server${extension} --static-dir dist --port 8080, then open http://127.0.0.1:8080.\n\nTo change anything the server does — its address, what it waits for, what it refuses — copy config/moka.example.yaml to config/moka.yaml and edit that; with no such file every value stays at its default. The address alone can also be named here: --host 0.0.0.0 listens on every interface, and a server reachable from elsewhere has nothing checking who is calling.\n`,
 );
 console.log(`Created ${destination}`);

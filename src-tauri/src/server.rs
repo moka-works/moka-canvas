@@ -1,4 +1,9 @@
-use std::{net::SocketAddr, path::Path, sync::Mutex, time::Instant};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::Path,
+    sync::Mutex,
+    time::Instant,
+};
 
 use anyhow::{ensure, Context, Result};
 use axum::{
@@ -25,6 +30,32 @@ pub struct LocalServer {
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
 
+/// Where the server listens: `server.bind` with the `--host` and `--port` named
+/// on the command line folded in. Each names one part of an address, so each
+/// beats the file for that part alone. Folded through `SocketAddr` rather than
+/// by joining strings, because joining an IPv6 address would produce something
+/// that is not one (`::1:8080`).
+pub fn listen_address(bind: &str, host: Option<IpAddr>, port: Option<u16>) -> Result<SocketAddr> {
+    let written: SocketAddr = bind
+        .parse()
+        .with_context(|| format!("server.bind is not a valid socket address: {bind}"))?;
+    Ok(SocketAddr::new(
+        host.unwrap_or(written.ip()),
+        port.unwrap_or(written.port()),
+    ))
+}
+
+/// The address a reader should open, which is not always the address bound: a
+/// server on every interface answers on loopback too, and no browser opens
+/// `0.0.0.0`.
+fn navigable(address: SocketAddr) -> String {
+    if address.ip().is_unspecified() {
+        format!("http://127.0.0.1:{}", address.port())
+    } else {
+        format!("http://{address}")
+    }
+}
+
 impl LocalServer {
     pub async fn start(config: AppConfig, mode: RuntimeMode, metadata_root: &Path) -> Result<Self> {
         // The prompts are embedded in this binary, so one that does not compile
@@ -38,11 +69,7 @@ impl LocalServer {
         // make would be a difference nobody asked for.
         crate::generate::debug::init(&config.generate.debug)
             .context("provider call recording could not be started")?;
-        let address: SocketAddr = config
-            .server
-            .bind
-            .parse()
-            .context("server.bind is not a valid socket address")?;
+        let address = listen_address(&config.server.bind, None, None)?;
         ensure!(
             config.server.static_dir.is_dir(),
             "static directory does not exist: {}",
@@ -67,6 +94,15 @@ impl LocalServer {
             .await
             .context("failed to bind the local HTTP server")?;
         let address = listener.local_addr()?;
+        // Read from the listener rather than from what was asked for: a `:0`
+        // port is only known once it is bound, and a warning that named the
+        // wrong address would send a reader to the wrong one.
+        if !address.ip().is_loopback() {
+            tracing::warn!(
+                target: "moka::server",
+                "listening on {address}, which is not loopback: anything that can reach this port can read and write every project this process can open, and nothing in front of these routes asks who is calling (see docs/security.md)"
+            );
+        }
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let app = router(state);
 
@@ -89,6 +125,12 @@ impl LocalServer {
 
     pub fn url(&self) -> String {
         format!("http://{}", self.address)
+    }
+
+    /// What goes in the line a reader is told to open. The desktop window is
+    /// built from `url()`, which therefore stays the address really bound.
+    pub fn display_url(&self) -> String {
+        navigable(self.address)
     }
 
     pub fn shutdown(&self) {
@@ -375,5 +417,91 @@ mod tests {
         }
 
         std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    #[test]
+    fn the_configured_address_is_used_when_the_command_line_names_nothing() {
+        assert_eq!(
+            listen_address("127.0.0.1:3000", None, None).unwrap(),
+            "127.0.0.1:3000".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_host_named_on_the_command_line_keeps_the_configured_port() {
+        assert_eq!(
+            listen_address("127.0.0.1:3000", Some("0.0.0.0".parse().unwrap()), None).unwrap(),
+            "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_port_named_on_the_command_line_keeps_the_configured_host() {
+        assert_eq!(
+            listen_address("0.0.0.0:3000", None, Some(9000)).unwrap(),
+            "0.0.0.0:9000".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_host_and_a_port_named_on_the_command_line_fold_into_one_address() {
+        assert_eq!(
+            listen_address(
+                "127.0.0.1:3000",
+                Some("192.168.1.5".parse().unwrap()),
+                Some(9000)
+            )
+            .unwrap(),
+            "192.168.1.5:9000".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn an_ipv6_address_is_folded_into_one_that_can_be_written_down() {
+        assert_eq!(
+            listen_address("127.0.0.1:3000", Some("::1".parse().unwrap()), Some(8080)).unwrap(),
+            "[::1]:8080".parse::<SocketAddr>().unwrap()
+        );
+        assert_eq!(
+            listen_address("[::1]:3000", None, Some(8080)).unwrap(),
+            "[::1]:8080".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_bind_that_is_not_an_address_is_reported_with_what_was_written() {
+        let error = listen_address("nonsense", None, Some(8080)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "server.bind is not a valid socket address: nonsense"
+        );
+    }
+
+    #[test]
+    fn a_server_on_every_interface_is_still_opened_on_loopback() {
+        assert_eq!(
+            navigable("0.0.0.0:8080".parse().unwrap()),
+            "http://127.0.0.1:8080"
+        );
+        assert_eq!(
+            navigable("[::]:8080".parse().unwrap()),
+            "http://127.0.0.1:8080"
+        );
+    }
+
+    #[test]
+    fn a_named_address_is_opened_as_it_stands() {
+        assert_eq!(
+            navigable("127.0.0.1:8080".parse().unwrap()),
+            "http://127.0.0.1:8080"
+        );
+        assert_eq!(
+            navigable("192.168.1.5:9000".parse().unwrap()),
+            "http://192.168.1.5:9000"
+        );
+        assert_eq!(
+            navigable("[::1]:8080".parse().unwrap()),
+            "http://[::1]:8080"
+        );
     }
 }

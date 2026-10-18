@@ -94,7 +94,9 @@ make web-serve   # 构建前端，在 http://127.0.0.1:8080 提供 dist/ + API
 make tauri-dev   # 构建前端，运行 Tauri 桌面应用
 ```
 
-服务器与 Vite 开发服务器读同一个 `PORT`，默认 8080，所以端口只有一个说法：`make web-serve PORT=9000` 让服务器监听 9000，`PORT=9000 npm run dev` 让开发服务器（1420）把 `/api` 代理到 9000。两条命令各给一次——`make` 的变量不会流到另一个终端里的 `npm run dev`——否则代理会指向一个没人启动的端口。
+监听地址与端口各由一个变量命名：`HOST`（默认 `127.0.0.1`）与 `PORT`（默认 8080），它们分别落到服务器的 `--host` 与 `--port` 上，各自只覆盖 `server.bind` 的那一半——所以 `make web-serve PORT=9000` 换端口不会顺带改地址。`make web-serve HOST=0.0.0.0` 让这台机器以外的设备也能访问：这条路径上没有鉴权层，谁能连上谁就能读写项目，只在你信得过的网络里这么做（见 `docs/security.md`）。
+
+Vite 开发服务器读同一个 `PORT`：`make web-serve PORT=9000` 配套 `PORT=9000 npm run dev`（1420，把 `/api` 代理到 9000）。两条命令得各给一次——`make` 的变量不会流到另一个终端里的 `npm run dev`——否则代理会指向一个没人启动的端口。代理始终连 `127.0.0.1`；`HOST=0.0.0.0` 同样包含 loopback，两者并不冲突。
 
 ## 版本号
 

@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 
 use anyhow::Result;
 use clap::Parser;
 use moka_canvas::config::{load_config_file, validate_startup, RuntimeMode};
 use moka_canvas::metadata::crypto;
-use moka_canvas::server::LocalServer;
+use moka_canvas::server::{listen_address, LocalServer};
 
 #[derive(Parser)]
 #[command(name = "moka-server", about = "Serve Moka Canvas over localhost")]
@@ -18,6 +18,12 @@ struct Args {
     /// Overrides server.staticDir from the configuration file.
     #[arg(long)]
     static_dir: Option<PathBuf>,
+    /// Names the address part of server.bind; the port comes from the
+    /// configuration file unless `--port` says otherwise. Written as the IP
+    /// alone (`0.0.0.0`, `127.0.0.1`, `::1`), because an address that has to be
+    /// looked up is not one this server binds.
+    #[arg(long)]
+    host: Option<IpAddr>,
     /// Overrides the port in server.bind from the configuration file.
     #[arg(long)]
     port: Option<u16>,
@@ -78,13 +84,17 @@ anything able to read that directory can read."
     if let Some(static_dir) = args.static_dir {
         config.server.static_dir = static_dir;
     }
-    if let Some(port) = args.port {
-        config.server.bind = format!("127.0.0.1:{port}");
+    // Folded before anything reads the address, and folded into the same
+    // string the configuration file filled, so that the two names each beat
+    // that file for their own part and nothing else changes when neither is
+    // typed.
+    if args.host.is_some() || args.port.is_some() {
+        config.server.bind = listen_address(&config.server.bind, args.host, args.port)?.to_string();
     }
     let metadata_root = validate_startup(&config, RuntimeMode::Web, None)?;
 
     let server = LocalServer::start(config, RuntimeMode::Web, &metadata_root).await?;
-    println!("Moka Canvas is available at {}", server.url());
+    println!("Moka Canvas is available at {}", server.display_url());
     tokio::signal::ctrl_c().await?;
     server.shutdown();
     Ok(())

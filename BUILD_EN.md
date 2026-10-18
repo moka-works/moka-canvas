@@ -94,7 +94,9 @@ make web-serve   # Build frontend, serve dist/ + API at http://127.0.0.1:8080
 make tauri-dev   # Build frontend, run the Tauri desktop app
 ```
 
-The server and the Vite dev server read one `PORT`, defaulting to 8080, so the port has a single name: `make web-serve PORT=9000` makes the server listen on 9000, and `PORT=9000 npm run dev` makes the dev server (1420) proxy `/api` to it. Both commands need it — a `make` variable does not reach an `npm run dev` running in another terminal — otherwise the proxy points at a port nobody started.
+The address and the port each have one variable: `HOST` (default `127.0.0.1`) and `PORT` (default 8080), which land on the server's `--host` and `--port` and each override only their own half of `server.bind` — so `make web-serve PORT=9000` moves the port without moving the address. `make web-serve HOST=0.0.0.0` makes it reachable from other devices: there is no authentication layer on this path, so anyone who can connect can read and write every project. Do that only on a network you trust (see `docs/security.md`).
+
+The Vite dev server reads the same `PORT`: `make web-serve PORT=9000` pairs with `PORT=9000 npm run dev` (1420, proxying `/api` to 9000). Both commands need it — a `make` variable does not reach an `npm run dev` running in another terminal — otherwise the proxy points at a port nobody started. The proxy always connects to `127.0.0.1`, which `HOST=0.0.0.0` covers as well, so the two do not conflict.
 
 ## Versioning
 
