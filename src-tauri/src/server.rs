@@ -291,8 +291,17 @@ async fn log_api_request(req: Request, next: Next) -> Response {
 }
 
 async fn runtime(State(state): State<ApiState>) -> impl IntoResponse {
+    // Whether this server answers anywhere but this machine. The configured
+    // bind decides it: startup has already refused one that does not parse,
+    // and a port of 0 is resolved without changing the host.
+    let loopback = state
+        .config
+        .server
+        .bind
+        .parse::<SocketAddr>()
+        .is_ok_and(|address| address.ip().is_loopback());
     Json(json!({
-        "delivery": "localhost",
+        "delivery": if loopback { "localhost" } else { "network" },
         "mode": state.mode.as_str(),
         "renderer": "react + leafer-ui"
     }))
@@ -303,7 +312,12 @@ mod tests {
     use super::*;
 
     fn test_state(root: &Path) -> ApiState {
-        let config = crate::config::parse_test_config(root);
+        state_bound_to(root, "127.0.0.1:0")
+    }
+
+    fn state_bound_to(root: &Path, bind: &str) -> ApiState {
+        let mut config = crate::config::parse_test_config(root);
+        config.server.bind = bind.to_owned();
         let dir = config
             .metadata
             .dir
@@ -354,6 +368,20 @@ mod tests {
             .await
             .into_response();
         assert_eq!(response.status(), 200);
+        let body = body_json(response).await;
+        assert_eq!(body["delivery"], "localhost");
+        assert_eq!(body["mode"], "web");
+        assert_eq!(body["renderer"], "react + leafer-ui");
+    }
+
+    #[tokio::test]
+    async fn reports_a_network_delivery_when_bound_off_loopback() {
+        let root = tempfile::tempdir().unwrap();
+        let response = runtime(State(state_bound_to(root.path(), "0.0.0.0:0")))
+            .await
+            .into_response();
+        let body = body_json(response).await;
+        assert_eq!(body["delivery"], "network");
     }
 
     #[tokio::test]
