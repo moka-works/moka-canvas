@@ -129,8 +129,18 @@ impl LocalServer {
 
     /// What goes in the line a reader is told to open. The desktop window is
     /// built from `url()`, which therefore stays the address really bound.
+    ///
+    /// A wildcard bind answers on loopback too, and no browser opens the
+    /// wildcard, so the URL offered is loopback. The bound address is named
+    /// beside it: "available at 127.0.0.1" alone reads as if a `--host` asking
+    /// for the network had been ignored.
     pub fn display_url(&self) -> String {
-        navigable(self.address)
+        let url = navigable(self.address);
+        if self.address.ip().is_unspecified() {
+            format!("{url} (listening on {})", self.address)
+        } else {
+            url
+        }
     }
 
     pub fn shutdown(&self) {
@@ -531,5 +541,31 @@ mod tests {
             navigable("[::1]:8080".parse().unwrap()),
             "http://[::1]:8080"
         );
+    }
+
+    fn display_url(address: &str) -> String {
+        LocalServer {
+            address: address.parse().unwrap(),
+            shutdown: Mutex::new(None),
+        }
+        .display_url()
+    }
+
+    #[test]
+    fn a_wildcard_bind_names_the_address_it_listens_on_beside_the_one_to_open() {
+        assert_eq!(
+            display_url("0.0.0.0:8080"),
+            "http://127.0.0.1:8080 (listening on 0.0.0.0:8080)"
+        );
+        assert_eq!(
+            display_url("[::]:8080"),
+            "http://127.0.0.1:8080 (listening on [::]:8080)"
+        );
+    }
+
+    #[test]
+    fn a_named_bind_is_one_address_in_the_delivery_line() {
+        assert_eq!(display_url("127.0.0.1:8080"), "http://127.0.0.1:8080");
+        assert_eq!(display_url("192.168.1.5:9000"), "http://192.168.1.5:9000");
     }
 }
