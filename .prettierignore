@@ -1,4 +1,5 @@
 node_modules/
+.qoder/
 dist/
 release/
 src-tauri/target/
