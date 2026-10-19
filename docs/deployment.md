@@ -17,12 +17,15 @@ cd release/moka-canvas-web-<version>-<platform>-<arch>
 ./moka-server --static-dir dist --port 8080
 ```
 
-| Flag           | Default                            | Effect                                 |
-| -------------- | ---------------------------------- | -------------------------------------- |
-| `--config`     | `config/moka.yaml`, if it exists   | YAML configuration file                |
-| `--static-dir` | `server.staticDir` from the config | Built frontend to serve                |
-| `--host <IP>`  | `server.bind` from the config      | Overrides the address in `server.bind` |
-| `--port`       | `server.bind` from the config      | Overrides the port in `server.bind`    |
+| Flag                   | Default                            | Effect                                 |
+| ---------------------- | ---------------------------------- | -------------------------------------- |
+| `--config`             | `config/moka.yaml`, if it exists   | YAML configuration file                |
+| `--static-dir`         | `server.staticDir` from the config | Built frontend to serve                |
+| `--host <IP>`          | `server.bind` from the config      | Overrides the address in `server.bind` |
+| `--port`               | `server.bind` from the config      | Overrides the port in `server.bind`    |
+| `--metadata-dir <DIR>` | `metadata.dir` from the config     | Overrides the metadata directory       |
+
+`MOKA_METADATA_DIR`, when set, still wins over `--metadata-dir`.
 
 The server starts from built-in defaults and reads nothing else, so a first run
 needs no file at all. To tune it, copy the tracked example, which says what every

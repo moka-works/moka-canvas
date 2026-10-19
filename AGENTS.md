@@ -25,6 +25,8 @@
 
 前置：Node.js 22+、npm 10+、Rust stable（桌面打包另需各平台原生依赖，见 `BUILD.md`）。ffmpeg（≥5.0、带 libass）只有剪辑导出与自动字幕需要，可用 `MOKA_FFMPEG` 或配置 `clip.ffmpegPath` 指定；其余功能不依赖。
 
+并行 worktree：qoder 建的 worktree 会把 `src-tauri/target` 软链到主检出。首次 `make`（或 e2e 启动器）会把该软链替换成该 worktree 自己的目录，`make web-serve` 还会用 `--metadata-dir` 给它一个位于检出目录之外的元数据目录（默认目录被谁占用谁锁住，两个服务器无法共用一个）——此后各 worktree 的 cargo 锁、`target/debug/<binary>`、sccache 键与服务器状态互不相干；主检出保持 `src-tauri/target` 与平台默认元数据目录不变。**直接**调用 `cargo` 前先跑一次 `node scripts/checkout.mjs` 完成替换。装有 `sccache` 时 `make` 与 e2e 会自动以它为 `RUSTC_WRAPPER`、设置 `SCCACHE_BASEDIR` 并关掉增量编译（sccache 不缓存增量；元数据目录只走命令行参数，因为环境变量的差异会击穿缓存键），主检出与各 worktree 在同一相对布局下共享编译缓存；显式设 `CARGO_INCREMENTAL=1` 可换回增量（见 `scripts/checkout.mjs`）。
+
 ## 仓库地图
 
 - `src/`——React 前端。`features/{editor,clip,story,assets,settings,assistant}` 按房间划分、`App.tsx` 懒加载；zustand store 在各 feature 的 `stores/`；HTTP 调用只经 `src/api/*`；`shared/i18n/`（i18next，en/zh）、`components/`、`styles/`。

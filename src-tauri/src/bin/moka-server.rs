@@ -18,6 +18,12 @@ struct Args {
     /// Overrides server.staticDir from the configuration file.
     #[arg(long)]
     static_dir: Option<PathBuf>,
+    /// Overrides metadata.dir from the configuration file. Model
+    /// configurations, credentials and preferences live here; a worktree names
+    /// a directory of its own so two servers can run side by side.
+    /// MOKA_METADATA_DIR in the environment still wins.
+    #[arg(long)]
+    metadata_dir: Option<PathBuf>,
     /// Names the address part of server.bind; the port comes from the
     /// configuration file unless `--port` says otherwise. Written as the IP
     /// alone (`0.0.0.0`, `127.0.0.1`, `::1`), because an address that has to be
@@ -83,6 +89,9 @@ anything able to read that directory can read."
     }
     if let Some(static_dir) = args.static_dir {
         config.server.static_dir = static_dir;
+    }
+    if let Some(metadata_dir) = args.metadata_dir {
+        config.metadata.dir = Some(metadata_dir);
     }
     // Folded before anything reads the address, and folded into the same
     // string the configuration file filled, so that the two names each beat

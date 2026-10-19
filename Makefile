@@ -5,6 +5,33 @@ WINDOWS_CROSS_TARGET := x86_64-pc-windows-gnu
 HOST ?= 127.0.0.1
 PORT ?= 8080
 
+# A linked worktree's src-tauri/target symlink is replaced with a directory of
+# its own by this script, so parallel worktrees do not share one cargo lock, one
+# target/debug/<binary>, or sccache keys built from the path. A worktree also
+# gets a metadata directory beside itself, named on the server's command line at
+# run time — never in the environment, which sccache hashes. An explicit
+# CARGO_TARGET_DIR wins.
+WORKTREE_TARGET := $(shell node scripts/checkout.mjs 2>/dev/null)
+ifneq ($(WORKTREE_TARGET),)
+CARGO_TARGET_DIR ?= $(WORKTREE_TARGET)
+export CARGO_TARGET_DIR
+endif
+WORKTREE_METADATA := $(shell node scripts/checkout.mjs --metadata-dir 2>/dev/null)
+WORKTREE_METADATA_FLAG := $(if $(WORKTREE_METADATA),--metadata-dir $(WORKTREE_METADATA))
+
+# sccache, when installed, wraps every cargo invocation in these recipes, and
+# SCCACHE_BASEDIR lets all checkouts share cache entries. It does not cache
+# incremental compilations, so those are off unless asked for. Without sccache,
+# nothing changes. An explicit RUSTC_WRAPPER still wins.
+RUSTC_WRAPPER ?= $(shell command -v sccache >/dev/null 2>&1 && echo sccache)
+ifneq ($(RUSTC_WRAPPER),)
+export RUSTC_WRAPPER
+ifeq ($(RUSTC_WRAPPER),sccache)
+export SCCACHE_BASEDIR ?= $(CURDIR)
+export CARGO_INCREMENTAL ?= 0
+endif
+endif
+
 .PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows set-version clean
 
 ifeq (set-version,$(firstword $(MAKECMDGOALS)))
@@ -52,7 +79,7 @@ web-build:
 	npm run build
 
 web-serve: web-build
-	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT)
+	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT) $(WORKTREE_METADATA_FLAG)
 
 tauri-dev: web-build
 	npm run tauri dev

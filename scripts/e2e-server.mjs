@@ -17,7 +17,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 
+import { cargoEnv, ensurePrivateTarget } from "./checkout.mjs";
+
 const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "..");
+// The suite may be the first thing a worktree runs, and cargo would follow a
+// symlinked target into another checkout.
+ensurePrivateTarget(repoRoot);
 const port = process.env.MOKA_E2E_PORT ?? "8971";
 const dist = join(repoRoot, "dist");
 
@@ -105,6 +110,7 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      ...cargoEnv(repoRoot),
       MOKA_METADATA_KEY: metadataKey,
       MOKA_FFMPEG: ffmpegPath,
     },

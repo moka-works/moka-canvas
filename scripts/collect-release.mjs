@@ -1,9 +1,11 @@
 import { cp, mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { cargoTargetDir } from "./checkout.mjs";
+
 const root = new URL("..", import.meta.url).pathname;
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const targetDir = join(root, "src-tauri", "target");
+const targetDir = process.env.CARGO_TARGET_DIR ?? cargoTargetDir(root);
 const releaseDir = join(root, "release");
 const extensions = new Set([
   ".dmg",
