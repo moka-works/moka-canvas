@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   Grid,
   Line as DreiLine,
@@ -43,7 +43,9 @@ import { PerformerView } from "./PerformerView";
 import { CameraRigView, LightRigView, SelectionOutline } from "./RigViews";
 import { ORTHO_DIRECTIONS, isOrthoView, type DirectorView } from "./viewModes";
 import {
+  aspectValue,
   cameraUsable,
+  fitAspectRect,
   orthographicDistance,
   orthographicHalfRanges,
   stageBounds,
@@ -265,6 +267,41 @@ function BlockoutMaterials({
       invalidate();
     };
   }, [mode, scene, sceneKey, loadedKey, invalidate]);
+  return null;
+}
+
+/**
+ * Draws the camera view only inside the shot's frame.
+ *
+ * The frame's rectangle is cut out of the viewport with a scissor, so the
+ * image inside it is the lens's own projection at the shot's shape rather
+ * than the window's shape stretched to fit.
+ */
+function ShotScissor({ active, aspect }: { active: boolean; aspect: number }) {
+  const { gl, size } = useThree();
+  useFrame(() => {
+    if (!active) {
+      gl.setScissorTest(false);
+      gl.setViewport(0, 0, size.width, size.height);
+      return;
+    }
+    const ratio = gl.getPixelRatio();
+    const rect = fitAspectRect(size.width, size.height, aspect);
+    const x = rect.x * ratio;
+    const y = (size.height - rect.y - rect.height) * ratio;
+    const width = rect.width * ratio;
+    const height = rect.height * ratio;
+    gl.setScissorTest(true);
+    gl.setScissor(x, y, width, height);
+    gl.setViewport(x, y, width, height);
+  });
+  useEffect(
+    () => () => {
+      gl.setScissorTest(false);
+      gl.setViewport(0, 0, size.width, size.height);
+    },
+    [gl, size.width, size.height],
+  );
   return null;
 }
 
@@ -522,6 +559,14 @@ export function StageWorld({
         controls.current?.update();
         invalidate();
       },
+      currentView: () => {
+        const camera = freeCamera.current;
+        if (!camera) return null;
+        return {
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          rotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z],
+        };
+      },
     };
     apiRef.current = api;
     return () => {
@@ -561,7 +606,8 @@ export function StageWorld({
               sampleTransform(data.keyframes, playhead) ?? data.transform,
           }
         : undefined;
-      if (!animated || !placeShotCamera(shot, animated, aspect)) {
+      const frameAspect = current ? aspectValue(current.aspectRatio) : aspect;
+      if (!animated || !placeShotCamera(shot, animated, frameAspect)) {
         reportFallback(
           "The active shot has no usable camera; the free view is in use.",
         );
@@ -758,6 +804,10 @@ export function StageWorld({
             />
           );
         })}
+      <ShotScissor
+        active={view === "camera"}
+        aspect={aspectValue(activeShotOf(scene)?.aspectRatio ?? "16:9")}
+      />
       {showTracks && <KeyframePaths playhead={playhead} scene={scene} />}
       {pathPreview.length > 1 && (
         <PathLine color="#f2ce7a" points={pathPreview} />

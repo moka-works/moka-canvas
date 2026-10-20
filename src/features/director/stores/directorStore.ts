@@ -31,6 +31,10 @@ export interface DirectorRoom {
   autoKey: boolean;
   playhead: number;
   playing: boolean;
+  /** The camera-frame guides shown over the CAM view. */
+  safeFrames: boolean;
+  thirds: boolean;
+  centerCross: boolean;
   /** Why the last write to the document failed, when it did. */
   saveError: string | null;
 
@@ -52,6 +56,11 @@ export interface DirectorRoom {
   setAutoKey: (on: boolean) => void;
   setPlayhead: (time: number) => void;
   setPlaying: (playing: boolean) => void;
+  setGuides: (guides: {
+    safeFrames?: boolean;
+    thirds?: boolean;
+    centerCross?: boolean;
+  }) => void;
   setSaveError: (error: string | null) => void;
 }
 
@@ -112,6 +121,9 @@ export const useDirectorStore = create<DirectorRoom>()((set, get) => ({
   autoKey: false,
   playhead: 0,
   playing: false,
+  safeFrames: true,
+  thirds: true,
+  centerCross: true,
   saveError: null,
 
   open: (nodeId, scene) =>
@@ -129,6 +141,9 @@ export const useDirectorStore = create<DirectorRoom>()((set, get) => ({
       autoKey: false,
       playhead: 0,
       playing: false,
+      safeFrames: true,
+      thirds: true,
+      centerCross: true,
       saveError: null,
     }),
 
@@ -267,6 +282,7 @@ export const useDirectorStore = create<DirectorRoom>()((set, get) => ({
   setPlayhead: (playhead) =>
     set({ playhead: Math.max(0, Number.isFinite(playhead) ? playhead : 0) }),
   setPlaying: (playing) => set({ playing }),
+  setGuides: (guides) => set(guides),
   setSaveError: (saveError) => set({ saveError }),
 }));
 

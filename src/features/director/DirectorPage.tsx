@@ -43,6 +43,7 @@ import {
   CAMERA_PRESETS,
   addCamera,
   addEnsemble,
+  duplicateShot,
   addLight,
   addModelObject,
   addPerformer,
@@ -55,6 +56,7 @@ import {
   removeCamera,
   removeLight,
   removeObject,
+  removeShot,
   setActiveShot,
   updateCamera,
   updateLight,
@@ -67,6 +69,7 @@ import {
   StageViewport,
   type DirectorCaptureContext,
 } from "./stage/StageViewport";
+import { compileDirection } from "./stage/direction";
 import type { ModelAnimation } from "./stage/ModelView";
 import {
   applyBoneRotation,
@@ -77,6 +80,8 @@ import {
   pathKeyframes,
   recordKeyframe,
   sampleTransform,
+  snapTime,
+  upsertTransformKeyframe,
   type PathPoint,
 } from "./stage/animation";
 import { autoBoneMap, rigReady } from "./stage/rig";
@@ -121,6 +126,9 @@ export function DirectorPage() {
   const autoKey = useDirectorStore((state) => state.autoKey);
   const saveError = useDirectorStore((state) => state.saveError);
   const [pathMode, setPathMode] = useState<"object" | "camera" | null>(null);
+  const safeFrames = useDirectorStore((state) => state.safeFrames);
+  const thirds = useDirectorStore((state) => state.thirds);
+  const centerCross = useDirectorStore((state) => state.centerCross);
   const past = useDirectorStore((state) => state.past);
   const future = useDirectorStore((state) => state.future);
   const moka = useProjectStore((state) => state.moka);
@@ -1019,6 +1027,97 @@ export function DirectorPage() {
 
   const models = moka?.resources.models ?? [];
   const images = moka?.resources.images ?? [];
+  const shot = activeShotOf(scene);
+  const assetNames = new Map<string, string>();
+  for (const entry of Object.values(moka?.resources ?? {}).flat()) {
+    assetNames.set(entry.id, entry.name);
+  }
+  const promptLocale = (i18n.language || "en").startsWith("zh")
+    ? ("zh" as const)
+    : ("en" as const);
+  const compiledPrompt = shot
+    ? compileDirection(scene, shot, promptLocale, (id) => assetNames.get(id))
+    : "";
+
+  const duplicateShotNow = (id: string) => {
+    let created: string | null = null;
+    edit((current) => {
+      const result = duplicateShot(current, id);
+      if (!result) return current;
+      created = result.id;
+      return result.scene;
+    });
+    if (created) {
+      useDirectorStore.getState().setPlayhead(0);
+    }
+  };
+
+  const deleteShotNow = (id: string) => {
+    edit((current) => removeShot(current, id));
+    useDirectorStore.getState().setPlayhead(0);
+  };
+
+  const alignCameraToView = () => {
+    const view = viewportApi.current?.currentView();
+    const current = useDirectorStore.getState().draft;
+    if (!view || !current) return;
+    const used = activeShotOf(current);
+    const camera = used
+      ? current.cameras.find((entry) => entry.id === used.cameraId)
+      : undefined;
+    if (!used || !camera) return;
+    const distance = Math.max(
+      0.1,
+      Math.hypot(
+        camera.target[0] - camera.transform.position[0],
+        camera.target[1] - camera.transform.position[1],
+        camera.target[2] - camera.transform.position[2],
+      ),
+    );
+    const direction = new Vector3(0, 0, -1).applyEuler(
+      new Euler(...view.rotation),
+    );
+    const target: [number, number, number] = [
+      view.position[0] + direction.x * distance,
+      view.position[1] + direction.y * distance,
+      view.position[2] + direction.z * distance,
+    ];
+    const transform: DirectorTransform = {
+      position: view.position,
+      rotation: view.rotation,
+      scale: [1, 1, 1],
+    };
+    edit((sceneNow) => {
+      const held = sceneNow.cameras.find((entry) => entry.id === camera.id);
+      if (!held) return sceneNow;
+      if (held.keyframes.length === 0) {
+        return updateCamera(sceneNow, held.id, { transform, target });
+      }
+      return updateCamera(sceneNow, held.id, {
+        target,
+        keyframes: upsertTransformKeyframe(
+          held.keyframes,
+          snapTime(useDirectorStore.getState().playhead, used.fps),
+          transform,
+          "smooth",
+        ),
+      });
+    });
+  };
+
+  const copyCompiledPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(compiledPrompt);
+      useAppStore
+        .getState()
+        .pushToast("success", t("director:cardPanel.promptCopied"));
+    } catch (error) {
+      notify(
+        t("director:cardPanel.copyFailed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
 
   return (
     <main
@@ -1188,6 +1287,7 @@ export function DirectorPage() {
                 }
                 onGroundPoint={placeOnGround}
                 onModelLoaded={handleModelLoaded}
+                guides={{ safeFrames, thirds, centerCross }}
                 onPathCancel={() => setPathMode(null)}
                 onPathComplete={completePath}
                 onSelect={(next) =>
@@ -1357,6 +1457,15 @@ export function DirectorPage() {
                     edit((current) => updateShot(current, id, patch))
                   }
                   onUseAsPerformer={useAsPerformer}
+                  onDuplicateShot={duplicateShotNow}
+                  onDeleteShot={deleteShotNow}
+                  onAlignCamera={alignCameraToView}
+                  compiledPrompt={compiledPrompt}
+                  onCopyPrompt={() => void copyCompiledPrompt()}
+                  guides={{ safeFrames, thirds, centerCross }}
+                  onGuides={(patch) =>
+                    useDirectorStore.getState().setGuides(patch)
+                  }
                   playhead={playhead}
                   scene={scene}
                   selection={selection}

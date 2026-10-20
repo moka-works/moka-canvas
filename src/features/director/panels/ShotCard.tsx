@@ -61,6 +61,17 @@ export interface ShotCardProps {
   ) => void;
   onUseAsPerformer: (id: string) => void;
   onApplyCameraMove: () => void;
+  onDuplicateShot: (id: string) => void;
+  onDeleteShot: (id: string) => void;
+  onAlignCamera: () => void;
+  compiledPrompt: string;
+  onCopyPrompt: () => void;
+  guides: { safeFrames: boolean; thirds: boolean; centerCross: boolean };
+  onGuides: (patch: {
+    safeFrames?: boolean;
+    thirds?: boolean;
+    centerCross?: boolean;
+  }) => void;
   playhead: number;
 }
 
@@ -87,6 +98,13 @@ export function ShotCard({
   onBone,
   onUseAsPerformer,
   onApplyCameraMove,
+  onDuplicateShot,
+  onDeleteShot,
+  onAlignCamera,
+  compiledPrompt,
+  onCopyPrompt,
+  guides,
+  onGuides,
   playhead,
 }: ShotCardProps) {
   const { t } = useTranslation(["director", "editor"]);
@@ -162,13 +180,25 @@ export function ShotCard({
         {tab === "shot" &&
           (shot ? (
             <ShotPage
+              camera={scene.cameras.find(
+                (camera) => camera.id === shot.cameraId,
+              )}
+              canDeleteShot={scene.shots.length > 1}
+              compiledPrompt={compiledPrompt}
               fpsOptions={DIRECTOR_SHOT_FPS.map((fps) => ({
                 value: String(fps),
                 label: `${fps} fps`,
               }))}
+              guides={guides}
+              onAlignCamera={onAlignCamera}
+              onApplyCameraMove={onApplyCameraMove}
+              onCamera={onCamera}
               onCameraSelect={(cameraId) => onCameraSelect(shot.id, cameraId)}
               onChange={(patch) => onShot(shot.id, patch)}
-              onApplyCameraMove={onApplyCameraMove}
+              onCopyPrompt={onCopyPrompt}
+              onDeleteShot={() => onDeleteShot(shot.id)}
+              onDuplicateShot={() => onDuplicateShot(shot.id)}
+              onGuides={onGuides}
               scene={scene}
               shot={shot}
             />
@@ -878,22 +908,59 @@ function LightPage({
 function ShotPage({
   scene,
   shot,
+  camera,
+  canDeleteShot,
+  compiledPrompt,
   fpsOptions,
+  guides,
   onChange,
   onCameraSelect,
+  onCamera,
   onApplyCameraMove,
+  onAlignCamera,
+  onCopyPrompt,
+  onDuplicateShot,
+  onDeleteShot,
+  onGuides,
 }: {
   scene: DirectorScene;
   shot: DirectorShot;
+  camera?: DirectorCamera;
+  canDeleteShot: boolean;
+  compiledPrompt: string;
   fpsOptions: { value: string; label: string }[];
+  guides: { safeFrames: boolean; thirds: boolean; centerCross: boolean };
   onChange: (patch: Partial<DirectorShot>) => void;
   onCameraSelect: (cameraId: string) => void;
+  onCamera: (id: string, patch: Partial<DirectorCamera>) => void;
   onApplyCameraMove: () => void;
+  onAlignCamera: () => void;
+  onCopyPrompt: () => void;
+  onDuplicateShot: () => void;
+  onDeleteShot: () => void;
+  onGuides: (patch: {
+    safeFrames?: boolean;
+    thirds?: boolean;
+    centerCross?: boolean;
+  }) => void;
 }) {
   const { t } = useTranslation("director");
   return (
     <>
       <DirectorSection title={t("cardPanel.shot")}>
+        <div className="director-inline-actions">
+          <button className="button" onClick={onDuplicateShot} type="button">
+            {t("cardPanel.duplicateShot")}
+          </button>
+          <button
+            className="button"
+            disabled={!canDeleteShot}
+            onClick={onDeleteShot}
+            type="button"
+          >
+            {t("cardPanel.deleteShot")}
+          </button>
+        </div>
         <DirectorText
           label={t("field.name")}
           onCommit={(name) => name.trim() && onChange({ name: name.trim() })}
@@ -902,9 +969,9 @@ function ShotPage({
         <DirectorSelect
           label={t("field.camera")}
           onChange={(cameraId) => onCameraSelect(cameraId)}
-          options={scene.cameras.map((camera) => ({
-            value: camera.id,
-            label: camera.name,
+          options={scene.cameras.map((entry) => ({
+            value: entry.id,
+            label: entry.name,
           }))}
           value={shot.cameraId}
         />
@@ -968,6 +1035,98 @@ function ShotPage({
           rows={5}
           value={shot.prompt}
         />
+      </DirectorSection>
+      {camera && (
+        <DirectorSection title={t("cardPanel.cameraOptics")}>
+          <DirectorNumber
+            label={t("field.focalLength")}
+            max={300}
+            min={12}
+            onChange={(focalLength) => onCamera(camera.id, { focalLength })}
+            step={1}
+            suffix="mm"
+            value={camera.focalLength}
+          />
+          <DirectorNumber
+            label={t("field.aperture")}
+            max={22}
+            min={1.2}
+            onChange={(aperture) => onCamera(camera.id, { aperture })}
+            step={0.1}
+            value={camera.aperture}
+          />
+          <DirectorNumber
+            label={t("field.focusDistance")}
+            max={1000}
+            min={0.1}
+            onChange={(focusDistance) => onCamera(camera.id, { focusDistance })}
+            step={0.1}
+            suffix="m"
+            value={camera.focusDistance}
+          />
+          <p className="director-note">{t("cardPanel.apertureNote")}</p>
+          <DirectorNumber
+            label={t("field.near")}
+            min={0.001}
+            onChange={(near) => onCamera(camera.id, { near })}
+            step={0.01}
+            suffix="m"
+            value={camera.near}
+          />
+          <DirectorNumber
+            label={t("field.far")}
+            min={0.01}
+            onChange={(far) => onCamera(camera.id, { far })}
+            step={1}
+            suffix="m"
+            value={camera.far}
+          />
+          <p className="director-note">
+            {t("cardPanel.fovReadout", {
+              value: (
+                (2 * Math.atan(36 / (2 * camera.focalLength)) * 180) /
+                Math.PI
+              ).toFixed(1),
+            })}
+          </p>
+          <button
+            className="button director-wide-button"
+            onClick={onAlignCamera}
+            type="button"
+          >
+            {t("cardPanel.alignView")}
+          </button>
+        </DirectorSection>
+      )}
+      <DirectorSection title={t("cardPanel.framingGuides")}>
+        <DirectorToggle
+          checked={guides.safeFrames}
+          label={t("cardPanel.safeFrames")}
+          onChange={(safeFrames) => onGuides({ safeFrames })}
+        />
+        <DirectorToggle
+          checked={guides.thirds}
+          label={t("cardPanel.thirds")}
+          onChange={(thirds) => onGuides({ thirds })}
+        />
+        <DirectorToggle
+          checked={guides.centerCross}
+          label={t("cardPanel.centerCross")}
+          onChange={(centerCross) => onGuides({ centerCross })}
+        />
+      </DirectorSection>
+      <DirectorSection title={t("cardPanel.compiledPrompt")}>
+        <label className="director-field">
+          <span>{t("cardPanel.compiledPromptHint")}</span>
+          <textarea readOnly rows={10} value={compiledPrompt} />
+        </label>
+        <button
+          className="button director-wide-button"
+          onClick={onCopyPrompt}
+          type="button"
+        >
+          {t("cardPanel.copyPrompt")}
+        </button>
       </DirectorSection>
     </>
   );

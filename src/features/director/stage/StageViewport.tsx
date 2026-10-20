@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
-import type {
-  DirectorQuat,
-  DirectorRenderMode,
-  DirectorScene,
-  DirectorTransform,
+import {
+  activeShotOf,
+  type DirectorQuat,
+  type DirectorRenderMode,
+  type DirectorScene,
+  type DirectorTransform,
 } from "../../../shared/domain";
 import type {
   DirectorSelection,
@@ -14,6 +15,7 @@ import type {
   DirectorViewportApi,
 } from "../types";
 import { StageWorld } from "./StageWorld";
+import { aspectValue, fitAspectRect } from "./framing";
 import type { ModelAnimation } from "./ModelView";
 import type { DirectorView } from "./viewModes";
 
@@ -73,6 +75,7 @@ export interface StageViewportProps {
   showTracks: boolean;
   onPathComplete: (points: import("./animation").PathPoint[]) => void;
   onPathCancel: () => void;
+  guides: { safeFrames: boolean; thirds: boolean; centerCross: boolean };
   apiRef?: { current: DirectorViewportApi | null };
 }
 
@@ -126,6 +129,7 @@ export function StageViewport({
   showTracks,
   onPathComplete,
   onPathCancel,
+  guides,
   apiRef,
 }: StageViewportProps) {
   const { t } = useTranslation("director");
@@ -139,6 +143,19 @@ export function StageViewport({
   const [environmentError, setEnvironmentError] = useState<string | null>(null);
   const [fallback, setFallback] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () =>
+      setSize({ width: root.clientWidth, height: root.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   const reportModelError = useCallback((objectId: string, message: string) => {
     setModelErrors((held) => {
@@ -196,6 +213,7 @@ export function StageViewport({
     <div
       className="director-viewport"
       data-renderer-ready={ready && !lost ? "true" : "false"}
+      ref={rootRef}
     >
       <Canvas
         camera={CAMERA_CONFIG}
@@ -248,6 +266,50 @@ export function StageViewport({
           {t(`director:view.${view}`)}
         </span>
       )}
+      {view === "camera" &&
+        (() => {
+          const shot = activeShotOf(scene);
+          if (!shot) return null;
+          const frame = fitAspectRect(
+            size.width,
+            size.height,
+            aspectValue(shot.aspectRatio),
+          );
+          if (frame.width <= 0 || frame.height <= 0) return null;
+          return (
+            <div
+              aria-hidden="true"
+              className="director-cam-guides"
+              style={{
+                left: frame.x,
+                top: frame.y,
+                width: frame.width,
+                height: frame.height,
+              }}
+            >
+              {guides.safeFrames && (
+                <>
+                  <span className="director-safe is-action" />
+                  <span className="director-safe is-title" />
+                </>
+              )}
+              {guides.thirds && (
+                <>
+                  <span className="director-thirds is-v1" />
+                  <span className="director-thirds is-v2" />
+                  <span className="director-thirds is-h1" />
+                  <span className="director-thirds is-h2" />
+                </>
+              )}
+              {guides.centerCross && (
+                <>
+                  <span className="director-cross is-h" />
+                  <span className="director-cross is-v" />
+                </>
+              )}
+            </div>
+          );
+        })()}
       {lost && (
         <div className="director-viewport-error" role="alert">
           <strong>{t("director:contextLost.title")}</strong>

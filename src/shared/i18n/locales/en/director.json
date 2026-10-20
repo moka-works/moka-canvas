@@ -337,7 +337,20 @@
       "none": "Unmapped"
     },
     "useAsPerformer": "Use this model as a performer",
-    "applyCameraMove": "Apply the camera move"
+    "applyCameraMove": "Apply the camera move",
+    "duplicateShot": "Duplicate shot",
+    "deleteShot": "Delete shot",
+    "cameraOptics": "Camera optics",
+    "alignView": "Align to the current view",
+    "framingGuides": "Framing guides",
+    "safeFrames": "Safe frames",
+    "thirds": "Thirds",
+    "centerCross": "Centre cross",
+    "compiledPrompt": "Compiled prompt",
+    "compiledPromptHint": "Fixed in the interface language when delivered; editing the scene does not rewrite a delivered snapshot.",
+    "copyPrompt": "Copy the prompt",
+    "promptCopied": "The lens direction is on the clipboard.",
+    "copyFailed": "The browser would not copy automatically; select the text above and copy it."
   },
   "shots": {
     "strip": "Shots",

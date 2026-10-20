@@ -337,7 +337,20 @@
       "none": "未映射"
     },
     "useAsPerformer": "把该模型用作演员",
-    "applyCameraMove": "应用运镜"
+    "applyCameraMove": "应用运镜",
+    "duplicateShot": "复制镜头",
+    "deleteShot": "删除镜头",
+    "cameraOptics": "镜头光学",
+    "alignView": "对齐当前视图",
+    "framingGuides": "取景辅助",
+    "safeFrames": "安全框",
+    "thirds": "三分线",
+    "centerCross": "中心十字",
+    "compiledPrompt": "编译后的提示词",
+    "compiledPromptHint": "回写时按当时的界面语言固定；继续修改场景不会改写已回写的快照。",
+    "copyPrompt": "复制提示词",
+    "promptCopied": "镜头提示词已复制。",
+    "copyFailed": "浏览器不允许自动复制，请选中上方文本手动复制。"
   },
   "shots": {
     "strip": "镜头条",

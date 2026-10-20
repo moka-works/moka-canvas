@@ -36,6 +36,11 @@ export interface DirectorViewportApi {
   fitAll: () => void;
   resetView: () => void;
   dolly: (factor: number) => void;
+  /** The free camera's place and orientation, for aligning a shot to it. */
+  currentView: () => {
+    position: [number, number, number];
+    rotation: [number, number, number];
+  } | null;
 }
 
 /** One keyframe named well enough to delete or re-ease it. */
