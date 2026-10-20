@@ -1,0 +1,12 @@
+{
+  "page": {
+    "title": "Director desk"
+  },
+  "capability": {
+    "title": "This environment cannot draw 3D",
+    "body": "The director desk needs WebGL, and this browser or desktop view did not provide a WebGL context.",
+    "reason": "Reason: {{reason}}",
+    "lowTexture": "This device's largest texture is {{size}} px; large model textures may be slow.",
+    "retry": "Check again"
+  }
+}

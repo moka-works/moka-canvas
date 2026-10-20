@@ -17,6 +17,15 @@ export default defineConfig({
           if (/node_modules\/(i18next|react-i18next)\//.test(id)) {
             return "i18n";
           }
+          // The 3D stack is one lazy room's own weight. Keeping it in one
+          // chunk makes the room one fetch and keeps it off every other page.
+          if (
+            /node_modules\/(three|three-stdlib|@react-three|@use-gesture|maath|troika|meshline|three-mesh-bvh|camera-controls|detect-gpu|glsl-noise|suspend-react)\//.test(
+              id,
+            )
+          ) {
+            return "three";
+          }
         },
       },
     },

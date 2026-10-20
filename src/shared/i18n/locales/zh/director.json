@@ -1,0 +1,12 @@
+{
+  "page": {
+    "title": "导演台"
+  },
+  "capability": {
+    "title": "当前环境无法绘制 3D",
+    "body": "导演台需要 WebGL，但当前浏览器或桌面视图没有提供 WebGL 上下文。",
+    "reason": "原因：{{reason}}",
+    "lowTexture": "此设备的最大纹理为 {{size}} px；较大的模型贴图可能较慢。",
+    "retry": "重新检测"
+  }
+}

@@ -6,6 +6,7 @@ import enAssets from "./locales/en/assets.json" with { type: "json" };
 import enAssistant from "./locales/en/assistant.json" with { type: "json" };
 import enClip from "./locales/en/clip.json" with { type: "json" };
 import enCommon from "./locales/en/common.json" with { type: "json" };
+import enDirector from "./locales/en/director.json" with { type: "json" };
 import enDomain from "./locales/en/domain.json" with { type: "json" };
 import enEditor from "./locales/en/editor.json" with { type: "json" };
 import enErrors from "./locales/en/errors.json" with { type: "json" };
@@ -17,6 +18,7 @@ import zhAssets from "./locales/zh/assets.json" with { type: "json" };
 import zhAssistant from "./locales/zh/assistant.json" with { type: "json" };
 import zhClip from "./locales/zh/clip.json" with { type: "json" };
 import zhCommon from "./locales/zh/common.json" with { type: "json" };
+import zhDirector from "./locales/zh/director.json" with { type: "json" };
 import zhDomain from "./locales/zh/domain.json" with { type: "json" };
 import zhEditor from "./locales/zh/editor.json" with { type: "json" };
 import zhErrors from "./locales/zh/errors.json" with { type: "json" };
@@ -104,6 +106,7 @@ const resources = {
     assistant: enAssistant,
     clip: enClip,
     common: enCommon,
+    director: enDirector,
     domain: enDomain,
     editor: enEditor,
     errors: enErrors,
@@ -117,6 +120,7 @@ const resources = {
     assistant: zhAssistant,
     clip: zhClip,
     common: zhCommon,
+    director: zhDirector,
     domain: zhDomain,
     editor: zhEditor,
     errors: zhErrors,

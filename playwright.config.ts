@@ -24,7 +24,16 @@ export default defineConfig({
   fullyParallel: false,
   // The interface follows the browser's language; the assertions are English,
   // so the browser is asked for English.
-  use: { baseURL, locale: "en-US" },
+  use: {
+    baseURL,
+    locale: "en-US",
+    // The browser suite runs on machines without a GPU. SwiftShader supplies
+    // a real WebGL2 context so the director desk is exercised rather than
+    // skipped; performance there is not a product benchmark.
+    launchOptions: {
+      args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    },
+  },
   webServer: {
     command: "node scripts/e2e-server.mjs",
     url: `${baseURL}/api/health`,

@@ -8331,3 +8331,89 @@ button > .story-spin {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   The director desk
+   -------------------------------------------------------------------------- */
+
+.director-page {
+  background: var(--canvas);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.director-topbar {
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--stroke);
+  display: flex;
+  flex: none;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 16px;
+}
+
+.director-topbar h1 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.director-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.director-viewport canvas {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.director-capability {
+  align-items: flex-start;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 48px auto;
+  max-width: 640px;
+  padding: 24px;
+}
+
+.director-capability h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.director-capability p,
+.director-capability pre {
+  color: var(--muted);
+  margin: 0;
+}
+
+.director-capability pre {
+  background: var(--canvas);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.director-capability-note {
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  bottom: 16px;
+  color: var(--yellow);
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  position: absolute;
+  right: 16px;
+}
