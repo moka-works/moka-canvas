@@ -29,6 +29,7 @@ View detail document: [https://moka-canvas.art](https://moka-canvas.art)
 - **Asset shelf**: every file in the project laid out by kind — text, image, audio, video — searchable, with notes and a keep-to-hand mark; any file can show what uses it: which canvases, clips, and stories refer to it.
 - **Clip module**: multi-track timelines, seven transitions, subtitle editing with SRT import and export, and auto subtitles; MP4 export is rendered precisely by the machine's own ffmpeg.
 - **Story module**: premise → outline → elements → storyboard → compose — each step a batch of AI questions you can read, edit, and confirm, and at the end a film is put together and handed to the Clip module for fine cutting.
+- **3D director desk**: a director card on the canvas holds a 3D stage you can walk around — actors, props, lights, cameras, and shots. Block the moves, record keyframes, apply camera moves, then deliver the shot frame and the blockout reference back onto the card together with the compiled lens direction, ready for a video node.
 - **Projects travel with you**: a project is an ordinary folder — copy it and it has moved; it can also be exported as a `.mokapkg.zip` package and imported on another machine.
 
 ## Quick start
@@ -58,7 +59,7 @@ Keys are written, never read back: the interface only ever shows a mask, and lea
 
 ### 5. Meet the four modules
 
-- **Canvas**: nodes, connections, and generation — where the work happens;
+- **Canvas**: nodes, connections, and generation — where the work happens; a director desk is one kind of card, and double-clicking it opens the 3D stage to edit and deliver from;
 - **Story**: a telling in five steps, from premise to film;
 - **Clip**: timelines, transitions, and subtitles — cut material into a film;
 - **Assets**: every file the project holds — read in one place, kept in one place.
@@ -71,7 +72,7 @@ The projects menu in the top-left corner switches between the four modules at an
 - **Application state** (model configurations, API keys, preferences, the recent-projects list) lives in the system's application-data directory — `~/Library/Application Support/MokaCanvas/` on macOS, `%APPDATA%\MokaCanvas\` on Windows — and does not travel with a project; keys are stored encrypted, written but never read back;
 - No account, no cloud sync, and no telemetry: the only network requests are the ones to the model endpoints you configured.
 
-Video export and auto subtitles need ffmpeg 5.0 or newer on the machine (an open-source video tool; you need a full build with libass support, and how to install one is in the [build guide](BUILD_EN.md)). Without it everything else carries on as usual — only those two places report themselves unavailable.
+Video export and auto subtitles need ffmpeg 5.0 or newer on the machine (an open-source video tool; you need a full build with libass support, and how to install one is in the [build guide](BUILD_EN.md)). The director desk also uses the same ffmpeg to turn a blocking reference into MP4; without it the WebM recording is kept and said so. Everything else carries on as usual.
 
 ## Building and packaging
 

@@ -460,6 +460,25 @@ live in the platform application-data directory, never in the program tree. See
    know — per-node generation settings, for instance — are ignored on
    read instead of rejecting the document.
 
+## Director desk
+
+1. New project → Canvas → double-click empty space → **Director desk** → pick a
+   template. Orbit the stage, switch CAM and TOP, move an actor, and save;
+   reopen the project and confirm the scene is as it was left.
+2. Deliver a shot frame at 1080p. The card's inspector and `frame` port show
+   the picture immediately, the shelf lists it as **Shot frame**, and no image
+   or video node appeared beside the desk.
+3. Record a blocking reference. A machine with ffmpeg files an MP4; one
+   without keeps the WebM, keeps the recording on the shelf, and says why.
+   Export a depth pass and confirm it lands on the shelf only.
+4. Wire the desk's `blocking` output into a video node: its parameter page
+   says the run uses reference mode, and a run's preview carries the frame,
+   the blocking film, and the compiled lens direction. Choosing `auto`
+   explicitly shows the warning instead of overriding the choice.
+5. `e2e/director-lifecycle.spec.ts` automates fifty entries and exits; run it
+   once with a real browser's GPU enabled as well, watching the WebGL context
+   count in the browser's own tooling.
+
 ## Performance smoke (reference machine)
 
 1. Open the 200-node/300-edge stress project; pan, zoom, and drag stay

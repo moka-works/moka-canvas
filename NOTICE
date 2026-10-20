@@ -29,6 +29,20 @@ Components licensed under the Apache License, Version 2.0:
 * zopfli - https://github.com/zopfli-rs/zopfli
   Copyright the zopfli-rs contributors
 
+Components licensed under the MIT License:
+
+* three - https://github.com/mrdoob/three.js
+  Copyright 2010-2026 three.js authors
+
+* @react-three/fiber - https://github.com/pmndrs/react-three-fiber
+  Copyright Paul Henschel and contributors
+
+* @react-three/drei - https://github.com/pmndrs/drei
+  Copyright Paul Henschel and contributors
+
+* @types/three - https://github.com/DefinitelyTyped/DefinitelyTyped
+  Copyright DefinitelyTyped contributors
+
 Other third-party components are available under permissive licenses, including
 MIT, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0, MPL-2.0 and
 CDLA-Permissive-2.0.

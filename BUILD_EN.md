@@ -49,7 +49,7 @@ On rpm-based distributions the `-dev` packages become the matching `-devel` ones
 
 ## Clip export (ffmpeg)
 
-Timeline export is done by ffmpeg, which is not bundled. The program runs without it — export reports itself unavailable and its dialog names every way out — and a machine that is meant to export needs a build with **libass** (the `ass` filter that burns captions in) and `xfade` (the transitions). The plain `brew install ffmpeg` formula is built without libass: a cut with no words exports, and one with words is refused by name rather than quietly losing them.
+Timeline export is done by ffmpeg, which is not bundled. The program runs without it — export reports itself unavailable and its dialog names every way out — and a machine that is meant to export needs a build with **libass** (the `ass` filter that burns captions in) and `xfade` (the transitions). The director desk also uses this same renderer to turn a blockout reference into MP4; without it the recording is kept as WebM and said so. The plain `brew install ffmpeg` formula is built without libass: a cut with no words exports, and one with words is refused by name rather than quietly losing them.
 
 The renderer is looked for in three places, in this order: `clip.ffmpegPath` in the configuration file (`clip` in `config/moka.example.yaml`), the `MOKA_FFMPEG` environment variable, then the platform search path. A named path that is not there is unavailable rather than a different ffmpeg being run instead, which is what makes a machine's renderer deterministic.
 
