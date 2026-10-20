@@ -69,6 +69,10 @@ export interface StageViewportProps {
   onGestureStart: () => void;
   onGestureEnd: () => void;
   playhead: number;
+  pathMode: "object" | "camera" | null;
+  showTracks: boolean;
+  onPathComplete: (points: import("./animation").PathPoint[]) => void;
+  onPathCancel: () => void;
   apiRef?: { current: DirectorViewportApi | null };
 }
 
@@ -118,6 +122,10 @@ export function StageViewport({
   onGestureStart,
   onGestureEnd,
   playhead,
+  pathMode,
+  showTracks,
+  onPathComplete,
+  onPathCancel,
   apiRef,
 }: StageViewportProps) {
   const { t } = useTranslation("director");
@@ -219,13 +227,17 @@ export function StageViewport({
           onGroundPoint={onGroundPoint}
           onModelError={reportModelError}
           onModelLoaded={reportLoaded}
+          onPathCancel={onPathCancel}
+          onPathComplete={onPathComplete}
           onSelect={onSelect}
           onTransformPreview={onTransformPreview}
+          pathMode={pathMode}
           playhead={playhead}
           reloadToken={reloadToken}
           renderMode={renderMode}
           scene={scene}
           selection={selection}
+          showTracks={showTracks}
           transformMode={transformMode}
           view={view}
         />

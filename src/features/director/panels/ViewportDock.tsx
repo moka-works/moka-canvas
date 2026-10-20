@@ -21,6 +21,10 @@ export interface ViewportDockProps {
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleMotion: () => void;
+  pathMode: "object" | "camera" | null;
+  canPathObject: boolean;
+  canPathCamera: boolean;
+  onPath: (mode: "object" | "camera" | null) => void;
 }
 
 const TRANSFORMS: DirectorTransformMode[] = ["translate", "rotate", "scale"];
@@ -50,6 +54,10 @@ export function ViewportDock({
   onToggleLeft,
   onToggleRight,
   onToggleMotion,
+  pathMode,
+  canPathObject,
+  canPathCamera,
+  onPath,
 }: ViewportDockProps) {
   const { t } = useTranslation("director");
   return (
@@ -70,6 +78,30 @@ export function ViewportDock({
             <small>{TRANSFORM_KEYS[mode]}</small>
           </button>
         ))}
+      </div>
+      <div className="director-dock-group">
+        <button
+          aria-label={t("dock.pathObject")}
+          aria-pressed={pathMode === "object"}
+          className="director-dock-button"
+          disabled={!canPathObject}
+          onClick={() => onPath(pathMode === "object" ? null : "object")}
+          title={t("dock.pathObject")}
+          type="button"
+        >
+          {t("dock.pathObjectShort")}
+        </button>
+        <button
+          aria-label={t("dock.pathCamera")}
+          aria-pressed={pathMode === "camera"}
+          className="director-dock-button"
+          disabled={!canPathCamera}
+          onClick={() => onPath(pathMode === "camera" ? null : "camera")}
+          title={t("dock.pathCamera")}
+          type="button"
+        >
+          {t("dock.pathCameraShort")}
+        </button>
       </div>
       <div className="director-dock-group">
         {DIRECTOR_VIEWS.map((mode) => (

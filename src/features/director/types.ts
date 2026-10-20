@@ -37,3 +37,11 @@ export interface DirectorViewportApi {
   resetView: () => void;
   dolly: (factor: number) => void;
 }
+
+/** One keyframe named well enough to delete or re-ease it. */
+export interface DirectorKeyframeRef {
+  kind: "object" | "camera";
+  id: string;
+  bone?: DirectorBone;
+  keyframeId: string;
+}

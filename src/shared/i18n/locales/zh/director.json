@@ -336,7 +336,8 @@
       "manual": "逐骨骼手动映射",
       "none": "未映射"
     },
-    "useAsPerformer": "把该模型用作演员"
+    "useAsPerformer": "把该模型用作演员",
+    "applyCameraMove": "应用运镜"
   },
   "shots": {
     "strip": "镜头条",
@@ -382,7 +383,11 @@
     "label": "视口工具",
     "board": "显示/隐藏场记板",
     "card": "显示/隐藏镜头卡",
-    "timeline": "显示调度带"
+    "timeline": "显示调度带",
+    "pathObject": "绘制走位路径",
+    "pathObjectShort": "画走位",
+    "pathCamera": "绘制运镜路径",
+    "pathCameraShort": "画运镜"
   },
   "transform": {
     "translate": "移动",
@@ -409,7 +414,20 @@
     "show": "显示调度带",
     "hide": "收起",
     "pending": "调度带会随运动工具一起提供。",
-    "onlyInMotion": ""
+    "onlyInMotion": "",
+    "resize": "调整调度带高度",
+    "shotRow": "镜头",
+    "transformRow": "变换",
+    "play": "播放",
+    "pause": "暂停",
+    "shot": "镜头",
+    "autoKey": "自动关键帧",
+    "record": "记录关键帧",
+    "easing": "缓动",
+    "delete": "删除关键帧",
+    "zoom": "缩放",
+    "addShot": "镜头",
+    "keyframeAt": "{{time}} 秒处的关键帧"
   },
   "onboarding": {
     "title": "上手引导",

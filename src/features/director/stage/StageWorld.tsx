@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
-import { Grid, OrbitControls, TransformControls } from "@react-three/drei";
+import {
+  Grid,
+  Line as DreiLine,
+  OrbitControls,
+  TransformControls,
+} from "@react-three/drei";
 import {
   Mesh,
   MeshStandardMaterial,
@@ -33,6 +38,7 @@ import {
   SolidView,
   type ModelAnimation,
 } from "./ModelView";
+import { sampleTransform, type PathPoint } from "./animation";
 import { PerformerView } from "./PerformerView";
 import { CameraRigView, LightRigView, SelectionOutline } from "./RigViews";
 import { ORTHO_DIRECTIONS, isOrthoView, type DirectorView } from "./viewModes";
@@ -68,6 +74,10 @@ export interface StageWorldProps {
   onGestureStart: () => void;
   onGestureEnd: () => void;
   playhead: number;
+  pathMode: "object" | "camera" | null;
+  showTracks: boolean;
+  onPathComplete: (points: PathPoint[]) => void;
+  onPathCancel: () => void;
   apiRef?: { current: DirectorViewportApi | null };
   reloadToken: number;
 }
@@ -258,6 +268,78 @@ function BlockoutMaterials({
   return null;
 }
 
+/** Draws a polyline on the stage's floor. */
+function PathLine({ points, color }: { points: PathPoint[]; color: string }) {
+  if (points.length < 2) return null;
+  return (
+    <DreiLine
+      color={color}
+      lineWidth={2}
+      points={points.map(
+        (point) => [point.x, 0.025, point.z] as [number, number, number],
+      )}
+      transparent
+      opacity={0.85}
+    />
+  );
+}
+
+/** The paths of every animated object and the point each is at now. */
+function KeyframePaths({
+  scene,
+  playhead,
+}: {
+  scene: DirectorScene;
+  playhead: number;
+}) {
+  return (
+    <group userData={{ directorHelper: true }}>
+      {scene.objects
+        .filter((object) => object.keyframes.length > 0)
+        .map((object) => {
+          const points = [...object.keyframes]
+            .sort((a, b) => a.time - b.time)
+            .map((frame) => ({
+              x: frame.transform.position[0],
+              z: frame.transform.position[2],
+            }));
+          const now =
+            sampleTransform(object.keyframes, playhead) ?? object.transform;
+          return (
+            <group key={object.id}>
+              <PathLine color="#98c379" points={points} />
+              <mesh position={[now.position[0], 0.04, now.position[2]]}>
+                <sphereGeometry args={[0.06, 10, 8]} />
+                <meshBasicMaterial color="#98c379" />
+              </mesh>
+            </group>
+          );
+        })}
+      {scene.cameras
+        .filter((camera) => camera.keyframes.length > 0)
+        .map((camera) => {
+          const points = [...camera.keyframes]
+            .sort((a, b) => a.time - b.time)
+            .map((frame) => ({
+              x: frame.transform.position[0],
+              z: frame.transform.position[2],
+            }));
+          const now =
+            sampleTransform(camera.keyframes, playhead) ?? camera.transform;
+          return (
+            <group key={camera.id}>
+              <PathLine color="#61afef" points={points} />
+              <mesh position={[now.position[0], 0.04, now.position[2]]}>
+                <sphereGeometry args={[0.06, 10, 8]} />
+                <meshBasicMaterial color="#61afef" />
+              </mesh>
+            </group>
+          );
+        })}
+    </group>
+  );
+}
+
 /** Draws the scene's objects and the rigs that explain where its makers are. */
 export function StageWorld({
   scene,
@@ -276,6 +358,10 @@ export function StageWorld({
   onGestureStart,
   onGestureEnd,
   playhead,
+  pathMode,
+  showTracks,
+  onPathComplete,
+  onPathCancel,
   apiRef,
   reloadToken,
 }: StageWorldProps) {
@@ -298,6 +384,11 @@ export function StageWorld({
     new Map<string, (bone: DirectorBone, node: Group | null) => void>(),
   );
   const groundDown = useRef<{ x: number; y: number } | null>(null);
+  const pathPoints = useRef<PathPoint[]>([]);
+  const [drawingPath, setDrawingPath] = useState(false);
+  const [pathPreview, setPathPreview] = useState<PathPoint[]>([]);
+  const pathModeRef = useRef(pathMode);
+  pathModeRef.current = pathMode;
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null);
   const aspect =
     size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 9;
@@ -342,6 +433,14 @@ export function StageWorld({
       : objectRefs.current.get(selection.id);
     setSelectedNode(ref ?? null);
   }, [selection, scene.objects, scene.cameras, scene.lights]);
+
+  useEffect(() => {
+    if (pathMode || !drawingPath) return;
+    setDrawingPath(false);
+    pathPoints.current = [];
+    setPathPreview([]);
+    setDragging(false);
+  }, [pathMode, drawingPath]);
 
   useEffect(() => {
     if (!apiRef) return;
@@ -455,7 +554,14 @@ export function StageWorld({
     if (view === "camera") {
       const current = activeShotOf(scene);
       const data = current ? shotCamera(scene, current) : undefined;
-      if (!data || !placeShotCamera(shot, data, aspect)) {
+      const animated = data
+        ? {
+            ...data,
+            transform:
+              sampleTransform(data.keyframes, playhead) ?? data.transform,
+          }
+        : undefined;
+      if (!animated || !placeShotCamera(shot, animated, aspect)) {
         reportFallback(
           "The active shot has no usable camera; the free view is in use.",
         );
@@ -470,7 +576,17 @@ export function StageWorld({
       set({ camera: ortho });
       invalidate();
     }
-  }, [view, scene, shot, ortho, aspect, set, invalidate, reportFallback]);
+  }, [
+    view,
+    scene,
+    shot,
+    ortho,
+    aspect,
+    set,
+    invalidate,
+    reportFallback,
+    playhead,
+  ]);
 
   return (
     <>
@@ -483,12 +599,44 @@ export function StageWorld({
       />
       <mesh
         onPointerDown={(event) => {
+          if (pathMode && selection) {
+            pathPoints.current = [{ x: event.point.x, z: event.point.z }];
+            setPathPreview([...pathPoints.current]);
+            setDrawingPath(true);
+            setDragging(true);
+            return;
+          }
           groundDown.current = {
             x: event.nativeEvent.clientX,
             y: event.nativeEvent.clientY,
           };
         }}
+        onPointerMove={(event) => {
+          if (!drawingPath) return;
+          const last = pathPoints.current[pathPoints.current.length - 1];
+          if (
+            last &&
+            Math.hypot(event.point.x - last.x, event.point.z - last.z) < 0.04
+          ) {
+            return;
+          }
+          pathPoints.current = [
+            ...pathPoints.current,
+            { x: event.point.x, z: event.point.z },
+          ];
+          setPathPreview([...pathPoints.current]);
+        }}
         onPointerUp={(event) => {
+          if (drawingPath) {
+            const points = pathPoints.current;
+            pathPoints.current = [];
+            setPathPreview([]);
+            setDrawingPath(false);
+            setDragging(false);
+            if (points.length >= 2) onPathComplete(points);
+            else onPathCancel();
+            return;
+          }
           const start = groundDown.current;
           groundDown.current = null;
           if (!start || selection?.kind !== "object") return;
@@ -529,6 +677,8 @@ export function StageWorld({
         if (!object.visible) return null;
         const selected =
           selection?.kind === "object" && selection.id === object.id;
+        const transform =
+          sampleTransform(object.keyframes, playhead) ?? object.transform;
         return (
           <group
             key={object.id}
@@ -536,10 +686,10 @@ export function StageWorld({
               event.stopPropagation();
               onSelect({ kind: "object", id: object.id });
             }}
-            position={object.transform.position}
+            position={transform.position}
             ref={refFor(object.id)}
-            rotation={object.transform.rotation}
-            scale={object.transform.scale}
+            rotation={transform.rotation}
+            scale={transform.scale}
           >
             {object.kind === "solid" ? (
               <SolidView object={object} />
@@ -578,10 +728,15 @@ export function StageWorld({
         scene.cameras.map((camera) => {
           const selected =
             selection?.kind === "camera" && selection.id === camera.id;
+          const animated = {
+            ...camera,
+            transform:
+              sampleTransform(camera.keyframes, playhead) ?? camera.transform,
+          };
           return (
             <group key={camera.id}>
               <CameraRigView
-                camera={camera}
+                camera={animated}
                 groupRef={refFor(camera.id)}
                 onSelect={() => onSelect({ kind: "camera", id: camera.id })}
                 selected={selected}
@@ -603,6 +758,10 @@ export function StageWorld({
             />
           );
         })}
+      {showTracks && <KeyframePaths playhead={playhead} scene={scene} />}
+      {pathPreview.length > 1 && (
+        <PathLine color="#f2ce7a" points={pathPreview} />
+      )}
       <BlockoutMaterials
         loadedKey={loadedKey}
         mode={renderMode}

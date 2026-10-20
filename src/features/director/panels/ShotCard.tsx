@@ -60,6 +60,7 @@ export interface ShotCardProps {
     rotation: DirectorQuat | null,
   ) => void;
   onUseAsPerformer: (id: string) => void;
+  onApplyCameraMove: () => void;
   playhead: number;
 }
 
@@ -85,6 +86,7 @@ export function ShotCard({
   onCameraSelect,
   onBone,
   onUseAsPerformer,
+  onApplyCameraMove,
   playhead,
 }: ShotCardProps) {
   const { t } = useTranslation(["director", "editor"]);
@@ -166,6 +168,7 @@ export function ShotCard({
               }))}
               onCameraSelect={(cameraId) => onCameraSelect(shot.id, cameraId)}
               onChange={(patch) => onShot(shot.id, patch)}
+              onApplyCameraMove={onApplyCameraMove}
               scene={scene}
               shot={shot}
             />
@@ -878,12 +881,14 @@ function ShotPage({
   fpsOptions,
   onChange,
   onCameraSelect,
+  onApplyCameraMove,
 }: {
   scene: DirectorScene;
   shot: DirectorShot;
   fpsOptions: { value: string; label: string }[];
   onChange: (patch: Partial<DirectorShot>) => void;
   onCameraSelect: (cameraId: string) => void;
+  onApplyCameraMove: () => void;
 }) {
   const { t } = useTranslation("director");
   return (
@@ -947,6 +952,13 @@ function ShotPage({
           }))}
           value={shot.cameraMove}
         />
+        <button
+          className="button director-wide-button"
+          onClick={onApplyCameraMove}
+          type="button"
+        >
+          {t("cardPanel.applyCameraMove")}
+        </button>
         <DirectorText
           hint={t("cardPanel.promptHint")}
           label={t("field.prompt")}

@@ -336,7 +336,8 @@
       "manual": "Map joints by hand",
       "none": "Unmapped"
     },
-    "useAsPerformer": "Use this model as a performer"
+    "useAsPerformer": "Use this model as a performer",
+    "applyCameraMove": "Apply the camera move"
   },
   "shots": {
     "strip": "Shots",
@@ -382,7 +383,11 @@
     "label": "Viewport tools",
     "board": "Show or hide the board",
     "card": "Show or hide the shot card",
-    "timeline": "Show the motion strip"
+    "timeline": "Show the motion strip",
+    "pathObject": "Draw a blocking path",
+    "pathObjectShort": "Blocking path",
+    "pathCamera": "Draw a camera path",
+    "pathCameraShort": "Camera path"
   },
   "transform": {
     "translate": "Move",
@@ -409,7 +414,20 @@
     "show": "Show the motion strip",
     "hide": "Hide",
     "pending": "The motion timeline arrives with the motion tools.",
-    "onlyInMotion": ""
+    "onlyInMotion": "",
+    "resize": "Resize the blocking lane",
+    "shotRow": "Shot",
+    "transformRow": "Transform",
+    "play": "Play",
+    "pause": "Pause",
+    "shot": "Shot",
+    "autoKey": "AutoKey",
+    "record": "Record keyframe",
+    "easing": "Easing",
+    "delete": "Delete keyframe",
+    "zoom": "Zoom",
+    "addShot": "Shot",
+    "keyframeAt": "Keyframe at {{time}}s"
   },
   "onboarding": {
     "title": "Getting started",

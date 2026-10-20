@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Euler, Vector3 } from "three";
 import {
+  activeShotOf,
   actorFormFor,
   createDirectorScene,
   directorSceneOf,
@@ -33,7 +34,7 @@ import {
   probeDirectorCapabilities,
 } from "./capabilities";
 import { DirectorOnboarding } from "./components/DirectorOnboarding";
-import { BlockingLanePlaceholder } from "./panels/BlockingLane";
+import { BlockingLane } from "./panels/BlockingLane";
 import { DirectorTopBar } from "./panels/DirectorTopBar";
 import { ShotCard } from "./panels/ShotCard";
 import { StageBoard } from "./panels/StageBoard";
@@ -67,6 +68,17 @@ import {
   type DirectorCaptureContext,
 } from "./stage/StageViewport";
 import type { ModelAnimation } from "./stage/ModelView";
+import {
+  applyBoneRotation,
+  applyCameraTransform,
+  applyObjectTransform,
+  cameraMoveKeyframes,
+  mergeKeyframes,
+  pathKeyframes,
+  recordKeyframe,
+  sampleTransform,
+  type PathPoint,
+} from "./stage/animation";
 import { autoBoneMap, rigReady } from "./stage/rig";
 import { closeDirector, useDirectorStore } from "./stores/directorStore";
 import type {
@@ -105,7 +117,10 @@ export function DirectorPage() {
   const transformMode = useDirectorStore((state) => state.transformMode);
   const selection = useDirectorStore((state) => state.selection);
   const playhead = useDirectorStore((state) => state.playhead);
+  const playing = useDirectorStore((state) => state.playing);
+  const autoKey = useDirectorStore((state) => state.autoKey);
   const saveError = useDirectorStore((state) => state.saveError);
+  const [pathMode, setPathMode] = useState<"object" | "camera" | null>(null);
   const past = useDirectorStore((state) => state.past);
   const future = useDirectorStore((state) => state.future);
   const moka = useProjectStore((state) => state.moka);
@@ -423,60 +438,85 @@ export function DirectorPage() {
     const room = useDirectorStore.getState();
     const base = room.gesture ?? room.draft;
     if (!base) return;
-    room.update((current) => {
-      if (target.kind === "object") {
-        return updateObject(current, target.id, { transform });
-      }
-      if (target.kind === "light") {
-        return updateLight(current, target.id, { transform });
-      }
-      const baseCamera = base.cameras.find((camera) => camera.id === target.id);
-      if (!baseCamera) return current;
-      let nextTarget = baseCamera.target;
-      if (transformMode === "translate") {
-        nextTarget = [
-          baseCamera.target[0] +
-            (transform.position[0] - baseCamera.transform.position[0]),
-          baseCamera.target[1] +
-            (transform.position[1] - baseCamera.transform.position[1]),
-          baseCamera.target[2] +
-            (transform.position[2] - baseCamera.transform.position[2]),
-        ];
-      } else if (transformMode === "rotate") {
-        const distance = Math.max(
-          1e-4,
-          new Vector3(...baseCamera.target)
-            .sub(new Vector3(...baseCamera.transform.position))
-            .length(),
-        );
-        const direction = new Vector3(0, 0, -1).applyEuler(
-          new Euler(...transform.rotation),
-        );
-        nextTarget = [
-          transform.position[0] + direction.x * distance,
-          transform.position[1] + direction.y * distance,
-          transform.position[2] + direction.z * distance,
-        ];
-      }
-      return updateCamera(current, target.id, {
-        transform: { ...transform, scale: [1, 1, 1] },
-        target: nextTarget,
-      });
-    });
+    const fps = activeShotOf(base)?.fps ?? 30;
+    if (target.kind === "object") {
+      room.update(() =>
+        applyObjectTransform(
+          base,
+          target.id,
+          transform,
+          room.autoKey,
+          room.playhead,
+          fps,
+        ),
+      );
+      return;
+    }
+    if (target.kind === "light") {
+      room.update(() => updateLight(base, target.id, { transform }));
+      return;
+    }
+    const baseCamera = base.cameras.find((camera) => camera.id === target.id);
+    if (!baseCamera) return;
+    const rendered =
+      sampleTransform(baseCamera.keyframes, room.playhead) ??
+      baseCamera.transform;
+    let nextTarget = baseCamera.target;
+    if (transformMode === "translate") {
+      nextTarget = [
+        baseCamera.target[0] + (transform.position[0] - rendered.position[0]),
+        baseCamera.target[1] + (transform.position[1] - rendered.position[1]),
+        baseCamera.target[2] + (transform.position[2] - rendered.position[2]),
+      ];
+    } else if (transformMode === "rotate") {
+      const distance = Math.max(
+        1e-4,
+        new Vector3(...baseCamera.target)
+          .sub(new Vector3(...rendered.position))
+          .length(),
+      );
+      const direction = new Vector3(0, 0, -1).applyEuler(
+        new Euler(...transform.rotation),
+      );
+      nextTarget = [
+        transform.position[0] + direction.x * distance,
+        transform.position[1] + direction.y * distance,
+        transform.position[2] + direction.z * distance,
+      ];
+    }
+    const next = applyCameraTransform(
+      base,
+      target.id,
+      { ...transform, scale: [1, 1, 1] },
+      room.autoKey,
+      room.playhead,
+      fps,
+    );
+    room.update(() => ({
+      ...next,
+      cameras: next.cameras.map((camera) =>
+        camera.id === target.id ? { ...camera, target: nextTarget } : camera,
+      ),
+    }));
   };
 
   const onBonePreview = (target: DirectorSelection, rotation: DirectorQuat) => {
     if (!target.bone) return;
-    useDirectorStore.getState().update((current) => {
-      const object = current.objects.find((entry) => entry.id === target.id);
-      if (!object) return current;
-      return updateObject(current, target.id, {
-        boneOverrides: {
-          ...(object.boneOverrides ?? {}),
-          [target.bone!]: rotation,
-        },
-      });
-    });
+    const room = useDirectorStore.getState();
+    const base = room.gesture ?? room.draft;
+    if (!base) return;
+    const fps = activeShotOf(base)?.fps ?? 30;
+    room.update(() =>
+      applyBoneRotation(
+        base,
+        target.id,
+        target.bone!,
+        rotation,
+        room.autoKey,
+        room.playhead,
+        fps,
+      ),
+    );
   };
 
   const handleModelLoaded = useCallback(
@@ -547,7 +587,8 @@ export function DirectorPage() {
   };
 
   const placeOnGround = (x: number, z: number) => {
-    const target = useDirectorStore.getState().selection;
+    const room = useDirectorStore.getState();
+    const target = room.selection;
     if (target?.kind !== "object") return;
     edit((current) => {
       const object = current.objects.find((entry) => entry.id === target.id);
@@ -557,11 +598,175 @@ export function DirectorPage() {
         x,
         z,
       });
-      return updateObject(current, target.id, {
-        transform: {
-          ...object.transform,
-          position: [placedX, object.transform.position[1], placedZ],
+      const from =
+        sampleTransform(object.keyframes, room.playhead) ?? object.transform;
+      const fps = activeShotOf(current)?.fps ?? 30;
+      return applyObjectTransform(
+        current,
+        target.id,
+        {
+          ...from,
+          position: [placedX, from.position[1], placedZ],
         },
+        room.autoKey,
+        room.playhead,
+        fps,
+      );
+    });
+  };
+
+  const recordNow = () => {
+    const room = useDirectorStore.getState();
+    const current = room.draft;
+    if (!current) return;
+    const shot = activeShotOf(current);
+    const target =
+      room.selection ??
+      (shot
+        ? ({ kind: "camera", id: shot.cameraId } as DirectorSelection)
+        : null);
+    edit((scene) =>
+      recordKeyframe(scene, target, room.playhead, shot?.fps ?? 30),
+    );
+  };
+
+  const applyCameraMove = () => {
+    const current = useDirectorStore.getState().draft;
+    const shot = current ? activeShotOf(current) : undefined;
+    if (!shot) return;
+    edit((scene) => {
+      const camera = scene.cameras.find((entry) => entry.id === shot.cameraId);
+      if (!camera) return scene;
+      return updateCamera(scene, camera.id, {
+        keyframes: cameraMoveKeyframes(camera, shot.cameraMove, shot.duration),
+      });
+    });
+    useDirectorStore.getState().setMode("motion");
+  };
+
+  const completePath = (points: PathPoint[]) => {
+    const room = useDirectorStore.getState();
+    const mode = pathMode;
+    const target = room.selection;
+    const current = room.draft;
+    if (!mode || !target || !current || points.length === 0) {
+      setPathMode(null);
+      return;
+    }
+    const shot = activeShotOf(current);
+    const duration = shot?.duration ?? 6;
+    const start = Math.min(room.playhead, Math.max(0, duration - 0.5));
+    edit((scene) => {
+      if (mode === "object" && target.kind === "object") {
+        const object = scene.objects.find((entry) => entry.id === target.id);
+        if (!object) return scene;
+        const from =
+          sampleTransform(object.keyframes, start) ?? object.transform;
+        const frames = pathKeyframes(
+          points,
+          start,
+          duration - start,
+          from,
+          true,
+          0,
+        );
+        return updateObject(scene, object.id, {
+          keyframes: mergeKeyframes(object.keyframes, frames),
+        });
+      }
+      if (mode === "camera" && target.kind === "camera") {
+        const camera = scene.cameras.find((entry) => entry.id === target.id);
+        if (!camera) return scene;
+        const from =
+          sampleTransform(camera.keyframes, start) ?? camera.transform;
+        const frames = pathKeyframes(
+          points,
+          start,
+          duration - start,
+          from,
+          true,
+          Math.PI,
+        );
+        return updateCamera(scene, camera.id, {
+          keyframes: mergeKeyframes(camera.keyframes, frames),
+        });
+      }
+      return scene;
+    });
+    setPathMode(null);
+    useDirectorStore.getState().setMode("motion");
+  };
+
+  const changeKeyframeEasing = (
+    ref: import("./types").DirectorKeyframeRef,
+    easing: "step" | "linear" | "smooth",
+  ) => {
+    edit((scene) => {
+      if (ref.kind === "camera") {
+        const camera = scene.cameras.find((entry) => entry.id === ref.id);
+        if (!camera) return scene;
+        return updateCamera(scene, ref.id, {
+          keyframes: camera.keyframes.map((frame) =>
+            frame.id === ref.keyframeId ? { ...frame, easing } : frame,
+          ),
+        });
+      }
+      const object = scene.objects.find((entry) => entry.id === ref.id);
+      if (!object) return scene;
+      if (ref.bone) {
+        return updateObject(scene, ref.id, {
+          boneTracks: object.boneTracks?.map((track) =>
+            track.bone === ref.bone
+              ? {
+                  ...track,
+                  keyframes: track.keyframes.map((frame) =>
+                    frame.id === ref.keyframeId ? { ...frame, easing } : frame,
+                  ),
+                }
+              : track,
+          ),
+        });
+      }
+      return updateObject(scene, ref.id, {
+        keyframes: object.keyframes.map((frame) =>
+          frame.id === ref.keyframeId ? { ...frame, easing } : frame,
+        ),
+      });
+    });
+  };
+
+  const deleteKeyframe = (ref: import("./types").DirectorKeyframeRef) => {
+    edit((scene) => {
+      if (ref.kind === "camera") {
+        const camera = scene.cameras.find((entry) => entry.id === ref.id);
+        if (!camera) return scene;
+        return updateCamera(scene, ref.id, {
+          keyframes: camera.keyframes.filter(
+            (frame) => frame.id !== ref.keyframeId,
+          ),
+        });
+      }
+      const object = scene.objects.find((entry) => entry.id === ref.id);
+      if (!object) return scene;
+      if (ref.bone) {
+        const tracks = (object.boneTracks ?? [])
+          .map((track) =>
+            track.bone === ref.bone
+              ? {
+                  ...track,
+                  keyframes: track.keyframes.filter(
+                    (frame) => frame.id !== ref.keyframeId,
+                  ),
+                }
+              : track,
+          )
+          .filter((track) => track.keyframes.length > 0);
+        return updateObject(scene, ref.id, { boneTracks: tracks });
+      }
+      return updateObject(scene, ref.id, {
+        keyframes: object.keyframes.filter(
+          (frame) => frame.id !== ref.keyframeId,
+        ),
       });
     });
   };
@@ -659,6 +864,10 @@ export function DirectorPage() {
         return;
       }
       if (event.key === "Escape") {
+        if (pathMode) {
+          setPathMode(null);
+          return;
+        }
         if (room.gesture) room.cancelGesture();
         else room.setSelection(null);
         return;
@@ -690,6 +899,37 @@ export function DirectorPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
+
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const room = useDirectorStore.getState();
+      const current = room.draft;
+      if (!current) {
+        room.setPlaying(false);
+        return;
+      }
+      const shot = activeShotOf(current);
+      const duration = shot?.duration ?? 6;
+      const elapsed = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      last = now;
+      let time = room.playhead + elapsed;
+      if (time >= duration) time = duration > 0 ? time % duration : 0;
+      room.setPlayhead(time);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing]);
+
+  useEffect(() => {
+    const shot = scene ? activeShotOf(scene) : undefined;
+    if (shot && playhead > shot.duration) {
+      useDirectorStore.getState().setPlayhead(0);
+    }
+  }, [scene, playhead]);
 
   const beginResize = (side: "left" | "right", event: ReactPointerEvent) => {
     event.preventDefault();
@@ -932,59 +1172,96 @@ export function DirectorPage() {
             </>
           )}
           <div className="director-center">
-            <StageViewport
-              apiRef={viewportApi}
-              onBonePreview={onBonePreview}
-              onCameraFallback={() => {
-                useDirectorStore.getState().setView("free");
-              }}
-              onCaptureContext={(context) => {
-                capture.current = context;
-              }}
-              onGestureEnd={() => useDirectorStore.getState().commitGesture()}
-              onGestureStart={() => useDirectorStore.getState().beginGesture()}
-              onGroundPoint={placeOnGround}
-              onModelLoaded={handleModelLoaded}
-              onSelect={(next) =>
-                useDirectorStore.getState().setSelection(next)
-              }
-              onTransformPreview={onTransformPreview}
-              playhead={playhead}
-              renderMode={renderMode}
-              scene={scene}
-              selection={selection}
-              transformMode={transformMode}
-              view={view}
-            />
-            <ViewportDock
-              canTransform={selection !== null && view === "free"}
-              leftOpen={leftOpen}
-              onDolly={(factor) => viewportApi.current?.dolly(factor)}
-              onFitAll={() => viewportApi.current?.fitAll()}
-              onFocusSelection={() => viewportApi.current?.focusSelection()}
-              onResetView={() => viewportApi.current?.resetView()}
-              onToggleLeft={() => setLeftOpen((held) => !held)}
-              onToggleMotion={() => {
-                if (mode !== "motion") {
-                  useDirectorStore.getState().setMode("motion");
-                  setMotionOpen(true);
-                } else {
-                  setMotionOpen((held) => !held);
+            <div className="director-stage">
+              <StageViewport
+                apiRef={viewportApi}
+                onBonePreview={onBonePreview}
+                onCameraFallback={() => {
+                  useDirectorStore.getState().setView("free");
+                }}
+                onCaptureContext={(context) => {
+                  capture.current = context;
+                }}
+                onGestureEnd={() => useDirectorStore.getState().commitGesture()}
+                onGestureStart={() =>
+                  useDirectorStore.getState().beginGesture()
                 }
-              }}
-              onToggleRight={() => setRightOpen((held) => !held)}
-              onTransformMode={(next) =>
-                useDirectorStore.getState().setTransformMode(next)
-              }
-              onView={(next) => useDirectorStore.getState().setView(next)}
-              rightOpen={rightOpen}
-              transformMode={transformMode}
-              view={view}
-            />
+                onGroundPoint={placeOnGround}
+                onModelLoaded={handleModelLoaded}
+                onPathCancel={() => setPathMode(null)}
+                onPathComplete={completePath}
+                onSelect={(next) =>
+                  useDirectorStore.getState().setSelection(next)
+                }
+                onTransformPreview={onTransformPreview}
+                pathMode={pathMode}
+                playhead={playhead}
+                renderMode={renderMode}
+                scene={scene}
+                selection={selection}
+                showTracks={mode === "motion"}
+                transformMode={transformMode}
+                view={view}
+              />
+              <ViewportDock
+                canTransform={selection !== null && view === "free"}
+                leftOpen={leftOpen}
+                onDolly={(factor) => viewportApi.current?.dolly(factor)}
+                onFitAll={() => viewportApi.current?.fitAll()}
+                onFocusSelection={() => viewportApi.current?.focusSelection()}
+                onResetView={() => viewportApi.current?.resetView()}
+                onToggleLeft={() => setLeftOpen((held) => !held)}
+                onToggleMotion={() => {
+                  if (mode !== "motion") {
+                    useDirectorStore.getState().setMode("motion");
+                    setMotionOpen(true);
+                  } else {
+                    setMotionOpen((held) => !held);
+                  }
+                }}
+                onToggleRight={() => setRightOpen((held) => !held)}
+                onTransformMode={(next) =>
+                  useDirectorStore.getState().setTransformMode(next)
+                }
+                onView={(next) => useDirectorStore.getState().setView(next)}
+                pathMode={pathMode}
+                canPathCamera={selection?.kind === "camera" && view === "free"}
+                canPathObject={selection?.kind === "object" && view === "free"}
+                onPath={setPathMode}
+                rightOpen={rightOpen}
+                transformMode={transformMode}
+                view={view}
+              />
+            </div>
             {mode === "motion" && (
-              <BlockingLanePlaceholder
+              <BlockingLane
+                autoKey={autoKey}
                 collapsed={!motionOpen}
+                onAddShot={() => {
+                  edit((current) => addShot(current).scene);
+                  useDirectorStore.getState().setPlayhead(0);
+                }}
+                onAutoKey={(on) => useDirectorStore.getState().setAutoKey(on)}
                 onCollapse={() => setMotionOpen((held) => !held)}
+                onDelete={deleteKeyframe}
+                onEasing={changeKeyframeEasing}
+                onPlayToggle={() =>
+                  useDirectorStore.getState().setPlaying(!playing)
+                }
+                onPlayhead={(time) =>
+                  useDirectorStore.getState().setPlayhead(time)
+                }
+                onRecord={recordNow}
+                onSelect={(next) =>
+                  useDirectorStore.getState().setSelection(next)
+                }
+                onShotSelect={(id) => {
+                  edit((current) => setActiveShot(current, id));
+                  useDirectorStore.getState().setPlayhead(0);
+                }}
+                playhead={playhead}
+                playing={playing}
+                scene={scene}
               />
             )}
           </div>
@@ -1007,16 +1284,43 @@ export function DirectorPage() {
                         (entry) => entry.id === id,
                       );
                       if (!object) return current;
+                      if (rotation) {
+                        return applyBoneRotation(
+                          current,
+                          id,
+                          bone,
+                          rotation,
+                          autoKey,
+                          playhead,
+                          activeShotOf(current)?.fps ?? 30,
+                        );
+                      }
                       const overrides = { ...(object.boneOverrides ?? {}) };
-                      if (rotation) overrides[bone] = rotation;
-                      else delete overrides[bone];
+                      delete overrides[bone];
                       return updateObject(current, id, {
                         boneOverrides: overrides,
                       });
                     })
                   }
+                  onApplyCameraMove={applyCameraMove}
                   onCamera={(id, patch) =>
-                    edit((current) => updateCamera(current, id, patch))
+                    edit((current) => {
+                      if (!patch.transform) {
+                        return updateCamera(current, id, patch);
+                      }
+                      const { transform, ...rest } = patch;
+                      const next = applyCameraTransform(
+                        current,
+                        id,
+                        transform,
+                        autoKey,
+                        playhead,
+                        activeShotOf(current)?.fps ?? 30,
+                      );
+                      return Object.keys(rest).length > 0
+                        ? updateCamera(next, id, rest)
+                        : next;
+                    })
                   }
                   onCameraSelect={(shotId, cameraId) =>
                     edit((current) => updateShot(current, shotId, { cameraId }))
@@ -1025,7 +1329,23 @@ export function DirectorPage() {
                     edit((current) => updateLight(current, id, patch))
                   }
                   onObject={(id, patch) =>
-                    edit((current) => updateObject(current, id, patch))
+                    edit((current) => {
+                      if (!patch.transform) {
+                        return updateObject(current, id, patch);
+                      }
+                      const { transform, ...rest } = patch;
+                      const next = applyObjectTransform(
+                        current,
+                        id,
+                        transform,
+                        autoKey,
+                        playhead,
+                        activeShotOf(current)?.fps ?? 30,
+                      );
+                      return Object.keys(rest).length > 0
+                        ? updateObject(next, id, rest)
+                        : next;
+                    })
                   }
                   onScene={(patch) =>
                     edit((current) => updateScene(current, patch))
