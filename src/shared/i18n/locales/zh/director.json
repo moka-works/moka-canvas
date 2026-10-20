@@ -20,6 +20,35 @@
     "lowTexture": "此设备的最大纹理为 {{size}} px；较大的模型贴图可能较慢。",
     "retry": "重新检测"
   },
+  "view": {
+    "free": "3D",
+    "camera": "CAM",
+    "top": "TOP",
+    "front": "FRONT",
+    "back": "BACK",
+    "left": "LEFT",
+    "right": "RIGHT",
+    "fallback": "镜头机位不可用，已回落到自由视角。",
+    "dismiss": "关闭"
+  },
+  "renderMode": {
+    "label": "渲染",
+    "lit": "灯光",
+    "blockout": "白模"
+  },
+  "contextLost": {
+    "title": "3D 显示上下文已丢失",
+    "body": "浏览器回收了图形上下文。可以等待自动恢复，或重建视口。场景数据不会丢失。",
+    "rebuild": "重建 3D 视口"
+  },
+  "modelLoad": {
+    "failed": "{{count}} 个模型加载失败",
+    "retry": "全部重试"
+  },
+  "environment": {
+    "failed": "全景图加载失败，当前使用背景色。",
+    "retry": "重试全景图"
+  },
   "card": {
     "sceneMissing": "场景缺失",
     "shotNotDelivered": "当前镜头未回写",

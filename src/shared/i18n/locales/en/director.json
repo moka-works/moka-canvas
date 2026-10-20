@@ -20,6 +20,35 @@
     "lowTexture": "This device's largest texture is {{size}} px; large model textures may be slow.",
     "retry": "Check again"
   },
+  "view": {
+    "free": "3D",
+    "camera": "CAM",
+    "top": "TOP",
+    "front": "FRONT",
+    "back": "BACK",
+    "left": "LEFT",
+    "right": "RIGHT",
+    "fallback": "The shot's camera could not be used; the free view is in use.",
+    "dismiss": "Dismiss"
+  },
+  "renderMode": {
+    "label": "Render",
+    "lit": "Lit",
+    "blockout": "Blockout"
+  },
+  "contextLost": {
+    "title": "The 3D display context was lost",
+    "body": "The browser reclaimed the graphics context. Wait for it to come back, or rebuild the viewport. Your scene is safe.",
+    "rebuild": "Rebuild the 3D viewport"
+  },
+  "modelLoad": {
+    "failed": "{{count}} model(s) failed to load",
+    "retry": "Retry all"
+  },
+  "environment": {
+    "failed": "The panorama could not be loaded; the background colour is in use.",
+    "retry": "Retry the panorama"
+  },
   "card": {
     "sceneMissing": "Scene missing",
     "shotNotDelivered": "Current shot not delivered",

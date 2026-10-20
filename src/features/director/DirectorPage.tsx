@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../shared/i18n";
-import type { DirectorNodeData } from "../../shared/domain";
+import type { DirectorNodeData, DirectorRenderMode } from "../../shared/domain";
 import {
+  DIRECTOR_RENDER_MODES,
   activeShotOf,
   createDirectorScene,
   directorSceneOf,
@@ -14,23 +15,35 @@ import {
   lowTextureBudget,
   probeDirectorCapabilities,
 } from "./capabilities";
-import { StageViewport } from "./stage/StageViewport";
+import {
+  StageViewport,
+  type DirectorCaptureContext,
+} from "./stage/StageViewport";
+import type { DirectorSelection } from "./stage/StageWorld";
+import {
+  DIRECTOR_VIEWS,
+  viewLabel,
+  type DirectorView,
+} from "./stage/viewModes";
 import { closeDirector, useDirectorStore } from "./stores/directorStore";
 
 /**
- * The director desk: a place in the project where a scene is staged.
+ * The director desk: a page of its own where a scene is staged.
  *
- * It is a page of its own beside the cutting room and the story room, opened
- * from one card and closed back onto the board that card sits on. The scene it
- * shows is read from the document; the page holds no copy of its own yet.
+ * The scene comes from the document and every edit will go back through a
+ * command; the page holds the reader's place — which view, which object is
+ * selected — and nothing that would matter after a reload.
  */
 export function DirectorPage() {
-  const { t } = useTranslation("director");
+  const { t } = useTranslation(["director", "editor"]);
   const nodeId = useDirectorStore((state) => state.nodeId);
   const moka = useProjectStore((state) => state.moka);
-  // Asked once on entry: a host that has no WebGL will not grow one while
-  // the page is open, and asking again is a fresh context each time.
-  const [capabilities, setCapabilities] = useState(probeDirectorCapabilities);
+  const [capabilities] = useState(probeDirectorCapabilities);
+  const [view, setView] = useState<DirectorView>("free");
+  const [renderMode, setRenderMode] = useState<DirectorRenderMode>("lit");
+  const [selection, setSelection] = useState<DirectorSelection | null>(null);
+  const [fallback, setFallback] = useState(false);
+  const capture = useRef<DirectorCaptureContext | null>(null);
 
   const canvas = moka?.canvas.find((item) =>
     item.nodes.some((node) => node.id === nodeId),
@@ -38,6 +51,17 @@ export function DirectorPage() {
   const node = canvas?.nodes.find((item) => item.id === nodeId);
   const scene = moka && node ? directorSceneOf(moka, node) : undefined;
   const shot = scene ? activeShotOf(scene) : undefined;
+
+  const onCaptureContext = useCallback(
+    (context: DirectorCaptureContext | null) => {
+      capture.current = context;
+    },
+    [],
+  );
+  const onCameraFallback = useCallback(() => {
+    setFallback(true);
+    setView("free");
+  }, []);
 
   const recover = () => {
     if (!node || !canvas) return;
@@ -55,51 +79,101 @@ export function DirectorPage() {
   };
 
   return (
-    <main className="director-page" aria-label={t("page.title")}>
+    <main
+      aria-label={t("director:page.title")}
+      className="director-page"
+      data-testid="director-page"
+    >
       <header className="director-topbar">
         <button type="button" className="button" onClick={closeDirector}>
-          {t("page.back")}
+          {t("director:page.back")}
         </button>
-        <h1>{scene?.title ?? node?.title ?? t("page.title")}</h1>
+        <h1>{scene?.title ?? node?.title ?? t("director:page.title")}</h1>
         {shot && (
           <p className="director-shot-summary">
-            {t("page.shotSummary", {
+            {t("director:page.shotSummary", {
               name: shot.name,
               seconds: shot.duration,
               ratio: shot.aspectRatio,
             })}
           </p>
         )}
+        <div className="director-view-tabs" role="tablist">
+          {DIRECTOR_VIEWS.map((mode) => (
+            <button
+              aria-selected={view === mode}
+              className="director-view-tab"
+              key={mode}
+              onClick={() => {
+                setFallback(false);
+                setView(mode);
+              }}
+              role="tab"
+              type="button"
+            >
+              {viewLabel(mode)}
+            </button>
+          ))}
+        </div>
+        <label className="director-render-select">
+          <span>{t("director:renderMode.label")}</span>
+          <select
+            onChange={(event) =>
+              setRenderMode(event.target.value as DirectorRenderMode)
+            }
+            value={renderMode}
+          >
+            {DIRECTOR_RENDER_MODES.filter(
+              (mode) => mode === "lit" || mode === "blockout",
+            ).map((mode) => (
+              <option key={mode} value={mode}>
+                {t(`director:renderMode.${mode}`)}
+              </option>
+            ))}
+          </select>
+        </label>
       </header>
       {!node || !canvas ? (
         <section className="director-capability" role="alert">
-          <h2>{t("page.nodeMissing.title")}</h2>
-          <p>{t("page.nodeMissing.body")}</p>
+          <h2>{t("director:page.nodeMissing.title")}</h2>
+          <p>{t("director:page.nodeMissing.body")}</p>
           <button type="button" className="button" onClick={closeDirector}>
-            {t("page.back")}
+            {t("director:page.back")}
           </button>
         </section>
       ) : !scene ? (
         <SceneMissing title={node.title} onRecover={recover} />
       ) : canRender3d(capabilities) ? (
-        <StageViewport />
+        <StageViewport
+          onCameraFallback={onCameraFallback}
+          onCaptureContext={onCaptureContext}
+          onSelect={setSelection}
+          renderMode={renderMode}
+          scene={scene}
+          selection={selection}
+          view={view}
+        />
       ) : (
         <section className="director-capability" role="alert">
-          <h2>{t("capability.title")}</h2>
-          <p>{t("capability.body")}</p>
-          <pre>{t("capability.reason", { reason: capabilities.failure })}</pre>
-          <button
-            type="button"
-            className="button"
-            onClick={() => setCapabilities(probeDirectorCapabilities())}
-          >
-            {t("capability.retry")}
-          </button>
+          <h2>{t("director:capability.title")}</h2>
+          <p>{t("director:capability.body")}</p>
+          <pre>
+            {t("director:capability.reason", {
+              reason: capabilities.failure,
+            })}
+          </pre>
         </section>
       )}
       {lowTextureBudget(capabilities) && (
         <p className="director-capability-note" role="status">
-          {t("capability.lowTexture", { size: capabilities.maxTextureSize })}
+          {t("director:capability.lowTexture", {
+            size: capabilities.maxTextureSize,
+          })}
+        </p>
+      )}
+      {fallback && (
+        <p className="director-viewport-fallback director-page-fallback">
+          {t("director:view.fallback")}
         </p>
       )}
     </main>
