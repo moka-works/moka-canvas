@@ -181,6 +181,103 @@ fn with_session(canvas: &CanvasDocument, session: AssistantSession) -> CanvasDoc
     with_sessions(canvas, sessions)
 }
 
+fn director_scene_id_of(node: &WorkflowNode) -> Option<&str> {
+    node.data
+        .director
+        .as_ref()
+        .map(|state| state.scene_id.as_str())
+        .filter(|scene_id| !scene_id.is_empty())
+}
+
+/// Scenes left holding nothing once these cards are gone.
+///
+/// A scene is deleted with the last card that opened onto it, not with the
+/// first: a scene already orphaned before this edit is left where it was.
+fn orphan_director_scenes(
+    moka: &MokaFile,
+    removed: &HashSet<String>,
+) -> Vec<(usize, super::director::DirectorScene)> {
+    let mut referenced_by_removed = HashSet::new();
+    let mut still_referenced = HashSet::new();
+    for canvas in &moka.canvas {
+        for node in &canvas.nodes {
+            let Some(scene_id) = director_scene_id_of(node) else {
+                continue;
+            };
+            if removed.contains(&node.id) {
+                referenced_by_removed.insert(scene_id.to_string());
+            } else {
+                still_referenced.insert(scene_id.to_string());
+            }
+        }
+    }
+    moka.director_scenes
+        .iter()
+        .flatten()
+        .enumerate()
+        .filter(|(_, scene)| {
+            referenced_by_removed.contains(&scene.id) && !still_referenced.contains(&scene.id)
+        })
+        .map(|(index, scene)| (index, scene.clone()))
+        .collect()
+}
+
+fn without_director_scenes(
+    moka: &MokaFile,
+    orphans: &[(usize, super::director::DirectorScene)],
+) -> Option<Vec<super::director::DirectorScene>> {
+    let held = moka.director_scenes.as_ref()?;
+    let ids: HashSet<&str> = orphans.iter().map(|(_, scene)| scene.id.as_str()).collect();
+    let remaining: Vec<_> = held
+        .iter()
+        .filter(|scene| !ids.contains(scene.id.as_str()))
+        .cloned()
+        .collect();
+    if remaining.is_empty() {
+        None
+    } else {
+        Some(remaining)
+    }
+}
+
+fn director_scene_inverses(
+    orphans: &[(usize, super::director::DirectorScene)],
+) -> Vec<DocumentCommand> {
+    orphans
+        .iter()
+        .map(|(index, scene)| DocumentCommand::AddDirectorScene {
+            scene: scene.clone(),
+            index: Some(*index),
+        })
+        .collect()
+}
+
+fn check_director_scene(scene: &super::director::DirectorScene) -> Result<(), CommandError> {
+    if let Some(problem) = super::director::scene_issues(scene).into_iter().next() {
+        return Err(CommandError::new(
+            problem.code,
+            format!(
+                "Director scene is invalid at {}: {}",
+                problem.path, problem.message
+            ),
+        ));
+    }
+    let bytes = bson::serialize_to_vec(scene)
+        .map(|held| held.len())
+        .unwrap_or(usize::MAX);
+    if bytes > super::director::MAX_DIRECTOR_SCENE_BYTES {
+        return Err(CommandError::new(
+            "DIRECTOR_SCENE_TOO_LARGE",
+            format!(
+                "Director scene \"{}\" is {bytes} bytes; the limit is {}",
+                scene.title,
+                super::director::MAX_DIRECTOR_SCENE_BYTES
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn sync_group_node_data(canvas: &mut CanvasDocument) {
     for node in &mut canvas.nodes {
         if node.kind != NodeKind::Group {
@@ -465,7 +562,9 @@ fn apply_one(
                 removing.insert(id.as_str());
             }
 
-            let mut inverse: Vec<DocumentCommand> = Vec::new();
+            let removed_ids: HashSet<String> = removing.iter().map(|id| id.to_string()).collect();
+            let orphans = orphan_director_scenes(moka, &removed_ids);
+            let mut inverse: Vec<DocumentCommand> = director_scene_inverses(&orphans);
             for node in &canvas.nodes {
                 if removing.contains(node.id.as_str()) {
                     inverse.push(DocumentCommand::AddNode {
@@ -491,6 +590,9 @@ fn apply_one(
             }
 
             let mut next = moka.clone();
+            if !orphans.is_empty() {
+                next.director_scenes = without_director_scenes(moka, &orphans);
+            }
             let canvas_mut = next.canvas_mut(canvas_id).expect("canvas checked above");
             canvas_mut
                 .nodes
@@ -1054,15 +1156,20 @@ fn apply_one(
                 ));
             }
             let removed = moka.canvas[position].clone();
+            let removed_ids: HashSet<String> =
+                removed.nodes.iter().map(|node| node.id.clone()).collect();
+            let orphans = orphan_director_scenes(moka, &removed_ids);
             let mut next = moka.clone();
+            if !orphans.is_empty() {
+                next.director_scenes = without_director_scenes(moka, &orphans);
+            }
             next.canvas.remove(position);
-            Ok((
-                next,
-                vec![DocumentCommand::AddCanvas {
-                    canvas: removed,
-                    index: Some(position),
-                }],
-            ))
+            let mut inverse = director_scene_inverses(&orphans);
+            inverse.push(DocumentCommand::AddCanvas {
+                canvas: removed,
+                index: Some(position),
+            });
+            Ok((next, inverse))
         }
 
         DocumentCommand::AddFolder { folder, index } => {
@@ -1317,6 +1424,92 @@ fn apply_one(
         // The story room's commands live in `story.rs`, which holds the same
         // rules the document validator reads so a command and a validation
         // cannot disagree, for the same reason the cutting room's do.
+        DocumentCommand::AddDirectorScene { scene, index } => {
+            let scenes = moka.director_scenes.clone().unwrap_or_default();
+            if scenes.iter().any(|held| held.id == scene.id) {
+                return Err(CommandError::new(
+                    "CONFLICT",
+                    "Director scene id already exists",
+                ));
+            }
+            if scenes.len() + 1 > super::director::MAX_DIRECTOR_SCENES_PER_PROJECT {
+                return Err(CommandError::new(
+                    "DIRECTOR_LIMIT_EXCEEDED",
+                    "Director scene limit reached",
+                ));
+            }
+            check_director_scene(scene)?;
+            let at = index.unwrap_or(scenes.len());
+            if at > scenes.len() {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "A scene cannot be inserted at that place",
+                ));
+            }
+            let mut list = scenes;
+            list.insert(at, scene.clone());
+            let mut next = moka.clone();
+            next.director_scenes = Some(list);
+            Ok((
+                next,
+                vec![DocumentCommand::RemoveDirectorScene {
+                    scene_id: scene.id.clone(),
+                }],
+            ))
+        }
+
+        DocumentCommand::ReplaceDirectorScene { scene_id, scene } => {
+            let scenes = moka.director_scenes.clone().unwrap_or_default();
+            let position = scenes
+                .iter()
+                .position(|held| &held.id == scene_id)
+                .ok_or_else(|| {
+                    CommandError::new("DIRECTOR_SCENE_NOT_FOUND", "Director scene not found")
+                })?;
+            if &scene.id != scene_id {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "A replaced scene must keep its own id",
+                ));
+            }
+            check_director_scene(scene)?;
+            let previous = scenes[position].clone();
+            let mut list = scenes;
+            list[position] = scene.clone();
+            let mut next = moka.clone();
+            next.director_scenes = Some(list);
+            Ok((
+                next,
+                vec![DocumentCommand::ReplaceDirectorScene {
+                    scene_id: scene_id.clone(),
+                    scene: previous,
+                }],
+            ))
+        }
+
+        DocumentCommand::RemoveDirectorScene { scene_id } => {
+            let scenes = moka.director_scenes.clone().unwrap_or_default();
+            let position = scenes.iter().position(|held| &held.id == scene_id);
+            // Taking a scene out twice is taking it out once: undoing the
+            // creation batch removes the card first, and that removal has
+            // already cleared the scene the card opened onto.
+            let Some(position) = position else {
+                return Ok((moka.clone(), Vec::new()));
+            };
+            let removed = scenes[position].clone();
+            let mut list = scenes;
+            list.remove(position);
+            let mut next = moka.clone();
+            next.director_scenes = if list.is_empty() { None } else { Some(list) };
+            Ok((
+                next,
+                vec![DocumentCommand::AddDirectorScene {
+                    scene: removed,
+                    index: Some(position),
+                }],
+            ))
+        }
+
         command @ (DocumentCommand::AddStory { .. }
         | DocumentCommand::RemoveStory { .. }
         | DocumentCommand::RenameStory { .. }
@@ -1386,6 +1579,18 @@ pub fn default_node_data(kind: NodeKind) -> NodeData {
         // there. This default is only reachable from server-side construction,
         // which never makes one, and says so by leaving it unusable.
         NodeKind::Extension => {}
+        // A director card is made together with its scene by the client. This
+        // placeholder names no scene, which the room reads as "stage one".
+        NodeKind::Director => {
+            data.director = Some(super::director::DirectorState {
+                scene_id: String::new(),
+                frame_asset_id: None,
+                blocking_asset_id: None,
+                frame_shot_id: None,
+                direction_text: None,
+                delivered_at: None,
+            });
+        }
         _ => {}
     }
     data

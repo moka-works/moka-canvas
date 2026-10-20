@@ -1,6 +1,17 @@
 {
   "page": {
-    "title": "导演台"
+    "title": "导演台",
+    "back": "返回画布",
+    "shotSummary": "{{name}} · {{seconds}} 秒 · {{ratio}}",
+    "nodeMissing": {
+      "title": "这张卡片已不在画布上",
+      "body": "导演台卡片已被删除，或项目在别处发生了变化。返回画布继续。"
+    },
+    "sceneMissing": {
+      "title": "场景已不存在",
+      "body": "导演台“{{title}}”指向的场景已不在项目中。可以新建一个空场景继续，或返回画布。",
+      "recover": "新建空场景"
+    }
   },
   "capability": {
     "title": "当前环境无法绘制 3D",
@@ -8,5 +19,71 @@
     "reason": "原因：{{reason}}",
     "lowTexture": "此设备的最大纹理为 {{size}} px；较大的模型贴图可能较慢。",
     "retry": "重新检测"
+  },
+  "card": {
+    "sceneMissing": "场景缺失",
+    "shotNotDelivered": "当前镜头未回写",
+    "shotLine": "{{name}} · {{seconds}} 秒",
+    "noShot": "尚无镜头",
+    "counts": "{{objects}} 个对象 · {{cameras}} 台机位 · {{lights}} 盏灯",
+    "delivered": "已回写",
+    "notDelivered": "尚未回写",
+    "enter": "进入导演台"
+  },
+  "templates": {
+    "dialogTitle": "新建导演台",
+    "dialogNote": "选择开局的场景模板；进入导演台后都可以修改。",
+    "empty": {
+      "name": "空场",
+      "description": "摄影机与三点布光，无演员"
+    },
+    "solo": {
+      "name": "独白",
+      "description": "1 名演员在窗侧，45mm 中近景"
+    },
+    "duo": {
+      "name": "对坐",
+      "description": "2 名演员隔桌对坐，35mm 过肩起手"
+    },
+    "ensemble": {
+      "name": "群像调度",
+      "description": "3 名演员分散站位，24mm 广角"
+    },
+    "tabletop": {
+      "name": "静物台",
+      "description": "主体、背板与侧道具，80mm 长焦"
+    }
+  },
+  "defaults": {
+    "sceneTitle": "镜头 {{n}} · {{template}}",
+    "cameraName": "摄影机",
+    "shotName": "镜头",
+    "actorName": "演员 {{n}}",
+    "keyLight": "主光",
+    "rimLight": "轮廓光",
+    "ambientLight": "环境光"
+  },
+  "props": {
+    "longTable": "长桌",
+    "sideTable": "边几",
+    "bookshelf": "书架",
+    "bench": "长凳",
+    "screen": "屏风",
+    "lowWall": "矮墙",
+    "doorway": "门洞",
+    "window": "窗洞",
+    "steps": "台阶",
+    "platform": "地台",
+    "bush": "树丛",
+    "rock": "岩石",
+    "hill": "山丘",
+    "groundSheet": "地面片",
+    "floorLamp": "立灯",
+    "crate": "箱笼",
+    "ball": "球体道具",
+    "car": "车形",
+    "backdrop": "背板",
+    "subject": "主体",
+    "sideProp": "侧道具"
   }
 }

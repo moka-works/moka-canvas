@@ -108,7 +108,14 @@
     "storyVoiceTooLong": "声音的模型、音色或念法过长",
     "storyVoiceRate": "语速超出允许范围",
     "storyVoicePitch": "音高超出允许范围",
-    "storyDigestShape": "装配摘要应是 8 位十六进制"
+    "storyDigestShape": "装配摘要应是 8 位十六进制",
+    "directorSceneNotFound": "导演台场景 {{id}} 不存在",
+    "directorSceneIdExists": "该 id 的导演台场景已存在",
+    "directorSceneIdMismatch": "替换场景时必须保持自己的 id",
+    "directorSceneIndexOutOfRange": "无法把场景插入到该位置",
+    "directorSceneLimit": "项目里的导演台场景数量超过上限 {{count}}",
+    "directorSceneInvalid": "导演台场景在 {{path}} 处无效：{{reason}}",
+    "directorSceneTooLarge": "导演台场景“{{title}}”为 {{bytes}} 字节；上限为 {{limit}}"
   },
   "timeline": {
     "clipAssetMissing": "片段引用的资源不在项目中",
@@ -213,6 +220,9 @@
     "storyTimelineMissing": "故事指向的时间线 {{id}} 已不存在",
     "storyLimitReached": "项目里的故事数量超过上限",
     "duplicateStoryId": "重复的故事 id {{id}}",
-    "extensionInvalid": "扩展节点“{{title}}”的数据无效：{{reason}}"
+    "extensionInvalid": "扩展节点“{{title}}”的数据无效：{{reason}}",
+    "directorSceneLimit": "项目里的导演台场景数量超过上限 {{count}}",
+    "duplicateDirectorSceneId": "重复的导演台场景 id {{id}}",
+    "directorSceneInvalid": "导演台场景“{{title}}”在 {{path}} 处无效：{{reason}}"
   }
 }

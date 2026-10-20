@@ -22,6 +22,7 @@ import {
   isCapability,
 } from "./constants";
 import type { Capability, TransitionKind } from "./constants";
+import type { DirectorScene } from "./director";
 import type {
   AssistantSession,
   CanvasDocument,
@@ -57,7 +58,14 @@ import type {
 } from "./types";
 
 export function emptyResources(): ResourceRegistry {
-  return { images: [], music: [], voice: [], texts: [], videos: [] };
+  return {
+    images: [],
+    music: [],
+    voice: [],
+    texts: [],
+    videos: [],
+    models: [],
+  };
 }
 
 export function createCanvas(name: string): CanvasDocument {
@@ -295,6 +303,7 @@ const NODE_TITLES: Record<NodeKind, string> = {
   group: "domain:nodeTitle.group",
   export: "domain:nodeTitle.export",
   extension: "domain:nodeTitle.extension",
+  director: "domain:nodeTitle.director",
 };
 
 export function defaultDataForKind(kind: NodeKind): WorkflowNode["data"] {
@@ -334,6 +343,10 @@ export function defaultDataForKind(kind: NodeKind): WorkflowNode["data"] {
         resultSlots: [],
         resultNodeIds: [],
       };
+    case "director":
+      // A real director card is made by `createDirectorNode`, which has a
+      // scene to point at. The empty id keeps the exhaustive switch honest.
+      return { director: { sceneId: "" } };
   }
 }
 
@@ -349,7 +362,8 @@ export function generationCapabilityFor(kind: NodeKind): Capability | null {
     kind === "operation" ||
     kind === "group" ||
     kind === "export" ||
-    kind === "extension"
+    kind === "extension" ||
+    kind === "director"
   ) {
     return null;
   }
@@ -653,6 +667,32 @@ export function createNode(
     zIndex: 0,
     ports: derivePorts(kind),
     data,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * A card for a scene already staged.
+ *
+ * The scene and the card are made together, in that order, because the card
+ * without its scene would be a card that opens onto nothing. The two are
+ * wider than a media card: the framing preview and the status line have to
+ * share the face.
+ */
+export function createDirectorNode(
+  scene: DirectorScene,
+  at: { x: number; y: number },
+): WorkflowNode {
+  const now = nowIso();
+  return {
+    id: newId(),
+    kind: "director",
+    title: scene.title,
+    bounds: { x: at.x, y: at.y, width: 500, height: 320 },
+    zIndex: 0,
+    ports: derivePorts("director"),
+    data: { director: { sceneId: scene.id } },
     createdAt: now,
     updatedAt: now,
   };

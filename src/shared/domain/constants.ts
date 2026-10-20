@@ -8,11 +8,13 @@ import type {
 
 export const MOKA_MAGIC = [0x4d, 0x4f, 0x4b, 0x41] as const;
 export const MOKA_FILE_VERSION = "v1" as const;
-// Version 4 added extension nodes. Version 3 is still read and is upgraded to
-// 4 on the way in: a v3 canvas holds no extension node, so nothing has to be
-// rewritten but the number. Version 3 split the audio capability into speech
-// and music; the codec rewrites a v2 canvas's generation specs on decode.
-export const CANVAS_SCHEMA_VERSION = 4;
+// Version 5 added director desks and the scenes they stage. Version 3 is
+// still read and both 3 and 4 are upgraded to 5 on the way in: neither holds
+// a director node, so nothing has to be rewritten but the number. The bump is
+// a guard rather than a formality — an older build ignores the top-level
+// `directorScenes` it does not know, and would drop every staged scene if it
+// read the document and wrote it back.
+export const CANVAS_SCHEMA_VERSION = 5;
 /** The previous canvas schema this build still reads. */
 export const CANVAS_SCHEMA_VERSION_MIN = 3;
 export const PACKAGE_FORMAT_VERSION = 2;
@@ -93,6 +95,7 @@ export const PROJECT_ASSET_CATEGORIES = [
   "voice",
   "texts",
   "videos",
+  "models",
 ] as const;
 export type AssetCategory = (typeof PROJECT_ASSET_CATEGORIES)[number];
 
@@ -103,6 +106,7 @@ export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
   voice: "domain:assetCategory.voice",
   texts: "domain:assetCategory.texts",
   videos: "domain:assetCategory.videos",
+  models: "domain:assetCategory.models",
 };
 
 /**
@@ -278,7 +282,13 @@ export function isModelScene(value: unknown): value is ModelScene {
  * kind of model rather than a kind of material, which is why a shelf, a lens
  * and a node never offer it.
  */
-export const ASSET_KINDS = ["text", "image", "audio", "video"] as const;
+export const ASSET_KINDS = [
+  "text",
+  "image",
+  "audio",
+  "video",
+  "model",
+] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 /**
@@ -294,6 +304,7 @@ export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
   image: "domain:nodeTitle.image",
   audio: "domain:nodeTitle.audio",
   video: "domain:nodeTitle.video",
+  model: "domain:assetKind.model",
 };
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
@@ -556,6 +567,17 @@ export const NODE_PORTS: Record<NodeKind, PortDefinition[]> = {
   // An extension's ports are a snapshot copied from its definition when the
   // node is inserted. An empty table leaves every stored port standing.
   extension: [],
+  // The desk stages a scene and hands back what was staged: a still of the
+  // framing, the blocking reference, and the lens direction. Its input is a
+  // shelf of upstream pictures to use as background or model reference.
+  director: [
+    port("plates", "input", ["image"], "domain:port.plates", {
+      cardinality: "many",
+    }),
+    port("frame", "output", ["image"], "domain:port.frame"),
+    port("blocking", "output", ["video"], "domain:port.blocking"),
+    port("direction", "output", ["text"], "domain:port.direction"),
+  ],
 };
 
 export const MOKA_FRAGMENT_MIME = "application/x-moka-canvas-fragment+json";
@@ -743,6 +765,23 @@ export const PROBLEM_CODES = [
   "STORY_JOB_NOT_CANCELLABLE",
   "STORY_JOB_BUSY",
   "STORY_JOB_ITEM_LIMIT",
+  "DIRECTOR_SCENE_NOT_FOUND",
+  "DIRECTOR_SCHEMA_UNSUPPORTED",
+  "DIRECTOR_LIMIT_EXCEEDED",
+  "DIRECTOR_SCENE_TOO_LARGE",
+  "DIRECTOR_REFERENCE_INVALID",
+  "DIRECTOR_WEBGL_UNAVAILABLE",
+  "DIRECTOR_CONTEXT_LOST",
+  "DIRECTOR_MODEL_UNSUPPORTED",
+  "DIRECTOR_MODEL_LOAD_FAILED",
+  "DIRECTOR_MODEL_TOO_LARGE",
+  "DIRECTOR_RIG_UNMAPPED",
+  "DIRECTOR_CAPTURE_FAILED",
+  "DIRECTOR_RECORD_UNSUPPORTED",
+  "DIRECTOR_RECORD_INCOMPLETE",
+  "DIRECTOR_TRANSCODE_FAILED",
+  "DIRECTOR_OUTPUT_STALE",
+  "DIRECTOR_HISTORY_TRUNCATED",
   "NOT_FOUND",
   "CONFLICT",
   "PAYLOAD_TOO_LARGE",

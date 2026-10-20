@@ -104,6 +104,10 @@ struct Contribution {
     word: &'static str,
     /// Empty until [`label`] has numbered the set.
     label: String,
+    /// Whether the block is numbered at all. A director's lens direction is a
+    /// complete description of the shot, not a reference to one, so it folds
+    /// into the prompt as prose rather than as `[Text 1]`.
+    labelled: bool,
     share: Share,
 }
 
@@ -178,7 +182,13 @@ fn from_upstream(
             continue;
         };
         for source in expand(canvas, &edge.source.node_id) {
-            contribute(source, sink, &mut taken, &mut contributions);
+            contribute(
+                source,
+                sink,
+                Some(edge.source.port_id.as_str()),
+                &mut taken,
+                &mut contributions,
+            );
         }
     }
     label(&mut contributions);
@@ -195,6 +205,7 @@ fn from_references(canvas: &CanvasDocument, spec: &GenerationSpec) -> ResolvedIn
             contribute(
                 source,
                 Sink::Any(InputRole::Reference),
+                None,
                 &mut taken,
                 &mut contributions,
             );
@@ -225,6 +236,7 @@ fn from_mentions(canvas: &CanvasDocument, spec: &GenerationSpec) -> ResolvedInpu
             contribute(
                 source,
                 Sink::Any(InputRole::Reference),
+                None,
                 &mut taken,
                 &mut contributions,
             );
@@ -277,6 +289,7 @@ fn finish(
         let Contribution {
             node_id,
             label,
+            labelled,
             share,
             ..
         } = contribution;
@@ -284,7 +297,12 @@ fn finish(
             Share::Text(text) => {
                 // The blank line and the label travel with the text, so the
                 // budget pays for them before the text is cut to what is left.
-                let framing = if body.is_empty() { 0 } else { 2 } + label.chars().count() + 1;
+                let framing = if body.is_empty() { 0 } else { 2 }
+                    + if labelled {
+                        label.chars().count() + 1
+                    } else {
+                        0
+                    };
                 let kept = cut_at(&text, budget.saturating_sub(framing));
                 truncated_chars += text.chars().count() - kept.chars().count();
                 // A label pointing at a block that was cut away whole points at
@@ -297,8 +315,10 @@ fn finish(
                 if !body.is_empty() {
                     body.push_str("\n\n");
                 }
-                body.push_str(&label);
-                body.push('\n');
+                if labelled {
+                    body.push_str(&label);
+                    body.push('\n');
+                }
                 body.push_str(kept);
             }
             Share::Media { role, asset_id } => {
@@ -343,6 +363,9 @@ fn cut_at(text: &str, limit: usize) -> &str {
 fn label(contributions: &mut [Contribution]) {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     for contribution in contributions.iter_mut() {
+        if !contribution.labelled {
+            continue;
+        }
         let count = seen.entry(contribution.word).or_insert(0);
         *count += 1;
         contribution.label = format!("[{} {}]", contribution.word, count);
@@ -352,28 +375,39 @@ fn label(contributions: &mut [Contribution]) {
 fn contribute(
     source: &WorkflowNode,
     sink: Sink,
-    taken: &mut HashSet<NodeId>,
+    source_port: Option<&str>,
+    taken: &mut HashSet<(NodeId, Option<String>)>,
     out: &mut Vec<Contribution>,
 ) {
     // A node reached twice — two edges from it, or a mention repeated — gives
     // its share once. Labelling it twice would leave the prompt pointing at a
-    // block that says the same thing.
-    if taken.contains(&source.id) {
+    // block that says the same thing. A director is the exception: it has
+    // three outputs, and a run that reads two of them is reading two things.
+    let key = (
+        source.id.clone(),
+        if source.kind == NodeKind::Director {
+            source_port.map(str::to_string)
+        } else {
+            None
+        },
+    );
+    if taken.contains(&key) {
         return;
     }
     let share = match sink {
-        Sink::Text => text_output(source).map(Share::Text),
-        Sink::Media(role) => media_share(source, role),
-        Sink::Any(role) => text_output(source)
+        Sink::Text => text_output(source, source_port).map(Share::Text),
+        Sink::Media(role) => media_share(source, role, source_port),
+        Sink::Any(role) => text_output(source, source_port)
             .map(Share::Text)
-            .or_else(|| media_share(source, role)),
+            .or_else(|| media_share(source, role, source_port)),
     };
     // Nothing to give is nothing recorded, so a node that had no words for one
     // port is still free to give its asset to another.
     let Some(share) = share else {
         return;
     };
-    taken.insert(source.id.clone());
+    let labelled = !matches!((&share, source.kind), (Share::Text(_), NodeKind::Director));
+    taken.insert(key);
     out.push(Contribution {
         node_id: source.id.clone(),
         word: match &share {
@@ -381,11 +415,30 @@ fn contribute(
             Share::Media { .. } => label_word(source.kind),
         },
         label: String::new(),
+        labelled,
         share,
     });
 }
 
-fn media_share(source: &WorkflowNode, role: InputRole) -> Option<Share> {
+/// The file a node hands along for one of its outputs.
+///
+/// A media node has one asset, whatever port it is read on. A director has
+/// three outputs and no single asset: the frame and the blocking reference
+/// are chosen by the port the edge came from, and a port it has not delivered
+/// hands along nothing.
+fn media_share(source: &WorkflowNode, role: InputRole, source_port: Option<&str>) -> Option<Share> {
+    if source.kind == NodeKind::Director {
+        let state = source.data.director.as_ref()?;
+        let asset_id = match source_port {
+            Some("frame") => state.frame_asset_id.clone(),
+            Some("blocking") => state.blocking_asset_id.clone(),
+            _ => None,
+        }?;
+        if asset_id.is_empty() {
+            return None;
+        }
+        return Some(Share::Media { role, asset_id });
+    }
     source
         .data
         .asset_id
@@ -395,8 +448,20 @@ fn media_share(source: &WorkflowNode, role: InputRole) -> Option<Share> {
 
 /// What a node has to say. Written content wins; otherwise the primary result
 /// a previous run left behind, which is how an operation node's output reaches
-/// the node downstream of it.
-fn text_output(node: &WorkflowNode) -> Option<String> {
+/// the node downstream of it. A director says its delivered lens direction,
+/// and only when read from that output.
+fn text_output(node: &WorkflowNode, source_port: Option<&str>) -> Option<String> {
+    if node.kind == NodeKind::Director {
+        if source_port != Some("direction") {
+            return None;
+        }
+        return node
+            .data
+            .director
+            .as_ref()
+            .and_then(|state| state.direction_text.clone())
+            .filter(|text| !text.trim().is_empty());
+    }
     if let Some(content) = node.data.content.as_deref() {
         if !content.trim().is_empty() {
             return Some(content.to_string());
@@ -470,6 +535,7 @@ fn label_word(kind: NodeKind) -> &'static str {
         NodeKind::Image => "Image",
         NodeKind::Audio => "Audio",
         NodeKind::Video => "Video",
+        NodeKind::Director => "Director",
         _ => "Node",
     }
 }

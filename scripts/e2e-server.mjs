@@ -53,7 +53,7 @@ workflow:
 public:
   productName: "Moka Canvas"
   maxUploadBytes: 2147483648
-  allowedMediaTypes: ["image", "audio", "video", "text"]
+  allowedMediaTypes: ["image", "audio", "video", "text", "model"]
 limits:
   maxNodesPerCanvas: 5000
   maxEdgesPerCanvas: 10000

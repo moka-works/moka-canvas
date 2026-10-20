@@ -59,6 +59,12 @@ import type {
 import { folderDepth, foldersOf } from "./folders";
 import { currentTake } from "./story";
 import { validateTimeline } from "./timeline";
+import {
+  DIRECTOR_LIMITS,
+  directorSceneAssetIds,
+  directorSceneIssues,
+  type DirectorScene,
+} from "./director";
 import { i18n } from "../i18n";
 
 export function isFiniteNumber(value: unknown): value is number {
@@ -325,6 +331,23 @@ export function timelineAssetIds(timeline: TimelineDocument): AssetId[] {
 }
 
 /**
+ * The scene a director card opens onto, when the project still holds it.
+ *
+ * A card whose scene is gone is a state the room repairs, not a broken
+ * document: it reads as an empty desk with a way to stage a new scene.
+ */
+export function directorSceneOf(
+  moka: MokaFile,
+  node: WorkflowNode,
+): DirectorScene | undefined {
+  if (node.kind !== "director") return undefined;
+  const sceneId = (node.data as { director?: { sceneId?: string } }).director
+    ?.sceneId;
+  if (!sceneId) return undefined;
+  return (moka.directorScenes ?? []).find((scene) => scene.id === sceneId);
+}
+
+/**
  * What points at each asset, as a list of the cards and clips that do.
  *
  * Both halves of a document hold assets — a canvas node shows one, a timeline
@@ -346,6 +369,12 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
   for (const canvas of moka.canvas) {
     for (const node of canvas.nodes) {
       for (const assetId of nodeAssetIds(node)) add(assetId, node.id);
+      const scene = directorSceneOf(moka, node);
+      if (scene) {
+        for (const assetId of directorSceneAssetIds(scene)) {
+          add(assetId, node.id);
+        }
+      }
     }
   }
   for (const timeline of moka.timelines ?? []) {
@@ -469,7 +498,10 @@ export function assetHolders(moka: MokaFile, assetId: AssetId): AssetHolder[] {
   const holders: AssetHolder[] = [];
   for (const canvas of moka.canvas) {
     for (const node of canvas.nodes) {
-      if (nodeAssetIds(node).includes(assetId)) {
+      const scene = directorSceneOf(moka, node);
+      const held = nodeAssetIds(node);
+      if (scene) held.push(...directorSceneAssetIds(scene));
+      if (held.includes(assetId)) {
         holders.push({ kind: "node", canvasId: canvas.id, nodeId: node.id });
       }
     }
@@ -1275,6 +1307,36 @@ export function validateMokaFile(moka: MokaFile): ValidationIssue[] {
           id: story.edit.timelineId,
         }),
       });
+  }
+
+  const scenes = moka.directorScenes ?? [];
+  if (scenes.length > DIRECTOR_LIMITS.maxScenesPerProject)
+    issues.push({
+      code: "DIRECTOR_LIMIT_EXCEEDED",
+      message: i18n.t("errors:validate.directorSceneLimit", {
+        count: DIRECTOR_LIMITS.maxScenesPerProject,
+      }),
+    });
+  const sceneIds = new Set<string>();
+  for (const scene of scenes) {
+    if (sceneIds.has(scene.id))
+      issues.push({
+        code: "DIRECTOR_REFERENCE_INVALID",
+        message: i18n.t("errors:validate.duplicateDirectorSceneId", {
+          id: scene.id,
+        }),
+      });
+    sceneIds.add(scene.id);
+    for (const problem of directorSceneIssues(scene)) {
+      issues.push({
+        code: problem.code,
+        message: i18n.t("errors:validate.directorSceneInvalid", {
+          title: scene.title,
+          path: problem.path,
+          reason: problem.message,
+        }),
+      });
+    }
   }
 
   const refs = collectAssetReferences(moka);

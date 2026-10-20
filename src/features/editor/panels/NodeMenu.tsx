@@ -1,15 +1,22 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ExtensionDefinition, NodeKind } from "../../../shared/domain";
+import type {
+  DirectorTemplateId,
+  ExtensionDefinition,
+  NodeKind,
+  Point,
+} from "../../../shared/domain";
 import { extensionPorts } from "../../../shared/domain";
+import { DirectorTemplateDialog } from "../../director/components/DirectorTemplateDialog";
 import {
+  addDirectorNodeAt,
   addExtensionNodeAt,
   addNodeAt,
   kindAcceptsConnection,
   portsAcceptConnection,
   activeCanvas,
 } from "../interactions/actions";
-import { useEditorStore } from "../stores/editorStore";
+import { useEditorStore, type PortRef } from "../stores/editorStore";
 import { useExtensionStore } from "../stores/extensionStore";
 import { useClampedMenuPosition } from "./useClampedMenuPosition";
 
@@ -24,6 +31,7 @@ const GROUPS: {
       { kind: "image", label: "domain:nodeTitle.image" },
       { kind: "audio", label: "domain:nodeTitle.audio" },
       { kind: "video", label: "domain:nodeTitle.video" },
+      { kind: "director", label: "domain:nodeTitle.director" },
     ],
   },
   {
@@ -62,6 +70,10 @@ export function NodeMenu() {
   );
   const locale = (i18n.language || "en").split("-")[0];
   const [extensionsOpen, setExtensionsOpen] = useState(false);
+  const [pendingTemplate, setPendingTemplate] = useState<{
+    world: Point;
+    connectFrom: PortRef | null;
+  } | null>(null);
   const [submenuPos, setSubmenuPos] = useState<{
     left: number;
     top: number;
@@ -128,10 +140,32 @@ export function NodeMenu() {
     submenu.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
   }, [extensionsOpen, catalog, loading, error]);
 
-  if (!menu) return null;
+  if (!menu) {
+    return (
+      <DirectorTemplateDialog
+        open={pendingTemplate !== null}
+        onPick={chooseTemplate}
+        onClose={() => setPendingTemplate(null)}
+      />
+    );
+  }
   const canvas = activeCanvas();
 
+  function chooseTemplate(template: DirectorTemplateId) {
+    const target = pendingTemplate;
+    setPendingTemplate(null);
+    if (target) addDirectorNodeAt(target.world, target.connectFrom, template);
+  }
+
   const pick = (kind: NodeKind) => {
+    if (kind === "director") {
+      setPendingTemplate({
+        world: menu!.world,
+        connectFrom: menu!.connectFrom,
+      });
+      useEditorStore.getState().closeNodeMenu();
+      return;
+    }
     useEditorStore.getState().closeNodeMenu();
     addNodeAt(menu.world, kind, menu.connectFrom);
   };

@@ -260,6 +260,7 @@ fn fixture_project(root: &Path) -> (MokaFile, TimelineDocument) {
         folders: None,
         timelines: Some(vec![timeline.clone()]),
         stories: None,
+        director_scenes: None,
         canvas: Vec::new(),
     };
     (moka, timeline)

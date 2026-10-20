@@ -108,7 +108,14 @@
     "storyVoiceTooLong": "The voice's model, tone, or manner is too long",
     "storyVoiceRate": "The voice's pace is out of range",
     "storyVoicePitch": "The voice's pitch is out of range",
-    "storyDigestShape": "An assembly's digest is eight hexadecimal digits"
+    "storyDigestShape": "An assembly's digest is eight hexadecimal digits",
+    "directorSceneNotFound": "Director scene {{id}} is not here",
+    "directorSceneIdExists": "A director scene with that id already exists",
+    "directorSceneIdMismatch": "A replaced scene must keep its own id",
+    "directorSceneIndexOutOfRange": "A scene cannot be inserted at that place",
+    "directorSceneLimit": "The project holds more director scenes than the {{count}} allowed",
+    "directorSceneInvalid": "The director scene is invalid at {{path}}: {{reason}}",
+    "directorSceneTooLarge": "Director scene \"{{title}}\" is {{bytes}} bytes; the limit is {{limit}}"
   },
   "timeline": {
     "clipAssetMissing": "Clip's asset is not in the project",
@@ -213,6 +220,9 @@
     "storyTimelineMissing": "A story points at timeline {{id}}, which is not here",
     "storyLimitReached": "The project holds more stories than the limit",
     "duplicateStoryId": "Duplicate story id {{id}}",
-    "extensionInvalid": "Extension node \"{{title}}\" is invalid: {{reason}}"
+    "extensionInvalid": "Extension node \"{{title}}\" is invalid: {{reason}}",
+    "directorSceneLimit": "The project holds more director scenes than the {{count}} allowed",
+    "duplicateDirectorSceneId": "Duplicate director scene id {{id}}",
+    "directorSceneInvalid": "Director scene \"{{title}}\" is invalid at {{path}}: {{reason}}"
   }
 }

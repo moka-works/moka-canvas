@@ -115,7 +115,7 @@ describe("the canvas tree", () => {
     ]);
   });
 
-  it("opens a board onto the four kinds of thing it uses", () => {
+  it("opens a board onto the five kinds of thing it uses", () => {
     const ids = goldenNodeIds();
     openTree(buildShelfMokaFile());
     fireEvent.click(screen.getByRole("button", { name: "Open Canvas 1" }));
@@ -125,6 +125,7 @@ describe("the canvas tree", () => {
       "Image",
       "Audio",
       "Video",
+      "3D model",
       "Canvas 2",
     ]);
     fireEvent.click(rowNamed("Image"));

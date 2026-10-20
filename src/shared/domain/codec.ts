@@ -66,15 +66,12 @@ import type {
   WorkflowNode,
 } from "./types";
 import { validateResourcePath } from "./validate";
+import { MokaCodecError } from "./codecError";
+import { decodeDirectorScene, decodeDirectorState } from "./directorCodec";
+import { encodeDirectorScene, encodeDirectorState } from "./directorCodec";
+import type { DirectorState } from "./director";
 
-export class MokaCodecError extends Error {
-  readonly code: string;
-  constructor(code: string, message: string) {
-    super(message);
-    this.code = code;
-    this.name = "MokaCodecError";
-  }
-}
+export { MokaCodecError };
 
 function asDouble(value: number): Double {
   return new Double(value);
@@ -162,6 +159,13 @@ function encodeNodeData(kind: string, data: NodeData): Record<string, unknown> {
       // the executor key and before the common result fields.
       put("parameters");
       put("extension");
+      break;
+    case "director":
+      // The scene reference and the outputs last delivered from it sit where
+      // the Rust NodeData puts them: after the extension state and before the
+      // common result fields.
+      if (record.director !== undefined)
+        doc.director = encodeDirectorState(record.director as DirectorState);
       break;
     case "group":
       put("color");
@@ -666,11 +670,18 @@ function encodeMetadata(metadata: ProjectMetadata): Record<string, unknown> {
 }
 
 export function encodeMokaFile(moka: MokaFile, maxBytes?: number): Uint8Array {
+  const categories = PROJECT_ASSET_CATEGORIES.filter(
+    // A model shelf arrived without a schema version of its own: a project
+    // that never held a model leaves the key off rather than writing an
+    // empty list back into a document that came in without one.
+    (category) =>
+      category !== "models" || (moka.resources.models?.length ?? 0) > 0,
+  );
   const doc: Record<string, unknown> = {
     version: moka.version,
     metadata: encodeMetadata(moka.metadata),
     resources: Object.fromEntries(
-      PROJECT_ASSET_CATEGORIES.map((category) => [
+      categories.map((category) => [
         category,
         (moka.resources[category] ?? []).map(encodeResource),
       ]),
@@ -680,6 +691,8 @@ export function encodeMokaFile(moka: MokaFile, maxBytes?: number): Uint8Array {
   if (moka.timelines !== undefined)
     doc.timelines = moka.timelines.map(encodeTimeline);
   if (moka.stories !== undefined) doc.stories = moka.stories.map(encodeStory);
+  if (moka.directorScenes !== undefined)
+    doc.directorScenes = moka.directorScenes.map(encodeDirectorScene);
   doc.canvas = moka.canvas.map(encodeCanvas);
   const bson = serialize(doc);
   const bytes = new Uint8Array(4 + bson.length);
@@ -970,6 +983,10 @@ function normalizeCanvas(canvas: CanvasDocument): CanvasDocument {
     node.ports = reconcilePorts(node.kind, node.ports);
     if (node.kind === "extension") {
       decodeExtensionData(node.data as Record<string, unknown>);
+    }
+    if (node.kind === "director") {
+      const data = node.data as Record<string, unknown>;
+      data.director = decodeDirectorState(data.director);
     }
   }
   return canvas;
@@ -1800,6 +1817,12 @@ export function decodeMokaFile(bytes: Uint8Array): MokaFile {
   const folders = decodeFolders(doc.folders);
   const timelines = decodeTimelines(doc.timelines);
   const stories = decodeStories(doc.stories);
+  const directorScenes =
+    doc.directorScenes === undefined || doc.directorScenes === null
+      ? undefined
+      : asArray(doc.directorScenes, "directorScenes").map((scene) =>
+          decodeDirectorScene(scene),
+        );
 
   return {
     version: MOKA_FILE_VERSION,
@@ -1808,6 +1831,7 @@ export function decodeMokaFile(bytes: Uint8Array): MokaFile {
     ...(folders !== undefined ? { folders } : {}),
     ...(timelines !== undefined ? { timelines } : {}),
     ...(stories !== undefined ? { stories } : {}),
+    ...(directorScenes !== undefined ? { directorScenes } : {}),
     canvas,
   };
 }

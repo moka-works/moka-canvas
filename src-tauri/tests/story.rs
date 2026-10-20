@@ -191,6 +191,7 @@ fn story_document() -> MokaFile {
         folders: None,
         timelines: Some(vec![timeline()]),
         stories: None,
+        director_scenes: None,
         canvas: vec![CanvasDocument::empty("canvas-1".into(), "Canvas 1".into())],
     };
     for id in [HERO_MAIN, HERO_SHEET, FRAME_ART] {

@@ -7,6 +7,8 @@ import {
   MOKA_FRAGMENT_MIME,
   assetHolders,
   createExtensionNode,
+  createDirectorNode,
+  createDirectorScene,
   createNode,
   defaultGenerationSpec,
   extensionPorts,
@@ -31,6 +33,7 @@ import {
   type BackgroundMode,
   type CanvasDocument,
   type CanvasId,
+  type DirectorTemplateId,
   type DocumentCommand,
   type EdgeId,
   type GenerationSpec,
@@ -60,6 +63,7 @@ import {
   type ToolReport,
 } from "../../../api/tools";
 import { i18n } from "../../../shared/i18n";
+import { openDirector } from "../../director/stores/directorStore";
 import { useAppStore } from "../stores/appStore";
 import {
   useEditorStore,
@@ -2254,8 +2258,10 @@ function insertNode(
   canvas: CanvasDocument,
   node: WorkflowNode,
   connectFrom: PortRef | null,
+  before: DocumentCommand[] = [],
 ): NodeId | null {
   const commands: DocumentCommand[] = [
+    ...before,
     { type: "addNode", canvasId: canvas.id, node },
   ];
   let connected = false;
@@ -2350,6 +2356,55 @@ export function addExtensionNodeAt(
     (i18n.language || "en").split("-")[0],
   );
   return insertNode(canvas, node, connectFrom);
+}
+
+/**
+ * A director desk is made with its scene in one step of history.
+ *
+ * The card without the scene would be a card opening onto nothing, so the two
+ * commands travel together and the undo of creating a desk removes both. An
+ * upstream picture dropped on blank canvas is wired to the desk's `plates`
+ * input, where it waits to be used rather than entering the scene itself.
+ */
+export function addDirectorNodeAt(
+  world: Point,
+  connectFrom: PortRef | null,
+  template: DirectorTemplateId | string = "empty",
+): NodeId | null {
+  const canvas = activeCanvas();
+  if (!canvas) return null;
+  const count =
+    canvas.nodes.filter((node) => node.kind === "director").length + 1;
+  const templateName = i18n.t(
+    `director:templates.${isKnownTemplate(template) ? template : "empty"}.name`,
+  );
+  const title = i18n.t("director:defaults.sceneTitle", {
+    n: count,
+    template: templateName,
+  });
+  const scene = createDirectorScene(title, template);
+  const node = createDirectorNode(
+    scene,
+    unoccupiedPosition(canvas, {
+      x: world.x - 250,
+      y: world.y - 40,
+    }),
+  );
+  const id = insertNode(canvas, node, connectFrom, [
+    { type: "addDirectorScene", scene },
+  ]);
+  if (id) openDirector(id);
+  return id;
+}
+
+function isKnownTemplate(template: string): boolean {
+  return (
+    template === "empty" ||
+    template === "solo" ||
+    template === "duo" ||
+    template === "ensemble" ||
+    template === "tabletop"
+  );
 }
 
 /**

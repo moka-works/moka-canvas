@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use super::folders::{folder_depth, folders_of, holds_itself};
 use super::{
-    story, timeline, CanvasDocument, Capability, Cardinality, DataType, MokaFile, NodeId, NodeKind,
-    PortDirection, ResourceEntry, ValidationIssue, WorkflowEdge, WorkflowNode, ASSET_CATEGORIES,
-    ASSET_ORIGINS,
+    director, story, timeline, CanvasDocument, Capability, Cardinality, DataType, MokaFile, NodeId,
+    NodeKind, PortDirection, ResourceEntry, ValidationIssue, WorkflowEdge, WorkflowNode,
+    ASSET_CATEGORIES, ASSET_ORIGINS,
 };
 
 pub const COORDINATE_LIMIT: f64 = 1_000_000.0;
@@ -1150,6 +1150,59 @@ pub fn validate_moka_file(moka: &MokaFile) -> Vec<ValidationIssue> {
                     format!("Story points at timeline {timeline_id}, which is not here"),
                 ));
             }
+        }
+    }
+
+    let scenes = moka.director_scenes.iter().flatten().collect::<Vec<_>>();
+    if scenes.len() > director::MAX_DIRECTOR_SCENES_PER_PROJECT {
+        issues.push(ValidationIssue {
+            code: "DIRECTOR_LIMIT_EXCEEDED".into(),
+            message: format!(
+                "The project holds more director scenes than the {} allowed",
+                director::MAX_DIRECTOR_SCENES_PER_PROJECT
+            ),
+            canvas_id: None,
+            node_id: None,
+            port_id: None,
+            edge_id: None,
+            timeline_id: None,
+            track_id: None,
+            clip_id: None,
+            transition_id: None,
+        });
+    }
+    let mut scene_ids = HashSet::new();
+    for scene in scenes {
+        if !scene_ids.insert(scene.id.as_str()) {
+            issues.push(ValidationIssue {
+                code: "DIRECTOR_REFERENCE_INVALID".into(),
+                message: format!("Duplicate director scene id {}", scene.id),
+                canvas_id: None,
+                node_id: None,
+                port_id: None,
+                edge_id: None,
+                timeline_id: None,
+                track_id: None,
+                clip_id: None,
+                transition_id: None,
+            });
+        }
+        for problem in director::scene_issues(scene) {
+            issues.push(ValidationIssue {
+                code: problem.code.into(),
+                message: format!(
+                    "Director scene \"{}\" is invalid at {}: {}",
+                    scene.title, problem.path, problem.message
+                ),
+                canvas_id: None,
+                node_id: None,
+                port_id: None,
+                edge_id: None,
+                timeline_id: None,
+                track_id: None,
+                clip_id: None,
+                transition_id: None,
+            });
         }
     }
 

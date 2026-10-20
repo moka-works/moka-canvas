@@ -129,6 +129,7 @@ impl ProjectRegistry {
             folders: None,
             timelines: None,
             stories: None,
+            director_scenes: None,
             canvas: vec![CanvasDocument::empty(
                 new_id(),
                 first_canvas_name(input.first_canvas_name),

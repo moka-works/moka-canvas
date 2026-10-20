@@ -2,9 +2,13 @@
   "assetCategory": {
     "images": "Images",
     "music": "Music",
+    "models": "3D models",
     "texts": "Texts",
     "videos": "Videos",
     "voice": "Voice"
+  },
+  "assetKind": {
+    "model": "3D model"
   },
   "assetOrigin": {
     "brought": "Brought in",
@@ -30,17 +34,22 @@
     "operation": "Operation",
     "text": "Text",
     "video": "Video",
-    "extension": "Extension"
+    "extension": "Extension",
+    "director": "Director desk"
   },
   "port": {
     "artifact": "Artifact",
     "audio": "Audio",
     "audios": "Audios",
+    "blocking": "Blocking reference",
+    "direction": "Lens direction",
     "firstFrame": "First frame",
+    "frame": "Shot frame",
     "image": "Image",
     "images": "Images",
     "lastFrame": "Last frame",
     "mask": "Mask",
+    "plates": "Plates",
     "prompt": "Prompt",
     "result": "Result",
     "text": "Text",

@@ -1,6 +1,17 @@
 {
   "page": {
-    "title": "Director desk"
+    "title": "Director desk",
+    "back": "Back to canvas",
+    "shotSummary": "{{name}} · {{seconds}}s · {{ratio}}",
+    "nodeMissing": {
+      "title": "This card is no longer on the board",
+      "body": "The director card was removed or the project changed elsewhere. Go back to the canvas to continue."
+    },
+    "sceneMissing": {
+      "title": "This scene is not here",
+      "body": "Director \"{{title}}\" points at a scene this project no longer holds. Stage an empty scene to continue, or go back.",
+      "recover": "Stage an empty scene"
+    }
   },
   "capability": {
     "title": "This environment cannot draw 3D",
@@ -8,5 +19,71 @@
     "reason": "Reason: {{reason}}",
     "lowTexture": "This device's largest texture is {{size}} px; large model textures may be slow.",
     "retry": "Check again"
+  },
+  "card": {
+    "sceneMissing": "Scene missing",
+    "shotNotDelivered": "Current shot not delivered",
+    "shotLine": "{{name}} · {{seconds}}s",
+    "noShot": "No shot",
+    "counts": "{{objects}} objects · {{cameras}} cameras · {{lights}} lights",
+    "delivered": "Delivered",
+    "notDelivered": "Not delivered yet",
+    "enter": "Enter director desk"
+  },
+  "templates": {
+    "dialogTitle": "Start a director desk",
+    "dialogNote": "Pick the scene to begin from. Everything can be changed inside the desk.",
+    "empty": {
+      "name": "Empty stage",
+      "description": "Camera and three-point light, no actors"
+    },
+    "solo": {
+      "name": "Monologue",
+      "description": "One actor by the window, 45mm medium close-up"
+    },
+    "duo": {
+      "name": "Two at a table",
+      "description": "Two seated actors across a table, 35mm over-the-shoulder start"
+    },
+    "ensemble": {
+      "name": "Ensemble blocking",
+      "description": "Three actors spread across the stage, 24mm wide"
+    },
+    "tabletop": {
+      "name": "Tabletop",
+      "description": "Subject, backdrop, and a side prop, 80mm long lens"
+    }
+  },
+  "defaults": {
+    "sceneTitle": "Shot {{n}} · {{template}}",
+    "cameraName": "Camera",
+    "shotName": "Shot",
+    "actorName": "Actor {{n}}",
+    "keyLight": "Key light",
+    "rimLight": "Rim light",
+    "ambientLight": "Ambient light"
+  },
+  "props": {
+    "longTable": "Long table",
+    "sideTable": "Side table",
+    "bookshelf": "Bookshelf",
+    "bench": "Bench",
+    "screen": "Screen",
+    "lowWall": "Low wall",
+    "doorway": "Doorway",
+    "window": "Window",
+    "steps": "Steps",
+    "platform": "Platform",
+    "bush": "Bush",
+    "rock": "Rock",
+    "hill": "Hill",
+    "groundSheet": "Ground sheet",
+    "floorLamp": "Floor lamp",
+    "crate": "Crate",
+    "ball": "Ball prop",
+    "car": "Car",
+    "backdrop": "Backdrop",
+    "subject": "Subject",
+    "sideProp": "Side prop"
   }
 }

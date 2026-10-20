@@ -110,6 +110,12 @@ import {
 import { emptyStorySlot } from "./factories";
 import { STORY_STEPS, storyVoiceTake, voiceTakeOf } from "./story";
 import { findNode, validateBounds, validateEdgeCandidate } from "./validate";
+import {
+  DIRECTOR_LIMITS,
+  directorSceneIssues,
+  type DirectorScene,
+} from "./director";
+import { directorSceneBytes } from "./directorCodec";
 import { i18n } from "../i18n";
 
 export class CommandError extends Error {
@@ -387,6 +393,87 @@ function syncGroupNodeData(canvas: CanvasDocument): CanvasDocument {
   return changed ? { ...canvas, nodes } : canvas;
 }
 
+/**
+ * The scenes a project carries, or carrying the field not at all when it has
+ * none — the same honest reading the timelines and folders give an empty room.
+ */
+function withDirectorScenes(moka: MokaFile, scenes: DirectorScene[]): MokaFile {
+  return {
+    ...moka,
+    directorScenes: scenes.length > 0 ? scenes : undefined,
+  };
+}
+
+function directorSceneIdOf(node: WorkflowNode): string | undefined {
+  if (node.kind !== "director") return undefined;
+  const state = (node.data as { director?: { sceneId?: string } }).director;
+  return state?.sceneId || undefined;
+}
+
+/**
+ * Scenes left holding nothing once these cards are gone.
+ *
+ * A scene is not a card's private copy of itself: one card opens it, and if
+ * that card is deleted and no other still points at the scene, the scene goes
+ * with it rather than sitting in the document for ever. A scene that was
+ * already orphaned before this edit is left where it was — it is not this
+ * command's mistake to repair.
+ */
+function orphanDirectorScenes(
+  moka: MokaFile,
+  removedNodeIds: ReadonlySet<string>,
+): { scene: DirectorScene; index: number }[] {
+  const referencedByRemoved = new Set<string>();
+  for (const canvas of moka.canvas) {
+    for (const node of canvas.nodes) {
+      if (!removedNodeIds.has(node.id)) continue;
+      const sceneId = directorSceneIdOf(node);
+      if (sceneId) referencedByRemoved.add(sceneId);
+    }
+  }
+  if (referencedByRemoved.size === 0) return [];
+  const stillReferenced = new Set<string>();
+  for (const canvas of moka.canvas) {
+    for (const node of canvas.nodes) {
+      if (removedNodeIds.has(node.id)) continue;
+      const sceneId = directorSceneIdOf(node);
+      if (sceneId) stillReferenced.add(sceneId);
+    }
+  }
+  const orphans: { scene: DirectorScene; index: number }[] = [];
+  (moka.directorScenes ?? []).forEach((scene, index) => {
+    if (referencedByRemoved.has(scene.id) && !stillReferenced.has(scene.id)) {
+      orphans.push({ scene, index });
+    }
+  });
+  return orphans;
+}
+
+function checkDirectorScene(scene: DirectorScene): void {
+  const issues = directorSceneIssues(scene);
+  if (issues.length > 0) {
+    const first = issues[0];
+    throw new CommandError(
+      first.code,
+      i18n.t("errors:command.directorSceneInvalid", {
+        path: first.path,
+        reason: first.message,
+      }),
+    );
+  }
+  const bytes = directorSceneBytes(scene);
+  if (bytes > DIRECTOR_LIMITS.maxSceneBytes) {
+    throw new CommandError(
+      "DIRECTOR_SCENE_TOO_LARGE",
+      i18n.t("errors:command.directorSceneTooLarge", {
+        title: scene.title,
+        bytes,
+        limit: DIRECTOR_LIMITS.maxSceneBytes,
+      }),
+    );
+  }
+}
+
 function applyOne(
   moka: MokaFile,
   command: DocumentCommand,
@@ -619,7 +706,30 @@ function applyOne(
       }
 
       const next = syncGroupNodeData({ ...canvas, nodes, edges, groups });
+      const orphaned = orphanDirectorScenes(
+        moka,
+        new Set(removedNodes.map((node) => node.id)),
+      );
+      const base =
+        orphaned.length > 0
+          ? withDirectorScenes(
+              moka,
+              (moka.directorScenes ?? []).filter(
+                (scene) =>
+                  !orphaned.some((entry) => entry.scene.id === scene.id),
+              ),
+            )
+          : moka;
       const inverse: DocumentCommand[] = [];
+      // A scene comes back before the card that opens onto it: undoing the
+      // deletion must never pass through a card pointing at nothing.
+      for (const entry of orphaned) {
+        inverse.push({
+          type: "addDirectorScene",
+          scene: entry.scene,
+          index: entry.index,
+        });
+      }
       const orderedRemoved = canvas.nodes.filter((n) =>
         removedNodes.some((r) => r.id === n.id),
       );
@@ -644,7 +754,7 @@ function applyOne(
           });
         }
       }
-      return { next: replaceCanvas(moka, next), inverse };
+      return { next: replaceCanvas(base, next), inverse };
     }
 
     case "addEdge": {
@@ -1150,9 +1260,30 @@ function applyOne(
         );
       const removed = moka.canvas[index];
       const list = moka.canvas.filter((c) => c.id !== command.canvasId);
+      const orphaned = orphanDirectorScenes(
+        moka,
+        new Set(removed.nodes.map((node) => node.id)),
+      );
+      const base =
+        orphaned.length > 0
+          ? withDirectorScenes(
+              moka,
+              (moka.directorScenes ?? []).filter(
+                (scene) =>
+                  !orphaned.some((entry) => entry.scene.id === scene.id),
+              ),
+            )
+          : moka;
       return {
-        next: { ...moka, canvas: list },
-        inverse: [{ type: "addCanvas", canvas: removed, index }],
+        next: { ...base, canvas: list },
+        inverse: [
+          ...orphaned.map((entry): DocumentCommand => ({
+            type: "addDirectorScene",
+            scene: entry.scene,
+            index: entry.index,
+          })),
+          { type: "addCanvas", canvas: removed, index },
+        ],
       };
     }
 
@@ -2516,6 +2647,84 @@ function applyOne(
         inverse: [
           { type: "setStoryEdit", storyId: command.storyId, patch: previous },
         ],
+      };
+    }
+
+    case "addDirectorScene": {
+      const scenes = moka.directorScenes ?? [];
+      if (scenes.some((scene) => scene.id === command.scene.id))
+        throw new CommandError(
+          "CONFLICT",
+          i18n.t("errors:command.directorSceneIdExists"),
+        );
+      if (scenes.length + 1 > DIRECTOR_LIMITS.maxScenesPerProject)
+        throw new CommandError(
+          "DIRECTOR_LIMIT_EXCEEDED",
+          i18n.t("errors:command.directorSceneLimit", {
+            count: DIRECTOR_LIMITS.maxScenesPerProject,
+          }),
+        );
+      checkDirectorScene(command.scene);
+      const index = command.index ?? scenes.length;
+      if (index < 0 || index > scenes.length)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.directorSceneIndexOutOfRange"),
+        );
+      const list = [...scenes];
+      list.splice(index, 0, command.scene);
+      return {
+        next: withDirectorScenes(moka, list),
+        inverse: [{ type: "removeDirectorScene", sceneId: command.scene.id }],
+      };
+    }
+
+    case "replaceDirectorScene": {
+      const scenes = moka.directorScenes ?? [];
+      const index = scenes.findIndex((scene) => scene.id === command.sceneId);
+      if (index < 0)
+        throw new CommandError(
+          "DIRECTOR_SCENE_NOT_FOUND",
+          i18n.t("errors:command.directorSceneNotFound", {
+            id: command.sceneId,
+          }),
+        );
+      if (command.scene.id !== command.sceneId)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.directorSceneIdMismatch"),
+        );
+      checkDirectorScene(command.scene);
+      const previous = scenes[index];
+      const list = [...scenes];
+      list[index] = command.scene;
+      return {
+        next: withDirectorScenes(moka, list),
+        inverse: [
+          {
+            type: "replaceDirectorScene",
+            sceneId: command.sceneId,
+            scene: previous,
+          },
+        ],
+      };
+    }
+
+    case "removeDirectorScene": {
+      const scenes = moka.directorScenes ?? [];
+      const index = scenes.findIndex((scene) => scene.id === command.sceneId);
+      // Taking a scene out twice is taking it out once. This is what the undo
+      // of `[addDirectorScene, addNode]` relies on: the cards come back out
+      // first, and the deletion of the last card already clears the scene it
+      // opened onto, so the scene's own inverse finds nothing left to do.
+      if (index < 0) return { next: moka, inverse: [] };
+      const removed = scenes[index];
+      return {
+        next: withDirectorScenes(
+          moka,
+          scenes.filter((scene) => scene.id !== command.sceneId),
+        ),
+        inverse: [{ type: "addDirectorScene", scene: removed, index }],
       };
     }
   }

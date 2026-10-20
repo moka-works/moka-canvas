@@ -20,6 +20,7 @@ import {
 } from "../interactions/actions";
 import { useAppearance } from "../stores/appearance";
 import { useEditorStore, type ContextMenuTarget } from "../stores/editorStore";
+import { openDirector } from "../../director/stores/directorStore";
 import { useProjectStore } from "../stores/projectStore";
 import { nodeRunViews, useRunStore } from "../stores/runStore";
 import { buildIssueIndex, buildResourceIndex } from "./mediaCards";
@@ -67,6 +68,8 @@ function createCallbacks(host: () => HTMLElement | null): ControllerCallbacks {
       const editor = useEditorStore.getState();
       if (node?.kind === "text") {
         editor.startEditingText(nodeId);
+      } else if (node?.kind === "director") {
+        openDirector(nodeId);
       } else {
         editor.startRenaming(nodeId);
       }

@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod director;
 pub mod folders;
 pub mod story;
 pub mod timeline;
@@ -149,7 +150,7 @@ pub struct ResourceEntry {
 
 pub const ASSET_ORIGINS: [&str; 2] = ["brought", "filed"];
 
-pub const ASSET_CATEGORIES: [&str; 5] = ["images", "music", "voice", "texts", "videos"];
+pub const ASSET_CATEGORIES: [&str; 6] = ["images", "music", "voice", "texts", "videos", "models"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ResourceRegistry {
@@ -163,6 +164,11 @@ pub struct ResourceRegistry {
     pub texts: Vec<ResourceEntry>,
     #[serde(default)]
     pub videos: Vec<ResourceEntry>,
+    /// The 3D models a project stages. Left out of the document when empty:
+    /// the shelf arrived without a schema version of its own, so a project
+    /// that never held a model keeps the bytes it came in with.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ResourceEntry>,
 }
 
 impl ResourceRegistry {
@@ -173,6 +179,7 @@ impl ResourceRegistry {
             "voice" => Some(&mut self.voice),
             "texts" => Some(&mut self.texts),
             "videos" => Some(&mut self.videos),
+            "models" => Some(&mut self.models),
             _ => None,
         }
     }
@@ -184,6 +191,7 @@ impl ResourceRegistry {
             "voice" => Some(&self.voice),
             "texts" => Some(&self.texts),
             "videos" => Some(&self.videos),
+            "models" => Some(&self.models),
             _ => None,
         }
     }
@@ -202,6 +210,7 @@ impl ResourceRegistry {
             &mut self.voice,
             &mut self.texts,
             &mut self.videos,
+            &mut self.models,
         ]
         .into_iter()
         .flatten()
@@ -294,6 +303,10 @@ pub enum NodeKind {
     /// The kind is static so every older exhaustiveness point still compiles;
     /// what differs between one extension and another lives in its data.
     Extension,
+    /// A staged scene that delivers a frame, a blocking reference, and a lens
+    /// direction. The scene itself lives at the top of the document; the node
+    /// holds only its id and the outputs last delivered from it.
+    Director,
 }
 
 impl NodeKind {
@@ -307,6 +320,7 @@ impl NodeKind {
             NodeKind::Group => "group",
             NodeKind::Export => "export",
             NodeKind::Extension => "extension",
+            NodeKind::Director => "director",
         }
     }
 }
@@ -396,7 +410,11 @@ pub fn generation_capability_for(kind: NodeKind) -> Option<Capability> {
         NodeKind::Image => Some(Capability::Image),
         NodeKind::Audio => Some(Capability::Speech),
         NodeKind::Video => Some(Capability::Video),
-        NodeKind::Operation | NodeKind::Group | NodeKind::Export | NodeKind::Extension => None,
+        NodeKind::Operation
+        | NodeKind::Group
+        | NodeKind::Export
+        | NodeKind::Extension
+        | NodeKind::Director => None,
     }
 }
 
@@ -568,6 +586,12 @@ pub fn derive_ports(kind: NodeKind) -> Vec<PortDefinition> {
         // it is inserted. A derived table would overwrite them with nothing;
         // an empty one leaves every stored port standing.
         NodeKind::Extension => Vec::new(),
+        NodeKind::Director => vec![
+            input("plates", vec![DataType::Image], "Plates", Cardinality::Many),
+            output("frame", vec![DataType::Image], "Shot frame"),
+            output("blocking", vec![DataType::Video], "Blocking reference"),
+            output("direction", vec![DataType::Text], "Lens direction"),
+        ],
     }
 }
 
@@ -682,6 +706,11 @@ pub struct NodeData {
     /// TypeScript encoder writes the same order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionState>,
+    /// The scene a director card opens onto, and the outputs last delivered
+    /// from it. Sits after the extension state and before the result fields,
+    /// in the order the TypeScript encoder writes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub director: Option<director::DirectorState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_slots: Option<Vec<ResultSlot>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1111,15 +1140,28 @@ pub struct MokaFile {
     /// has never told one says so by carrying nothing here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stories: Option<Vec<StoryDocument>>,
+    /// The scenes staged on this project's director desks, in the order their
+    /// cards were made.
+    ///
+    /// Left off rather than left empty on a project that has staged nothing.
+    /// The canvas schema went to five with this field so an older build
+    /// refuses the document outright instead of reading it and silently
+    /// dropping the scenes it does not know about on the way back out.
+    #[serde(
+        rename = "directorScenes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub director_scenes: Option<Vec<director::DirectorScene>>,
     pub canvas: Vec<CanvasDocument>,
 }
 
 pub const MOKA_FILE_VERSION: &str = "v1";
-/// Version 4 added extension nodes. The codec reads 3 and 4 and writes 4: a
-/// v3 canvas holds no extension node, so its upgrade is lossless, while an
-/// older build opening a v4 document is told the version is too new rather
-/// than failing to decode the node kind it has never heard of.
-pub const CANVAS_SCHEMA_VERSION: i32 = 4;
+/// Version 5 added director scenes. The codec reads 3, 4, and 5 and writes 5:
+/// neither earlier version holds a director node, so its upgrade is lossless,
+/// while an older build opening a v5 document is told the version is too new
+/// rather than dropping scenes it never knew about.
+pub const CANVAS_SCHEMA_VERSION: i32 = 5;
 /// The previous canvas schema this build still reads.
 pub const CANVAS_SCHEMA_VERSION_MIN: i32 = 3;
 pub const PACKAGE_MANIFEST_VERSION: u32 = 2;
@@ -1139,21 +1181,25 @@ impl MokaFile {
     /// document hold assets, and whether an asset is still in use is a question
     /// about the project rather than about one board.
     pub fn asset_references(&self) -> BTreeMap<AssetId, Vec<NodeId>> {
-        let mut refs: BTreeMap<AssetId, Vec<NodeId>> = BTreeMap::new();
-        let mut add = |asset_id: &Option<AssetId>, node_id: &NodeId| {
+        fn note(
+            refs: &mut BTreeMap<AssetId, Vec<NodeId>>,
+            asset_id: &Option<AssetId>,
+            node_id: &NodeId,
+        ) {
             if let Some(asset_id) = asset_id {
                 refs.entry(asset_id.clone())
                     .or_default()
                     .push(node_id.clone());
             }
-        };
+        }
+        let mut refs: BTreeMap<AssetId, Vec<NodeId>> = BTreeMap::new();
         for canvas in &self.canvas {
             for node in &canvas.nodes {
-                add(&node.data.asset_id, &node.id);
-                add(&node.data.poster_asset_id, &node.id);
+                note(&mut refs, &node.data.asset_id, &node.id);
+                note(&mut refs, &node.data.poster_asset_id, &node.id);
                 if let Some(slots) = &node.data.result_slots {
                     for slot in slots {
-                        add(&slot.asset_id, &node.id);
+                        note(&mut refs, &slot.asset_id, &node.id);
                     }
                 }
                 // An extension's output snapshot is what its panel and its
@@ -1167,14 +1213,31 @@ impl MokaFile {
                         .flatten()
                         .flat_map(|(_, values)| values)
                     {
-                        add(&value.asset_id, &node.id);
+                        note(&mut refs, &value.asset_id, &node.id);
+                    }
+                }
+                // A director card holds what it delivered and whatever its
+                // scene reads: a panorama, a model, a plate. All of it is in
+                // use for as long as the card opens onto that scene.
+                if let Some(state) = &node.data.director {
+                    note(&mut refs, &state.frame_asset_id, &node.id);
+                    note(&mut refs, &state.blocking_asset_id, &node.id);
+                    if let Some(scene) = self
+                        .director_scenes
+                        .iter()
+                        .flatten()
+                        .find(|scene| scene.id == state.scene_id)
+                    {
+                        for asset_id in director::scene_asset_ids(scene) {
+                            refs.entry(asset_id).or_default().push(node.id.clone());
+                        }
                     }
                 }
             }
         }
         for timeline in self.timelines.iter().flatten() {
             for clip in &timeline.clips {
-                add(&clip.asset_id, &clip.id);
+                note(&mut refs, &clip.asset_id, &clip.id);
             }
         }
         // A story's pictures are its own: the frames drawn for a shot, the
@@ -1692,6 +1755,24 @@ pub enum DocumentCommand {
         story_id: String,
         patch: StoryEditPatch,
     },
+    // -------------------------------------------------------------------------
+    // The director desk. A scene arrives whole, is replaced whole, and leaves
+    // whole: staging is one document, and moving one object inside it is a
+    // replacement rather than a command of its own.
+    // -------------------------------------------------------------------------
+    #[serde(rename_all = "camelCase")]
+    AddDirectorScene {
+        scene: director::DirectorScene,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReplaceDirectorScene {
+        scene_id: String,
+        scene: director::DirectorScene,
+    },
+    #[serde(rename_all = "camelCase")]
+    RemoveDirectorScene { scene_id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

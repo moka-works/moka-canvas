@@ -138,6 +138,7 @@ const KIND_GLYPH: Record<NodeKind, string> = {
   group: "▦",
   export: "⇪",
   extension: "✦",
+  director: "◈",
 };
 
 function summarize(node: WorkflowNode): string {
@@ -176,6 +177,8 @@ function summarize(node: WorkflowNode): string {
       const state = data.extension as { extensionId?: string } | undefined;
       return state?.extensionId ?? "extension";
     }
+    case "director":
+      return i18n.t("domain:nodeTitle.director");
   }
 }
 

@@ -359,6 +359,7 @@ fn default_allowed_media_types() -> Vec<String> {
         "audio".into(),
         "video".into(),
         "text".into(),
+        "model".into(),
     ]
 }
 fn default_max_nodes_per_canvas() -> usize {

@@ -15,6 +15,7 @@ export type AppPhase =
   | "clip"
   | "story"
   | "assets"
+  | "director"
   | "error";
 
 export interface Toast {

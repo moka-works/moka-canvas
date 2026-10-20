@@ -7,6 +7,7 @@ import type {
   TransitionKind,
 } from "./constants";
 import type { StoryStep } from "./story";
+import type { DirectorNodeData, DirectorScene } from "./director";
 
 export type ProjectId = string;
 export type CanvasId = string;
@@ -403,7 +404,8 @@ export type NodeKind =
   | "operation"
   | "group"
   | "export"
-  | "extension";
+  | "extension"
+  | "director";
 
 export type DataType =
   "text" | "image" | "audio" | "video" | "timeline" | "artifact";
@@ -627,7 +629,8 @@ export type NodeData =
   | OperationNodeData
   | GroupNodeData
   | ExportNodeData
-  | ExtensionNodeData;
+  | ExtensionNodeData
+  | DirectorNodeData;
 
 export interface WorkflowNode {
   id: NodeId;
@@ -685,6 +688,16 @@ export interface MokaFile {
    * know rather than failing on it.
    */
   stories?: StoryDocument[];
+  /**
+   * The scenes staged on this project's director desks, in the order their
+   * cards were made.
+   *
+   * Left off rather than left empty on a project that has staged nothing. The
+   * canvas schema went to five with this field so an older build refuses the
+   * document outright instead of reading it and silently dropping the scenes
+   * it does not know about on the way back out.
+   */
+  directorScenes?: DirectorScene[];
   canvas: CanvasDocument[];
 }
 
@@ -1572,7 +1585,15 @@ export type DocumentCommand =
       read?: { text: string; voice: string };
     }
   /** What the story was assembled into, whole. */
-  | { type: "setStoryEdit"; storyId: string; patch: StoryEditPatch };
+  | { type: "setStoryEdit"; storyId: string; patch: StoryEditPatch }
+  // -------------------------------------------------------------------------
+  // The director desk. A scene arrives whole, is replaced whole, and leaves
+  // whole: staging is one document, and a command that moved one object
+  // inside it would be a second way to write the same bytes.
+  // -------------------------------------------------------------------------
+  | { type: "addDirectorScene"; scene: DirectorScene; index?: number }
+  | { type: "replaceDirectorScene"; sceneId: string; scene: DirectorScene }
+  | { type: "removeDirectorScene"; sceneId: string };
 
 export interface SelfCheckIssue {
   assetId: AssetId;

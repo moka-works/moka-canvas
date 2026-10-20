@@ -917,6 +917,7 @@ mod tests {
             folders: None,
             timelines: None,
             stories: None,
+            director_scenes: None,
             canvas: vec![canvas],
         }
     }

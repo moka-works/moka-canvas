@@ -36,6 +36,14 @@ const AssetsPage = lazy(() =>
     default: module.AssetsPage,
   })),
 );
+// The desk is opened from one card and needs that card, so it is not among
+// the rooms fetched while the launcher is up: its 3D chunk arrives only when
+// a scene is actually opened.
+const DirectorPage = lazy(() =>
+  import("./features/director/DirectorPage").then((module) => ({
+    default: module.DirectorPage,
+  })),
+);
 
 export default function App() {
   const phase = useAppStore((state) => state.phase);
@@ -86,6 +94,7 @@ export default function App() {
         {phase === "clip" && <ClipPage />}
         {phase === "story" && <StoryPage />}
         {phase === "assets" && <AssetsPage />}
+        {phase === "director" && <DirectorPage />}
       </Suspense>
       <SettingsDialog />
       <SavePathHost />

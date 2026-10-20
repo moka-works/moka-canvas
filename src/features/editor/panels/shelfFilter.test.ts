@@ -44,6 +44,7 @@ function registryOf(...entries: ResourceEntry[]): ResourceRegistry {
     voice: [],
     texts: [],
     videos: [],
+    models: [],
   } as ResourceRegistry;
   for (const entry of entries) {
     const shelf = entry.path.split("/")[1] as AssetCategory;

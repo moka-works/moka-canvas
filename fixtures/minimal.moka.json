@@ -31,13 +31,14 @@
     "music": [],
     "voice": [],
     "texts": [],
-    "videos": []
+    "videos": [],
+    "models": []
   },
   "canvas": [
     {
       "id": "00000000-0000-7000-8000-000000000002",
       "name": "Canvas 1",
-      "schemaVersion": 4,
+      "schemaVersion": 5,
       "viewport": {
         "x": 120.5,
         "y": -40.25,
@@ -339,7 +340,7 @@
     {
       "id": "00000000-0000-7000-8000-000000000003",
       "name": "Canvas 2",
-      "schemaVersion": 4,
+      "schemaVersion": 5,
       "viewport": {
         "x": 0,
         "y": 0,

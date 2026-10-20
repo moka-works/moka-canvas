@@ -26,6 +26,7 @@ export const KIND_SHELVES: Record<AssetKind, readonly AssetCategory[]> = {
   image: ["images"],
   audio: ["music", "voice"],
   video: ["videos"],
+  model: ["models"],
 };
 
 /** The kinds, in the order the tabs read them. */
@@ -38,6 +39,7 @@ export const SHELF_GLYPHS: Record<AssetCategory, string> = {
   voice: "\u266a",
   texts: "\u00b6",
   videos: "\u25b6",
+  models: "\u25c8",
 };
 
 /** Which kind a shelf is read under. */

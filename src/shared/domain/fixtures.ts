@@ -144,6 +144,7 @@ export function buildGoldenMokaFile(): MokaFile {
       voice: [],
       texts: [],
       videos: [],
+      models: [],
     },
     canvas: [
       {
@@ -271,7 +272,14 @@ export function buildBatchMokaFile(): MokaFile {
       createdAt: T0,
       updatedAt: T1,
     },
-    resources: { images, music: [], voice: [], texts: [], videos: [] },
+    resources: {
+      images,
+      music: [],
+      voice: [],
+      texts: [],
+      videos: [],
+      models: [],
+    },
     canvas: [
       {
         id: ids.canvas,
@@ -357,7 +365,14 @@ export function buildGenerationMokaFile(): MokaFile {
       createdAt: T0,
       updatedAt: T1,
     },
-    resources: { images: [], music: [], voice: [], texts: [], videos: [] },
+    resources: {
+      images: [],
+      music: [],
+      voice: [],
+      texts: [],
+      videos: [],
+      models: [],
+    },
     canvas: [
       {
         id: canvasId,

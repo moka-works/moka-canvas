@@ -182,6 +182,7 @@ pub fn moka(entries: Vec<ResourceEntry>, timelines: Vec<TimelineDocument>) -> Mo
             Some(timelines)
         },
         stories: None,
+        director_scenes: None,
         canvas: Vec::new(),
     }
 }

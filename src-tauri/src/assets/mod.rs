@@ -15,8 +15,126 @@ pub fn category_for_mime(mime: &str) -> Option<&'static str> {
         Some("videos")
     } else if mime.starts_with("audio/") {
         Some("music")
+    } else if mime == "model/gltf-binary" || mime == "model/gltf+json" {
+        Some("models")
     } else if mime == "text/plain" || mime == "text/markdown" || mime == "application/json" {
         Some("texts")
+    } else {
+        None
+    }
+}
+
+/// The model formats this build deliberately does not read.
+///
+/// Each is a real pipeline with its own exchange problems — external
+/// textures, versioned binary layouts, proprietary encodings — and every one
+/// of them can be exported as GLB from the tool that made it.
+const REJECTED_MODEL_EXTENSIONS: [&str; 9] = [
+    "fbx", "obj", "usdz", "usd", "vrm", "stl", "ply", "blend", "3mf",
+];
+
+/// The compression extensions this build has no decoder for.
+const UNSUPPORTED_MODEL_EXTENSIONS: [&str; 3] = [
+    "KHR_draco_mesh_compression",
+    "EXT_meshopt_compression",
+    "KHR_texture_basisu",
+];
+
+fn gltf_problem(document: &serde_json::Value) -> Option<String> {
+    let version = document
+        .get("asset")
+        .and_then(|asset| asset.get("version"))
+        .and_then(|version| version.as_str())
+        .unwrap_or_default();
+    if !version.starts_with('2') {
+        return Some(format!(
+            "the model says glTF version \"{version}\"; only glTF 2 is read"
+        ));
+    }
+    for field in ["buffers", "images"] {
+        if let Some(rows) = document.get(field).and_then(|rows| rows.as_array()) {
+            for row in rows {
+                if let Some(uri) = row.get("uri").and_then(|uri| uri.as_str()) {
+                    if !uri.starts_with("data:") {
+                        return Some(format!(
+                            "the model reads {field} from an external address; export a self-contained GLB"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    for field in ["extensionsUsed", "extensionsRequired"] {
+        if let Some(rows) = document.get(field).and_then(|rows| rows.as_array()) {
+            for name in rows.iter().filter_map(|name| name.as_str()) {
+                if UNSUPPORTED_MODEL_EXTENSIONS.contains(&name) {
+                    return Some(format!(
+                        "the model uses the {name} extension, which this build does not decode"
+                    ));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_gltf(bytes: &[u8]) -> Result<serde_json::Value, String> {
+    let document: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|error| format!("the GLTF is not valid JSON: {error}"))?;
+    if let Some(problem) = gltf_problem(&document) {
+        return Err(problem);
+    }
+    Ok(document)
+}
+
+/// Reads a GLB's header and JSON chunk; the binary payload is not decoded.
+fn parse_glb(bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() < 20 {
+        return Err("the GLB is too short to hold a header and a JSON chunk".into());
+    }
+    if &bytes[0..4] != b"glTF" {
+        return Err("the file does not start with the GLB magic".into());
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap_or_default());
+    if version != 2 {
+        return Err(format!(
+            "the GLB says version {version}; only version 2 is read"
+        ));
+    }
+    let declared = u32::from_le_bytes(bytes[8..12].try_into().unwrap_or_default()) as usize;
+    if declared != bytes.len() {
+        return Err(format!(
+            "the GLB header says {declared} bytes but the file holds {}",
+            bytes.len()
+        ));
+    }
+    let chunk_length = u32::from_le_bytes(bytes[12..16].try_into().unwrap_or_default()) as usize;
+    let chunk_type = u32::from_le_bytes(bytes[16..20].try_into().unwrap_or_default());
+    if chunk_type != 0x4E4F_534A {
+        return Err("the GLB's first chunk is not its JSON scene".into());
+    }
+    let end = 20usize.saturating_add(chunk_length);
+    if end > bytes.len() {
+        return Err("the GLB's JSON chunk runs past the end of the file".into());
+    }
+    let json = bytes[20..end]
+        .iter()
+        .copied()
+        .take_while(|byte| *byte != 0)
+        .collect::<Vec<u8>>();
+    parse_gltf(&json)?;
+    Ok(())
+}
+
+fn rejected_model_extension(path: &Path) -> Option<String> {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())?;
+    if REJECTED_MODEL_EXTENSIONS.contains(&extension.as_str()) {
+        Some(format!(
+            ".{extension} is not a format this build reads; export GLB from the modelling tool"
+        ))
     } else {
         None
     }
@@ -44,14 +162,34 @@ pub fn analyze_staged(path: &Path) -> Result<StagedAnalysis, ProjectError> {
     if bytes.is_empty() {
         return Err(ProjectError::domain("ASSET_INVALID", "The file is empty"));
     }
-    let sniffed = infer::get(&bytes).map(|kind| kind.mime_type().to_string());
-    let mime = sniffed.unwrap_or_else(|| {
-        if std::str::from_utf8(&bytes[..bytes.len().min(8192)]).is_ok() {
-            "text/plain".to_string()
-        } else {
-            "application/octet-stream".to_string()
-        }
-    });
+    if let Some(problem) = rejected_model_extension(path) {
+        return Err(ProjectError::domain("ASSET_INVALID", problem));
+    }
+    // infer does not recognise GLB, and a GLTF would otherwise be filed as
+    // text. Both are checked before the generic sniff, by the bytes rather
+    // than only by the extension: a model renamed to .bin is still a model.
+    let is_glb = bytes.len() >= 4 && &bytes[0..4] == b"glTF";
+    let looks_gltf = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gltf"));
+    let mime = if is_glb {
+        parse_glb(&bytes).map_err(|problem| ProjectError::domain("ASSET_INVALID", problem))?;
+        "model/gltf-binary".to_string()
+    } else if looks_gltf {
+        parse_gltf(&bytes).map_err(|problem| ProjectError::domain("ASSET_INVALID", problem))?;
+        "model/gltf+json".to_string()
+    } else {
+        infer::get(&bytes)
+            .map(|kind| kind.mime_type().to_string())
+            .unwrap_or_else(|| {
+                if std::str::from_utf8(&bytes[..bytes.len().min(8192)]).is_ok() {
+                    "text/plain".to_string()
+                } else {
+                    "application/octet-stream".to_string()
+                }
+            })
+    };
 
     let mut hasher = sha2::Sha256::new();
     hasher.update(&bytes);
@@ -151,6 +289,8 @@ pub fn extension_for(name: &str, mime: &str) -> String {
         "video/mp4" => "mp4",
         "video/webm" => "webm",
         "video/quicktime" => "mov",
+        "model/gltf-binary" => "glb",
+        "model/gltf+json" => "gltf",
         "text/plain" => "txt",
         "text/markdown" => "md",
         "application/json" => "json",

@@ -831,6 +831,7 @@
     "linkAnAsset": "关联素材",
     "replaceNodeAsset": "替换节点的素材",
     "addNode": "添加节点",
+    "createDirector": "新建导演台",
     "addConnectedNode": "添加已连接的节点",
     "renameNode": "重命名节点",
     "editText": "编辑文本",

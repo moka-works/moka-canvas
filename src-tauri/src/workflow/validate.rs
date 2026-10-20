@@ -186,6 +186,35 @@ fn snapshot_value(node: &WorkflowNode, port_id: &str) -> WorkflowValue {
             source,
         },
         NodeKind::Extension => placeholder_value(node, port_id),
+        NodeKind::Director => {
+            let state = node.data.director.as_ref();
+            match port_id {
+                "frame" => WorkflowValue::Media {
+                    media_type: DataType::Image,
+                    asset_id: state
+                        .and_then(|state| state.frame_asset_id.clone())
+                        .unwrap_or_default(),
+                    source,
+                },
+                "blocking" => WorkflowValue::Media {
+                    media_type: DataType::Video,
+                    asset_id: state
+                        .and_then(|state| state.blocking_asset_id.clone())
+                        .unwrap_or_default(),
+                    source,
+                },
+                "direction" => WorkflowValue::Text {
+                    text: state
+                        .and_then(|state| state.direction_text.clone())
+                        .unwrap_or_default(),
+                    source,
+                },
+                _ => WorkflowValue::Text {
+                    text: String::new(),
+                    source,
+                },
+            }
+        }
         _ => WorkflowValue::Text {
             text: String::new(),
             source,
@@ -384,6 +413,9 @@ pub async fn validate_run(
         ) {
             validate_media_node(root, moka, node, canvas_id, &mut issues);
         }
+        if node.kind == NodeKind::Director {
+            validate_director_outputs(root, moka, &scoped, node, canvas_id, &mut issues);
+        }
     }
 
     if !issues.is_empty() {
@@ -402,6 +434,7 @@ fn kind_label(kind: NodeKind) -> &'static str {
         NodeKind::Group => "Group",
         NodeKind::Export => "Export",
         NodeKind::Extension => "Extension",
+        NodeKind::Director => "Director",
     }
 }
 
@@ -578,6 +611,124 @@ async fn validate_step(
             }
             item
         }));
+    }
+}
+
+/// What a director card must still hold for the ports that are wired up.
+///
+/// Only the outputs an edge actually reads are checked: a scene may have
+/// delivered a frame and never recorded a blocking reference, and a run that
+/// asks only for the frame is not stopped by the second. A direction that was
+/// never written is allowed — it is a hint rather than material.
+fn validate_director_outputs(
+    root: &Path,
+    moka: &MokaFile,
+    canvas: &CanvasDocument,
+    node: &WorkflowNode,
+    canvas_id: &str,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let say = |code: &str, message: String, port: &str, issues: &mut Vec<ValidationIssue>| {
+        issues.push(issue(
+            code,
+            message,
+            canvas_id,
+            Some(node.id.clone()),
+            Some(port.to_string()),
+        ));
+    };
+    let Some(state) = node.data.director.as_ref() else {
+        say(
+            "DIRECTOR_REFERENCE_INVALID",
+            format!("Director \"{}\" carries no scene reference", node.title),
+            "frame",
+            issues,
+        );
+        return;
+    };
+    let Some(scene) = moka
+        .director_scenes
+        .iter()
+        .flatten()
+        .find(|scene| scene.id == state.scene_id)
+    else {
+        say(
+            "DIRECTOR_SCENE_NOT_FOUND",
+            format!(
+                "Director \"{}\" opens onto a scene that is not here",
+                node.title
+            ),
+            "frame",
+            issues,
+        );
+        return;
+    };
+    if !scene
+        .shots
+        .iter()
+        .any(|shot| shot.id == scene.active_shot_id)
+    {
+        say(
+            "DIRECTOR_REFERENCE_INVALID",
+            format!(
+                "Director \"{}\" names shot {} as active, and the scene has no such shot",
+                node.title, scene.active_shot_id
+            ),
+            "frame",
+            issues,
+        );
+    }
+    let used: HashSet<&str> = canvas
+        .edges
+        .iter()
+        .filter(|edge| edge.source.node_id == node.id)
+        .map(|edge| edge.source.port_id.as_str())
+        .collect();
+    for port in used {
+        let (label, asset_id) = match port {
+            "frame" => ("shot frame", state.frame_asset_id.as_deref()),
+            "blocking" => ("blocking reference", state.blocking_asset_id.as_deref()),
+            _ => continue,
+        };
+        let Some(asset_id) = asset_id.filter(|id| !id.is_empty()) else {
+            say(
+                "DIRECTOR_OUTPUT_MISSING",
+                format!(
+                    "Director \"{}\" has not delivered a {label} yet",
+                    node.title
+                ),
+                port,
+                issues,
+            );
+            continue;
+        };
+        let Some(entry) = moka.resources.find(asset_id) else {
+            say(
+                "ASSET_MISSING",
+                format!(
+                    "Director \"{}\" delivers a {label} that is not registered",
+                    node.title
+                ),
+                port,
+                issues,
+            );
+            continue;
+        };
+        let path = root.join(&entry.path);
+        let ready = std::fs::metadata(&path)
+            .map(|meta| meta.is_file() && meta.len() > 0)
+            .unwrap_or(false);
+        if !ready {
+            say(
+                "ASSET_NOT_READY",
+                format!(
+                    "Director \"{}\" delivers a {label} whose file is missing on disk",
+                    node.title
+                ),
+                port,
+                issues,
+            );
+        }
     }
 }
 
@@ -760,6 +911,7 @@ mod tests {
             folders: None,
             timelines: None,
             stories: None,
+            director_scenes: None,
             canvas: vec![canvas],
         }
     }

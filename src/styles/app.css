@@ -8417,3 +8417,126 @@ button > .story-spin {
   position: absolute;
   right: 16px;
 }
+
+.director-shot-summary {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 0 auto;
+}
+
+.director-template-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 16px 0;
+}
+
+.director-template-choice {
+  align-items: flex-start;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  text-align: left;
+}
+
+.director-template-choice:hover,
+.director-template-choice:focus-visible {
+  border-color: var(--muted);
+}
+
+.director-template-choice strong {
+  font-size: 14px;
+}
+
+.director-template-choice span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.director-card-face {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.director-card-face img,
+.director-card-face .director-plan {
+  background: #202630;
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.director-card-empty {
+  align-items: center;
+  background: #202630;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  height: 100%;
+  justify-content: center;
+}
+
+.director-card-badge {
+  background: rgb(13 13 16 / 72%);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  left: 6px;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  position: absolute;
+  top: 6px;
+}
+
+.director-card-stale {
+  background: rgb(13 13 16 / 78%);
+  border: 1px solid var(--yellow);
+  border-radius: 999px;
+  color: var(--yellow);
+  font-size: 10px;
+  padding: 2px 7px;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+}
+
+.director-card-status {
+  align-items: center;
+  background: linear-gradient(transparent, rgb(13 13 16 / 82%));
+  bottom: 0;
+  color: var(--ink);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 10px;
+  gap: 4px 10px;
+  left: 0;
+  padding: 14px 8px 6px;
+  position: absolute;
+  right: 0;
+}
+
+.director-card-enter {
+  background: var(--surface-glass);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  bottom: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 10px;
+  pointer-events: auto;
+  position: absolute;
+  right: 8px;
+}

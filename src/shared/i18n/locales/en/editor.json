@@ -831,6 +831,7 @@
     "linkAnAsset": "Link an asset",
     "replaceNodeAsset": "Replace the node's asset",
     "addNode": "Add node",
+    "createDirector": "Create director desk",
     "addConnectedNode": "Add connected node",
     "renameNode": "Rename node",
     "editText": "Edit text",
