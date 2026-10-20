@@ -332,7 +332,11 @@ fn finish(
                 input_sources.push(node_id.clone());
             }
         }
-        used_node_ids.push(node_id);
+        // A director read from two ports is one card that contributed twice;
+        // provenance names the card once, while the inputs keep both files.
+        if !used_node_ids.contains(&node_id) {
+            used_node_ids.push(node_id);
+        }
     }
     ResolvedInputs {
         prompt: body,
@@ -841,6 +845,66 @@ mod tests {
             assets(&resolved.inputs),
             ["asset-mood", "asset-closing", "asset-opening"]
         );
+    }
+
+    /// A director's three outputs are three shares: the frame and the blocking
+    /// film travel as media, the lens direction folds in as prose without a
+    /// `[Text]` label, and the one card is counted once as provenance.
+    #[test]
+    fn a_director_gives_each_output_its_own_share() {
+        let asked = node(
+            NodeKind::Video,
+            "shot",
+            NodeData {
+                generation: Some(GenerationSpec {
+                    capability: Capability::Video,
+                    input_mode: GenerationInputMode::Upstream,
+                    prompt: String::new(),
+                    updated_at: now_iso(),
+                    ..GenerationSpec::default()
+                }),
+                ..NodeData::default()
+            },
+        );
+        let desk = node(
+            NodeKind::Director,
+            "desk",
+            NodeData {
+                director: Some(crate::domain::director::DirectorState {
+                    scene_id: "scene".to_string(),
+                    frame_asset_id: Some("asset-frame".to_string()),
+                    blocking_asset_id: Some("asset-blocking".to_string()),
+                    direction_text: Some("A slow push in.".to_string()),
+                    frame_shot_id: None,
+                    delivered_at: None,
+                }),
+                ..NodeData::default()
+            },
+        );
+        let mut document = canvas(
+            vec![desk, asked.clone()],
+            vec![
+                (&id("desk"), "images", &id("shot")),
+                (&id("desk"), "videos", &id("shot")),
+                (&id("desk"), "prompt", &id("shot")),
+            ],
+        );
+        // The helper writes every edge from the source's first output; the
+        // port under test is the one the director actually gave.
+        for (edge, port) in document
+            .edges
+            .iter_mut()
+            .zip(["frame", "blocking", "direction"])
+        {
+            edge.source.port_id = port.to_string();
+        }
+
+        let resolved = collect_generation_inputs(&document, &asked);
+        assert_eq!(assets(&resolved.inputs), ["asset-frame", "asset-blocking"]);
+        assert_eq!(roles(&resolved.inputs), ["reference", "reference"]);
+        assert_eq!(resolved.used_node_ids, [id("desk")]);
+        assert!(resolved.prompt.contains("A slow push in."));
+        assert!(!resolved.prompt.contains("[Text"));
     }
 
     #[test]
