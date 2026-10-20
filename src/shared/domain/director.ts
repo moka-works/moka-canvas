@@ -461,6 +461,17 @@ export const DIRECTOR_RENDER_MODES: readonly DirectorRenderMode[] = [
   "normal",
   "silhouette",
 ];
+/** Modes that are control passes for the shelf rather than a shot's look. */
+export const DIRECTOR_CONTROL_MODES: readonly DirectorRenderMode[] = [
+  "depth",
+  "normal",
+  "silhouette",
+];
+
+/** Whether a frame in this mode is a control pass, shelf-only. */
+export function directorControlMode(mode: DirectorRenderMode): boolean {
+  return (DIRECTOR_CONTROL_MODES as readonly string[]).includes(mode);
+}
 export const DIRECTOR_SHOT_FPS = [24, 25, 30] as const;
 export const DIRECTOR_LIGHT_TYPES = [
   "directional",

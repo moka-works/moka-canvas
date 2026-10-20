@@ -566,7 +566,10 @@
     "systemPlaceholder": "为此节点的回答定框架",
     "default": "默认",
     "defaultWith": "默认 · {{value}}",
-    "kept": "{{value}}（保留）"
+    "kept": "{{value}}（保留）",
+    "blockingReference": "已连接调度参考，本次运行使用参考模式。",
+    "blockingAuto": "已连接调度参考，但 auto 模式会把它当作首帧。除非这正是你的意图，否则请改用参考模式。",
+    "useReferenceMode": "改用参考模式"
   },
   "referenceBar": {
     "aria": "此节点获得的内容",
@@ -848,6 +851,7 @@
     "replaceNodeAsset": "替换节点的素材",
     "addNode": "添加节点",
     "createDirector": "新建导演台",
+    "applyDirector": "回写导演台输出",
     "addConnectedNode": "添加已连接的节点",
     "renameNode": "重命名节点",
     "editText": "编辑文本",

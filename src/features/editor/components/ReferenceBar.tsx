@@ -34,6 +34,8 @@ interface Arrival {
   source: WorkflowNode;
   /** What this node calls the input the edge lands on. */
   port: string;
+  /** What the source calls the output the edge leaves by. */
+  sourcePort: string;
   media: MediaCardInfo | null;
   /** The other inputs of this node the arrival could be moved to. */
   moves: PortDefinition[];
@@ -78,7 +80,10 @@ function arrivalsAt(
       port:
         node.ports.find((port) => port.id === edge.target.portId)?.label ??
         edge.target.portId,
-      media: mediaInfoForNode(source, resources, issues),
+      sourcePort:
+        source.ports.find((port) => port.id === edge.source.portId)?.label ??
+        edge.source.portId,
+      media: mediaInfoForNode(source, resources, issues, edge.source.portId),
       moves: movesFor(node, source).filter(
         (port) => port.id !== edge.target.portId,
       ),
@@ -208,7 +213,14 @@ export function ReferenceBar({
                   />
                 )}
                 <span className="reference-name">{arrival.source.title}</span>
-                <span className="reference-port">{arrival.port}</span>
+                <span
+                  className="reference-port"
+                  data-source-port={arrival.edge.source.portId}
+                >
+                  {arrival.source.kind === "director"
+                    ? arrival.sourcePort
+                    : arrival.port}
+                </span>
                 {arrival.moves.map((port) => (
                   <button
                     aria-label={t("editor:referenceBar.useAs", {

@@ -717,6 +717,7 @@ export function StageWorld({
           sectionColor="#788391"
           sectionSize={2}
           sectionThickness={1}
+          userData={{ directorHelper: true }}
         />
       )}
       {scene.objects.map((object) => {
@@ -736,6 +737,7 @@ export function StageWorld({
             ref={refFor(object.id)}
             rotation={transform.rotation}
             scale={transform.scale}
+            userData={{ directorObjectId: object.id }}
           >
             {object.kind === "solid" ? (
               <SolidView object={object} />
@@ -859,6 +861,7 @@ export function StageWorld({
             });
           }}
           size={0.85}
+          userData={{ directorHelper: true }}
         />
       )}
       <OrbitControls

@@ -5,7 +5,7 @@ use moka_canvas::config::{parse_test_config, AppConfig, RuntimeMode};
 use moka_canvas::domain::commands::make_node;
 use moka_canvas::domain::NodeKind;
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tower::ServiceExt;
 
 fn test_app(root: &Path) -> axum::Router {
@@ -1794,4 +1794,61 @@ async fn a_reveal_of_something_that_is_not_there_is_refused() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body_json(response).await["code"], "VALIDATION_FAILED");
+}
+
+/// The ffmpeg this machine has, by the variable the server itself reads first.
+fn machine_ffmpeg() -> Option<PathBuf> {
+    if let Some(program) = std::env::var_os("MOKA_FFMPEG") {
+        return Some(program.into());
+    }
+    let path = std::env::var_os("PATH")?;
+    for folder in std::env::split_paths(&path) {
+        let candidate = folder.join("ffmpeg");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// A blocking recording is turned into an MP4 that lands on the shelf.
+#[tokio::test]
+async fn a_video_is_transcoded_into_the_shelf() {
+    let Some(program) = machine_ffmpeg() else {
+        eprintln!("skipped: this machine has no ffmpeg");
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let mut config = parse_test_config(home.path());
+    config.clip.ffmpeg_path = Some(program);
+    let app = moka_canvas::server::router(open_state(config));
+    create_project(&app, &home.path().join("project"), "Transcode").await;
+
+    let video = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/tiny.mp4"));
+    let response = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets/transcode",
+            ("blocking.webm", video),
+            &[("target", "mp4")],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = body_json(response).await;
+    assert_eq!(body["entry"]["mime"], "video/mp4");
+    assert_eq!(body["entry"]["name"], "blocking.mp4");
+
+    // The filed file is readable from the asset route, not merely described.
+    let id = body["entry"]["id"].as_str().expect("an asset id");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 }

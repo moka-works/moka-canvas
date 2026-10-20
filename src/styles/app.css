@@ -9790,3 +9790,29 @@ button > .story-spin {
   width: 1px;
   transform: translate(-50%, -50%);
 }
+
+.director-deliver-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.director-deliver-size,
+.director-deliver-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.director-deliver-dialog .director-save-error {
+  margin-top: 4px;
+}
+
+.prompt-panel-note .prompt-panel-link {
+  background: none;
+  border: 0;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}

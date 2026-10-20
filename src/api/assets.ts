@@ -64,6 +64,28 @@ export const assetsApi = {
   },
 
   /**
+   * Asks the server's ffmpeg to make an MP4 of a blocking reference.
+   *
+   * The answer is already filed under videos; a machine without ffmpeg
+   * answers with FFMPEG_UNAVAILABLE and its own reason, which the caller
+   * shows rather than pretending the WebM was the requested format.
+   */
+  transcode(file: File, options: UploadOptions = {}): Promise<AssetChange> {
+    const formData = new FormData();
+    formData.set("target", "mp4");
+    formData.set("file", file, file.name);
+    return http.request<AssetChange>(
+      "/api/v1/projects/current/assets/transcode",
+      {
+        method: "POST",
+        formData,
+        signal: options.signal,
+        onUploadProgress: options.onUploadProgress,
+      },
+    );
+  },
+
+  /**
    * Writes down what a reader says about an asset. Only the parts given are
    * touched, and the file underneath is left as it was — saying a picture is a
    * keeper costs nothing of the picture's.

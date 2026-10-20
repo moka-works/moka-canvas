@@ -12,6 +12,7 @@ import {
   activeShotOf,
   actorFormFor,
   createDirectorScene,
+  directorControlMode,
   directorSceneOf,
   freePosition,
   objectFootprint,
@@ -23,16 +24,23 @@ import {
   type DirectorSolidShape,
   type DirectorTransform,
 } from "../../shared/domain";
-import { assetUrl, assetsApi } from "../../api";
+import { assetUrl, assetsApi, isApiError } from "../../api";
+import type { AssetChange } from "../../api";
 import { i18n } from "../../shared/i18n";
 import { execute } from "../editor/commands/execute";
 import { useAppStore } from "../editor/stores/appStore";
 import { useProjectStore } from "../editor/stores/projectStore";
 import {
+  canRecordCanvas,
   canRender3d,
   lowTextureBudget,
   probeDirectorCapabilities,
 } from "./capabilities";
+import {
+  DirectorDeliverDialog,
+  type DirectorDeliveryError,
+  type DirectorDeliveryOptions,
+} from "./components/DirectorDeliverDialog";
 import { DirectorOnboarding } from "./components/DirectorOnboarding";
 import { BlockingLane } from "./panels/BlockingLane";
 import { DirectorTopBar } from "./panels/DirectorTopBar";
@@ -69,6 +77,7 @@ import {
   StageViewport,
   type DirectorCaptureContext,
 } from "./stage/StageViewport";
+import { captureFrame, recordBlocking } from "./stage/capture";
 import { compileDirection } from "./stage/direction";
 import type { ModelAnimation } from "./stage/ModelView";
 import {
@@ -103,6 +112,11 @@ function saveToneOf(
   if (status === "conflicted") return "conflict";
   if (status === "error") return "failed";
   return "saved";
+}
+
+/** A scene or shot name as a file name part, without the separators. */
+function fileNamePart(value: string): string {
+  return value.replace(/[\\/:*?"<>|]+/g, "-").trim() || "shot";
 }
 
 /**
@@ -149,8 +163,20 @@ export function DirectorPage() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [exit, setExit] = useState<"conflict" | "error" | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deliverOpen, setDeliverOpen] = useState(false);
+  const [delivering, setDelivering] = useState(false);
+  const [deliveryError, setDeliveryError] =
+    useState<DirectorDeliveryError | null>(null);
+  const [captureReady, setCaptureReady] = useState(false);
   const capture = useRef<DirectorCaptureContext | null>(null);
   const viewportApi = useRef<DirectorViewportApi | null>(null);
+  const reportCapture = useCallback(
+    (context: DirectorCaptureContext | null) => {
+      capture.current = context;
+      setCaptureReady(context !== null);
+    },
+    [],
+  );
 
   const canvas = moka?.canvas.find((item) =>
     item.nodes.some((node) => node.id === nodeId),
@@ -834,6 +860,10 @@ export function DirectorPage() {
   }, [canvas, node]);
 
   const leave = async () => {
+    if (delivering) {
+      notify(t("director:deliver.working"));
+      return;
+    }
     const project = useProjectStore.getState();
     if (project.saveStatus === "conflicted") {
       setExit("conflict");
@@ -1119,6 +1149,334 @@ export function DirectorPage() {
     }
   };
 
+  const openDelivery = () => {
+    if (delivering) return;
+    const current = useDirectorStore.getState().draft;
+    if (!current || !activeShotOf(current)) {
+      notify(t("director:deliver.noShot"));
+      return;
+    }
+    if (!capture.current) {
+      notify(t("director:deliver.noContext"));
+      return;
+    }
+    useDirectorStore.getState().setPlaying(false);
+    setDeliveryError(null);
+    setDeliverOpen(true);
+  };
+
+  /**
+   * Writes one shot's frame, and optionally its blocking reference, back to
+   * the card and to the shelf.
+   *
+   * Every step happens against a locked snapshot. The scene is allowed to
+   * move while a recording runs — the card is only written once the snapshot
+   * still stands, so a picture of one shot can never land on another. Files
+   * that were uploaded before that check stay on the shelf, where they are
+   * still useful; they are never a partial write of the card.
+   */
+  const deliverShot = async (options: DirectorDeliveryOptions) => {
+    const room = useDirectorStore.getState();
+    if (room.gesture) room.commitGesture();
+    room.setPlaying(false);
+    const current = useDirectorStore.getState().draft;
+    const active = current ? activeShotOf(current) : undefined;
+    const context = capture.current;
+    if (!current || !active) {
+      setDeliveryError({ message: t("director:deliver.noShot") });
+      return;
+    }
+    if (!context) {
+      setDeliveryError({ message: t("director:deliver.noContext") });
+      return;
+    }
+    if (useProjectStore.getState().saveStatus === "conflicted") {
+      setDeliveryError({
+        message: t("director:save.conflictBanner"),
+        detail: useProjectStore.getState().saveError ?? undefined,
+      });
+      return;
+    }
+    const snapshot = {
+      sceneId: current.id,
+      updatedAt: current.updatedAt,
+      shotId: active.id,
+      shotName: active.name,
+      canvasId: canvas.id,
+      nodeId: node.id,
+    };
+    const uploaded: string[] = [];
+    const warnings: string[] = [];
+    const control = directorControlMode(options.mode);
+    const wantBlocking = options.blocking && !control;
+    const modeLabel = t(`director:renderMode.${options.mode}`);
+    let stage: "capture" | "record" | "upload" | "update" = "capture";
+    setDelivering(true);
+    setDeliveryError(null);
+    try {
+      await useProjectStore.getState().flush();
+      const flushed = useProjectStore.getState();
+      if (
+        flushed.saveStatus === "conflicted" ||
+        flushed.saveStatus === "error"
+      ) {
+        throw new Error(
+          flushed.saveError ??
+            t(`director:save.${saveToneOf(flushed.saveStatus)}`),
+        );
+      }
+      const base = `${fileNamePart(current.title)}-${fileNamePart(active.name)}`;
+      const framePng = await captureFrame(
+        context,
+        current,
+        active,
+        options.mode,
+        options.resolution,
+        room.playhead,
+      );
+      stage = "record";
+      let blocking: { change: AssetChange; format: string } | null = null;
+      if (wantBlocking) {
+        const recording = await recordBlocking(
+          context,
+          current,
+          active,
+          options.resolution,
+          room.playhead,
+        );
+        stage = "upload";
+        if (options.transcode) {
+          try {
+            const changed = await assetsApi.transcode(
+              new File([recording.blob], `${base}-blocking.webm`, {
+                type: recording.mime,
+              }),
+            );
+            blocking = { change: changed, format: "MP4" };
+          } catch (error) {
+            const said = error instanceof Error ? error.message : String(error);
+            warnings.push(
+              `${
+                isApiError(error, "FFMPEG_UNAVAILABLE")
+                  ? t("director:deliver.ffmpegMissing")
+                  : t("director:deliver.transcodeFailed")
+              }\n${said}`,
+            );
+          }
+        }
+        if (!blocking) {
+          const changed = await assetsApi.upload(
+            new File([recording.blob], `${base}-blocking.webm`, {
+              type: recording.mime,
+            }),
+            { categoryHint: "videos" },
+          );
+          blocking = { change: changed, format: "WebM" };
+        }
+      }
+      if (blocking) {
+        uploaded.push(blocking.change.entry.name);
+        useProjectStore.getState().integrateAssetEntry(blocking.change.entry, {
+          revision: blocking.change.revision,
+          updatedAt: blocking.change.updatedAt,
+        });
+        try {
+          const tagged = await assetsApi.patchShelf(blocking.change.entry.id, {
+            tags: [
+              t("director:deliver.blockingTag"),
+              `shot:${active.name}`,
+              `scene:${current.title}`,
+            ],
+            keyword: active.name,
+          });
+          useProjectStore.getState().integrateAssetEntry(tagged.entry, {
+            revision: tagged.revision,
+            updatedAt: tagged.updatedAt,
+          });
+        } catch (error) {
+          warnings.push(
+            `${t("director:deliver.tagsFailed")}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+      stage = "upload";
+      const frame = await assetsApi.upload(
+        new File([framePng], `${base}-frame.png`, { type: "image/png" }),
+        { categoryHint: "images" },
+      );
+      uploaded.push(frame.entry.name);
+      useProjectStore.getState().integrateAssetEntry(frame.entry, {
+        revision: frame.revision,
+        updatedAt: frame.updatedAt,
+      });
+      try {
+        const tagged = await assetsApi.patchShelf(frame.entry.id, {
+          tags: control
+            ? [
+                t("director:deliver.controlTag"),
+                modeLabel,
+                `shot:${active.name}`,
+                `scene:${current.title}`,
+              ]
+            : [
+                t("director:deliver.frameTag"),
+                `shot:${active.name}`,
+                `scene:${current.title}`,
+              ],
+          keyword: active.name,
+        });
+        useProjectStore.getState().integrateAssetEntry(tagged.entry, {
+          revision: tagged.revision,
+          updatedAt: tagged.updatedAt,
+        });
+      } catch (error) {
+        warnings.push(
+          `${t("director:deliver.tagsFailed")}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+
+      const latest = useDirectorStore.getState().draft;
+      const latestShot = latest?.shots.find(
+        (shot) => shot.id === snapshot.shotId,
+      );
+      const projectNow = useProjectStore.getState();
+      const latestNode = projectNow.moka?.canvas
+        .flatMap((item) => item.nodes)
+        .find((item) => item.id === snapshot.nodeId);
+      const latestState = (latestNode?.data as DirectorNodeData | undefined)
+        ?.director;
+      const stillThere =
+        latest !== null &&
+        latest.id === snapshot.sceneId &&
+        latest.updatedAt === snapshot.updatedAt &&
+        latest.activeShotId === snapshot.shotId &&
+        latest.shots.some((shot) => shot.id === snapshot.shotId) &&
+        latestNode !== undefined &&
+        latestState !== undefined &&
+        latestState.sceneId === snapshot.sceneId;
+      if (!stillThere) {
+        setDeliveryError({
+          message: t("director:deliver.stale"),
+          detail: [
+            t("director:deliver.staleDetail", {
+              shot: latestShot?.name ?? snapshot.shotName,
+              time: useDirectorStore.getState().playhead.toFixed(2),
+            }),
+            uploaded.length > 0 ? t("director:deliver.assetsKept") : "",
+            uploaded.join(", "),
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+        return;
+      }
+
+      if (control) {
+        // A control pass explains the shot; it is not the look the card hands
+        // to the graph, so only the shelf receives it.
+        setDeliverOpen(false);
+        useAppStore.getState().pushToast(
+          "success",
+          t("director:deliver.exported", {
+            shot: active.name,
+            mode: modeLabel,
+          }),
+          undefined,
+          [...warnings, uploaded.join(", ")].filter(Boolean).join("\n"),
+        );
+        return;
+      }
+
+      stage = "update";
+      const freshData = latestNode.data as DirectorNodeData;
+      const names = new Map<string, string>();
+      for (const entry of Object.values(
+        projectNow.moka?.resources ?? {},
+      ).flat()) {
+        names.set(entry.id, entry.name);
+      }
+      const directionText = compileDirection(
+        current,
+        active,
+        promptLocale,
+        (id) => names.get(id),
+      );
+      const inverse = execute(t("editor:history.applyDirector"), [
+        {
+          type: "updateNode",
+          canvasId: snapshot.canvasId,
+          nodeId: snapshot.nodeId,
+          patch: {
+            data: {
+              ...freshData,
+              director: {
+                ...freshData.director,
+                frameAssetId: frame.entry.id,
+                frameShotId: active.id,
+                directionText,
+                deliveredAt: new Date().toISOString(),
+                ...(blocking
+                  ? { blockingAssetId: blocking.change.entry.id }
+                  : {}),
+              },
+            },
+          },
+        },
+      ]);
+      if (inverse === null) {
+        throw new Error(t("editor:stores.changeRejected"));
+      }
+      await useProjectStore.getState().flush();
+      const saveTone = saveToneOf(useProjectStore.getState().saveStatus);
+      setDeliverOpen(false);
+      useAppStore
+        .getState()
+        .pushToast(
+          "success",
+          t("director:deliver.done", { shot: active.name }),
+          undefined,
+          [
+            t("director:deliver.doneFrame"),
+            blocking
+              ? `${t("director:deliver.doneBlocking")} (${blocking.format})`
+              : "",
+            ...warnings,
+            t(`director:save.${saveTone}`),
+            uploaded.join(", "),
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+    } catch (error) {
+      const said = error instanceof Error ? error.message : String(error);
+      const summary =
+        stage === "capture"
+          ? t("director:deliver.frameFailed")
+          : stage === "record"
+            ? t("director:deliver.recordFailed")
+            : stage === "upload"
+              ? t("director:deliver.uploadFailed")
+              : t("editor:stores.changeRejected");
+      setDeliveryError({
+        message: summary,
+        detail: [
+          said,
+          uploaded.length > 0
+            ? `${t("director:deliver.assetsKept")} ${uploaded.join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      });
+    } finally {
+      setDelivering(false);
+    }
+  };
+
   return (
     <main
       aria-label={t("director:page.title")}
@@ -1126,10 +1484,11 @@ export function DirectorPage() {
       data-testid="director-page"
     >
       <DirectorTopBar
+        busy={delivering}
         canRedo={future.length > 0}
         canUndo={past.length > 0}
-        deliverDisabled
-        delivering={false}
+        deliverDisabled={delivering || !captureReady}
+        delivering={delivering}
         mode={mode}
         onAddShot={() => {
           let created: string | null = null;
@@ -1141,7 +1500,7 @@ export function DirectorPage() {
           if (created) useDirectorStore.getState().setPlayhead(0);
         }}
         onBack={() => void leave()}
-        onDeliver={() => undefined}
+        onDeliver={openDelivery}
         onMode={(next) => useDirectorStore.getState().setMode(next)}
         onRedo={() => useDirectorStore.getState().redo()}
         onRenderMode={(next) => useDirectorStore.getState().setRenderMode(next)}
@@ -1278,9 +1637,7 @@ export function DirectorPage() {
                 onCameraFallback={() => {
                   useDirectorStore.getState().setView("free");
                 }}
-                onCaptureContext={(context) => {
-                  capture.current = context;
-                }}
+                onCaptureContext={reportCapture}
                 onGestureEnd={() => useDirectorStore.getState().commitGesture()}
                 onGestureStart={() =>
                   useDirectorStore.getState().beginGesture()
@@ -1529,6 +1886,22 @@ export function DirectorPage() {
             </div>
           </div>
         </div>
+      )}
+      {deliverOpen && shot && (
+        <DirectorDeliverDialog
+          busy={delivering}
+          canRecord={canRecordCanvas(capabilities)}
+          error={deliveryError}
+          onClose={() => {
+            if (delivering) return;
+            setDeliverOpen(false);
+            setDeliveryError(null);
+          }}
+          onDeliver={(options) => void deliverShot(options)}
+          recordingReason={capabilities.failure}
+          scene={scene}
+          shot={shot}
+        />
       )}
       {exit && (
         <div className="dialog-backdrop" role="presentation">

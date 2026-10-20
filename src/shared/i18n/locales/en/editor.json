@@ -566,7 +566,10 @@
     "systemPlaceholder": "Frames this node's answer",
     "default": "Default",
     "defaultWith": "Default · {{value}}",
-    "kept": "{{value}} (kept)"
+    "kept": "{{value}} (kept)",
+    "blockingReference": "A blocking reference is wired in, so this run uses reference mode.",
+    "blockingAuto": "A blocking reference is wired in, but auto mode treats it as a first frame. Switch to reference mode unless that is intended.",
+    "useReferenceMode": "Use reference mode"
   },
   "referenceBar": {
     "aria": "What this node is given",
@@ -848,6 +851,7 @@
     "replaceNodeAsset": "Replace the node's asset",
     "addNode": "Add node",
     "createDirector": "Create director desk",
+    "applyDirector": "Deliver director output",
     "addConnectedNode": "Add connected node",
     "renameNode": "Rename node",
     "editText": "Edit text",

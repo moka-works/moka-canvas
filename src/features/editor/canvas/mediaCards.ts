@@ -123,18 +123,35 @@ export function mediaInfoForNode(
   node: WorkflowNode,
   resources: ReadonlyMap<AssetId, ResourceEntry>,
   issues: ReadonlyMap<AssetId, MediaState>,
+  portId?: string,
 ): MediaCardInfo | null {
   let kind: "image" | "audio" | "video";
   let assetId: AssetId | undefined;
   const data = node.data as {
     assetId?: AssetId;
     posterAssetId?: AssetId;
+    director?: { frameAssetId?: AssetId; blockingAssetId?: AssetId };
     resultSlots?: { assetId?: AssetId }[];
     extension?: { outputs?: Record<string, { assetId?: AssetId }[]> };
   };
   if (node.kind === "image" || node.kind === "audio" || node.kind === "video") {
     kind = node.kind;
     assetId = data.assetId;
+  } else if (node.kind === "director") {
+    // A director hands back different files from its different ports; the
+    // file shown is the one the named port actually delivered, and a port
+    // with nothing to show has no picture rather than another port's.
+    assetId =
+      portId === "blocking"
+        ? data.director?.blockingAssetId
+        : portId === "frame"
+          ? data.director?.frameAssetId
+          : portId === undefined
+            ? (data.director?.frameAssetId ?? data.director?.blockingAssetId)
+            : undefined;
+    if (!assetId) return null;
+    const mime = resources.get(assetId)?.mime ?? "";
+    kind = mime.startsWith("video/") ? "video" : "image";
   } else if (node.kind === "extension") {
     // The card shows the first file the last answer left, by the slot list
     // first and the port snapshot second. A node that produced only words has

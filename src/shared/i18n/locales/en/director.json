@@ -34,7 +34,10 @@
   "renderMode": {
     "label": "Render",
     "lit": "Lit",
-    "blockout": "Blockout"
+    "blockout": "Blockout",
+    "depth": "Depth",
+    "normal": "Normal",
+    "silhouette": "Silhouette"
   },
   "contextLost": {
     "title": "The 3D display context was lost",
@@ -375,7 +378,38 @@
   },
   "deliver": {
     "action": "Deliver frame",
-    "working": "Delivering…"
+    "working": "Delivering…",
+    "title": "Deliver shot",
+    "intro": "Save the active shot of “{{scene}}” as a project asset and write it to this director card. The shot is “{{shot}}”.",
+    "resolution": "Resolution",
+    "size": "{{width}} × {{height}} · {{aspect}} · {{seconds}}s at {{fps}}fps",
+    "frameMode": "Frame render",
+    "blocking": "Also record a blocking reference",
+    "blockingUnsupported": "This environment cannot record a video, so only the frame can be delivered. {{reason}}",
+    "blockingUnavailable": "This environment cannot record a video (MediaRecorder or canvas.captureStream is unavailable), so only the frame can be delivered.",
+    "transcode": "Transcode the blocking reference to MP4",
+    "transcodeHint": "The server's ffmpeg turns the WebM recording into an MP4. Without ffmpeg the WebM is kept and said so.",
+    "confirm": "Deliver",
+    "export": "Export",
+    "controlNote": "Control passes are saved to the asset shelf only; the card's frame output is left as it is.",
+    "exported": "Exported the “{{mode}}” frame of “{{shot}}” to the asset shelf.",
+    "controlTag": "Control frame",
+    "done": "Delivered “{{shot}}”.",
+    "doneFrame": "The shot frame was written to this director card.",
+    "doneBlocking": "The blocking reference was written to this director card.",
+    "noContext": "The viewport is not ready to draw a frame yet.",
+    "noShot": "This scene has no active shot.",
+    "stale": "The scene or shot changed while delivering, so nothing was written.",
+    "staleDetail": "The active shot is now “{{shot}}” at {{time}}s. Try again.",
+    "frameFailed": "The shot frame could not be captured.",
+    "recordFailed": "The blocking reference could not be recorded.",
+    "uploadFailed": "The delivered file could not be uploaded.",
+    "transcodeFailed": "The blocking reference could not be converted to MP4; the WebM recording was kept.",
+    "ffmpegMissing": "ffmpeg was not found, so the blocking reference was kept as WebM.",
+    "assetsKept": "Uploaded files remain on the shelf; the director card was not changed.",
+    "tagsFailed": "The asset's tags could not be written",
+    "frameTag": "Shot frame",
+    "blockingTag": "Blocking reference"
   },
   "confirm": {
     "title": "Confirm",

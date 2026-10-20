@@ -362,6 +362,27 @@ export function PromptPanel() {
   const wired = canvas.edges.filter((edge) => edge.target.nodeId === node.id);
 
   /**
+   * Whether a director's blocking reference is among the inputs.
+   *
+   * A plain white-model film is a video of the motion, not a picture a clip
+   * starts from. The gateway only reads it that way in the reference mode, so
+   * the panel says so before a run spends anything.
+   */
+  const blockingFed = wired.some((edge) => {
+    const source = findNode(canvas, edge.source.nodeId);
+    return source?.kind === "director" && edge.source.portId === "blocking";
+  });
+  const videoBlocking = asked === "video" && blockingFed;
+  const explicitVideoMode =
+    typeof spec.params.mode === "string" ? spec.params.mode : undefined;
+  // Left to the default, a wired blocking reference means reference mode.
+  // Choosing auto is a choice, and the panel warns rather than overrides it.
+  const panelParams =
+    videoBlocking && explicitVideoMode === undefined
+      ? { ...spec.params, mode: "reference" }
+      : spec.params;
+
+  /**
    * Where the ask takes what it is given from, read off the words and the
    * graph rather than chosen on the panel.
    *
@@ -461,6 +482,16 @@ export function PromptPanel() {
     const params = { ...spec.params };
     if (value === null) delete params[key];
     else params[key] = value;
+    // The panel's reading of a wired blocking reference is written down with
+    // the first parameter touch, so what is shown and what is sent agree.
+    if (
+      key !== "mode" &&
+      videoBlocking &&
+      explicitVideoMode === undefined &&
+      params.mode === undefined
+    ) {
+      params.mode = "reference";
+    }
     // A shape is the shape of the node as well, while the node is still waiting
     // for something: an empty one is resized to it in the same step. One that
     // already holds something keeps the size its content gave it, since a
@@ -621,7 +652,11 @@ export function PromptPanel() {
     try {
       // A run is served from the document on disk, so what the panel holds is
       // saved before the run is asked for.
-      commit();
+      commit(
+        videoBlocking && explicitVideoMode === undefined
+          ? { params: { ...spec.params, mode: "reference" } }
+          : {},
+      );
       await useProjectStore.getState().flush();
       const runs = useRunStore.getState();
       if (again && run) await runs.retry(run.id);
@@ -876,18 +911,40 @@ export function PromptPanel() {
         )}
 
         {tab === "parameter" && (
-          <GenerationParams
-            capability={asked}
-            defaults={view?.preferences ?? null}
-            key={node.id}
-            onCapabilityChange={
-              asked === "speech" || asked === "music"
-                ? switchCapability
-                : undefined
-            }
-            onChange={setParam}
-            params={spec.params}
-          />
+          <>
+            {videoBlocking && (
+              <p
+                className="prompt-panel-note"
+                data-testid="blocking-reference-note"
+                role="status"
+              >
+                {explicitVideoMode === "auto"
+                  ? t("editor:generationParams.blockingAuto")
+                  : t("editor:generationParams.blockingReference")}
+                {explicitVideoMode === "auto" && (
+                  <button
+                    className="prompt-panel-link"
+                    onClick={() => setParam("mode", "reference")}
+                    type="button"
+                  >
+                    {t("editor:generationParams.useReferenceMode")}
+                  </button>
+                )}
+              </p>
+            )}
+            <GenerationParams
+              capability={asked}
+              defaults={view?.preferences ?? null}
+              key={node.id}
+              onCapabilityChange={
+                asked === "speech" || asked === "music"
+                  ? switchCapability
+                  : undefined
+              }
+              onChange={setParam}
+              params={panelParams}
+            />
+          </>
         )}
 
         {tab === "preview" && previewOpen && (

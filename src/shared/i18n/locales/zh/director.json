@@ -34,7 +34,10 @@
   "renderMode": {
     "label": "渲染",
     "lit": "灯光",
-    "blockout": "白模"
+    "blockout": "白模",
+    "depth": "深度",
+    "normal": "法线",
+    "silhouette": "剪影"
   },
   "contextLost": {
     "title": "3D 显示上下文已丢失",
@@ -375,7 +378,38 @@
   },
   "deliver": {
     "action": "回写取景",
-    "working": "回写中…"
+    "working": "回写中…",
+    "title": "回写镜头",
+    "intro": "把「{{scene}}」当前镜头的取景存为项目素材并写入这张导演台卡片。当前镜头是「{{shot}}」。",
+    "resolution": "分辨率",
+    "size": "{{width}} × {{height}} · {{aspect}} · {{seconds}} 秒 · {{fps}}fps",
+    "frameMode": "画面渲染",
+    "blocking": "同时录制调度参考",
+    "blockingUnsupported": "当前环境无法录制视频，只能回写取景定帧。{{reason}}",
+    "blockingUnavailable": "当前环境无法录制视频（MediaRecorder 或 canvas.captureStream 不可用），只能回写取景定帧。",
+    "transcode": "把调度参考转码为 MP4",
+    "transcodeHint": "由服务端 ffmpeg 把 WebM 录制转成 MP4；没有 ffmpeg 时保留 WebM 并明确提示。",
+    "confirm": "回写",
+    "export": "导出",
+    "controlNote": "控制图只保存到素材架，不会写入卡片的取景输出。",
+    "exported": "已把「{{shot}}」的「{{mode}}」帧导出到素材架。",
+    "controlTag": "控制图",
+    "done": "已回写「{{shot}}」。",
+    "doneFrame": "取景定帧已写入这张导演台卡片。",
+    "doneBlocking": "调度参考已写入这张导演台卡片。",
+    "noContext": "视口还没有准备好绘制画面。",
+    "noShot": "这个场景没有当前镜头。",
+    "stale": "输出期间场景或镜头已变化，本次没有写入。",
+    "staleDetail": "当前镜头现在是「{{shot}}」（{{time}} 秒处），请重试。",
+    "frameFailed": "取景定帧导出失败。",
+    "recordFailed": "调度参考录制失败。",
+    "uploadFailed": "回写文件上传失败。",
+    "transcodeFailed": "调度参考转码 MP4 失败，已保留 WebM 录制。",
+    "ffmpegMissing": "未检测到 ffmpeg，已保留 WebM。",
+    "assetsKept": "已上传的文件仍保留在素材架；导演台卡片没有改动。",
+    "tagsFailed": "素材标签未能写入",
+    "frameTag": "取景定帧",
+    "blockingTag": "调度参考"
   },
   "confirm": {
     "title": "确认",

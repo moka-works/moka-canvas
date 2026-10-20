@@ -45,6 +45,8 @@ export interface DirectorCaptureContext {
   gl: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.Camera;
+  /** Redraws the visible viewport after capture has put the scene back. */
+  invalidate: () => void;
 }
 
 export interface StageViewportProps {
@@ -87,10 +89,11 @@ function CaptureBridge({
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
   useEffect(() => {
-    onContext({ gl, scene, camera });
+    onContext({ gl, scene, camera, invalidate });
     return () => onContext(null);
-  }, [gl, scene, camera, onContext]);
+  }, [gl, scene, camera, invalidate, onContext]);
   return null;
 }
 

@@ -469,6 +469,138 @@ pub async fn upload_asset(
     ))
 }
 
+/// Turns a recorded blocking reference into an MP4 with the machine's ffmpeg.
+///
+/// The file is only ever the desk's own recording: a video of any kind is
+/// accepted, but a machine without ffmpeg says so by name rather than
+/// pretending the format is unsupported. A failure keeps the original WebM
+/// in the hands of the client, which uploads it instead.
+pub async fn transcode_asset(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<AssetChangeResponse>), Problem> {
+    let root = session.0.project_root().await?;
+    let max = state.config.server.max_upload_bytes;
+    let upload = read_upload(&mut multipart, &root, max).await?;
+    let cleanup = |paths: &[&PathBuf]| {
+        for path in paths {
+            let _ = std::fs::remove_file(path);
+        }
+    };
+    let analysis = match crate::assets::analyze_staged(&upload.tmp_path) {
+        Ok(analysis) => analysis,
+        Err(error) => {
+            cleanup(&[&upload.tmp_path]);
+            return Err(error.into());
+        }
+    };
+    if !analysis.mime.starts_with("video/") {
+        cleanup(&[&upload.tmp_path]);
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "ASSET_INVALID",
+            format!(
+                "The transcoder only takes video; \"{}\" is {}",
+                upload.name, analysis.mime
+            ),
+        ));
+    }
+    if analysis.probe.duration_ms.is_some_and(|ms| ms > 60_000) {
+        cleanup(&[&upload.tmp_path]);
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "A blocking reference longer than 60 seconds is not transcoded",
+        ));
+    }
+    let Some(program) = state.clip_program() else {
+        cleanup(&[&upload.tmp_path]);
+        return Err(Problem::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "FFMPEG_UNAVAILABLE",
+            crate::clip::locate::UNAVAILABLE_REASON,
+        ));
+    };
+    let output = crate::assets::new_tmp_path(&root).map_err(problem_from_io)?;
+    let run = tokio::process::Command::new(&program)
+        .arg("-y")
+        .arg("-i")
+        .arg(&upload.tmp_path)
+        .arg("-c:v")
+        .arg("libx264")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-movflags")
+        .arg("+faststart")
+        .arg("-an")
+        .arg("-f")
+        .arg("mp4")
+        .arg(&output)
+        .kill_on_drop(true)
+        .output();
+    let completed = tokio::time::timeout(Duration::from_secs(60), run).await;
+    let result = match completed {
+        Err(_) => {
+            cleanup(&[&upload.tmp_path, &output]);
+            return Err(Problem::new(
+                StatusCode::GATEWAY_TIMEOUT,
+                "DIRECTOR_TRANSCODE_FAILED",
+                "ffmpeg did not finish the blocking reference within 60 seconds",
+            ));
+        }
+        Ok(Err(error)) => {
+            cleanup(&[&upload.tmp_path, &output]);
+            return Err(Problem::new(
+                StatusCode::BAD_GATEWAY,
+                "DIRECTOR_TRANSCODE_FAILED",
+                format!("ffmpeg could not be run: {error}"),
+            ));
+        }
+        Ok(Ok(output)) => output,
+    };
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let tail: String = stderr
+            .chars()
+            .rev()
+            .take(2_000)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        cleanup(&[&upload.tmp_path, &output]);
+        return Err(Problem::new(
+            StatusCode::BAD_GATEWAY,
+            "DIRECTOR_TRANSCODE_FAILED",
+            format!("ffmpeg exited with {}: {tail}", result.status),
+        ));
+    }
+    let stem = FsPath::new(&upload.name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("blocking");
+    let change = session
+        .0
+        .add_asset(StagedAsset {
+            name: format!("{stem}.mp4"),
+            tmp_path: output,
+            declared_mime: Some("video/mp4".to_string()),
+            category_hint: Some("videos".to_string()),
+            provenance: None,
+        })
+        .await?;
+    cleanup(&[&upload.tmp_path]);
+    Ok((
+        StatusCode::CREATED,
+        Json(AssetChangeResponse {
+            entry: change.entry,
+            revision: change.revision,
+            updated_at: change.updated_at,
+        }),
+    ))
+}
+
 pub async fn replace_asset(
     State(state): State<ApiState>,
     session: ProjectSession,

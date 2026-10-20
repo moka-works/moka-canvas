@@ -246,6 +246,12 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/projects/current/assets",
             post(routes::upload_asset),
         )
+        // A blocking reference recorded in the desk is WebM; a video model
+        // that takes MP4 is given one by the machine's own renderer.
+        .route(
+            "/api/v1/projects/current/assets/transcode",
+            post(routes::transcode_asset),
+        )
         // A node's own work goes on the shelf through a route of its own: the
         // words are read out of the document here rather than sent up again.
         .route(

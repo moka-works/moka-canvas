@@ -81,6 +81,48 @@ function disposeModel(root: Object3D): void {
   for (const texture of textures) texture.dispose();
 }
 
+/** Drives a loaded model's clip and mapped joints to one time. */
+function applyModelTime(
+  model: LoadedModel,
+  object: DirectorObject,
+  time: number,
+): void {
+  for (const action of Object.values(model.actions)) action.stop();
+  const clip = object.motionClips?.find(
+    (entry) => entry.id === object.activeMotionClipId,
+  );
+  const action = clip ? model.actions[clip.sourceAnimation] : undefined;
+  if (clip && action) {
+    action.reset();
+    action.setLoop(clip.loop ? LoopRepeat : LoopOnce, Infinity);
+    action.clampWhenFinished = !clip.loop;
+    action.play();
+    let local = Math.max(0, time - clip.start) * clip.playbackRate;
+    if (clip.loop && clip.duration > 0) {
+      local %= clip.duration;
+    } else {
+      local = Math.min(clip.duration, local);
+    }
+    model.mixer.setTime(local);
+  } else {
+    for (const [name, bone] of Object.entries(model.bones)) {
+      const rest = model.rest[name];
+      if (rest) bone.quaternion.copy(rest);
+    }
+  }
+  for (const [bone, modelName] of Object.entries(object.rig?.boneMap ?? {})) {
+    if (!modelName) continue;
+    const target = model.bones[modelName];
+    if (!target) continue;
+    const delta = boneRotation(object, bone as DirectorHumanoidBone, time);
+    const rest = model.rest[modelName];
+    if (!delta || !rest) continue;
+    const quaternion = new Quaternion(delta[0], delta[1], delta[2], delta[3]);
+    target.quaternion.copy(rest).multiply(quaternion.normalize());
+  }
+  model.object.updateMatrixWorld(true);
+}
+
 /**
  * One imported model, normalised to the stage's metres.
  *
@@ -168,6 +210,12 @@ export function ModelView({
           rest,
           alive: true,
         };
+        current.object.userData.directorSample = (
+          next: DirectorObject,
+          at: number,
+        ) => {
+          if (current?.alive) applyModelTime(current, next, at);
+        };
         setModel(current);
         const boneNames = Object.keys(bones);
         useRigNames.getState().setBoneNames(object.id, boneNames);
@@ -209,40 +257,7 @@ export function ModelView({
 
   useEffect(() => {
     if (!model || !model.alive) return;
-    for (const action of Object.values(model.actions)) action.stop();
-    const clip = object.motionClips?.find(
-      (entry) => entry.id === object.activeMotionClipId,
-    );
-    const action = clip ? model.actions[clip.sourceAnimation] : undefined;
-    if (clip && action) {
-      action.reset();
-      action.setLoop(clip.loop ? LoopRepeat : LoopOnce, Infinity);
-      action.clampWhenFinished = !clip.loop;
-      action.play();
-      let local = Math.max(0, time - clip.start) * clip.playbackRate;
-      if (clip.loop && clip.duration > 0) {
-        local %= clip.duration;
-      } else {
-        local = Math.min(clip.duration, local);
-      }
-      model.mixer.setTime(local);
-    } else {
-      for (const [name, bone] of Object.entries(model.bones)) {
-        const rest = model.rest[name];
-        if (rest) bone.quaternion.copy(rest);
-      }
-    }
-    for (const [bone, modelName] of Object.entries(object.rig?.boneMap ?? {})) {
-      if (!modelName) continue;
-      const target = model.bones[modelName];
-      if (!target) continue;
-      const delta = boneRotation(object, bone as DirectorHumanoidBone, time);
-      const rest = model.rest[modelName];
-      if (!delta || !rest) continue;
-      const quaternion = new Quaternion(delta[0], delta[1], delta[2], delta[3]);
-      target.quaternion.copy(rest).multiply(quaternion.normalize());
-    }
-    model.object.updateMatrixWorld(true);
+    applyModelTime(model, object, time);
     invalidate();
   }, [
     model,

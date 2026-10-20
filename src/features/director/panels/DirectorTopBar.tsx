@@ -21,6 +21,8 @@ export interface DirectorTopBarProps {
   onOnboarding: () => void;
   onDeliver: () => void;
   delivering: boolean;
+  /** True while a delivery is running: leaving and retargeting wait for it. */
+  busy?: boolean;
   deliverDisabled?: boolean;
   renderMode: DirectorRenderMode;
   onRenderMode: (mode: DirectorRenderMode) => void;
@@ -48,6 +50,7 @@ export function DirectorTopBar({
   onOnboarding,
   onDeliver,
   delivering,
+  busy,
   deliverDisabled,
   renderMode,
   onRenderMode,
@@ -55,7 +58,7 @@ export function DirectorTopBar({
   const { t } = useTranslation(["director", "editor"]);
   return (
     <header className="director-topbar">
-      <button className="button" onClick={onBack} type="button">
+      <button className="button" disabled={busy} onClick={onBack} type="button">
         {t("director:page.back")}
       </button>
       <h1>{scene.title}</h1>
@@ -68,6 +71,7 @@ export function DirectorTopBar({
           <button
             aria-selected={scene.activeShotId === shot.id}
             className="director-shot-chip"
+            disabled={busy}
             key={shot.id}
             onClick={() => onSelectShot(shot.id)}
             role="tab"
@@ -83,6 +87,7 @@ export function DirectorTopBar({
         <button
           aria-label={t("director:shots.add")}
           className="director-shot-add"
+          disabled={busy}
           onClick={onAddShot}
           title={t("director:shots.add")}
           type="button"
