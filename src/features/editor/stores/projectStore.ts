@@ -434,10 +434,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     integrateAssetEntry(entry, result) {
       const category = entry.path.split("/")[1] as AssetCategory | undefined;
       set((state) => {
-        if (!state.moka || !category || !(category in state.moka.resources)) {
+        if (!state.moka || !category) {
           return state;
         }
-        const list = state.moka.resources[category];
+        // A shelf that has never held a file of this kind is absent from the
+        // server's reading of the document; filing the first one creates it.
+        const list = state.moka.resources[category] ?? [];
         const index = list.findIndex((item) => item.id === entry.id);
         const nextList =
           index === -1

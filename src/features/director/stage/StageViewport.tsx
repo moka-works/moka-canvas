@@ -3,6 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import type {
+  DirectorQuat,
   DirectorRenderMode,
   DirectorScene,
   DirectorTransform,
@@ -13,6 +14,7 @@ import type {
   DirectorViewportApi,
 } from "../types";
 import { StageWorld } from "./StageWorld";
+import type { ModelAnimation } from "./ModelView";
 import type { DirectorView } from "./viewModes";
 
 /**
@@ -52,15 +54,21 @@ export interface StageViewportProps {
   onSelect: (selection: DirectorSelection | null) => void;
   onCaptureContext?: (context: DirectorCaptureContext | null) => void;
   onCameraFallback?: (reason: string) => void;
-  /** Called when a model's own animation list becomes known. */
-  onModelAnimations?: (objectId: string, animationNames: string[]) => void;
+  /** Called when a model's own animations and skeleton names become known. */
+  onModelLoaded?: (
+    objectId: string,
+    animations: ModelAnimation[],
+    boneNames: string[],
+  ) => void;
   onGroundPoint: (x: number, z: number) => void;
   onTransformPreview: (
     selection: DirectorSelection,
     transform: DirectorTransform,
   ) => void;
+  onBonePreview: (selection: DirectorSelection, rotation: DirectorQuat) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  playhead: number;
   apiRef?: { current: DirectorViewportApi | null };
 }
 
@@ -103,11 +111,13 @@ export function StageViewport({
   onSelect,
   onCaptureContext,
   onCameraFallback,
-  onModelAnimations,
+  onModelLoaded,
   onGroundPoint,
   onTransformPreview,
+  onBonePreview,
   onGestureStart,
   onGestureEnd,
+  playhead,
   apiRef,
 }: StageViewportProps) {
   const { t } = useTranslation("director");
@@ -142,16 +152,16 @@ export function StageViewport({
     [onCameraFallback],
   );
   const reportLoaded = useCallback(
-    (objectId: string, animationNames: string[]) => {
+    (objectId: string, animations: ModelAnimation[], boneNames: string[]) => {
       setModelErrors((held) => {
         if (!held.has(objectId)) return held;
         const next = new Map(held);
         next.delete(objectId);
         return next;
       });
-      onModelAnimations?.(objectId, animationNames);
+      onModelLoaded?.(objectId, animations, boneNames);
     },
-    [onModelAnimations],
+    [onModelLoaded],
   );
 
   useEffect(() => {
@@ -201,6 +211,7 @@ export function StageViewport({
         <InvalidateOnScene scene={scene} />
         <StageWorld
           apiRef={apiRef}
+          onBonePreview={onBonePreview}
           onCameraFallback={reportCameraFallback}
           onEnvironmentError={reportEnvironmentError}
           onGestureEnd={onGestureEnd}
@@ -210,6 +221,7 @@ export function StageViewport({
           onModelLoaded={reportLoaded}
           onSelect={onSelect}
           onTransformPreview={onTransformPreview}
+          playhead={playhead}
           reloadToken={reloadToken}
           renderMode={renderMode}
           scene={scene}

@@ -9526,3 +9526,16 @@ button > .story-spin {
   margin: 8px 0;
   width: 100%;
 }
+
+.director-inline-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.director-details-summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  margin: 6px 0;
+}

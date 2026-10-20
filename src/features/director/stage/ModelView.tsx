@@ -1,29 +1,58 @@
 import { useEffect, useState } from "react";
 import {
+  AnimationMixer,
+  Bone,
   Box3,
   DoubleSide,
   FrontSide,
+  LoopOnce,
+  LoopRepeat,
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  Quaternion,
   SRGBColorSpace,
   Texture,
   TextureLoader,
   Vector3,
+  type AnimationAction,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { useThree } from "@react-three/fiber";
 import { assetUrl } from "../../../api";
-import type { DirectorObject } from "../../../shared/domain";
+import {
+  type DirectorHumanoidBone,
+  type DirectorObject,
+} from "../../../shared/domain";
+import { boneRotation } from "./poses";
+import { useRigNames } from "../stores/rigNames";
+
+/** One animation a model brought with it, as its file states it. */
+export interface ModelAnimation {
+  name: string;
+  duration: number;
+}
 
 interface LoadedModel {
   object: Object3D;
-  animationNames: string[];
+  mixer: AnimationMixer;
+  actions: Record<string, AnimationAction>;
+  bones: Record<string, Bone>;
+  rest: Record<string, Quaternion>;
+  /** False once the load that made it has been replaced or unmounted. */
+  alive: boolean;
 }
 
 export interface ModelViewProps {
   object: DirectorObject;
-  onLoaded: (objectId: string, animationNames: string[]) => void;
+  /** The time the shot is being drawn at. */
+  time: number;
+  onLoaded: (
+    objectId: string,
+    animations: ModelAnimation[],
+    boneNames: string[],
+  ) => void;
   onError: (objectId: string, message: string) => void;
   /** Bumped to ask every failed model to try again. */
   reloadToken: number;
@@ -55,23 +84,27 @@ function disposeModel(root: Object3D): void {
 /**
  * One imported model, normalised to the stage's metres.
  *
- * A model is cloned before it is touched so an animation played on a clone
- * never moves a second copy, and the clone's own resources are released when
- * the object is removed, replaced, retried, or the room closes. A model that
- * will not load leaves the caller to draw a placeholder and say why.
+ * The file is cloned before it is touched, so an animation played on this
+ * copy never moves another. Its skeleton is read once for the mapping UI,
+ * and its bones are driven by the document: the selected animation first,
+ * then pose or overrides on the joints the rig maps.
  */
 export function ModelView({
   object,
+  time,
   onLoaded,
   onError,
   reloadToken,
 }: ModelViewProps) {
   const [model, setModel] = useState<LoadedModel | null>(null);
+  const invalidate = useThree((state) => state.invalidate);
   const url = object.assetId ? assetUrl(object.assetId) : "";
 
   useEffect(() => {
     let cancelled = false;
     let built: Object3D | null = null;
+    let mixer: AnimationMixer | null = null;
+    let current: LoadedModel | null = null;
     setModel(null);
     if (!url) {
       onError(object.id, "No model asset is bound");
@@ -85,43 +118,66 @@ export function ModelView({
           disposeModel(gltf.scene);
           return;
         }
-        const model = cloneSkeleton(gltf.scene);
-        built = model;
-        const box = new Box3().setFromObject(model);
+        const clone = cloneSkeleton(gltf.scene);
+        built = clone;
+        const box = new Box3().setFromObject(clone);
         const size = box.getSize(new Vector3());
         const longest = Math.max(size.x, size.y, size.z);
         const target = object.kind === "performer" ? 1.7 : 1.9;
         if (Number.isFinite(longest) && longest > 0) {
-          model.scale.multiplyScalar(target / longest);
+          clone.scale.multiplyScalar(target / longest);
         }
-        model.updateMatrixWorld(true);
-        const fitted = new Box3().setFromObject(model);
+        clone.updateMatrixWorld(true);
+        const fitted = new Box3().setFromObject(clone);
         const center = fitted.getCenter(new Vector3());
-        model.position.x -= center.x;
-        model.position.z -= center.z;
-        model.position.y -= fitted.min.y;
-        model.updateMatrixWorld(true);
-        model.traverse((child) => {
+        clone.position.x -= center.x;
+        clone.position.z -= center.z;
+        clone.position.y -= fitted.min.y;
+        clone.updateMatrixWorld(true);
+        const bones: Record<string, Bone> = {};
+        const rest: Record<string, Quaternion> = {};
+        clone.traverse((child) => {
+          if (!(child as Bone).isBone) return;
+          const bone = child as Bone;
+          bones[bone.name] = bone;
+          rest[bone.name] = bone.quaternion.clone();
+        });
+        clone.traverse((child) => {
           const mesh = child as Mesh;
           if (!mesh.isMesh) return;
           mesh.castShadow = object.castShadow;
           mesh.receiveShadow = object.receiveShadow;
           if (object.kind !== "performer") return;
           mesh.userData.directorActor = true;
-          const material = new MeshStandardMaterial({
+          mesh.material = new MeshStandardMaterial({
             color: object.color,
             roughness: 0.75,
             metalness: 0.05,
           });
-          mesh.material = material;
         });
-        setModel({
-          object: model,
-          animationNames: gltf.animations.map((clip) => clip.name),
-        });
+        mixer = new AnimationMixer(clone);
+        const actions: Record<string, AnimationAction> = {};
+        for (const clip of gltf.animations) {
+          actions[clip.name] = mixer.clipAction(clip);
+        }
+        current = {
+          object: clone,
+          mixer,
+          actions,
+          bones,
+          rest,
+          alive: true,
+        };
+        setModel(current);
+        const boneNames = Object.keys(bones);
+        useRigNames.getState().setBoneNames(object.id, boneNames);
         onLoaded(
           object.id,
-          gltf.animations.map((clip) => clip.name),
+          gltf.animations.map((clip) => ({
+            name: clip.name,
+            duration: clip.duration,
+          })),
+          boneNames,
         );
       },
       undefined,
@@ -133,6 +189,8 @@ export function ModelView({
     );
     return () => {
       cancelled = true;
+      if (current) current.alive = false;
+      mixer?.stopAllAction();
       if (built) disposeModel(built);
     };
     // The object's own material flags are applied on load; a colour change
@@ -147,6 +205,55 @@ export function ModelView({
     onLoaded,
     onError,
     reloadToken,
+  ]);
+
+  useEffect(() => {
+    if (!model || !model.alive) return;
+    for (const action of Object.values(model.actions)) action.stop();
+    const clip = object.motionClips?.find(
+      (entry) => entry.id === object.activeMotionClipId,
+    );
+    const action = clip ? model.actions[clip.sourceAnimation] : undefined;
+    if (clip && action) {
+      action.reset();
+      action.setLoop(clip.loop ? LoopRepeat : LoopOnce, Infinity);
+      action.clampWhenFinished = !clip.loop;
+      action.play();
+      let local = Math.max(0, time - clip.start) * clip.playbackRate;
+      if (clip.loop && clip.duration > 0) {
+        local %= clip.duration;
+      } else {
+        local = Math.min(clip.duration, local);
+      }
+      model.mixer.setTime(local);
+    } else {
+      for (const [name, bone] of Object.entries(model.bones)) {
+        const rest = model.rest[name];
+        if (rest) bone.quaternion.copy(rest);
+      }
+    }
+    for (const [bone, modelName] of Object.entries(object.rig?.boneMap ?? {})) {
+      if (!modelName) continue;
+      const target = model.bones[modelName];
+      if (!target) continue;
+      const delta = boneRotation(object, bone as DirectorHumanoidBone, time);
+      const rest = model.rest[modelName];
+      if (!delta || !rest) continue;
+      const quaternion = new Quaternion(delta[0], delta[1], delta[2], delta[3]);
+      target.quaternion.copy(rest).multiply(quaternion.normalize());
+    }
+    model.object.updateMatrixWorld(true);
+    invalidate();
+  }, [
+    model,
+    object.activeMotionClipId,
+    object.motionClips,
+    object.boneOverrides,
+    object.boneTracks,
+    object.pose,
+    object.rig,
+    time,
+    invalidate,
   ]);
 
   if (!model) return null;

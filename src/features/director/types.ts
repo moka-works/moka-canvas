@@ -1,4 +1,4 @@
-import type { DirectorRenderMode } from "../../shared/domain";
+import type { DirectorBone, DirectorRenderMode } from "../../shared/domain";
 import type { DirectorView } from "./stage/viewModes";
 
 /** The four ways the desk is worked in. */
@@ -11,6 +11,8 @@ export type DirectorTransformMode = "translate" | "rotate" | "scale";
 export interface DirectorSelection {
   kind: "object" | "camera" | "light";
   id: string;
+  /** The joint being rotated, when a performer's bone is selected. */
+  bone?: DirectorBone;
 }
 
 export interface DirectorPlacement {

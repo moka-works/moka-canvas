@@ -17,6 +17,7 @@ import {
   type DirectorActorArchetype,
   type DirectorLight,
   type DirectorNodeData,
+  type DirectorQuat,
   type DirectorScene,
   type DirectorSolidShape,
   type DirectorTransform,
@@ -65,6 +66,8 @@ import {
   StageViewport,
   type DirectorCaptureContext,
 } from "./stage/StageViewport";
+import type { ModelAnimation } from "./stage/ModelView";
+import { autoBoneMap, rigReady } from "./stage/rig";
 import { closeDirector, useDirectorStore } from "./stores/directorStore";
 import type {
   DirectorPlate,
@@ -101,6 +104,7 @@ export function DirectorPage() {
   const renderMode = useDirectorStore((state) => state.renderMode);
   const transformMode = useDirectorStore((state) => state.transformMode);
   const selection = useDirectorStore((state) => state.selection);
+  const playhead = useDirectorStore((state) => state.playhead);
   const saveError = useDirectorStore((state) => state.saveError);
   const past = useDirectorStore((state) => state.past);
   const future = useDirectorStore((state) => state.future);
@@ -461,6 +465,87 @@ export function DirectorPage() {
     });
   };
 
+  const onBonePreview = (target: DirectorSelection, rotation: DirectorQuat) => {
+    if (!target.bone) return;
+    useDirectorStore.getState().update((current) => {
+      const object = current.objects.find((entry) => entry.id === target.id);
+      if (!object) return current;
+      return updateObject(current, target.id, {
+        boneOverrides: {
+          ...(object.boneOverrides ?? {}),
+          [target.bone!]: rotation,
+        },
+      });
+    });
+  };
+
+  const handleModelLoaded = useCallback(
+    (objectId: string, animations: ModelAnimation[], boneNames: string[]) => {
+      const current = useDirectorStore.getState().draft;
+      const object = current?.objects.find((entry) => entry.id === objectId);
+      if (!object) return;
+      const names = animations.map((animation) => animation.name);
+      const heldNames = object.rig?.animationNames ?? [];
+      const sameRig =
+        [...heldNames].sort().join("\u0000") ===
+        [...names].sort().join("\u0000");
+      const hasClips = (object.motionClips?.length ?? 0) > 0;
+      const boneMap = object.kind === "performer" ? autoBoneMap(boneNames) : {};
+      // A model turned into a performer needs its joints read again even when
+      // its animation list has not changed: the first loading saw a model and
+      // deliberately mapped nothing.
+      const needsMapping =
+        object.kind === "performer" &&
+        rigReady(boneMap) &&
+        object.rig?.status !== "ready";
+      if (sameRig && (hasClips || animations.length === 0) && !needsMapping) {
+        return;
+      }
+      const rig = {
+        status: (object.kind === "performer" && rigReady(boneMap)
+          ? "ready"
+          : "unmapped") as "ready" | "unmapped",
+        boneMap,
+        animationNames: names,
+      };
+      const clips =
+        sameRig && object.motionClips?.length
+          ? object.motionClips
+          : animations.map((animation) => ({
+              id: crypto.randomUUID(),
+              name: animation.name,
+              sourceAnimation: animation.name,
+              start: 0,
+              duration: animation.duration,
+              playbackRate: 1,
+              loop: true,
+            }));
+      const active = clips.some((clip) => clip.id === object.activeMotionClipId)
+        ? object.activeMotionClipId
+        : clips[0]?.id;
+      edit((scene) =>
+        updateObject(scene, objectId, {
+          rig,
+          motionClips: clips,
+          ...(active !== undefined ? { activeMotionClipId: active } : {}),
+        }),
+      );
+    },
+    [edit],
+  );
+
+  const useAsPerformer = (id: string) => {
+    edit((current) => {
+      const object = current.objects.find((entry) => entry.id === id);
+      if (!object) return current;
+      return updateObject(current, id, {
+        kind: "performer",
+        archetype: object.archetype ?? "standard",
+        pose: object.pose ?? "neutral",
+      });
+    });
+  };
+
   const placeOnGround = (x: number, z: number) => {
     const target = useDirectorStore.getState().selection;
     if (target?.kind !== "object") return;
@@ -720,9 +805,7 @@ export function DirectorPage() {
         onDeliver={() => undefined}
         onMode={(next) => useDirectorStore.getState().setMode(next)}
         onRedo={() => useDirectorStore.getState().redo()}
-        onRenderMode={(next) =>
-          useDirectorStore.getState().setRenderMode(next)
-        }
+        onRenderMode={(next) => useDirectorStore.getState().setRenderMode(next)}
         onRetrySave={() => void useProjectStore.getState().flush()}
         onSelectShot={(id) => {
           edit((current) => setActiveShot(current, id));
@@ -851,6 +934,7 @@ export function DirectorPage() {
           <div className="director-center">
             <StageViewport
               apiRef={viewportApi}
+              onBonePreview={onBonePreview}
               onCameraFallback={() => {
                 useDirectorStore.getState().setView("free");
               }}
@@ -860,11 +944,12 @@ export function DirectorPage() {
               onGestureEnd={() => useDirectorStore.getState().commitGesture()}
               onGestureStart={() => useDirectorStore.getState().beginGesture()}
               onGroundPoint={placeOnGround}
-              onModelAnimations={() => undefined}
+              onModelLoaded={handleModelLoaded}
               onSelect={(next) =>
                 useDirectorStore.getState().setSelection(next)
               }
               onTransformPreview={onTransformPreview}
+              playhead={playhead}
               renderMode={renderMode}
               scene={scene}
               selection={selection}
@@ -916,6 +1001,20 @@ export function DirectorPage() {
                   images={images}
                   models={models}
                   onArchetype={changeArchetypeOf}
+                  onBone={(id, bone, rotation) =>
+                    edit((current) => {
+                      const object = current.objects.find(
+                        (entry) => entry.id === id,
+                      );
+                      if (!object) return current;
+                      const overrides = { ...(object.boneOverrides ?? {}) };
+                      if (rotation) overrides[bone] = rotation;
+                      else delete overrides[bone];
+                      return updateObject(current, id, {
+                        boneOverrides: overrides,
+                      });
+                    })
+                  }
                   onCamera={(id, patch) =>
                     edit((current) => updateCamera(current, id, patch))
                   }
@@ -937,6 +1036,8 @@ export function DirectorPage() {
                   onShot={(id, patch) =>
                     edit((current) => updateShot(current, id, patch))
                   }
+                  onUseAsPerformer={useAsPerformer}
+                  playhead={playhead}
                   scene={scene}
                   selection={selection}
                 />

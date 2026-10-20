@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Euler, Quaternion } from "three";
 import {
   DIRECTOR_ACCESSORIES,
   DIRECTOR_ASPECT_RATIOS,
   DIRECTOR_CAMERA_MOVES,
+  DIRECTOR_HUMANOID_BODY_BONES,
   DIRECTOR_SHOT_FPS,
   DIRECTOR_SHOT_SIZES,
   MAX_PROMPT_LENGTH,
@@ -12,15 +14,21 @@ import {
   bonesFor,
   posesFor,
   type DirectorActorArchetype,
+  type DirectorBone,
   type DirectorCamera,
+  type DirectorHumanoidBone,
   type DirectorLight,
   type DirectorObject,
+  type DirectorQuat,
   type DirectorScene,
   type DirectorShot,
   type DirectorSolidShape,
   type ResourceEntry,
 } from "../../../shared/domain";
 import { ACTOR_ARCHETYPE_KEYS } from "../staging";
+import { MAPPABLE_BONES, rigReady } from "../stage/rig";
+import { boneRotation } from "../stage/poses";
+import { useRigNames } from "../stores/rigNames";
 import type { DirectorSelection } from "../types";
 import {
   DirectorColor,
@@ -46,6 +54,13 @@ export interface ShotCardProps {
   onScene: (patch: Partial<DirectorScene>) => void;
   onArchetype: (id: string, archetype: DirectorActorArchetype) => void;
   onCameraSelect: (shotId: string, cameraId: string) => void;
+  onBone: (
+    id: string,
+    bone: DirectorBone,
+    rotation: DirectorQuat | null,
+  ) => void;
+  onUseAsPerformer: (id: string) => void;
+  playhead: number;
 }
 
 /**
@@ -68,6 +83,9 @@ export function ShotCard({
   onScene,
   onArchetype,
   onCameraSelect,
+  onBone,
+  onUseAsPerformer,
+  playhead,
 }: ShotCardProps) {
   const { t } = useTranslation(["director", "editor"]);
   const [tab, setTab] = useState<CardTab>("object");
@@ -116,10 +134,14 @@ export function ShotCard({
               object={object}
               onChange={(patch) => onObject(object.id, patch)}
               onArchetype={(archetype) => onArchetype(object.id, archetype)}
+              onBone={(bone, rotation) => onBone(object.id, bone, rotation)}
               onRemove={() => onSelect(null)}
               onSelect={onSelect}
+              onUseAsPerformer={() => onUseAsPerformer(object.id)}
               models={models}
+              playhead={playhead}
               scene={scene}
+              selection={selection}
             />
           ) : camera ? (
             <CameraPage
@@ -163,25 +185,42 @@ function ObjectPage({
   object,
   scene,
   models,
+  selection,
+  playhead,
   onChange,
   onArchetype,
+  onBone,
   onSelect,
+  onUseAsPerformer,
 }: {
   object: DirectorObject;
   scene: DirectorScene;
   models: ResourceEntry[];
+  selection: DirectorSelection | null;
+  playhead: number;
   onChange: (patch: Partial<DirectorObject>) => void;
   onArchetype: (archetype: DirectorActorArchetype) => void;
+  onBone: (bone: DirectorBone, rotation: DirectorQuat | null) => void;
   onSelect: (selection: DirectorSelection | null) => void;
   onRemove: () => void;
+  onUseAsPerformer: () => void;
 }) {
   const { t } = useTranslation("director");
+  const NO_BONES: string[] = [];
+
   const humanoid = object.archetype
     ? actorFormFor(object.archetype) === "humanoid"
     : true;
   const poses = posesFor(humanoid ? "humanoid" : "quadruped");
   const build = object.actorBuild;
   const animal = object.animalBuild;
+  const boneNames =
+    useRigNames((state) => state.boneNames[object.id]) ?? NO_BONES;
+  const editableBones: readonly DirectorBone[] = object.assetId
+    ? MAPPABLE_BONES
+    : humanoid
+      ? DIRECTOR_HUMANOID_BODY_BONES
+      : bonesFor("quadruped");
   return (
     <>
       <DirectorSection title={t("cardPanel.objectSection")}>
@@ -239,7 +278,13 @@ function ObjectPage({
           <DirectorSelect
             disabled={object.assetId !== undefined}
             label={t("field.pose")}
-            onChange={(pose) => onChange({ pose })}
+            onChange={(pose) =>
+              onChange({
+                pose,
+                activeMotionClipId: undefined,
+                boneOverrides: {},
+              })
+            }
             options={poses.map((pose) => ({
               value: pose,
               label: t(`poses.${pose}`),
@@ -353,11 +398,39 @@ function ObjectPage({
           <p className="director-note">
             {t("cardPanel.bones", {
               count: object.archetype
-                ? bonesFor(actorFormFor(object.archetype)).length
+                ? humanoid
+                  ? DIRECTOR_HUMANOID_BODY_BONES.length
+                  : bonesFor("quadruped").length
                 : 0,
             })}
           </p>
         </DirectorSection>
+      )}
+      {object.kind === "performer" && (
+        <BoneSection
+          bones={editableBones}
+          object={object}
+          onBone={onBone}
+          onSelectBone={(bone) =>
+            onSelect(
+              bone
+                ? { kind: "object", id: object.id, bone }
+                : { kind: "object", id: object.id },
+            )
+          }
+          playhead={playhead}
+          selectedBone={selection?.bone}
+        />
+      )}
+      {object.motionClips && object.motionClips.length > 0 && (
+        <MotionClipsSection object={object} onChange={onChange} />
+      )}
+      {object.kind === "performer" && object.assetId && (
+        <RigMappingSection
+          boneNames={boneNames}
+          object={object}
+          onChange={onChange}
+        />
       )}
       {(object.kind === "model" || object.kind === "plate") && (
         <DirectorSection title={t("cardPanel.asset")}>
@@ -366,6 +439,15 @@ function ObjectPage({
               scene.objects.find((entry) => entry.id === object.id)?.name ??
               t("cardPanel.assetMissing")}
           </p>
+          {object.kind === "model" && (
+            <button
+              className="button director-wide-button"
+              onClick={onUseAsPerformer}
+              type="button"
+            >
+              {t("cardPanel.useAsPerformer")}
+            </button>
+          )}
         </DirectorSection>
       )}
       {object.keyframes.length > 0 && (
@@ -383,6 +465,210 @@ function ObjectPage({
         {t("cardPanel.clearSelection")}
       </button>
     </>
+  );
+}
+
+function BoneSection({
+  bones,
+  object,
+  selectedBone,
+  playhead,
+  onSelectBone,
+  onBone,
+}: {
+  bones: readonly DirectorBone[];
+  object: DirectorObject;
+  selectedBone?: DirectorBone;
+  playhead: number;
+  onSelectBone: (bone: DirectorBone | null) => void;
+  onBone: (bone: DirectorBone, rotation: DirectorQuat | null) => void;
+}) {
+  const { t } = useTranslation("director");
+  const rotation = selectedBone
+    ? (boneRotation(object, selectedBone, playhead) ?? [0, 0, 0, 1])
+    : null;
+  const euler = rotation
+    ? new Euler().setFromQuaternion(
+        new Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]),
+      )
+    : null;
+  const setAxis = (axis: "x" | "y" | "z", degrees: number) => {
+    if (!selectedBone || !euler) return;
+    const next = new Euler(euler.x, euler.y, euler.z);
+    next[axis] = (degrees * Math.PI) / 180;
+    const quaternion = new Quaternion().setFromEuler(next);
+    onBone(selectedBone, [
+      quaternion.x,
+      quaternion.y,
+      quaternion.z,
+      quaternion.w,
+    ]);
+  };
+  return (
+    <DirectorSection title={t("cardPanel.boneTitle")}>
+      <DirectorSelect
+        label={t("field.bone")}
+        onChange={(value) =>
+          onSelectBone(value ? (value as DirectorBone) : null)
+        }
+        options={[
+          { value: "", label: t("cardPanel.noBone") },
+          ...bones.map((bone) => ({
+            value: bone as string,
+            label: t(`bones.${bone}`),
+          })),
+        ]}
+        value={selectedBone ?? ""}
+      />
+      {selectedBone && euler && (
+        <>
+          {(["x", "y", "z"] as const).map((axis) => (
+            <DirectorNumber
+              key={axis}
+              label={`${axis.toUpperCase()}°`}
+              onChange={(degrees) => setAxis(axis, degrees)}
+              step={1}
+              suffix="°"
+              value={(euler[axis] * 180) / Math.PI}
+            />
+          ))}
+          <div className="director-inline-actions">
+            <button
+              className="button"
+              onClick={() => onBone(selectedBone, null)}
+              type="button"
+            >
+              {t("cardPanel.resetBone")}
+            </button>
+            <button
+              className="button"
+              onClick={() => onSelectBone(null)}
+              type="button"
+            >
+              {t("cardPanel.noBone")}
+            </button>
+          </div>
+          <p className="director-note">{t("cardPanel.bonePriority")}</p>
+        </>
+      )}
+    </DirectorSection>
+  );
+}
+
+function MotionClipsSection({
+  object,
+  onChange,
+}: {
+  object: DirectorObject;
+  onChange: (patch: Partial<DirectorObject>) => void;
+}) {
+  const { t } = useTranslation("director");
+  const clips = object.motionClips ?? [];
+  const active = clips.find((clip) => clip.id === object.activeMotionClipId);
+  const patchClip = (patch: Partial<(typeof clips)[number]>) => {
+    if (!active) return;
+    onChange({
+      motionClips: clips.map((clip) =>
+        clip.id === active.id ? { ...clip, ...patch } : clip,
+      ),
+    });
+  };
+  return (
+    <DirectorSection title={t("cardPanel.clips")}>
+      <DirectorSelect
+        label={t("field.clip")}
+        onChange={(value) =>
+          onChange({ activeMotionClipId: value || undefined })
+        }
+        options={[
+          { value: "", label: t("cardPanel.noClip") },
+          ...clips.map((clip) => ({
+            value: clip.id,
+            label: `${clip.name} · ${clip.duration.toFixed(1)}s`,
+          })),
+        ]}
+        value={active?.id ?? ""}
+      />
+      {active && (
+        <>
+          <DirectorNumber
+            label={t("field.playbackRate")}
+            max={10}
+            min={0.1}
+            onChange={(playbackRate) => patchClip({ playbackRate })}
+            step={0.05}
+            value={active.playbackRate}
+          />
+          <DirectorNumber
+            label={t("field.clipStart")}
+            max={60}
+            min={0}
+            onChange={(start) => patchClip({ start })}
+            step={0.1}
+            suffix="s"
+            value={active.start}
+          />
+          <DirectorToggle
+            checked={active.loop}
+            label={t("field.loop")}
+            onChange={(loop) => patchClip({ loop })}
+          />
+        </>
+      )}
+    </DirectorSection>
+  );
+}
+
+function RigMappingSection({
+  object,
+  boneNames,
+  onChange,
+}: {
+  object: DirectorObject;
+  boneNames: string[];
+  onChange: (patch: Partial<DirectorObject>) => void;
+}) {
+  const { t } = useTranslation("director");
+  const rig = object.rig;
+  const boneMap = rig?.boneMap ?? {};
+  const mapped = Object.values(boneMap).filter(Boolean).length;
+  return (
+    <DirectorSection title={t("cardPanel.rig.title")}>
+      <p className="director-kind-line">
+        {t(`cardPanel.rig.${rig?.status ?? "unmapped"}`, { count: mapped })}
+      </p>
+      <details>
+        <summary className="director-details-summary">
+          {t("cardPanel.rig.manual")}
+        </summary>
+        {MAPPABLE_BONES.map((bone) => (
+          <DirectorSelect
+            key={bone}
+            label={t(`bones.${bone}`)}
+            onChange={(name) => {
+              const next = { ...boneMap };
+              if (name) {
+                next[bone] = name;
+              } else {
+                delete next[bone];
+              }
+              onChange({
+                rig: {
+                  status: rigReady(next) ? "ready" : "unmapped",
+                  boneMap: next,
+                  animationNames: rig?.animationNames ?? [],
+                },
+              });
+            }}
+            options={[
+              { value: "", label: t("cardPanel.rig.none") },
+              ...boneNames.map((name) => ({ value: name, label: name })),
+            ]}
+            value={boneMap[bone as DirectorHumanoidBone] ?? ""}
+          />
+        ))}
+      </details>
+    </DirectorSection>
   );
 }
 

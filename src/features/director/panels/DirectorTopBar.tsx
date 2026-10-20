@@ -118,7 +118,9 @@ export function DirectorTopBar({
             value={renderMode}
           >
             <option value="lit">{t("director:renderMode.lit")}</option>
-            <option value="blockout">{t("director:renderMode.blockout")}</option>
+            <option value="blockout">
+              {t("director:renderMode.blockout")}
+            </option>
           </select>
         </label>
         <span className={`director-save-status is-${saveTone}`} role="status">

@@ -15,6 +15,8 @@ import {
   DIRECTOR_ENVIRONMENT_INTENSITY,
   activeShotOf,
   shotCamera,
+  type DirectorBone,
+  type DirectorQuat,
   type DirectorRenderMode,
   type DirectorScene,
   type DirectorTransform,
@@ -25,7 +27,12 @@ import type {
   DirectorViewportApi,
 } from "../types";
 import { EnvironmentView } from "./EnvironmentView";
-import { ModelView, PlateView, SolidView } from "./ModelView";
+import {
+  ModelView,
+  PlateView,
+  SolidView,
+  type ModelAnimation,
+} from "./ModelView";
 import { PerformerView } from "./PerformerView";
 import { CameraRigView, LightRigView, SelectionOutline } from "./RigViews";
 import { ORTHO_DIRECTIONS, isOrthoView, type DirectorView } from "./viewModes";
@@ -47,14 +54,20 @@ export interface StageWorldProps {
   onModelError: (objectId: string, message: string) => void;
   onEnvironmentError: (message: string) => void;
   onCameraFallback: (reason: string) => void;
-  onModelLoaded: (objectId: string, animationNames: string[]) => void;
+  onModelLoaded: (
+    objectId: string,
+    animations: ModelAnimation[],
+    boneNames: string[],
+  ) => void;
   onGroundPoint: (x: number, z: number) => void;
   onTransformPreview: (
     selection: DirectorSelection,
     transform: DirectorTransform,
   ) => void;
+  onBonePreview: (selection: DirectorSelection, rotation: DirectorQuat) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  playhead: number;
   apiRef?: { current: DirectorViewportApi | null };
   reloadToken: number;
 }
@@ -259,8 +272,10 @@ export function StageWorld({
   onModelLoaded,
   onGroundPoint,
   onTransformPreview,
+  onBonePreview,
   onGestureStart,
   onGestureEnd,
+  playhead,
   apiRef,
   reloadToken,
 }: StageWorldProps) {
@@ -275,9 +290,13 @@ export function StageWorld({
   const [selectedNode, setSelectedNode] = useState<Object3D | null>(null);
   const [dragging, setDragging] = useState(false);
   const objectRefs = useRef(new Map<string, Group>());
+  const boneRefs = useRef(new Map<string, Group>());
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const refCallbacks = useRef(new Map<string, (node: Group | null) => void>());
+  const boneCallbacks = useRef(
+    new Map<string, (bone: DirectorBone, node: Group | null) => void>(),
+  );
   const groundDown = useRef<{ x: number; y: number } | null>(null);
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null);
   const aspect =
@@ -295,10 +314,33 @@ export function StageWorld({
     return callback;
   };
 
+  const boneRefFor = (objectId: string) => {
+    const held = boneCallbacks.current.get(objectId);
+    if (held) return held;
+    const callback = (bone: DirectorBone, node: Group | null) => {
+      const key = `${objectId}:${bone}`;
+      if (node) boneRefs.current.set(key, node);
+      else boneRefs.current.delete(key);
+      if (
+        selectionRef.current?.id === objectId &&
+        selectionRef.current.bone === bone
+      ) {
+        setSelectedNode(node);
+      }
+    };
+    boneCallbacks.current.set(objectId, callback);
+    return callback;
+  };
+
   useEffect(() => {
-    setSelectedNode(
-      selection ? (objectRefs.current.get(selection.id) ?? null) : null,
-    );
+    if (!selection) {
+      setSelectedNode(null);
+      return;
+    }
+    const ref = selection.bone
+      ? boneRefs.current.get(`${selection.id}:${selection.bone}`)
+      : objectRefs.current.get(selection.id);
+    setSelectedNode(ref ?? null);
   }, [selection, scene.objects, scene.cameras, scene.lights]);
 
   useEffect(() => {
@@ -397,9 +439,9 @@ export function StageWorld({
   );
 
   const reportModelLoaded = useCallback(
-    (objectId: string, animationNames: string[]) => {
+    (objectId: string, animations: ModelAnimation[], boneNames: string[]) => {
       setLoadedKey((held) => held + 1);
-      onModelLoaded(objectId, animationNames);
+      onModelLoaded(objectId, animations, boneNames);
     },
     [onModelLoaded],
   );
@@ -503,18 +545,29 @@ export function StageWorld({
               <SolidView object={object} />
             ) : object.kind === "plate" ? (
               <PlateView object={object} onError={onModelError} />
-            ) : object.kind === "model" ? (
+            ) : object.kind === "model" || object.assetId ? (
               <ModelView
                 object={object}
                 onError={onModelError}
                 onLoaded={reportModelLoaded}
                 reloadToken={reloadToken}
+                time={playhead}
               />
             ) : (
               <PerformerView
                 object={object}
                 onSelect={() => onSelect({ kind: "object", id: object.id })}
+                onSelectBone={(bone) =>
+                  onSelect({ kind: "object", id: object.id, bone })
+                }
+                registerBone={boneRefFor(object.id)}
                 selected={selected}
+                selectedBone={
+                  selection?.kind === "object" && selection.id === object.id
+                    ? selection.bone
+                    : undefined
+                }
+                time={playhead}
               />
             )}
             {selected && <SelectionOutline object={object} />}
@@ -557,7 +610,7 @@ export function StageWorld({
       />
       {view === "free" && selection && selectedNode && (
         <TransformControls
-          mode={transformMode}
+          mode={selection.bone ? "rotate" : transformMode}
           object={selectedNode}
           onMouseDown={() => {
             setDragging(true);
@@ -569,6 +622,15 @@ export function StageWorld({
           }}
           onObjectChange={() => {
             if (!selectedNode) return;
+            if (selection.bone) {
+              onBonePreview(selection, [
+                selectedNode.quaternion.x,
+                selectedNode.quaternion.y,
+                selectedNode.quaternion.z,
+                selectedNode.quaternion.w,
+              ]);
+              return;
+            }
             onTransformPreview(selection, {
               position: [
                 selectedNode.position.x,

@@ -572,6 +572,18 @@ export const DIRECTOR_HUMANOID_BONES: readonly DirectorHumanoidBone[] = [
   ...DIRECTOR_FINGER_BONES,
 ];
 
+/**
+ * The joints a procedural humanoid is built with.
+ *
+ * A programmatic body has no fingers: its hand is one joint, so offering
+ * thirty finger controls would name bones that are not on the stage. Those
+ * appear only when an imported rig maps them.
+ */
+export const DIRECTOR_HUMANOID_BODY_BONES: readonly DirectorHumanoidBone[] =
+  DIRECTOR_HUMANOID_BONES.filter(
+    (bone) => !(DIRECTOR_FINGER_BONES as readonly string[]).includes(bone),
+  );
+
 export const DIRECTOR_QUADRUPED_BONES: readonly DirectorQuadrupedBone[] = [
   "root",
   "hips",
