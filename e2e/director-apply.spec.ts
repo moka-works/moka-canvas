@@ -140,6 +140,35 @@ test("a delivered shot becomes an asset and the card's output", async ({
     .toBeUndefined();
 });
 
+test("a delivery in flight can be cancelled without writing the card", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const home = projectHome("director-cancel");
+  const root = join(home, "project");
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, root, "Director Cancel");
+  await startDesk(page);
+
+  await page.getByRole("button", { name: "Deliver frame" }).click();
+  const dialog = page.getByRole("dialog", { name: "Deliver shot" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Resolution").selectOption("1280");
+  await dialog.getByLabel("Also record a blocking reference").check();
+  await dialog.getByRole("button", { name: "Deliver", exact: true }).click();
+  await dialog.getByRole("button", { name: "Cancel delivery" }).click();
+  await expect(dialog).toContainText("Delivery cancelled");
+
+  const project = await served();
+  const card = project.moka.canvas[0].nodes.find(
+    (node) => node.kind === "director",
+  );
+  expect(card?.data.director?.frameAssetId).toBeUndefined();
+  expect(card?.data.director?.blockingAssetId).toBeUndefined();
+  expect(project.moka.resources.images ?? []).toHaveLength(0);
+});
+
 test("a control pass goes to the shelf and leaves the card's output alone", async ({
   page,
 }) => {

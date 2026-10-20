@@ -5,8 +5,10 @@ import {
   findResource,
   mentionSpans,
   newId,
+  nowIso,
   type AssetId,
   type CanvasDocument,
+  type DirectorScene,
   type GenerationSpec,
   type MokaFile,
   type NodeId,
@@ -30,6 +32,8 @@ export interface CanvasFragment {
   /** Only edges whose both endpoints are inside `nodes`. */
   edges: WorkflowEdge[];
   assetIds: AssetId[];
+  /** The staged scenes the copied director desks open onto. */
+  directorScenes?: DirectorScene[];
 }
 
 let memory: CanvasFragment | null = null;
@@ -37,6 +41,7 @@ let memory: CanvasFragment | null = null;
 export function buildFragment(
   canvas: CanvasDocument,
   nodeIds: NodeId[],
+  moka?: MokaFile,
 ): CanvasFragment | null {
   const included = new Set(nodeIds);
   const nodes = canvas.nodes.filter((node) => included.has(node.id));
@@ -50,17 +55,31 @@ export function buildFragment(
     y: Math.min(...nodes.map((node) => node.bounds.y)),
   };
   const assetIds = new Set<AssetId>();
+  const sceneIds = new Set<string>();
   for (const node of nodes) {
-    const data = node.data as { assetId?: string; posterAssetId?: string };
+    const data = node.data as {
+      assetId?: string;
+      posterAssetId?: string;
+      director?: { sceneId?: string };
+    };
     if (data.assetId) assetIds.add(data.assetId);
     if (data.posterAssetId) assetIds.add(data.posterAssetId);
+    if (node.kind === "director" && data.director?.sceneId) {
+      sceneIds.add(data.director.sceneId);
+    }
   }
+  // A desk copied onto another canvas or project carries its stage with it;
+  // the stage is part of the document, not of the node that points at it.
+  const directorScenes = (moka?.directorScenes ?? [])
+    .filter((scene) => sceneIds.has(scene.id))
+    .map((scene) => structuredClone(scene));
   return {
     version: FRAGMENT_SCHEMA_VERSION,
     origin,
     nodes,
     edges,
     assetIds: [...assetIds],
+    ...(directorScenes.length > 0 ? { directorScenes } : {}),
   };
 }
 
@@ -75,6 +94,8 @@ export function parseFragment(raw: string): CanvasFragment | null {
       parsed?.version !== FRAGMENT_SCHEMA_VERSION ||
       !Array.isArray(parsed.nodes) ||
       !Array.isArray(parsed.edges) ||
+      (parsed.directorScenes !== undefined &&
+        !Array.isArray(parsed.directorScenes)) ||
       typeof parsed.origin?.x !== "number" ||
       typeof parsed.origin?.y !== "number"
     ) {
@@ -163,6 +184,8 @@ export interface FragmentInstantiation {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   missingAssets: number;
+  /** Freshly identified copies of the copied desks' scenes. */
+  scenes: DirectorScene[];
 }
 
 /**
@@ -212,6 +235,31 @@ export function instantiateFragment(
   const dx = anchor.x - fragment.origin.x;
   const dy = anchor.y - fragment.origin.y;
 
+  // Each copied desk opens onto a scene of its own. The scene travels in the
+  // fragment when it was copied with one; a scene from the project the paste
+  // lands in is used as a fallback. Either way the copy gets a new id, so the
+  // two desks cannot edit one stage.
+  const available = new Map<string, DirectorScene>();
+  for (const scene of fragment.directorScenes ?? []) {
+    available.set(scene.id, scene);
+  }
+  for (const scene of moka.directorScenes ?? []) {
+    available.set(scene.id, scene);
+  }
+  const sceneMap = new Map<string, string>();
+  const scenes: DirectorScene[] = [];
+  for (const node of fragment.nodes) {
+    if (node.kind !== "director") continue;
+    const sceneId = (node.data as { director?: { sceneId?: string } }).director
+      ?.sceneId;
+    if (!sceneId || sceneMap.has(sceneId)) continue;
+    const source = available.get(sceneId);
+    if (!source) continue;
+    const id = newId();
+    sceneMap.set(sceneId, id);
+    scenes.push({ ...structuredClone(source), id, updatedAt: nowIso() });
+  }
+
   let missingAssets = 0;
   const nodes = fragment.nodes.map((node) => {
     const data = { ...(node.data as Record<string, unknown>) };
@@ -221,6 +269,13 @@ export function instantiateFragment(
         delete data[key];
         missingAssets += 1;
       }
+    }
+    if (node.kind === "director") {
+      // The copy starts empty: the original's delivered files may still exist,
+      // but they are frames of the original scene, not of this one.
+      const sceneId = (data.director as { sceneId?: string } | undefined)
+        ?.sceneId;
+      data.director = { sceneId: sceneId ? (sceneMap.get(sceneId) ?? "") : "" };
     }
     const spec = data.generation as GenerationSpec | undefined;
     if (spec) data.generation = carriedSpec(spec, idMap);
@@ -259,7 +314,7 @@ export function instantiateFragment(
         portId: edge.target.portId,
       },
     }));
-  return { nodes, edges, missingAssets };
+  return { nodes, edges, missingAssets, scenes };
 }
 
 export { MOKA_FRAGMENT_MIME };

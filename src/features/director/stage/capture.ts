@@ -324,7 +324,17 @@ export function blobDuration(blob: Blob): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     const url = URL.createObjectURL(blob);
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(url);
+      video.remove();
+      reject(
+        new Error(
+          "The recorded blocking reference never reported its duration",
+        ),
+      );
+    }, 10_000);
     const finish = (value: number) => {
+      clearTimeout(timer);
       URL.revokeObjectURL(url);
       video.remove();
       resolve(value);
@@ -343,6 +353,7 @@ export function blobDuration(blob: Blob): Promise<number> {
       }
     };
     video.onerror = () => {
+      clearTimeout(timer);
       URL.revokeObjectURL(url);
       video.remove();
       reject(
@@ -367,6 +378,7 @@ export async function recordBlocking(
   shot: DirectorShot,
   resolution: DirectorCaptureResolution,
   playhead: number,
+  signal?: AbortSignal,
 ): Promise<{ blob: Blob; mime: string }> {
   const mime = recordingMime();
   if (typeof HTMLCanvasElement.prototype.captureStream !== "function") {
@@ -392,6 +404,12 @@ export async function recordBlocking(
   const painted = paintMode(context.scene, "blockout");
   const chunks: Blob[] = [];
   let recorder: MediaRecorder | null = null;
+  let renderFailure: string | null = null;
+  const noteFailure = (event: ErrorEvent) => {
+    renderFailure ??=
+      event.message || "The page reported an error while recording";
+  };
+  window.addEventListener("error", noteFailure);
   try {
     applySceneTime(context.scene, sceneDocument, shot, 0, camera);
     const stream = canvas.captureStream(shot.fps);
@@ -411,6 +429,12 @@ export async function recordBlocking(
     const frameMs = 1000 / shot.fps;
     const frames = Math.ceil(shot.duration * shot.fps) + 1;
     for (let index = 0; index < frames; index += 1) {
+      if (signal?.aborted) {
+        throw new DOMException("The recording was cancelled", "AbortError");
+      }
+      if (renderFailure) {
+        throw new Error(`Recording stopped: ${renderFailure}`);
+      }
       const time = Math.min(shot.duration, index / shot.fps);
       applySceneTime(context.scene, sceneDocument, shot, time, camera);
       renderer.render(context.scene, camera);
@@ -433,6 +457,7 @@ export async function recordBlocking(
     }
     return { blob, mime };
   } finally {
+    window.removeEventListener("error", noteFailure);
     if (recorder && recorder.state !== "inactive") recorder.stop();
     applySceneTime(context.scene, sceneDocument, shot, playhead, camera);
     painted.restore();

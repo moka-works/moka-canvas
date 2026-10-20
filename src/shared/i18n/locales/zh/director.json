@@ -407,6 +407,8 @@
     "transcodeFailed": "调度参考转码 MP4 失败，已保留 WebM 录制。",
     "ffmpegMissing": "未检测到 ffmpeg，已保留 WebM。",
     "assetsKept": "已上传的文件仍保留在素材架；导演台卡片没有改动。",
+    "cancelled": "已取消回写。",
+    "cancelWork": "取消回写",
     "tagsFailed": "素材标签未能写入",
     "frameTag": "取景定帧",
     "blockingTag": "调度参考"

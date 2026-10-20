@@ -39,6 +39,7 @@ export function DirectorDeliverDialog({
   busy,
   error,
   onClose,
+  onCancel,
   onDeliver,
 }: {
   scene: DirectorScene;
@@ -48,6 +49,8 @@ export function DirectorDeliverDialog({
   busy: boolean;
   error: DirectorDeliveryError | null;
   onClose: () => void;
+  /** Stops work in flight, leaving the files already filed on the shelf. */
+  onCancel: () => void;
   onDeliver: (options: DirectorDeliveryOptions) => void;
 }) {
   const { t } = useTranslation("director");
@@ -161,11 +164,10 @@ export function DirectorDeliverDialog({
         <div className="dialog-actions">
           <button
             className="button"
-            disabled={busy}
-            onClick={onClose}
+            onClick={busy ? onCancel : onClose}
             type="button"
           >
-            {t("confirm.cancel")}
+            {busy ? t("deliver.cancelWork") : t("confirm.cancel")}
           </button>
           <button className="button is-primary" disabled={busy} type="submit">
             {busy

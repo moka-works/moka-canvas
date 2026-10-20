@@ -170,6 +170,7 @@ export function DirectorPage() {
   const [captureReady, setCaptureReady] = useState(false);
   const capture = useRef<DirectorCaptureContext | null>(null);
   const viewportApi = useRef<DirectorViewportApi | null>(null);
+  const deliveryAbort = useRef<AbortController | null>(null);
   const reportCapture = useCallback(
     (context: DirectorCaptureContext | null) => {
       capture.current = context;
@@ -224,6 +225,25 @@ export function DirectorPage() {
       // A machine that will not remember the guide shows it once on each
       // visit; the guide itself still works.
     }
+  }, []);
+
+  useEffect(() => {
+    const protect = (event: BeforeUnloadEvent) => {
+      if (useProjectStore.getState().pending.length === 0) return;
+      // A draft the desk has not written yet is worth a browser's own question;
+      // a clean document closes without one.
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const flushAway = () => {
+      void useProjectStore.getState().flush();
+    };
+    window.addEventListener("beforeunload", protect);
+    window.addEventListener("pagehide", flushAway);
+    return () => {
+      window.removeEventListener("beforeunload", protect);
+      window.removeEventListener("pagehide", flushAway);
+    };
   }, []);
 
   useEffect(() => {
@@ -1211,10 +1231,13 @@ export function DirectorPage() {
     const wantBlocking = options.blocking && !control;
     const modeLabel = t(`director:renderMode.${options.mode}`);
     let stage: "capture" | "record" | "upload" | "update" = "capture";
+    const abort = new AbortController();
+    deliveryAbort.current = abort;
     setDelivering(true);
     setDeliveryError(null);
     try {
       await useProjectStore.getState().flush();
+      abort.signal.throwIfAborted();
       const flushed = useProjectStore.getState();
       if (
         flushed.saveStatus === "conflicted" ||
@@ -1234,6 +1257,7 @@ export function DirectorPage() {
         options.resolution,
         room.playhead,
       );
+      abort.signal.throwIfAborted();
       stage = "record";
       let blocking: { change: AssetChange; format: string } | null = null;
       if (wantBlocking) {
@@ -1243,7 +1267,9 @@ export function DirectorPage() {
           active,
           options.resolution,
           room.playhead,
+          abort.signal,
         );
+        abort.signal.throwIfAborted();
         stage = "upload";
         if (options.transcode) {
           try {
@@ -1251,6 +1277,7 @@ export function DirectorPage() {
               new File([recording.blob], `${base}-blocking.webm`, {
                 type: recording.mime,
               }),
+              { signal: abort.signal },
             );
             blocking = { change: changed, format: "MP4" };
           } catch (error) {
@@ -1269,7 +1296,7 @@ export function DirectorPage() {
             new File([recording.blob], `${base}-blocking.webm`, {
               type: recording.mime,
             }),
-            { categoryHint: "videos" },
+            { categoryHint: "videos", signal: abort.signal },
           );
           blocking = { change: changed, format: "WebM" };
         }
@@ -1302,9 +1329,10 @@ export function DirectorPage() {
         }
       }
       stage = "upload";
+      abort.signal.throwIfAborted();
       const frame = await assetsApi.upload(
         new File([framePng], `${base}-frame.png`, { type: "image/png" }),
-        { categoryHint: "images" },
+        { categoryHint: "images", signal: abort.signal },
       );
       uploaded.push(frame.entry.name);
       useProjectStore.getState().integrateAssetEntry(frame.entry, {
@@ -1392,6 +1420,7 @@ export function DirectorPage() {
       }
 
       stage = "update";
+      abort.signal.throwIfAborted();
       const freshData = latestNode.data as DirectorNodeData;
       const names = new Map<string, string>();
       for (const entry of Object.values(
@@ -1452,6 +1481,16 @@ export function DirectorPage() {
             .join("\n"),
         );
     } catch (error) {
+      if (
+        abort.signal.aborted ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) {
+        setDeliveryError({
+          message: t("director:deliver.cancelled"),
+          detail: uploaded.length > 0 ? uploaded.join(", ") : undefined,
+        });
+        return;
+      }
       const said = error instanceof Error ? error.message : String(error);
       const summary =
         stage === "capture"
@@ -1473,6 +1512,7 @@ export function DirectorPage() {
           .join("\n"),
       });
     } finally {
+      if (deliveryAbort.current === abort) deliveryAbort.current = null;
       setDelivering(false);
     }
   };
@@ -1897,6 +1937,7 @@ export function DirectorPage() {
             setDeliverOpen(false);
             setDeliveryError(null);
           }}
+          onCancel={() => deliveryAbort.current?.abort()}
           onDeliver={(options) => void deliverShot(options)}
           recordingReason={capabilities.failure}
           scene={scene}

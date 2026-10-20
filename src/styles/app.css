@@ -1653,7 +1653,11 @@ body.is-dragging-panel {
   gap: 4px;
   justify-content: center;
   margin-bottom: -1px;
+  min-width: 0;
+  overflow: hidden;
   padding: 5px 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-asset-kinds button:hover:not(:disabled) {

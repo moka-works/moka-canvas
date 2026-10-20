@@ -350,7 +350,11 @@ export async function copySelection(): Promise<void> {
   const canvas = activeCanvas();
   if (!canvas) return;
   const selection = selectionWithMembers(canvas);
-  const fragment = buildFragment(canvas, selection.nodeIds);
+  const fragment = buildFragment(
+    canvas,
+    selection.nodeIds,
+    useProjectStore.getState().moka ?? undefined,
+  );
   if (!fragment) return;
   await writeFragment(fragment);
   announce(
@@ -362,7 +366,11 @@ export async function cutSelection(): Promise<void> {
   const canvas = activeCanvas();
   if (!canvas) return;
   const selection = selectionWithMembers(canvas);
-  const fragment = buildFragment(canvas, selection.nodeIds);
+  const fragment = buildFragment(
+    canvas,
+    selection.nodeIds,
+    useProjectStore.getState().moka ?? undefined,
+  );
   if (!fragment) return;
   await writeFragment(fragment);
   deleteSelection();
@@ -372,12 +380,13 @@ function pasteFragment(fragment: CanvasFragment, anchor: Point) {
   const canvas = activeCanvas();
   const moka = useProjectStore.getState().moka;
   if (!canvas || !moka) return;
-  const { nodes, edges, missingAssets } = instantiateFragment(
+  const { nodes, edges, missingAssets, scenes } = instantiateFragment(
     fragment,
     moka,
     anchor,
   );
   const commands: DocumentCommand[] = [
+    ...scenes.map((scene) => ({ type: "addDirectorScene", scene }) as const),
     ...nodes.map(
       (node) => ({ type: "addNode", canvasId: canvas.id, node }) as const,
     ),
@@ -514,7 +523,11 @@ export async function duplicateSelection(): Promise<void> {
   const canvas = activeCanvas();
   if (!canvas) return;
   const selection = selectionWithMembers(canvas);
-  const fragment = buildFragment(canvas, selection.nodeIds);
+  const fragment = buildFragment(
+    canvas,
+    selection.nodeIds,
+    useProjectStore.getState().moka ?? undefined,
+  );
   if (!fragment) return;
   pasteFragment(fragment, {
     x: fragment.origin.x + CASCADE_DROP_OFFSET,

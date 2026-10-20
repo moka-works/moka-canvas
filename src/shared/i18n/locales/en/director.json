@@ -407,6 +407,8 @@
     "transcodeFailed": "The blocking reference could not be converted to MP4; the WebM recording was kept.",
     "ffmpegMissing": "ffmpeg was not found, so the blocking reference was kept as WebM.",
     "assetsKept": "Uploaded files remain on the shelf; the director card was not changed.",
+    "cancelled": "Delivery cancelled.",
+    "cancelWork": "Cancel delivery",
     "tagsFailed": "The asset's tags could not be written",
     "frameTag": "Shot frame",
     "blockingTag": "Blocking reference"

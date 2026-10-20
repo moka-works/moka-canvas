@@ -6,6 +6,8 @@ import {
   goldenNodeIds,
 } from "../../../shared/domain/fixtures";
 import {
+  createDirectorNode,
+  createDirectorScene,
   findNode,
   mentionNodeIds,
   type GenerationSpec,
@@ -101,5 +103,70 @@ describe("what a copy is pointed at", () => {
     expect(copyOf(nodes, "Brief").data).toEqual(
       findNode(moka.canvas[0], golden.text)?.data,
     );
+  });
+});
+
+describe("a copied director desk", () => {
+  it("takes a stage of its own that the original cannot edit", () => {
+    const moka = buildGoldenMokaFile();
+    const scene = createDirectorScene("Desk");
+    const desk = createDirectorNode(scene, { x: 0, y: 0 });
+    moka.directorScenes = [scene];
+    moka.canvas[0].nodes.push(desk);
+
+    const fragment = buildFragment(moka.canvas[0], [desk.id], moka);
+    if (!fragment) throw new Error("the desk is on the canvas");
+    expect(fragment.directorScenes).toHaveLength(1);
+
+    const made = instantiateFragment(fragment, moka, { x: 0, y: 400 });
+    expect(made.scenes).toHaveLength(1);
+    expect(made.scenes[0].id).not.toBe(scene.id);
+    const copy = made.nodes[0];
+    expect(
+      (copy.data as { director: { sceneId: string } }).director.sceneId,
+    ).toBe(made.scenes[0].id);
+  });
+
+  it("carries its stage into a project that has never held it", () => {
+    const source = buildGoldenMokaFile();
+    const scene = createDirectorScene("Desk");
+    const desk = createDirectorNode(scene, { x: 0, y: 0 });
+    source.directorScenes = [scene];
+    source.canvas[0].nodes.push(desk);
+    const fragment = buildFragment(source.canvas[0], [desk.id], source);
+    if (!fragment) throw new Error("the desk is on the canvas");
+
+    // A second project has its own document and no scene of that id.
+    const target = buildGoldenMokaFile();
+    const made = instantiateFragment(fragment, target, { x: 0, y: 0 });
+    expect(made.scenes).toHaveLength(1);
+    expect(made.scenes[0].title).toBe("Desk");
+    expect(
+      (made.nodes[0].data as { director: { sceneId: string } }).director
+        .sceneId,
+    ).toBe(made.scenes[0].id);
+  });
+
+  it("starts the copied desk without the original's delivered files", () => {
+    const moka = buildGoldenMokaFile();
+    const scene = createDirectorScene("Desk");
+    const desk = createDirectorNode(scene, { x: 0, y: 0 });
+    (desk.data as { director: Record<string, unknown> }).director = {
+      sceneId: scene.id,
+      frameAssetId: "frame-asset",
+      blockingAssetId: "blocking-asset",
+      frameShotId: scene.shots[0].id,
+      directionText: "a delivered shot",
+      deliveredAt: new Date().toISOString(),
+    };
+    moka.directorScenes = [scene];
+    moka.canvas[0].nodes.push(desk);
+    const fragment = buildFragment(moka.canvas[0], [desk.id], moka);
+    if (!fragment) throw new Error("the desk is on the canvas");
+
+    const made = instantiateFragment(fragment, moka, { x: 0, y: 0 });
+    expect(made.nodes[0].data).toEqual({
+      director: { sceneId: made.scenes[0].id },
+    });
   });
 });
