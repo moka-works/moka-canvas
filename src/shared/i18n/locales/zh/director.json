@@ -47,7 +47,9 @@
   },
   "environment": {
     "failed": "全景图加载失败，当前使用背景色。",
-    "retry": "重试全景图"
+    "retry": "重试全景图",
+    "color": "背景色",
+    "panorama": "360° 全景"
   },
   "card": {
     "sceneMissing": "场景缺失",
@@ -113,6 +115,317 @@
     "car": "车形",
     "backdrop": "背板",
     "subject": "主体",
-    "sideProp": "侧道具"
+    "sideProp": "侧道具",
+    "geometry": "基础几何"
+  },
+  "board": {
+    "title": "场记板",
+    "actors": "演员",
+    "props": "陈设",
+    "cameras": "机位",
+    "lights": "灯光",
+    "reference": "参考",
+    "search": "搜索",
+    "cast": "角色",
+    "models": "3D 模型",
+    "objects": "对象",
+    "noActors": "舞台上还没有演员",
+    "noObjects": "还没有对象",
+    "stats": "{{actors}} 名演员 · {{props}} 个对象 · {{cameras}} 台机位 · {{lights}} 盏灯",
+    "resize": "调整场记板宽度",
+    "toggleVisible": "显示或隐藏 {{name}}",
+    "duplicate": "复制 {{name}}",
+    "remove": "删除 {{name}}"
+  },
+  "actors": {
+    "humanoid": "人形",
+    "animal": "四足",
+    "ensemble": "添加 8 人群像",
+    "standard": "标准成人",
+    "youth": "少年",
+    "senior": "长者",
+    "broad": "魁梧",
+    "slim": "纤细",
+    "stylized": "卡通比例",
+    "dog": "犬型",
+    "horse": "马型",
+    "crossFormConfirm": "人形与四足之间切换会清空姿态、骨骼覆盖、骨骼关键帧、动作片段与骨骼映射，保留对象级关键帧、名称和颜色。继续吗？"
+  },
+  "shapes": {
+    "box": "立方体",
+    "sphere": "球体",
+    "cylinder": "圆柱",
+    "plane": "平面"
+  },
+  "objectKind": {
+    "solid": "几何体",
+    "model": "模型",
+    "performer": "演员",
+    "plate": "背板"
+  },
+  "poses": {
+    "neutral": "自然",
+    "stand": "站立",
+    "t_pose": "T 型",
+    "walk": "行走",
+    "run": "跑步",
+    "sit": "坐姿",
+    "squat": "蹲下",
+    "kneel_single": "单膝跪",
+    "kneel_double": "双膝跪",
+    "hands_hips": "叉腰",
+    "lean": "倚靠",
+    "bow": "鞠躬",
+    "think": "思考",
+    "fight": "格斗",
+    "kick": "踢球",
+    "throw": "投掷",
+    "push": "推进",
+    "wave": "招手",
+    "reach": "伸手",
+    "arms_crossed": "抱臂",
+    "phone": "看手机",
+    "animal_stand": "站立",
+    "animal_sit": "坐",
+    "animal_lie": "卧",
+    "animal_walk": "走",
+    "animal_run": "跑",
+    "animal_alert": "警觉"
+  },
+  "accessory": {
+    "none": "无",
+    "cane": "手杖",
+    "horns": "角",
+    "crown": "王冠"
+  },
+  "propGroups": {
+    "furniture": "陈设",
+    "space": "空间",
+    "environment": "环境",
+    "props": "器物",
+    "geometry": "基础几何"
+  },
+  "cameras": {
+    "presets": "机位预设",
+    "add": "添加机位",
+    "inShot": "用于镜头",
+    "lastOne": "场景至少保留一台机位"
+  },
+  "cameraPresets": {
+    "frontWide": "正面全景",
+    "frontMedium": "正面中景",
+    "frontClose": "正面近景",
+    "sideFollow": "侧面跟随",
+    "backMedium": "背面中景",
+    "highBlocking": "高位调度",
+    "overhead": "顶部俯拍",
+    "lowAngle": "低角",
+    "overShoulderLeft": "越肩左",
+    "overShoulderRight": "越肩右",
+    "diagonal": "斜角"
+  },
+  "lights": {
+    "add": "添加灯光",
+    "directional": "方向光",
+    "point": "点光",
+    "spot": "聚光",
+    "ambient": "环境光"
+  },
+  "light": {
+    "directional": "方向光",
+    "point": "点光",
+    "spot": "聚光",
+    "ambient": "环境光"
+  },
+  "reference": {
+    "title": "接入的参考板",
+    "note": "连到导演台的图片会先放在这里，选中后才会进入场景。",
+    "panorama": "设为全景",
+    "plate": "设为背板",
+    "view": "查看",
+    "noAsset": "该节点没有可用素材",
+    "empty": "没有已连接的上游图片"
+  },
+  "field": {
+    "name": "名称",
+    "visible": "可见",
+    "castShadow": "投射阴影",
+    "receiveShadow": "接收阴影",
+    "appearance": "外观",
+    "color": "颜色",
+    "archetype": "原型",
+    "pose": "姿态",
+    "stature": "身高",
+    "headScale": "头身比",
+    "shoulderSpan": "肩宽",
+    "torsoShare": "躯干比例",
+    "accessory": "配件",
+    "shoulderHeight": "肩高",
+    "bodyLength": "体长",
+    "bodyWidth": "体宽",
+    "transform": "变换",
+    "position": "位置",
+    "rotation": "旋转",
+    "scale": "缩放",
+    "focalLength": "焦段",
+    "aperture": "光圈",
+    "focusDistance": "焦点距离",
+    "near": "近裁剪面",
+    "far": "远裁剪面",
+    "target": "目标点",
+    "intensity": "强度",
+    "angle": "锥角",
+    "penumbra": "半影",
+    "camera": "机位",
+    "duration": "时长",
+    "fps": "帧率",
+    "aspectRatio": "画幅",
+    "shotSize": "景别",
+    "cameraMove": "运镜",
+    "prompt": "本镜补充",
+    "background": "背景色",
+    "environmentIntensity": "环境光强度",
+    "gridVisible": "网格",
+    "environmentMode": "环境",
+    "panorama": "全景图",
+    "rotationY": "全景旋转",
+    "useAsLighting": "全景参与照明",
+    "lightingIntensity": "全景照明强度",
+    "sceneTitle": "场景标题"
+  },
+  "cardPanel": {
+    "title": "镜头卡",
+    "object": "当前对象",
+    "shot": "镜头",
+    "scene": "场景",
+    "objectSection": "对象",
+    "performer": "演员",
+    "asset": "模型",
+    "assetMissing": "素材不在当前项目中",
+    "keyframes": "关键帧",
+    "keyframeCount": "该对象有 {{count}} 个关键帧",
+    "clearSelection": "取消选择",
+    "apertureNote": "光圈与焦点距离只进入提示词，不改变预览景深。",
+    "fovReadout": "水平视角 {{value}}°",
+    "bones": "该形态有 {{count}} 根可编辑骨骼",
+    "camera": "机位",
+    "light": "灯光",
+    "promptHint": "你写的补充描述会置顶进入编译后的提示词。",
+    "environment": "环境",
+    "limits": "场景上限",
+    "counts": "{{objects}} 个对象 · {{cameras}} 台机位 · {{lights}} 盏灯 · {{shots}} 个镜头",
+    "nothing": "在视口中选择对象、机位或灯光。",
+    "noShot": "该场景还没有镜头",
+    "resize": "调整镜头卡宽度"
+  },
+  "shots": {
+    "strip": "镜头条",
+    "add": "新增镜头"
+  },
+  "mode": {
+    "label": "模式",
+    "stage": "摆场",
+    "perform": "表演",
+    "motion": "运动",
+    "lens": "镜头"
+  },
+  "save": {
+    "saved": "已保存",
+    "saving": "保存中",
+    "failed": "保存失败",
+    "conflict": "项目已在别处修改",
+    "retry": "重试",
+    "reload": "重新载入最新项目",
+    "conflictBanner": "项目已在另一个窗口修改。重新载入前，导演台编辑已冻结。",
+    "frozen": "项目已在别处修改，请重新载入后再编辑。"
+  },
+  "deliver": {
+    "action": "回写取景",
+    "working": "回写中…"
+  },
+  "confirm": {
+    "title": "确认",
+    "cancel": "取消"
+  },
+  "exit": {
+    "conflictTitle": "项目已在别处修改",
+    "errorTitle": "场景未能保存",
+    "body": "你的改动仍在。可以留在导演台、重试保存，或重新载入最新项目。",
+    "stay": "留在导演台",
+    "retry": "重试并返回"
+  },
+  "staging": {
+    "copyOf": "{{name}} 副本",
+    "shotName": "镜头 {{n}}"
+  },
+  "dock": {
+    "label": "视口工具",
+    "board": "显示/隐藏场记板",
+    "card": "显示/隐藏镜头卡",
+    "timeline": "显示调度带"
+  },
+  "transform": {
+    "translate": "移动",
+    "rotate": "旋转",
+    "scale": "缩放",
+    "short": {
+      "translate": "移动",
+      "rotate": "旋转",
+      "scale": "缩放"
+    }
+  },
+  "navigation": {
+    "focus": "聚焦选中对象",
+    "focusShort": "聚焦",
+    "fit": "适配全部",
+    "fitShort": "适配",
+    "closer": "拉近",
+    "farther": "拉远",
+    "reset": "重置自由视角",
+    "resetShort": "重置"
+  },
+  "blocking": {
+    "title": "调度带",
+    "show": "显示调度带",
+    "hide": "收起",
+    "pending": "调度带会随运动工具一起提供。",
+    "onlyInMotion": ""
+  },
+  "onboarding": {
+    "title": "上手引导",
+    "open": "打开引导",
+    "step": "第 {{current}} / {{total}} 步",
+    "back": "上一步",
+    "next": "下一步",
+    "skip": "跳过",
+    "finish": "完成",
+    "addActor": {
+      "title": "添加演员",
+      "body": "在场记板的演员页选择一名演员。六种人形与两种四足原型都使用真实米制尺寸。"
+    },
+    "placeActor": {
+      "title": "放置演员",
+      "body": "选中演员后点击地面即可落位，其他对象会自动避让。"
+    },
+    "poseActor": {
+      "title": "调整姿态",
+      "body": "切换到表演模式选择姿态，或在镜头卡中调整身体参数。"
+    },
+    "recordKeys": {
+      "title": "记录关键帧",
+      "body": "在运动模式下设置播放头，记录演员的位置与机位运动。"
+    },
+    "checkFrame": {
+      "title": "检查取景",
+      "body": "切换到镜头模式，用 CAM 查看构图。画幅与机位决定最终回写的画面。"
+    },
+    "recordBlocking": {
+      "title": "录制调度参考",
+      "body": "以白模录制这一镜，并与取景定帧一起保留。"
+    },
+    "deliver": {
+      "title": "回写取景",
+      "body": "把镜头回写到节点，然后把取景定帧、调度参考和镜头提示词连到视频节点。"
+    }
   }
 }

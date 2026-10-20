@@ -47,7 +47,9 @@
   },
   "environment": {
     "failed": "The panorama could not be loaded; the background colour is in use.",
-    "retry": "Retry the panorama"
+    "retry": "Retry the panorama",
+    "color": "Background colour",
+    "panorama": "360° panorama"
   },
   "card": {
     "sceneMissing": "Scene missing",
@@ -113,6 +115,317 @@
     "car": "Car",
     "backdrop": "Backdrop",
     "subject": "Subject",
-    "sideProp": "Side prop"
+    "sideProp": "Side prop",
+    "geometry": "Geometry"
+  },
+  "board": {
+    "title": "Director board",
+    "actors": "Actors",
+    "props": "Set",
+    "cameras": "Cameras",
+    "lights": "Lights",
+    "reference": "Plates",
+    "search": "Search",
+    "cast": "Cast",
+    "models": "3D models",
+    "objects": "Objects",
+    "noActors": "No actors on this stage yet",
+    "noObjects": "No objects yet",
+    "stats": "{{actors}} actors · {{props}} objects · {{cameras}} cameras · {{lights}} lights",
+    "resize": "Resize the director board",
+    "toggleVisible": "Show or hide {{name}}",
+    "duplicate": "Duplicate {{name}}",
+    "remove": "Remove {{name}}"
+  },
+  "actors": {
+    "humanoid": "Humanoid",
+    "animal": "Quadruped",
+    "ensemble": "Add an ensemble of eight",
+    "standard": "Standard adult",
+    "youth": "Youth",
+    "senior": "Senior",
+    "broad": "Broad",
+    "slim": "Slim",
+    "stylized": "Stylized",
+    "dog": "Dog",
+    "horse": "Horse",
+    "crossFormConfirm": "Changing between humanoid and quadruped clears the pose, bone overrides, bone keyframes, motion clips, and rig. Object keyframes, name, and colour are kept. Continue?"
+  },
+  "shapes": {
+    "box": "Box",
+    "sphere": "Sphere",
+    "cylinder": "Cylinder",
+    "plane": "Plane"
+  },
+  "objectKind": {
+    "solid": "Solid",
+    "model": "Model",
+    "performer": "Performer",
+    "plate": "Plate"
+  },
+  "poses": {
+    "neutral": "Natural",
+    "stand": "Standing",
+    "t_pose": "T-pose",
+    "walk": "Walking",
+    "run": "Running",
+    "sit": "Sitting",
+    "squat": "Squatting",
+    "kneel_single": "Kneeling (one knee)",
+    "kneel_double": "Kneeling (both knees)",
+    "hands_hips": "Hands on hips",
+    "lean": "Leaning",
+    "bow": "Bowing",
+    "think": "Thinking",
+    "fight": "Fighting",
+    "kick": "Kicking",
+    "throw": "Throwing",
+    "push": "Pushing",
+    "wave": "Waving",
+    "reach": "Reaching",
+    "arms_crossed": "Arms crossed",
+    "phone": "On the phone",
+    "animal_stand": "Standing",
+    "animal_sit": "Sitting",
+    "animal_lie": "Lying",
+    "animal_walk": "Walking",
+    "animal_run": "Running",
+    "animal_alert": "Alert"
+  },
+  "accessory": {
+    "none": "None",
+    "cane": "Cane",
+    "horns": "Horns",
+    "crown": "Crown"
+  },
+  "propGroups": {
+    "furniture": "Furniture",
+    "space": "Space",
+    "environment": "Environment",
+    "props": "Props",
+    "geometry": "Geometry"
+  },
+  "cameras": {
+    "presets": "Camera positions",
+    "add": "Add a camera",
+    "inShot": "in shot",
+    "lastOne": "A scene keeps at least one camera"
+  },
+  "cameraPresets": {
+    "frontWide": "Front wide",
+    "frontMedium": "Front medium",
+    "frontClose": "Front close",
+    "sideFollow": "Side follow",
+    "backMedium": "Back medium",
+    "highBlocking": "High blocking",
+    "overhead": "Overhead",
+    "lowAngle": "Low angle",
+    "overShoulderLeft": "Over shoulder left",
+    "overShoulderRight": "Over shoulder right",
+    "diagonal": "Diagonal"
+  },
+  "lights": {
+    "add": "Add a light",
+    "directional": "Directional",
+    "point": "Point",
+    "spot": "Spot",
+    "ambient": "Ambient"
+  },
+  "light": {
+    "directional": "Directional light",
+    "point": "Point light",
+    "spot": "Spot light",
+    "ambient": "Ambient light"
+  },
+  "reference": {
+    "title": "Plates wired in",
+    "note": "Pictures wired into this desk wait here. Nothing enters the scene until you choose it.",
+    "panorama": "Use as panorama",
+    "plate": "Use as plate",
+    "view": "View",
+    "noAsset": "This node has no usable asset",
+    "empty": "No upstream pictures are wired to this desk"
+  },
+  "field": {
+    "name": "Name",
+    "visible": "Visible",
+    "castShadow": "Cast shadow",
+    "receiveShadow": "Receive shadow",
+    "appearance": "Appearance",
+    "color": "Colour",
+    "archetype": "Archetype",
+    "pose": "Pose",
+    "stature": "Height",
+    "headScale": "Head scale",
+    "shoulderSpan": "Shoulder width",
+    "torsoShare": "Torso share",
+    "accessory": "Accessory",
+    "shoulderHeight": "Shoulder height",
+    "bodyLength": "Body length",
+    "bodyWidth": "Body width",
+    "transform": "Transform",
+    "position": "Position",
+    "rotation": "Rotation",
+    "scale": "Scale",
+    "focalLength": "Focal length",
+    "aperture": "Aperture",
+    "focusDistance": "Focus distance",
+    "near": "Near plane",
+    "far": "Far plane",
+    "target": "Target",
+    "intensity": "Intensity",
+    "angle": "Cone angle",
+    "penumbra": "Penumbra",
+    "camera": "Camera",
+    "duration": "Duration",
+    "fps": "Frame rate",
+    "aspectRatio": "Frame",
+    "shotSize": "Shot size",
+    "cameraMove": "Camera move",
+    "prompt": "Scene notes",
+    "background": "Background",
+    "environmentIntensity": "Environment light",
+    "gridVisible": "Grid",
+    "environmentMode": "Environment",
+    "panorama": "Panorama",
+    "rotationY": "Panorama rotation",
+    "useAsLighting": "Light with the panorama",
+    "lightingIntensity": "Panorama light strength",
+    "sceneTitle": "Scene title"
+  },
+  "cardPanel": {
+    "title": "Shot card",
+    "object": "Current",
+    "shot": "Shot",
+    "scene": "Scene",
+    "objectSection": "Object",
+    "performer": "Performer",
+    "asset": "Model",
+    "assetMissing": "The asset is not in this project",
+    "keyframes": "Keyframes",
+    "keyframeCount": "{{count}} keyframes on this object",
+    "clearSelection": "Clear selection",
+    "apertureNote": "Aperture and focus distance go into the prompt; they do not change the preview depth of field.",
+    "fovReadout": "Horizontal field of view {{value}}°",
+    "bones": "{{count}} editable bones on this form",
+    "camera": "Camera",
+    "light": "Light",
+    "promptHint": "Your own words come first in the compiled prompt.",
+    "environment": "Environment",
+    "limits": "Scene limits",
+    "counts": "{{objects}} objects · {{cameras}} cameras · {{lights}} lights · {{shots}} shots",
+    "nothing": "Select an object, camera, or light in the viewport.",
+    "noShot": "This scene has no shot",
+    "resize": "Resize the shot card"
+  },
+  "shots": {
+    "strip": "Shots",
+    "add": "Add a shot"
+  },
+  "mode": {
+    "label": "Mode",
+    "stage": "Stage",
+    "perform": "Perform",
+    "motion": "Motion",
+    "lens": "Lens"
+  },
+  "save": {
+    "saved": "Saved",
+    "saving": "Saving",
+    "failed": "Not saved",
+    "conflict": "Project changed elsewhere",
+    "retry": "Retry",
+    "reload": "Reload the latest project",
+    "conflictBanner": "The project changed in another window. Editing is frozen until it is reloaded.",
+    "frozen": "The project changed elsewhere; reload before editing."
+  },
+  "deliver": {
+    "action": "Deliver frame",
+    "working": "Delivering…"
+  },
+  "confirm": {
+    "title": "Confirm",
+    "cancel": "Cancel"
+  },
+  "exit": {
+    "conflictTitle": "The project changed elsewhere",
+    "errorTitle": "The scene could not be saved",
+    "body": "Your changes are still here. You can stay, retry the save, or reload the latest project.",
+    "stay": "Stay in the desk",
+    "retry": "Retry and leave"
+  },
+  "staging": {
+    "copyOf": "{{name}} copy",
+    "shotName": "Shot {{n}}"
+  },
+  "dock": {
+    "label": "Viewport tools",
+    "board": "Show or hide the board",
+    "card": "Show or hide the shot card",
+    "timeline": "Show the motion strip"
+  },
+  "transform": {
+    "translate": "Move",
+    "rotate": "Rotate",
+    "scale": "Scale",
+    "short": {
+      "translate": "Move",
+      "rotate": "Rotate",
+      "scale": "Scale"
+    }
+  },
+  "navigation": {
+    "focus": "Focus the selection",
+    "focusShort": "Focus",
+    "fit": "Fit everything",
+    "fitShort": "Fit",
+    "closer": "Move closer",
+    "farther": "Move farther",
+    "reset": "Reset the free view",
+    "resetShort": "Reset"
+  },
+  "blocking": {
+    "title": "Blocking",
+    "show": "Show the motion strip",
+    "hide": "Hide",
+    "pending": "The motion timeline arrives with the motion tools.",
+    "onlyInMotion": ""
+  },
+  "onboarding": {
+    "title": "Getting started",
+    "open": "Open the guide",
+    "step": "Step {{current}} of {{total}}",
+    "back": "Back",
+    "next": "Next",
+    "skip": "Skip",
+    "finish": "Finish",
+    "addActor": {
+      "title": "Add an actor",
+      "body": "Choose an actor from the Actors page of the board. The six humanoid and two quadruped starting points all use real metre sizes."
+    },
+    "placeActor": {
+      "title": "Place the actor",
+      "body": "Select the actor and tap the ground to move them there. Other objects keep their distance automatically."
+    },
+    "poseActor": {
+      "title": "Pose the actor",
+      "body": "Switch to Perform and choose a pose, or adjust the body in the shot card."
+    },
+    "recordKeys": {
+      "title": "Record keyframes",
+      "body": "In Motion, set the playhead and record the actor's position and the camera's move."
+    },
+    "checkFrame": {
+      "title": "Check the frame",
+      "body": "Switch to Lens and look through CAM. The shot's frame and camera decide what is delivered."
+    },
+    "recordBlocking": {
+      "title": "Record a blocking reference",
+      "body": "Record the shot as a blockout video and keep it beside the frame."
+    },
+    "deliver": {
+      "title": "Deliver the frame",
+      "body": "Deliver the shot to the card, then wire its frame, blocking reference, and lens direction into a video node."
+    }
   }
 }

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { exportCanvasImage } from "../interactions/actions";
 import { useActiveCanvas } from "../stores/projectStore";
 import { CanvasTabs } from "./CanvasTabs";
+import { DirectorTab } from "./DirectorTab";
 import { PageTopBar } from "./PageTopBar";
 
 interface TopBarProps {
@@ -48,7 +49,12 @@ export function TopBar({ onBack, onExport }: TopBarProps) {
           </button>
         </>
       }
-      tabs={<CanvasTabs />}
+      tabs={
+        <>
+          <CanvasTabs />
+          <DirectorTab />
+        </>
+      }
     />
   );
 }

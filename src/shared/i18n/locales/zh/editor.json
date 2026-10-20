@@ -37,7 +37,9 @@
     "tag": "标签",
     "undoLastMark": "撤销上一个标记",
     "ungroup": "取消分组",
-    "view": "查看"
+    "view": "查看",
+    "undo": "撤销",
+    "redo": "重做"
   },
   "field": {
     "about": "简介",
@@ -345,7 +347,21 @@
     "notConnected": "未连接",
     "inputsSection": "输入",
     "disconnect": "断开连接",
-    "clickCompatible": "在画布上点击一个兼容的源节点（Esc 取消）"
+    "clickCompatible": "在画布上点击一个兼容的源节点（Esc 取消）",
+    "director": {
+      "title": "导演台",
+      "scene": "场景",
+      "shot": "镜头",
+      "noShot": "尚无镜头",
+      "counts": "对象 / 机位 / 灯光",
+      "frame": "取景定帧",
+      "staleShot": "当前镜头未回写",
+      "notDelivered": "这个导演台还没有回写内容。进入导演台完成取景。",
+      "copyPrompt": "复制镜头提示词",
+      "open": "进入导演台",
+      "sceneMissing": "这张卡片指向的场景已不在项目中。",
+      "recover": "新建空场景"
+    }
   },
   "runHistory": {
     "title": "历史",

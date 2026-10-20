@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type Ref } from "react";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -6,6 +6,7 @@ import {
   EdgesGeometry,
   Float32BufferAttribute,
   Vector3,
+  type Group,
 } from "three";
 import {
   DIRECTOR_HUMANOID_BUILDS,
@@ -18,6 +19,7 @@ import { verticalFov } from "./framing";
 interface RigProps {
   selected: boolean;
   onSelect: () => void;
+  groupRef?: Ref<Group>;
 }
 
 function FrustumLines({ camera }: { camera: DirectorCamera }) {
@@ -83,10 +85,15 @@ export function CameraRigView({
   camera,
   selected,
   onSelect,
+  groupRef,
 }: RigProps & { camera: DirectorCamera }) {
   const [x, y, z] = camera.transform.position;
   return (
-    <group position={[x, y, z]} userData={{ directorHelper: true }}>
+    <group
+      position={[x, y, z]}
+      ref={groupRef}
+      userData={{ directorHelper: true }}
+    >
       <mesh
         onPointerDown={(event) => {
           event.stopPropagation();
@@ -115,11 +122,16 @@ export function LightRigView({
   light,
   selected,
   onSelect,
+  groupRef,
 }: RigProps & { light: DirectorLight }) {
   const [x, y, z] = light.transform.position;
   const hasAim = light.type === "directional" || light.type === "spot";
   return (
-    <group position={[x, y, z]} userData={{ directorHelper: true }}>
+    <group
+      position={[x, y, z]}
+      ref={groupRef}
+      userData={{ directorHelper: true }}
+    >
       <mesh
         onPointerDown={(event) => {
           event.stopPropagation();

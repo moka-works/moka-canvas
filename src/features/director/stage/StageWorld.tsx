@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
-import { Grid, OrbitControls } from "@react-three/drei";
+import { Grid, OrbitControls, TransformControls } from "@react-three/drei";
 import {
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Vector3,
+  type Group,
   type Material,
   type Object3D,
 } from "three";
@@ -16,7 +17,13 @@ import {
   shotCamera,
   type DirectorRenderMode,
   type DirectorScene,
+  type DirectorTransform,
 } from "../../../shared/domain";
+import type {
+  DirectorSelection,
+  DirectorTransformMode,
+  DirectorViewportApi,
+} from "../types";
 import { EnvironmentView } from "./EnvironmentView";
 import { ModelView, PlateView, SolidView } from "./ModelView";
 import { PerformerView } from "./PerformerView";
@@ -30,21 +37,25 @@ import {
   verticalFov,
 } from "./framing";
 
-export interface DirectorSelection {
-  kind: "object" | "camera" | "light";
-  id: string;
-}
-
 export interface StageWorldProps {
   scene: DirectorScene;
   view: DirectorView;
   renderMode: DirectorRenderMode;
+  transformMode: DirectorTransformMode;
   selection: DirectorSelection | null;
   onSelect: (selection: DirectorSelection | null) => void;
   onModelError: (objectId: string, message: string) => void;
   onEnvironmentError: (message: string) => void;
   onCameraFallback: (reason: string) => void;
   onModelLoaded: (objectId: string, animationNames: string[]) => void;
+  onGroundPoint: (x: number, z: number) => void;
+  onTransformPreview: (
+    selection: DirectorSelection,
+    transform: DirectorTransform,
+  ) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
+  apiRef?: { current: DirectorViewportApi | null };
   reloadToken: number;
 }
 
@@ -239,12 +250,18 @@ export function StageWorld({
   scene,
   view,
   renderMode,
+  transformMode,
   selection,
   onSelect,
   onModelError,
   onEnvironmentError,
   onCameraFallback,
   onModelLoaded,
+  onGroundPoint,
+  onTransformPreview,
+  onGestureStart,
+  onGestureEnd,
+  apiRef,
   reloadToken,
 }: StageWorldProps) {
   const { camera: activeCamera, size, set, invalidate } = useThree();
@@ -255,8 +272,121 @@ export function StageWorld({
   const shot = useMemo(() => new PerspectiveCamera(), []);
   const ortho = useMemo(() => new OrthographicCamera(), []);
   const [loadedKey, setLoadedKey] = useState(0);
+  const [selectedNode, setSelectedNode] = useState<Object3D | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const objectRefs = useRef(new Map<string, Group>());
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const refCallbacks = useRef(new Map<string, (node: Group | null) => void>());
+  const groundDown = useRef<{ x: number; y: number } | null>(null);
+  const controls = useRef<{ target: Vector3; update: () => void } | null>(null);
   const aspect =
     size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 9;
+
+  const refFor = (id: string) => {
+    const held = refCallbacks.current.get(id);
+    if (held) return held;
+    const callback = (node: Group | null) => {
+      if (node) objectRefs.current.set(id, node);
+      else objectRefs.current.delete(id);
+      if (selectionRef.current?.id === id) setSelectedNode(node);
+    };
+    refCallbacks.current.set(id, callback);
+    return callback;
+  };
+
+  useEffect(() => {
+    setSelectedNode(
+      selection ? (objectRefs.current.get(selection.id) ?? null) : null,
+    );
+  }, [selection, scene.objects, scene.cameras, scene.lights]);
+
+  useEffect(() => {
+    if (!apiRef) return;
+    const focusTarget = (): Vector3 | null => {
+      if (!selection) return null;
+      if (selection.kind === "object") {
+        const object = scene.objects.find((entry) => entry.id === selection.id);
+        if (!object) return null;
+        const [x, y, z] = object.transform.position;
+        const height =
+          object.kind === "performer"
+            ? (object.actorBuild?.stature ??
+                object.animalBuild?.shoulderHeight ??
+                1.7) * object.transform.scale[1]
+            : object.kind === "model"
+              ? 0.95 * object.transform.scale[1]
+              : 0.5 * object.transform.scale[1];
+        return new Vector3(x, y + height, z);
+      }
+      if (selection.kind === "camera") {
+        const camera = scene.cameras.find((entry) => entry.id === selection.id);
+        return camera ? new Vector3(...camera.transform.position) : null;
+      }
+      const light = scene.lights.find((entry) => entry.id === selection.id);
+      return light ? new Vector3(...light.transform.position) : null;
+    };
+    const api: DirectorViewportApi = {
+      focusSelection: () => {
+        const camera = freeCamera.current;
+        const target = focusTarget();
+        if (!camera || !target) return;
+        const currentTarget = controls.current?.target ?? new Vector3(0, 1, 0);
+        const direction = camera.position.clone().sub(currentTarget);
+        if (direction.lengthSq() < 1e-6) direction.set(6, 3, 8);
+        direction.normalize();
+        camera.position.copy(target).addScaledVector(direction, 3.2);
+        if (controls.current) {
+          controls.current.target.copy(target);
+          controls.current.update();
+        }
+        invalidate();
+      },
+      fitAll: () => {
+        const camera = freeCamera.current;
+        if (!camera) return;
+        const bounds = stageBounds(scene);
+        const centre = new Vector3(...bounds.center);
+        const radius = Math.max(1.5, Math.hypot(...bounds.span) / 2);
+        const currentTarget = controls.current?.target ?? centre;
+        const direction = camera.position.clone().sub(currentTarget);
+        if (direction.lengthSq() < 1e-6) direction.set(6, 3, 8);
+        direction.normalize();
+        camera.position.copy(centre).addScaledVector(direction, radius * 2.4);
+        if (controls.current) {
+          controls.current.target.copy(centre);
+          controls.current.update();
+        }
+        invalidate();
+      },
+      resetView: () => {
+        const camera = freeCamera.current;
+        if (!camera) return;
+        camera.position.set(6, 2.6, 7.8);
+        if (controls.current) {
+          controls.current.target.set(0, 1.05, 0);
+          controls.current.update();
+        }
+        invalidate();
+      },
+      dolly: (factor: number) => {
+        const camera = freeCamera.current;
+        if (!camera) return;
+        const target = controls.current?.target ?? new Vector3(0, 1.05, 0);
+        camera.position.copy(
+          target
+            .clone()
+            .addScaledVector(camera.position.clone().sub(target), factor),
+        );
+        controls.current?.update();
+        invalidate();
+      },
+    };
+    apiRef.current = api;
+    return () => {
+      if (apiRef.current === api) apiRef.current = null;
+    };
+  }, [apiRef, scene, selection, invalidate]);
 
   const reportFallback = useCallback(
     (reason: string) => {
@@ -309,7 +439,28 @@ export function StageWorld({
         environmentIntensity={scene.environmentIntensity}
         onError={onEnvironmentError}
       />
-      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+      <mesh
+        onPointerDown={(event) => {
+          groundDown.current = {
+            x: event.nativeEvent.clientX,
+            y: event.nativeEvent.clientY,
+          };
+        }}
+        onPointerUp={(event) => {
+          const start = groundDown.current;
+          groundDown.current = null;
+          if (!start || selection?.kind !== "object") return;
+          const moved = Math.hypot(
+            event.nativeEvent.clientX - start.x,
+            event.nativeEvent.clientY - start.y,
+          );
+          // A press that travelled is an orbit; only a tap places something.
+          if (moved > 5) return;
+          onGroundPoint(event.point.x, event.point.z);
+        }}
+        receiveShadow
+        rotation-x={-Math.PI / 2}
+      >
         <planeGeometry args={[120, 120]} />
         <meshStandardMaterial
           color={STAGE_FLOOR}
@@ -344,6 +495,7 @@ export function StageWorld({
               onSelect({ kind: "object", id: object.id });
             }}
             position={object.transform.position}
+            ref={refFor(object.id)}
             rotation={object.transform.rotation}
             scale={object.transform.scale}
           >
@@ -377,6 +529,7 @@ export function StageWorld({
             <group key={camera.id}>
               <CameraRigView
                 camera={camera}
+                groupRef={refFor(camera.id)}
                 onSelect={() => onSelect({ kind: "camera", id: camera.id })}
                 selected={selected}
               />
@@ -390,6 +543,7 @@ export function StageWorld({
           return (
             <LightRigView
               key={light.id}
+              groupRef={refFor(light.id)}
               light={light}
               onSelect={() => onSelect({ kind: "light", id: light.id })}
               selected={selected}
@@ -401,12 +555,48 @@ export function StageWorld({
         mode={renderMode}
         sceneKey={scene.updatedAt}
       />
+      {view === "free" && selection && selectedNode && (
+        <TransformControls
+          mode={transformMode}
+          object={selectedNode}
+          onMouseDown={() => {
+            setDragging(true);
+            onGestureStart();
+          }}
+          onMouseUp={() => {
+            setDragging(false);
+            onGestureEnd();
+          }}
+          onObjectChange={() => {
+            if (!selectedNode) return;
+            onTransformPreview(selection, {
+              position: [
+                selectedNode.position.x,
+                selectedNode.position.y,
+                selectedNode.position.z,
+              ],
+              rotation: [
+                selectedNode.rotation.x,
+                selectedNode.rotation.y,
+                selectedNode.rotation.z,
+              ],
+              scale: [
+                selectedNode.scale.x,
+                selectedNode.scale.y,
+                selectedNode.scale.z,
+              ],
+            });
+          }}
+          size={0.85}
+        />
+      )}
       <OrbitControls
         dampingFactor={0.08}
-        enabled={view === "free"}
+        enabled={view === "free" && !dragging}
         maxDistance={80}
         minDistance={0.35}
         panSpeed={0.85}
+        ref={controls as never}
         rotateSpeed={0.7}
         target={[0, 1.05, 0]}
         zoomSpeed={0.85}

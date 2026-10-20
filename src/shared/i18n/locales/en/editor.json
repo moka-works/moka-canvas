@@ -37,7 +37,9 @@
     "tag": "Tag",
     "undoLastMark": "Undo the last mark",
     "ungroup": "Ungroup",
-    "view": "View"
+    "view": "View",
+    "undo": "Undo",
+    "redo": "Redo"
   },
   "field": {
     "about": "About",
@@ -345,7 +347,21 @@
     "notConnected": "Not connected",
     "inputsSection": "Inputs",
     "disconnect": "Disconnect",
-    "clickCompatible": "Click a compatible source node on the canvas (Esc to cancel)"
+    "clickCompatible": "Click a compatible source node on the canvas (Esc to cancel)",
+    "director": {
+      "title": "Director desk",
+      "scene": "Scene",
+      "shot": "Shot",
+      "noShot": "No shot",
+      "counts": "Objects / cameras / lights",
+      "frame": "Shot frame",
+      "staleShot": "current shot not delivered",
+      "notDelivered": "Nothing has been delivered from this desk yet. Open it to frame a shot.",
+      "copyPrompt": "Copy the lens direction",
+      "open": "Enter the director desk",
+      "sceneMissing": "This card points at a scene that is not in the project.",
+      "recover": "Stage an empty scene"
+    }
   },
   "runHistory": {
     "title": "History",

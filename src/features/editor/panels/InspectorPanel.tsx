@@ -17,11 +17,17 @@ import {
   BACKGROUND_MODES,
   CAPABILITY_LABELS,
   PROVIDER_EXECUTOR_KEY,
+  activeShotOf,
   assetHolders,
+  createDirectorScene,
+  directorSceneOf,
   executorKeyForNode,
   generationSpecFromSnapshot,
 } from "../../../shared/domain";
 import { assetUrl } from "../../../api";
+import { i18n } from "../../../shared/i18n";
+import { execute } from "../commands/execute";
+import { openDirector } from "../../director/stores/directorStore";
 import { errorText } from "../../../api/client";
 import {
   generationUnavailable,
@@ -774,6 +780,9 @@ function NodeInspector({
       {node.kind === "extension" && (
         <ExtensionSection canvas={canvas} node={node} />
       )}
+      {node.kind === "director" && (
+        <DirectorSection canvas={canvas} node={node} />
+      )}
       <GenerationSection node={node} />
       <MediaAssetSection node={node} />
       <ShelfSection canvas={canvas} node={node} />
@@ -781,6 +790,137 @@ function NodeInspector({
       <RunSection canvas={canvas} node={node} />
       <JsonSection node={node} />
     </>
+  );
+}
+
+function DirectorSection({
+  canvas,
+  node,
+}: {
+  canvas: CanvasDocument;
+  node: WorkflowNode;
+}) {
+  const { t } = useTranslation();
+  const moka = useProjectStore((state) => state.moka);
+  const scene = moka ? directorSceneOf(moka, node) : undefined;
+  const state = (
+    node.data as {
+      director?: {
+        sceneId?: string;
+        frameAssetId?: string;
+        blockingAssetId?: string;
+        frameShotId?: string;
+        directionText?: string;
+      };
+    }
+  ).director;
+  const shot = scene ? activeShotOf(scene) : undefined;
+
+  const recover = () => {
+    if (!moka) return;
+    const fresh = createDirectorScene(node.title);
+    execute(i18n.t("editor:history.createDirector"), [
+      { type: "addDirectorScene", scene: fresh },
+      {
+        type: "updateNode",
+        canvasId: canvas.id,
+        nodeId: node.id,
+        patch: {
+          data: {
+            director: { ...state, sceneId: fresh.id },
+          },
+        },
+      },
+    ]);
+  };
+
+  return (
+    <section className="inspector-section">
+      <h3>{t("editor:inspector.director.title")}</h3>
+      {scene ? (
+        <>
+          <div className="inspector-row">
+            <span>{t("editor:inspector.director.scene")}</span>
+            <span>{scene.title}</span>
+          </div>
+          <div className="inspector-row">
+            <span>{t("editor:inspector.director.shot")}</span>
+            <span>
+              {shot
+                ? `${shot.name} · ${shot.duration}s · ${shot.aspectRatio} · ${shot.fps}fps`
+                : t("editor:inspector.director.noShot")}
+            </span>
+          </div>
+          <div className="inspector-row">
+            <span>{t("editor:inspector.director.counts")}</span>
+            <span>
+              {scene.objects.length} / {scene.cameras.length} /{" "}
+              {scene.lights.length}
+            </span>
+          </div>
+          {state?.frameAssetId ? (
+            <button
+              className="inspector-director-frame"
+              onClick={() =>
+                useEditorStore.getState().openPreview(state.frameAssetId!)
+              }
+              type="button"
+            >
+              <img alt="" src={assetUrl(state.frameAssetId)} />
+              <span>
+                {t("editor:inspector.director.frame")}
+                {state.frameShotId && scene.activeShotId !== state.frameShotId
+                  ? ` · ${t("editor:inspector.director.staleShot")}`
+                  : ""}
+              </span>
+            </button>
+          ) : (
+            <p className="inspector-text-excerpt">
+              {t("editor:inspector.director.notDelivered")}
+            </p>
+          )}
+          {state?.blockingAssetId && (
+            <video
+              className="inspector-director-blocking"
+              controls
+              preload="metadata"
+              src={assetUrl(state.blockingAssetId)}
+            />
+          )}
+          {state?.directionText && (
+            <div className="inspector-actions">
+              <button
+                onClick={() =>
+                  void navigator.clipboard?.writeText(state.directionText ?? "")
+                }
+                type="button"
+              >
+                {t("editor:inspector.director.copyPrompt")}
+              </button>
+            </div>
+          )}
+          <div className="inspector-actions">
+            <button onClick={() => openDirector(node.id)} type="button">
+              {t("editor:inspector.director.open")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="inspector-error">
+            {t("editor:inspector.director.sceneMissing")}
+          </p>
+          <div className="inspector-actions">
+            <button onClick={recover} type="button">
+              {t("editor:inspector.director.recover")}
+            </button>
+            <button onClick={() => openDirector(node.id)} type="button">
+              {t("editor:inspector.director.open")}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

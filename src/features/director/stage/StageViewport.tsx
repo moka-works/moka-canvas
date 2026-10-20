@@ -2,8 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
-import type { DirectorRenderMode, DirectorScene } from "../../../shared/domain";
-import { StageWorld, type DirectorSelection } from "./StageWorld";
+import type {
+  DirectorRenderMode,
+  DirectorScene,
+  DirectorTransform,
+} from "../../../shared/domain";
+import type {
+  DirectorSelection,
+  DirectorTransformMode,
+  DirectorViewportApi,
+} from "../types";
+import { StageWorld } from "./StageWorld";
 import type { DirectorView } from "./viewModes";
 
 /**
@@ -38,12 +47,21 @@ export interface StageViewportProps {
   scene: DirectorScene;
   view: DirectorView;
   renderMode: DirectorRenderMode;
+  transformMode: DirectorTransformMode;
   selection: DirectorSelection | null;
   onSelect: (selection: DirectorSelection | null) => void;
   onCaptureContext?: (context: DirectorCaptureContext | null) => void;
   onCameraFallback?: (reason: string) => void;
   /** Called when a model's own animation list becomes known. */
   onModelAnimations?: (objectId: string, animationNames: string[]) => void;
+  onGroundPoint: (x: number, z: number) => void;
+  onTransformPreview: (
+    selection: DirectorSelection,
+    transform: DirectorTransform,
+  ) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
+  apiRef?: { current: DirectorViewportApi | null };
 }
 
 function CaptureBridge({
@@ -80,11 +98,17 @@ export function StageViewport({
   scene,
   view,
   renderMode,
+  transformMode,
   selection,
   onSelect,
   onCaptureContext,
   onCameraFallback,
   onModelAnimations,
+  onGroundPoint,
+  onTransformPreview,
+  onGestureStart,
+  onGestureEnd,
+  apiRef,
 }: StageViewportProps) {
   const { t } = useTranslation("director");
   const [ready, setReady] = useState(false);
@@ -176,15 +200,21 @@ export function StageViewport({
       >
         <InvalidateOnScene scene={scene} />
         <StageWorld
+          apiRef={apiRef}
           onCameraFallback={reportCameraFallback}
           onEnvironmentError={reportEnvironmentError}
+          onGestureEnd={onGestureEnd}
+          onGestureStart={onGestureStart}
+          onGroundPoint={onGroundPoint}
           onModelError={reportModelError}
           onModelLoaded={reportLoaded}
           onSelect={onSelect}
+          onTransformPreview={onTransformPreview}
           reloadToken={reloadToken}
           renderMode={renderMode}
           scene={scene}
           selection={selection}
+          transformMode={transformMode}
           view={view}
         />
         <CaptureBridge onContext={(context) => onCaptureContext?.(context)} />

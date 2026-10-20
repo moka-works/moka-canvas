@@ -62,13 +62,13 @@ test("a director desk opens onto its staged scene and its views switch", async (
 
   // The camera view is the shot's own; the orthographic views show the
   // stage without changing the free view.
-  await page.getByRole("tab", { name: "CAM" }).click();
+  await page.getByRole("button", { name: "CAM" }).click();
   await expect(page.locator(".director-view-label")).toHaveText("CAM");
-  await page.getByRole("tab", { name: "TOP" }).click();
+  await page.getByRole("button", { name: "TOP" }).click();
   await expect(page.locator(".director-view-label")).toHaveText("TOP");
-  await page.getByRole("tab", { name: "FRONT" }).click();
+  await page.getByRole("button", { name: "FRONT" }).click();
   await expect(page.locator(".director-view-label")).toHaveText("FRONT");
-  await page.getByRole("tab", { name: "3D" }).click();
+  await page.getByRole("button", { name: "3D" }).click();
   await expect(page.locator(".director-view-label")).toHaveCount(0);
 
   // Blockout swaps the material without freezing the viewport.
