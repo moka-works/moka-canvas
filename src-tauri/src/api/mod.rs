@@ -40,6 +40,8 @@ pub struct ApiState {
     /// The one render this process may be running, and the handles it is
     /// polled with.
     pub exports: Arc<ExportRegistry>,
+    /// Project-local conversations, written beside the document.
+    pub agent_sessions: Arc<crate::agent::sessions::AgentSessionStore>,
     /// Root directory of the models tree: one directory per converter, each
     /// carrying its own `model.json`.
     converter_root: PathBuf,
@@ -125,6 +127,7 @@ impl ApiState {
             story_jobs,
             clip_probe,
             exports: Arc::new(ExportRegistry::new()),
+            agent_sessions: Arc::new(crate::agent::sessions::AgentSessionStore::new()),
             converter_root,
             nodes_root,
         }
@@ -350,6 +353,28 @@ pub fn router() -> axum::Router<ApiState> {
         .route(
             "/api/v1/agent/context",
             get(crate::agent::chat::get_context),
+        )
+        .route(
+            "/api/v1/agent/sessions",
+            get(routes::agent_session_list).post(routes::agent_session_create),
+        )
+        .route(
+            "/api/v1/agent/sessions/delete",
+            post(routes::agent_session_delete_many),
+        )
+        .route(
+            "/api/v1/agent/sessions/{id}",
+            get(routes::agent_session_get)
+                .patch(routes::agent_session_patch)
+                .delete(routes::agent_session_delete),
+        )
+        .route(
+            "/api/v1/agent/sessions/{id}/messages",
+            post(routes::agent_session_append),
+        )
+        .route(
+            "/api/v1/agent/sessions/{id}/messages/{messageId}",
+            put(routes::agent_session_update_message),
         )
 }
 

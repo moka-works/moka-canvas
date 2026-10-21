@@ -2264,3 +2264,253 @@ pub async fn agent_capabilities() -> Json<serde_json::Value> {
         "toolCount": catalog.tools.len(),
     }))
 }
+
+// ---------------------------------------------------------------------------
+// Agent sessions. Conversations live beside the document: these routes never
+// touch `canvas.moka` and never move its revision.
+// ---------------------------------------------------------------------------
+
+use crate::agent::sessions::{AgentMessage, SessionError};
+
+fn session_problem(error: SessionError) -> Problem {
+    Problem::new(
+        StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        error.code,
+        error.message,
+    )
+}
+
+async fn session_root(session: &ProjectSession) -> Result<PathBuf, Problem> {
+    session.0.project_root().await.map_err(Problem::from)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListQuery {
+    q: Option<String>,
+    limit: Option<usize>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCreateBody {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    scope: Option<serde_json::Value>,
+}
+
+pub async fn agent_session_list(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Query(query): Query<SessionListQuery>,
+) -> Result<Json<crate::agent::sessions::SessionList>, Problem> {
+    let root = session_root(&session).await?;
+    state
+        .agent_sessions
+        .list(
+            &root,
+            query.q.as_deref(),
+            query.limit.unwrap_or(20),
+            query.cursor.as_deref(),
+        )
+        .await
+        .map(Json)
+        .map_err(session_problem)
+}
+
+pub async fn agent_session_create(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Json(body): Json<SessionCreateBody>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session_root(&session).await?;
+    let created = state
+        .agent_sessions
+        .create(&root, body.title, body.model, body.scope)
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(serde_json::json!({ "session": created })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionGetQuery {
+    limit: Option<usize>,
+    before: Option<String>,
+}
+
+pub async fn agent_session_get(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(id): Path<String>,
+    Query(query): Query<SessionGetQuery>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session_root(&session).await?;
+    let found = state
+        .agent_sessions
+        .get(
+            &root,
+            &id,
+            query.limit.unwrap_or(100),
+            query.before.as_deref(),
+        )
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(serde_json::json!({ "session": found })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPatchBody {
+    #[serde(default)]
+    title: Option<String>,
+    /// An empty string clears the model override; absence leaves it alone.
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    scope: Option<serde_json::Value>,
+}
+
+pub async fn agent_session_patch(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(id): Path<String>,
+    Json(body): Json<SessionPatchBody>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session_root(&session).await?;
+    let model = body.model.map(|model| {
+        let model = model.trim().to_string();
+        (!model.is_empty()).then_some(model)
+    });
+    let patched = state
+        .agent_sessions
+        .patch(&root, &id, body.title, model, body.scope)
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(serde_json::json!({ "session": patched })))
+}
+
+pub async fn agent_session_delete(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(id): Path<String>,
+) -> Result<StatusCode, Problem> {
+    let root = session_root(&session).await?;
+    state
+        .agent_sessions
+        .delete(&root, &id)
+        .await
+        .map_err(session_problem)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDeleteManyBody {
+    ids: Vec<String>,
+}
+
+pub async fn agent_session_delete_many(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Json(body): Json<SessionDeleteManyBody>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    if !crate::agent::sessions::valid_ids(&body.ids) {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "ids must be unique and contain no path characters",
+        ));
+    }
+    let root = session_root(&session).await?;
+    let (deleted, warnings) = state
+        .agent_sessions
+        .delete_many(&root, &body.ids)
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(
+        serde_json::json!({ "deleted": deleted, "warnings": warnings }),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMessageBody {
+    #[serde(default)]
+    id: Option<String>,
+    role: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    turn_id: Option<String>,
+    #[serde(default)]
+    step_index: Option<u32>,
+    #[serde(default)]
+    tool_calls: Vec<serde_json::Value>,
+    #[serde(default)]
+    references: Vec<serde_json::Value>,
+    #[serde(default)]
+    scope: Option<serde_json::Value>,
+    #[serde(default)]
+    failure: Option<serde_json::Value>,
+}
+
+impl SessionMessageBody {
+    fn into_message(self) -> AgentMessage {
+        AgentMessage {
+            id: self
+                .id
+                .filter(|id| !id.trim().is_empty())
+                .unwrap_or_else(crate::domain::new_id),
+            role: self.role,
+            text: self.text,
+            created_at: self.created_at.unwrap_or_else(crate::domain::now_iso),
+            turn_id: self.turn_id,
+            step_index: self.step_index,
+            tool_calls: self.tool_calls,
+            references: self.references,
+            scope: self.scope,
+            failure: self.failure,
+        }
+    }
+}
+
+pub async fn agent_session_append(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(id): Path<String>,
+    Json(body): Json<SessionMessageBody>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session_root(&session).await?;
+    let (summary, trimmed) = state
+        .agent_sessions
+        .append(&root, &id, body.into_message())
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(
+        serde_json::json!({ "session": summary, "trimmed": trimmed }),
+    ))
+}
+
+pub async fn agent_session_update_message(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path((id, message_id)): Path<(String, String)>,
+    Json(body): Json<SessionMessageBody>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session_root(&session).await?;
+    let (summary, trimmed) = state
+        .agent_sessions
+        .update_message(&root, &id, &message_id, body.into_message())
+        .await
+        .map_err(session_problem)?;
+    Ok(Json(
+        serde_json::json!({ "session": summary, "trimmed": trimmed }),
+    ))
+}

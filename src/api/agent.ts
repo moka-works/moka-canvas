@@ -374,3 +374,193 @@ export const agentApi = {
 };
 
 export { readChatStream };
+
+export interface AgentToolResult {
+  ok: boolean;
+  summary: string;
+  data?: unknown;
+  changeSetId?: string;
+  auditId?: string;
+  task?: { kind: AgentTaskKind; id: string };
+  assetsAdded?: string[];
+  assetsUpdated?: string[];
+  assetsRemoved?: string[];
+  error?: { code: string; message: string; details?: Record<string, unknown> };
+  durationMs?: number;
+}
+
+export interface AgentToolCallRecord {
+  id: string;
+  name: string;
+  kind: AgentKind;
+  risk?: AgentRisk;
+  input: Record<string, unknown>;
+  status: "pending" | "running" | "ok" | "error" | "skipped";
+  result?: AgentToolResult;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  role: "user" | "assistant" | "error";
+  text: string;
+  createdAt: string;
+  turnId?: string;
+  stepIndex?: number;
+  toolCalls?: AgentToolCallRecord[];
+  references?: { kind: string; id: string; title: string }[];
+  scope?: AgentScope;
+  failure?: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+    retryable?: boolean;
+  };
+}
+
+export interface AgentSession {
+  id: string;
+  title: string;
+  messages: AgentMessage[];
+  createdAt: string;
+  updatedAt: string;
+  lastScope?: AgentScope;
+  model?: string | null;
+}
+
+export interface AgentSessionSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  bytes: number;
+  lastScope?: AgentScope;
+  model?: string | null;
+  snippet?: string;
+}
+
+export interface AgentSessionList {
+  sessions: AgentSessionSummary[];
+  warnings?: string[];
+}
+
+async function readJson<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const problem = await readProblem(response);
+    throw problem ?? ApiError.parse(response.status);
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+export const agentSessionsApi = {
+  list(
+    query: { q?: string; limit?: number; cursor?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<AgentSessionList> {
+    const params = new URLSearchParams();
+    if (query.q) params.set("q", query.q);
+    if (query.limit) params.set("limit", String(query.limit));
+    if (query.cursor) params.set("cursor", query.cursor);
+    return fetch(`/api/v1/agent/sessions?${params.toString()}`, {
+      signal,
+      headers: projectHeaders(),
+    }).then((response) => readJson<AgentSessionList>(response));
+  },
+
+  create(
+    input: { title?: string; model?: string | null; scope?: AgentScope },
+    signal?: AbortSignal,
+  ): Promise<{ session: AgentSessionSummary }> {
+    return fetch("/api/v1/agent/sessions", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", ...projectHeaders() },
+      body: JSON.stringify(input),
+    }).then((response) => readJson<{ session: AgentSessionSummary }>(response));
+  },
+
+  get(
+    id: string,
+    query: { limit?: number; before?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<{ session: AgentSession }> {
+    const params = new URLSearchParams();
+    if (query.limit) params.set("limit", String(query.limit));
+    if (query.before) params.set("before", query.before);
+    return fetch(
+      `/api/v1/agent/sessions/${encodeURIComponent(id)}?${params.toString()}`,
+      { signal, headers: projectHeaders() },
+    ).then((response) => readJson<{ session: AgentSession }>(response));
+  },
+
+  patch(
+    id: string,
+    input: { title?: string; model?: string; scope?: AgentScope },
+    signal?: AbortSignal,
+  ): Promise<{ session: AgentSessionSummary }> {
+    return fetch(`/api/v1/agent/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      signal,
+      headers: { "Content-Type": "application/json", ...projectHeaders() },
+      body: JSON.stringify(input),
+    }).then((response) => readJson<{ session: AgentSessionSummary }>(response));
+  },
+
+  delete(id: string, signal?: AbortSignal): Promise<void> {
+    return fetch(`/api/v1/agent/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      signal,
+      headers: projectHeaders(),
+    }).then((response) => readJson<void>(response));
+  },
+
+  deleteMany(
+    ids: string[],
+    signal?: AbortSignal,
+  ): Promise<{ deleted: number; warnings: string[] }> {
+    return fetch("/api/v1/agent/sessions/delete", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", ...projectHeaders() },
+      body: JSON.stringify({ ids }),
+    }).then((response) =>
+      readJson<{ deleted: number; warnings: string[] }>(response),
+    );
+  },
+
+  append(
+    id: string,
+    message: AgentMessage,
+    signal?: AbortSignal,
+  ): Promise<{ session: AgentSessionSummary; trimmed: number }> {
+    return fetch(`/api/v1/agent/sessions/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", ...projectHeaders() },
+      body: JSON.stringify(message),
+    }).then((response) =>
+      readJson<{ session: AgentSessionSummary; trimmed: number }>(response),
+    );
+  },
+
+  updateMessage(
+    id: string,
+    message: AgentMessage,
+    signal?: AbortSignal,
+  ): Promise<{ session: AgentSessionSummary; trimmed: number }> {
+    return fetch(
+      `/api/v1/agent/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(message.id)}`,
+      {
+        method: "PUT",
+        signal,
+        headers: { "Content-Type": "application/json", ...projectHeaders() },
+        body: JSON.stringify(message),
+      },
+    ).then((response) =>
+      readJson<{ session: AgentSessionSummary; trimmed: number }>(response),
+    );
+  },
+};

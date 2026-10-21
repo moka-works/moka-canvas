@@ -11,3 +11,4 @@ pub mod chat;
 pub mod context;
 pub mod prompt;
 pub mod protocol;
+pub mod sessions;
