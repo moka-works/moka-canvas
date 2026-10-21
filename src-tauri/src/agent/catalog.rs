@@ -757,6 +757,11 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("offsetMs", "integer", "Optional shift"),
             ("trackId", "string", "Target track"),
         ])),
+        command("clip.detach_audio", "clip", ToolRisk::Write, "Split the sound of a video clip onto an audio track and mute the video.", schema(&["timelineId", "clipId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("clipId", "string", "Video clip with sound"),
+            ("trackName", "string", "Name for a new audio track"),
+        ])),
         command("clip.align", "clip", ToolRisk::Write, "Align clips by start, end, or the playhead.", schema(&["timelineId", "clipIds", "mode"], &[
             ("timelineId", "string", "Timeline id"),
             ("clipIds", "array", "Clips to align"),
@@ -799,6 +804,12 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("afterClipId", "string", "The clip before the seam"),
             ("kind", "string", "Transition kind"),
             ("durationMs", "integer", "Transition window, 200 to 2000"),
+        ])),
+        command("clip.update_transition", "clip", ToolRisk::Write, "Change a transition's kind or window.", schema(&["timelineId", "transitionId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("transitionId", "string", "Transition id"),
+            ("kind", "string", "Transition kind"),
+            ("durationMs", "integer", "Window, 200 to 2000"),
         ])),
         command("clip.remove_transition", "clip", ToolRisk::Destroy, "Remove a transition and restore the butted seam.", schema(&["timelineId", "transitionId"], &[
             ("timelineId", "string", "Timeline id"),
@@ -949,6 +960,30 @@ fn story_tools() -> Vec<ToolSpec> {
             ("storyId", "string", "Story id"),
             ("elementId", "string", "Element id"),
             ("confirm", "string", "Must be non-empty"),
+        ])),
+        command("story.update_chapter", "story", ToolRisk::Write, "Change one chapter's title, synopsis, or target duration. The outline is written whole but only the named fields move.", schema(&["storyId", "chapterId", "patch"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("patch", "object", "title, synopsis, targetDurationMs"),
+        ])),
+        command("story.add_act", "story", ToolRisk::Write, "Insert an empty act into a chapter.", schema(&["storyId", "chapterId"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("index", "integer", "Position in the chapter"),
+            ("title", "string", "Act title"),
+            ("summary", "string", "Act summary"),
+        ])),
+        command("story.remove_act", "story", ToolRisk::Destroy, "Delete an act and its shots. Requires confirm.", schema(&["storyId", "chapterId", "actId", "confirm"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("actId", "string", "Act id"),
+            ("confirm", "string", "Must be non-empty"),
+        ])),
+        command("story.move_act", "story", ToolRisk::Write, "Move an act within its chapter.", schema(&["storyId", "chapterId", "actId", "toIndex"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("actId", "string", "Act id"),
+            ("toIndex", "integer", "New position"),
         ])),
         command("story.update_act", "story", ToolRisk::Write, "Change an act's title, summary, cast, setting, props, or sounds.", schema(&["storyId", "chapterId", "actId", "patch"], &[
             ("storyId", "string", "Story id"),

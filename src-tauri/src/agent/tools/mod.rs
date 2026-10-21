@@ -252,6 +252,8 @@ pub async fn run_command(
         | "clip.import_srt"
         | "clip.apply_transcript"
         | "clip.add_transition"
+        | "clip.detach_audio"
+        | "clip.update_transition"
         | "clip.remove_transition" => clip::command(Some(state), root, moka, name, input).await,
         "asset.list"
         | "asset.get"

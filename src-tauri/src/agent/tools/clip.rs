@@ -248,6 +248,8 @@ pub async fn command(
             clip_apply_transcript(state, moka, &args).await
         }
         "clip.add_transition" => clip_add_transition(moka, &args),
+        "clip.update_transition" => clip_update_transition(moka, &args),
+        "clip.detach_audio" => clip_detach_audio(moka, &args),
         "clip.remove_transition" => clip_remove_transition(moka, &args),
         other => Err(ToolError::new(
             "TOOL_NOT_FOUND",
@@ -1395,6 +1397,132 @@ fn clip_add_transition(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, 
             timeline_id: timeline.id.clone(),
             transitions: vec![transition],
         }],
+    ))
+}
+
+fn clip_update_transition(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let id = args.req_str("transitionId")?.to_string();
+    let existing = timeline
+        .transitions
+        .iter()
+        .find(|transition| transition.id == id)
+        .ok_or_else(|| {
+            ToolError::new(
+                "TRANSITION_NOT_FOUND",
+                format!("transition {id} does not exist"),
+            )
+        })?;
+    let after_clip_id = existing.after_clip_id.clone();
+    if let Some(clip) = timeline.clips.iter().find(|clip| clip.id == after_clip_id) {
+        ensure_unlocked(timeline, &clip.track_id)?;
+    }
+    let duration = args.opt_i64("durationMs").unwrap_or(existing.duration_ms);
+    if !(200..=2000).contains(&duration) {
+        return Err(ToolError::validation(
+            "a transition window is between 200 and 2000 ms",
+        ));
+    }
+    let kind: TransitionKind = match args.opt_str("kind") {
+        Some(kind) => serde_json::from_value(json!(kind))
+            .map_err(|_| ToolError::validation("unknown transition kind"))?,
+        None => existing.kind,
+    };
+    let mut next = existing.clone();
+    next.id = crate::domain::new_id();
+    next.kind = kind;
+    next.duration_ms = duration;
+    next.created_at = now_iso();
+    Ok(ToolOutcome::write(
+        format!("Changed the transition to {} ms", duration),
+        json!({"transitionId": next.id}),
+        vec![
+            DocumentCommand::RemoveTransitions {
+                timeline_id: timeline.id.clone(),
+                transition_ids: vec![id],
+            },
+            DocumentCommand::AddTransitions {
+                timeline_id: timeline.id.clone(),
+                transitions: vec![next],
+            },
+        ],
+    ))
+}
+
+fn clip_detach_audio(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let clip = clip_of(timeline, args.req_str("clipId")?)?;
+    if clip.kind != TrackKind::Video {
+        return Err(ToolError::validation(
+            "only a video clip carries sound to detach",
+        ));
+    }
+    let Some(asset_id) = clip.asset_id.clone() else {
+        return Err(ToolError::validation("the clip holds no material"));
+    };
+    ensure_unlocked(timeline, &clip.track_id)?;
+    let existing = timeline
+        .tracks
+        .iter()
+        .find(|track| track.kind == TrackKind::Audio && !track.locked)
+        .cloned();
+    let track = match existing {
+        Some(track) => track,
+        None => track_of(TrackKind::Audio, args.opt_str("trackName").unwrap_or("A1")),
+    };
+    validate_no_overlap(timeline, &track.id, clip.start_ms, clip.duration_ms, None)?;
+    let now = now_iso();
+    let audio = TimelineClip {
+        id: crate::domain::new_id(),
+        track_id: track.id.clone(),
+        kind: TrackKind::Audio,
+        label: format!("Audio · {}", clip.label),
+        start_ms: clip.start_ms,
+        duration_ms: clip.duration_ms,
+        in_point_ms: clip.in_point_ms,
+        out_point_ms: clip.out_point_ms,
+        speed: clip.speed,
+        volume: clip.volume,
+        fade_in_ms: clip.fade_in_ms,
+        fade_out_ms: clip.fade_out_ms,
+        muted: false,
+        opacity: 1.0,
+        created_at: now.clone(),
+        updated_at: now,
+        asset_id: Some(asset_id),
+        adjust: None,
+        filter: None,
+        text: None,
+    };
+    let audio_id = audio.id.clone();
+    let audio_track_id = track.id.clone();
+    let mut commands = Vec::new();
+    if !timeline.tracks.iter().any(|each| each.id == track.id) {
+        commands.push(DocumentCommand::AddTrack {
+            timeline_id: timeline.id.clone(),
+            track,
+            index: None,
+        });
+    }
+    commands.push(DocumentCommand::AddClips {
+        timeline_id: timeline.id.clone(),
+        clips: vec![audio],
+        seams: None,
+    });
+    commands.push(DocumentCommand::UpdateClips {
+        timeline_id: timeline.id.clone(),
+        patches: vec![ClipPatchEntry {
+            clip_id: clip.id.clone(),
+            patch: ClipPatch {
+                muted: Some(true),
+                ..empty_patch()
+            },
+        }],
+    });
+    Ok(ToolOutcome::write(
+        format!("Detached the sound of {}", clip.label),
+        json!({"clipId": audio_id, "trackId": audio_track_id}),
+        commands,
     ))
 }
 

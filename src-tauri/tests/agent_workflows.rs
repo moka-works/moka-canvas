@@ -140,8 +140,26 @@ async fn a_cutting_room_plan_creates_splits_and_joins_clips() {
         }),
     )
     .await;
-    assert!(transition["data"]["transitionId"].is_string());
+    let transition_id = transition["data"]["transitionId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "clip.update_transition",
+        json!({
+            "timelineId": timeline_id,
+            "transitionId": transition_id,
+            "kind": "dipToBlack",
+            "durationMs": 700
+        }),
+    )
+    .await;
     let opened = current(&app).await;
+    assert_eq!(
+        opened["moka"]["timelines"][0]["transitions"][0]["durationMs"],
+        700
+    );
     assert_eq!(
         opened["moka"]["timelines"][0]["transitions"]
             .as_array()
