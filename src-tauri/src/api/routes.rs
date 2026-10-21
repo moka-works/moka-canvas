@@ -2182,3 +2182,85 @@ pub async fn cancel_clip_export(
 ) -> Result<Json<ExportTask>, Problem> {
     Ok(Json(state.exports.cancel(&id)?))
 }
+
+#[derive(serde::Deserialize)]
+pub struct AgentToolsQuery {
+    surface: Option<String>,
+    pack: Option<String>,
+    detail: Option<String>,
+}
+
+/// The tool catalog, filtered for the caller's surface.
+///
+/// An external caller sees the tools it may run; the interface asks with no
+/// surface and gets the whole contract, including the app tools it executes
+/// itself.
+pub async fn agent_tools(
+    axum::extract::Query(query): axum::extract::Query<AgentToolsQuery>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    use crate::agent::catalog::{catalog, ToolSurface};
+    let catalog = catalog();
+    let surface = match query.surface.as_deref() {
+        None | Some("") | Some("all") => None,
+        Some("external") => Some(ToolSurface::External),
+        Some("app") => Some(ToolSurface::App),
+        Some(other) => {
+            return Err(Problem::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "VALIDATION_FAILED",
+                format!("unknown surface '{other}'"),
+            ))
+        }
+    };
+    let summary = query.detail.as_deref() == Some("summary");
+    let mut tools = Vec::new();
+    for tool in &catalog.tools {
+        if let Some(surface) = surface {
+            if !tool.accepts_surface(surface) {
+                continue;
+            }
+        }
+        if let Some(pack) = &query.pack {
+            if &tool.pack != pack {
+                continue;
+            }
+        }
+        if summary {
+            tools.push(serde_json::json!({
+                "name": tool.name,
+                "version": tool.version,
+                "kind": tool.kind,
+                "pack": tool.pack,
+                "surface": tool.surface,
+                "title": tool.title,
+                "description": tool.description,
+                "risk": tool.risk,
+                "kindLabel": tool.kind.as_str(),
+                "surfaceLabel": tool.surface.as_str(),
+                "riskLabel": tool.risk.as_str(),
+                "mutates": tool.mutates,
+            }));
+        } else {
+            tools.push(serde_json::to_value(tool).unwrap_or_default());
+        }
+    }
+    Ok(Json(serde_json::json!({
+        "catalogVersion": crate::agent::catalog::CATALOG_VERSION,
+        "catalogHash": catalog.hash(),
+        "packs": catalog.packs(),
+        "tools": tools,
+    })))
+}
+
+/// What the catalog is and which surfaces it serves, in one small answer.
+pub async fn agent_capabilities() -> Json<serde_json::Value> {
+    use crate::agent::catalog::{catalog, packs, CATALOG_VERSION};
+    let catalog = catalog();
+    Json(serde_json::json!({
+        "catalogVersion": CATALOG_VERSION,
+        "catalogHash": catalog.hash(),
+        "packs": packs(),
+        "surfaces": ["both", "app", "external"],
+        "toolCount": catalog.tools.len(),
+    }))
+}

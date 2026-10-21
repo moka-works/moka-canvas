@@ -6,4 +6,8 @@
 //! serve the CLI, MCP, and third-party agents. Nothing here reads the
 //! browser's state, so a tool has the same meaning whoever called it.
 
+pub mod catalog;
+pub mod chat;
+pub mod context;
+pub mod prompt;
 pub mod protocol;

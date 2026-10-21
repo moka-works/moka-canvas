@@ -341,6 +341,16 @@ pub fn router() -> axum::Router<ApiState> {
             get(routes::converter_protocols),
         )
         .route("/api/v1/extensions/nodes", get(routes::extension_nodes))
+        .route("/api/v1/agent/tools", get(routes::agent_tools))
+        .route(
+            "/api/v1/agent/capabilities",
+            get(routes::agent_capabilities),
+        )
+        .route("/api/v1/agent/chat", post(crate::agent::chat::chat))
+        .route(
+            "/api/v1/agent/context",
+            get(crate::agent::chat::get_context),
+        )
 }
 
 /// A generation request carries a prompt and references to assets already in
