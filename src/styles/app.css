@@ -2178,24 +2178,76 @@ body.is-dragging-panel {
   white-space: pre-wrap;
 }
 
-.inspector-input-port {
+.inspector-ports {
   display: grid;
+  gap: 12px;
+}
+
+.inspector-port-group {
+  display: grid;
+  gap: 8px;
+}
+
+.inspector-port-group h4 {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.inspector-port {
+  display: grid;
+  gap: 4px;
+}
+
+.inspector-port-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
   gap: 6px;
 }
 
-.inspector-input-head {
-  align-items: center;
-  display: flex;
-  font-size: 12px;
-  justify-content: space-between;
+.inspector-port-name {
+  color: var(--ink);
+  font-weight: 500;
 }
 
-.inspector-input-head > span {
+.inspector-port-required {
+  color: var(--danger);
+}
+
+.inspector-port-types {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.inspector-port-type {
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
   color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
 }
 
-.inspector-input-head button {
+.inspector-port-type.is-many {
+  border-style: dashed;
+}
+
+.inspector-port-role {
+  color: var(--muted);
   font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.inspector-port-head button {
+  font-size: 11px;
+  margin-left: auto;
   padding: 3px 8px;
 }
 

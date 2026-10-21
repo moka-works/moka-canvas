@@ -5,9 +5,12 @@ import type {
   AssetId,
   BackgroundMode,
   CanvasDocument,
+  DataType,
+  ExtensionState,
   GenerationSpec,
   MokaFile,
   NodeKind,
+  PortDefinition,
   ResourceEntry,
   ResultSlot,
   WorkflowEdge,
@@ -35,6 +38,7 @@ import {
   useGenerationAvailable,
 } from "../stores/appStore";
 import { useEditorStore } from "../stores/editorStore";
+import { useExtensionStore } from "../stores/extensionStore";
 import { useActiveCanvas, useProjectStore } from "../stores/projectStore";
 import {
   RUN_STATUS_LABEL,
@@ -244,8 +248,181 @@ function MediaAssetSection({ node }: { node: WorkflowNode }) {
   );
 }
 
-/** Incoming-connection chips with disconnect / replace-via-pick actions. */
-function InputChips({
+const DATA_TYPE_LABELS: Record<DataType, string> = {
+  text: "editor:inspector.dataType.text",
+  image: "editor:inspector.dataType.image",
+  audio: "editor:inspector.dataType.audio",
+  video: "editor:inspector.dataType.video",
+  timeline: "editor:inspector.dataType.timeline",
+  artifact: "editor:inspector.dataType.artifact",
+};
+
+/**
+ * What a port is for. Keyed by the port id, which means the same thing on
+ * every kind that offers it, with the few kinds whose ids serve a different
+ * purpose stated separately below.
+ */
+const PORT_ROLE_KEYS: Record<string, string> = {
+  prompt: "editor:inspector.portRole.prompt",
+  images: "editor:inspector.portRole.images",
+  mask: "editor:inspector.portRole.mask",
+  audio: "editor:inspector.portRole.audio",
+  video: "editor:inspector.portRole.video",
+  videos: "editor:inspector.portRole.videos",
+  audios: "editor:inspector.portRole.audios",
+  firstFrame: "editor:inspector.portRole.firstFrame",
+  lastFrame: "editor:inspector.portRole.lastFrame",
+  text: "editor:inspector.portRole.text",
+  out: "editor:inspector.portRole.out",
+  plates: "editor:inspector.portRole.plates",
+  frame: "editor:inspector.portRole.frame",
+  blocking: "editor:inspector.portRole.blocking",
+  direction: "editor:inspector.portRole.direction",
+};
+
+const KIND_PORT_ROLE_KEYS: Partial<Record<NodeKind, Record<string, string>>> = {
+  export: {
+    video: "editor:inspector.portRole.exportVideo",
+    audio: "editor:inspector.portRole.exportAudio",
+    out: "editor:inspector.portRole.exportOut",
+  },
+};
+
+/**
+ * The role of every port on the node, ready to read.
+ *
+ * An extension brings descriptions with its definition, and they win over
+ * whatever its port ids happen to share with the built-in table: only the
+ * definition knows what its own ports are for.
+ */
+function usePortRoles(node: WorkflowNode): ReadonlyMap<string, string> {
+  const { t, i18n } = useTranslation();
+  const catalog = useExtensionStore((state) => state.catalog);
+  return useMemo(() => {
+    const roles = new Map<string, string>();
+    for (const [id, key] of Object.entries(PORT_ROLE_KEYS)) {
+      roles.set(id, t(key));
+    }
+    for (const [id, key] of Object.entries(
+      KIND_PORT_ROLE_KEYS[node.kind] ?? {},
+    )) {
+      roles.set(id, t(key));
+    }
+    if (node.kind === "extension") {
+      const state = (node.data as { extension?: ExtensionState }).extension;
+      const definition = state
+        ? catalog?.nodes.find((entry) => entry.id === state.extensionId)
+        : undefined;
+      if (definition) {
+        const locale = (i18n.language || "en").split("-")[0];
+        for (const port of [...definition.inputs, ...definition.outputs]) {
+          const described =
+            port.descriptionLabels[locale]?.trim() || port.description?.trim();
+          if (described) roles.set(port.id, described);
+        }
+      }
+    }
+    return roles;
+  }, [catalog, i18n.language, node, t]);
+}
+
+function PortTypes({ port }: { port: PortDefinition }) {
+  const { t } = useTranslation();
+  return (
+    <span className="inspector-port-types">
+      {port.dataTypes.map((type) => (
+        <span className="inspector-port-type" key={type}>
+          {t(DATA_TYPE_LABELS[type])}
+        </span>
+      ))}
+      {port.cardinality === "many" && (
+        <span className="inspector-port-type is-many">
+          {t("editor:inspector.portMany")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function InputPort({
+  canvas,
+  node,
+  port,
+  role,
+}: {
+  canvas: CanvasDocument;
+  node: WorkflowNode;
+  port: PortDefinition;
+  role?: string;
+}) {
+  const { t } = useTranslation();
+  const inputPick = useEditorStore((state) => state.inputPick);
+  const incoming = canvas.edges.filter(
+    (edge) => edge.target.nodeId === node.id && edge.target.portId === port.id,
+  );
+  const picking =
+    inputPick?.nodeId === node.id && inputPick?.portId === port.id;
+  return (
+    <div className="inspector-port">
+      <div className="inspector-port-head">
+        <span className="inspector-port-name">
+          {port.label}
+          {port.required && (
+            <span
+              className="inspector-port-required"
+              title={t("editor:inspector.portRequired")}
+            >
+              *
+            </span>
+          )}
+        </span>
+        <PortTypes port={port} />
+        <button
+          aria-pressed={picking}
+          className={picking ? "is-active" : ""}
+          onClick={() => {
+            const store = useEditorStore.getState();
+            if (picking) store.stopInputPick();
+            else store.startInputPick({ nodeId: node.id, portId: port.id });
+          }}
+          type="button"
+        >
+          {picking ? t("editor:action.cancelPick") : t("editor:action.replace")}
+        </button>
+      </div>
+      {role && <p className="inspector-port-role">{role}</p>}
+      {picking && (
+        <p className="inspector-pick-hint">
+          {t("editor:inspector.clickCompatible")}
+        </p>
+      )}
+      {incoming.length === 0 ? (
+        <p className="inspector-empty">{t("editor:inspector.notConnected")}</p>
+      ) : (
+        <ul className="inspector-chip-list">
+          {incoming.map((edge) => (
+            <InputChip canvas={canvas} edge={edge} key={edge.id} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function OutputPort({ port, role }: { port: PortDefinition; role?: string }) {
+  return (
+    <div className="inspector-port">
+      <div className="inspector-port-head">
+        <span className="inspector-port-name">{port.label}</span>
+        <PortTypes port={port} />
+      </div>
+      {role && <p className="inspector-port-role">{role}</p>}
+    </div>
+  );
+}
+
+/** Every port on the node: what it takes, what it gives, and what each is for. */
+function PortsSection({
   canvas,
   node,
 }: {
@@ -253,61 +430,35 @@ function InputChips({
   node: WorkflowNode;
 }) {
   const { t } = useTranslation();
-  const inputPick = useEditorStore((state) => state.inputPick);
+  const roles = usePortRoles(node);
   const inputs = node.ports.filter((port) => port.direction === "input");
-  if (inputs.length === 0 || node.kind === "group") return null;
+  const outputs = node.ports.filter((port) => port.direction === "output");
+  if (inputs.length === 0 && outputs.length === 0) return null;
   return (
-    <section className="inspector-section">
-      <h3>{t("editor:inspector.inputsSection")}</h3>
-      {inputs.map((port) => {
-        const incoming = canvas.edges.filter(
-          (edge) =>
-            edge.target.nodeId === node.id && edge.target.portId === port.id,
-        );
-        const picking =
-          inputPick?.nodeId === node.id && inputPick?.portId === port.id;
-        return (
-          <div className="inspector-input-port" key={port.id}>
-            <div className="inspector-input-head">
-              <span>
-                {port.label}
-                {port.required ? " *" : ""}
-              </span>
-              <button
-                aria-pressed={picking}
-                className={picking ? "is-active" : ""}
-                onClick={() => {
-                  const store = useEditorStore.getState();
-                  if (picking) store.stopInputPick();
-                  else
-                    store.startInputPick({ nodeId: node.id, portId: port.id });
-                }}
-                type="button"
-              >
-                {picking
-                  ? t("editor:action.cancelPick")
-                  : t("editor:action.replace")}
-              </button>
-            </div>
-            {picking && (
-              <p className="inspector-pick-hint">
-                {t("editor:inspector.clickCompatible")}
-              </p>
-            )}
-            {incoming.length === 0 ? (
-              <p className="inspector-empty">
-                {t("editor:inspector.notConnected")}
-              </p>
-            ) : (
-              <ul className="inspector-chip-list">
-                {incoming.map((edge) => (
-                  <InputChip canvas={canvas} edge={edge} key={edge.id} />
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      })}
+    <section className="inspector-section inspector-ports">
+      <h3>{t("editor:inspector.portsSection")}</h3>
+      {inputs.length > 0 && (
+        <div className="inspector-port-group">
+          <h4>{t("editor:inspector.inputsSection")}</h4>
+          {inputs.map((port) => (
+            <InputPort
+              canvas={canvas}
+              key={port.id}
+              node={node}
+              port={port}
+              role={roles.get(port.id)}
+            />
+          ))}
+        </div>
+      )}
+      {outputs.length > 0 && (
+        <div className="inspector-port-group">
+          <h4>{t("editor:inspector.outputsSection")}</h4>
+          {outputs.map((port) => (
+            <OutputPort key={port.id} port={port} role={roles.get(port.id)} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -769,6 +920,7 @@ function NodeInspector({
           {Math.round(node.bounds.width)}×{Math.round(node.bounds.height)}
         </span>
       </div>
+      <PortsSection canvas={canvas} node={node} />
       {node.kind === "text" && <TextSection node={node} />}
       {node.kind === "operation" && <OperationSection node={node} />}
       {node.kind === "export" && (
@@ -786,7 +938,6 @@ function NodeInspector({
       <GenerationSection node={node} />
       <MediaAssetSection node={node} />
       <ShelfSection canvas={canvas} node={node} />
-      <InputChips canvas={canvas} node={node} />
       <RunSection canvas={canvas} node={node} />
       <JsonSection node={node} />
     </>

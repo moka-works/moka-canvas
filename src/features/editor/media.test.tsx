@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import App from "../../App";
 import {
@@ -900,6 +901,58 @@ describe("editor shell integration", () => {
     const canvas = useProjectStore.getState().moka!.canvas[0];
     expect(canvas.edges).toHaveLength(1);
     expect(canvas.edges[0].id).toBe(ids.edgeOpExport);
+  });
+
+  it("describes each port's type and role in the inspector", async () => {
+    const ids = goldenNodeIds();
+    await openGolden();
+    await screen.findByTestId("canvas-tab-Canvas 1");
+    act(() => {
+      useEditorStore
+        .getState()
+        .setSelection({ nodeIds: [ids.operation], edgeIds: [] });
+    });
+    const inspector = within(
+      screen.getByRole("complementary", { name: "Inspector" }),
+    );
+    expect(
+      inspector.getByRole("heading", { name: "Inputs & outputs" }),
+    ).toBeTruthy();
+
+    const textInput = inspector
+      .getByText("Text wired here is handed to this operation.")
+      .closest(".inspector-port")!;
+    expect(textInput.textContent).toContain("Text");
+    expect(textInput.textContent).toContain("Multiple");
+    expect(textInput.textContent).toContain("Brief");
+
+    const result = inspector
+      .getByText("What this node produces, handed to the nodes wired after it.")
+      .closest(".inspector-port")!;
+    expect(result.textContent).toContain("Result");
+    expect(result.textContent).toContain("Image");
+    expect(result.textContent).toContain("Audio");
+    expect(result.textContent).toContain("Video");
+  });
+
+  it("reads an export's ports by their own roles", async () => {
+    const ids = goldenNodeIds();
+    await openGolden();
+    await screen.findByTestId("canvas-tab-Canvas 1");
+    act(() => {
+      useEditorStore
+        .getState()
+        .setSelection({ nodeIds: [ids.export], edgeIds: [] });
+    });
+    expect(
+      await screen.findByText("The film this export writes out."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("The soundtrack mixed into the export."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("The written file, ready to be delivered."),
+    ).toBeTruthy();
   });
 
   it("opens the delete confirmation from the inspector", async () => {
