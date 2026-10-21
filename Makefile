@@ -4,6 +4,8 @@ MACOS_X86_TARGET := x86_64-apple-darwin
 WINDOWS_CROSS_TARGET := x86_64-pc-windows-gnu
 HOST ?= 127.0.0.1
 PORT ?= 8080
+SOURCE ?= artifacts
+DEST ?= dist
 
 # A linked worktree's src-tauri/target symlink is replaced with a directory of
 # its own by this script, so parallel worktrees do not share one cargo lock, one
@@ -32,7 +34,7 @@ export CARGO_INCREMENTAL ?= 0
 endif
 endif
 
-.PHONY: install check check-boundaries test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows set-version clean
+.PHONY: install check check-boundaries check-version release-check test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows prepare-release set-version clean
 
 ifeq (set-version,$(firstword $(MAKECMDGOALS)))
 SET_VERSION_ARG := $(word 2,$(MAKECMDGOALS))
@@ -70,6 +72,11 @@ check-boundaries:
 		(printf '%s\n' 'documents must go through the single atomic-write implementation' >&2; exit 1)
 	@! git ls-files --error-unmatch config/moka.yaml >/dev/null 2>&1 || \
 		(printf '%s\n' 'config/moka.yaml is what one deployment reads and must stay untracked; config/moka.example.yaml is the tracked one' >&2; exit 1)
+
+check-version:
+	node scripts/check-version.mjs $(if $(TAG),--tag $(TAG),)
+
+release-check: check-version check
 
 test:
 	npm test
@@ -127,6 +134,13 @@ cross-package-windows: web-build
 	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR=x86_64-w64-mingw32-ar \
 	npm run tauri build -- --target $(WINDOWS_CROSS_TARGET) --bundles nsis
 	node scripts/collect-release.mjs
+
+prepare-release:
+	node scripts/prepare-release.mjs \
+		--source "$(SOURCE)" \
+		--dest "$(DEST)" \
+		$(if $(VERSION),--version "$(VERSION)",) \
+		$(if $(REQUIRE_ALL),--require-all,)
 
 clean:
 	rm -rf dist release src-tauri/target node_modules/.tmp

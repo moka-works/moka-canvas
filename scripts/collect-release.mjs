@@ -1,9 +1,10 @@
 import { cp, mkdir, readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { cargoTargetDir } from "./checkout.mjs";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const targetDir = process.env.CARGO_TARGET_DIR ?? cargoTargetDir(root);
 const releaseDir = join(root, "release");
@@ -59,7 +60,7 @@ if (artifacts.length === 0) {
 
 await mkdir(releaseDir, { recursive: true });
 for (const artifact of artifacts) {
-  const destination = join(releaseDir, artifact.split("/").pop());
+  const destination = join(releaseDir, basename(artifact));
   await cp(artifact, destination);
   console.log(`Copied ${artifact} -> ${destination}`);
 }
