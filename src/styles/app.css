@@ -8851,7 +8851,7 @@ button > .story-spin {
   min-height: 0;
 }
 
-.director-body > div:not(.director-resizer) {
+.director-pane {
   display: flex;
   flex-direction: column;
   flex: none;
@@ -9446,7 +9446,7 @@ button > .story-spin {
 }
 
 @media (max-width: 960px) {
-  .director-body > div:not(.director-resizer) {
+  .director-pane {
     display: none;
   }
 

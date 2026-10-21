@@ -49,6 +49,14 @@ test("a director desk opens onto its staged scene and its views switch", async (
   await expect(viewport).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("canvas")).toBeVisible();
 
+  // The stage takes the room it is given: the shot card sits against the
+  // window's right edge instead of trailing a collapsed center column.
+  const cardBox = await page.locator(".director-shot-card").boundingBox();
+  const windowWidth = page.viewportSize()?.width;
+  expect(cardBox).not.toBeNull();
+  expect(windowWidth).toBeDefined();
+  expect(Math.round(cardBox!.x + cardBox!.width)).toBe(windowWidth);
+
   // The scene is in the document, and the card opens onto it.
   const project = await served();
   expect(project.moka.directorScenes).toHaveLength(1);

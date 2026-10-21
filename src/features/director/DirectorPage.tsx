@@ -1602,7 +1602,7 @@ export function DirectorPage() {
         <div className="director-body">
           {leftOpen && (
             <>
-              <div style={{ width: leftWidth }}>
+              <div className="director-pane" style={{ width: leftWidth }}>
                 <StageBoard
                   models={models}
                   onAddCamera={addCameraOf}
@@ -1770,7 +1770,7 @@ export function DirectorPage() {
                 onPointerDown={(event) => beginResize("right", event)}
                 role="separator"
               />
-              <div style={{ width: rightWidth }}>
+              <div className="director-pane" style={{ width: rightWidth }}>
                 <ShotCard
                   images={images}
                   models={models}
