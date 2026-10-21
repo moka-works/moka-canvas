@@ -1,6 +1,6 @@
 [package]
 name = "moka-canvas"
-version = "0.3.0"
+version = "0.3.1"
 default-run = "moka-canvas"
 description = "Local-first visual video workflow editor"
 authors = ["Moka Canvas"]
