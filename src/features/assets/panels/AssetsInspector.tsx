@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { findResource, type ResourceEntry } from "../../../shared/domain";
 import { PanelFold } from "../../editor/components/PanelFold";
+import { AgentDock } from "../../assistant/agent/AgentDock";
 import {
   AssetFileSection,
   AssetProvenanceSection,
@@ -24,6 +25,7 @@ import { useAssetsStore } from "../stores/assetsStore";
  */
 export function AssetsInspector() {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<"details" | "assistant">("details");
   const moka = useProjectStore((state) => state.moka);
   const inspectedAssetId = useAssetsStore((state) => state.inspectedAssetId);
   const entry =
@@ -41,7 +43,29 @@ export function AssetsInspector() {
       id="assets-panel-right"
     >
       <PanelFold side="right" />
-      {entry ? (
+      <div className="agent-panel-tabs" role="tablist">
+        <button
+          aria-selected={tab === "details"}
+          className={tab === "details" ? "is-active" : ""}
+          onClick={() => setTab("details")}
+          role="tab"
+          type="button"
+        >
+          {t("assets:inspector.label")}
+        </button>
+        <button
+          aria-selected={tab === "assistant"}
+          className={tab === "assistant" ? "is-active" : ""}
+          onClick={() => setTab("assistant")}
+          role="tab"
+          type="button"
+        >
+          {t("agent:title")}
+        </button>
+      </div>
+      {tab === "assistant" ? (
+        <AgentDock room="assets" />
+      ) : entry ? (
         <div className="inspector-asset" data-testid="assets-inspector-file">
           <h3 className="inspector-asset-name" title={entry.name}>
             {entry.name}

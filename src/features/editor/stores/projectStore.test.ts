@@ -505,3 +505,75 @@ describe("the file check behind the open", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("agent adoption", () => {
+  it("adopts server commands without queueing them, and records one undo step", () => {
+    hydrate();
+    const canvasId = goldenNodeIds().canvasMain;
+    useProjectStore
+      .getState()
+      .adoptAgentCommands(
+        [{ type: "renameCanvas", canvasId, name: "From the agent" }],
+        9,
+        "2026-10-21T09:00:00Z",
+        "cs_1",
+        "Rename canvas",
+      );
+    const state = useProjectStore.getState();
+    expect(state.moka?.canvas[0].name).toBe("From the agent");
+    expect(state.moka?.metadata.revision).toBe(9);
+    expect(state.pending).toHaveLength(0);
+    expect(useHistoryStore.getState().undoStack).toHaveLength(1);
+
+    // The same change set arriving twice is the same work, not a second edit.
+    useProjectStore
+      .getState()
+      .adoptAgentCommands(
+        [{ type: "renameCanvas", canvasId, name: "From the agent" }],
+        9,
+        "2026-10-21T09:00:00Z",
+        "cs_1",
+        "Rename canvas",
+      );
+    expect(useHistoryStore.getState().undoStack).toHaveLength(1);
+  });
+
+  it("undoes an adopted change through the ordinary pipeline", () => {
+    hydrate();
+    const canvasId = goldenNodeIds().canvasMain;
+    const before = useProjectStore.getState().moka?.canvas[0].name;
+    useProjectStore
+      .getState()
+      .adoptAgentCommands(
+        [{ type: "renameCanvas", canvasId, name: "From the agent" }],
+        9,
+        "2026-10-21T09:00:00Z",
+        "cs_1",
+        "Rename canvas",
+      );
+    expect(undo()).toBe(true);
+    expect(useProjectStore.getState().moka?.canvas[0].name).toBe(before);
+    expect(useProjectStore.getState().pending).toHaveLength(1);
+  });
+
+  it("holds automatic saving until the lease is released", async () => {
+    hydrate();
+    const release = await useProjectStore.getState().holdWrites();
+    expect(fetchMock).not.toHaveBeenCalled();
+    execute("Rename canvas", [
+      {
+        type: "renameCanvas",
+        canvasId: goldenNodeIds().canvasMain,
+        name: "Held",
+      },
+    ]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    release();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { revision: 7, updatedAt: "2026-10-21T09:00:00Z" }),
+    );
+  });
+});

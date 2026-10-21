@@ -12,6 +12,7 @@ import {
   type StoryStepProgress,
 } from "../../shared/domain";
 import { execute } from "../editor/commands/execute";
+import { AgentDock } from "../assistant/agent/AgentDock";
 import { StoryStepBody } from "./steps/StoryStepBody";
 import { useStoryStepFailure } from "./stores/storyJobStore";
 import { useStoryStore } from "./stores/storyStore";
@@ -178,6 +179,7 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           tabIndex={-1}
         >
           <StoryStepBody step={step} story={story} />
+          <AgentDock compact room="story" />
         </main>
       </div>
     </div>

@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AssetId, MokaFile, ResourceEntry } from "../../../shared/domain";
 import { PanelFold } from "../../editor/components/PanelFold";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { AgentDock } from "../../assistant/agent/AgentDock";
 import { SelectIcon } from "../components/ClipIcons";
 import { useClipStore } from "../stores/clipStore";
 import { ClipFields } from "../inspector/ClipFields";
@@ -35,6 +37,7 @@ function findEntry(
 
 export function ClipInspector() {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<"details" | "assistant">("details");
   const moka = useProjectStore((state) => state.moka);
   const activeTimelineId = useClipStore((state) => state.activeTimelineId);
   const selection = useClipStore((state) => state.selection);
@@ -60,7 +63,29 @@ export function ClipInspector() {
       id="clip-panel-right"
     >
       <PanelFold side="right" />
-      {timeline && transition ? (
+      <div className="agent-panel-tabs" role="tablist">
+        <button
+          aria-selected={tab === "details"}
+          className={tab === "details" ? "is-active" : ""}
+          onClick={() => setTab("details")}
+          role="tab"
+          type="button"
+        >
+          {t("clip:inspector.label")}
+        </button>
+        <button
+          aria-selected={tab === "assistant"}
+          className={tab === "assistant" ? "is-active" : ""}
+          onClick={() => setTab("assistant")}
+          role="tab"
+          type="button"
+        >
+          {t("agent:title")}
+        </button>
+      </div>
+      {tab === "assistant" ? (
+        <AgentDock room="clip" />
+      ) : timeline && transition ? (
         <TransitionCard timeline={timeline} transition={transition} />
       ) : timeline && clips.length > 0 ? (
         <ClipFields clips={clips} timeline={timeline} />

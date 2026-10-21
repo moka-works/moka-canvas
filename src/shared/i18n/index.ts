@@ -1,6 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { create } from "zustand";
+import enAgent from "./locales/en/agent.json" with { type: "json" };
 import enApp from "./locales/en/app.json" with { type: "json" };
 import enAssets from "./locales/en/assets.json" with { type: "json" };
 import enAssistant from "./locales/en/assistant.json" with { type: "json" };
@@ -13,6 +14,7 @@ import enErrors from "./locales/en/errors.json" with { type: "json" };
 import enProblems from "./locales/en/problems.json" with { type: "json" };
 import enSettings from "./locales/en/settings.json" with { type: "json" };
 import enStory from "./locales/en/story.json" with { type: "json" };
+import zhAgent from "./locales/zh/agent.json" with { type: "json" };
 import zhApp from "./locales/zh/app.json" with { type: "json" };
 import zhAssets from "./locales/zh/assets.json" with { type: "json" };
 import zhAssistant from "./locales/zh/assistant.json" with { type: "json" };
@@ -101,6 +103,7 @@ export function resolveLocale(mode: LocaleMode): Locale {
 
 const resources = {
   en: {
+    agent: enAgent,
     app: enApp,
     assets: enAssets,
     assistant: enAssistant,
@@ -115,6 +118,7 @@ const resources = {
     story: enStory,
   },
   zh: {
+    agent: zhAgent,
     app: zhApp,
     assets: zhAssets,
     assistant: zhAssistant,

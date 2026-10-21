@@ -142,8 +142,8 @@ export interface ToolCallResponse {
   summary: string;
   data?: unknown;
   commands: unknown[];
-  assetsAdded: string[];
-  assetsUpdated: string[];
+  assetsAdded: ResourceEntry[];
+  assetsUpdated: ResourceEntry[];
   assetsRemoved: string[];
   baseRevision: number;
   revision: number;

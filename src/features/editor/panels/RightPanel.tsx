@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { AssistantPanel } from "../../assistant/AssistantPanel";
+import { AgentDock } from "../../assistant/agent/AgentDock";
 import { PanelFold } from "../components/PanelFold";
 import { useEditorStore } from "../stores/editorStore";
 import { HistoryPanel } from "./HistoryPanel";
@@ -63,7 +63,7 @@ export function RightPanel() {
         </button>
       </div>
       {tab === "assistant" ? (
-        <AssistantPanel />
+        <AgentDock room="canvas" />
       ) : tab === "history" ? (
         <HistoryPanel />
       ) : (

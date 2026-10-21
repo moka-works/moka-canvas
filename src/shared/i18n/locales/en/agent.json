@@ -1,0 +1,89 @@
+{
+  "title": "Assistant",
+  "rooms": {
+    "canvas": "Canvas",
+    "clip": "Cutting room",
+    "assets": "Assets",
+    "story": "Story"
+  },
+  "roles": {
+    "user": "You",
+    "assistant": "Assistant",
+    "error": "Trouble"
+  },
+  "empty": "Ask for a change, or ask what is here.",
+  "emptyHint": "Reads and edits follow the room you are in. Destructive work asks first.",
+  "newSession": "New conversation",
+  "history": "Conversations",
+  "composer": {
+    "placeholder": "Ask the assistant…",
+    "send": "Send",
+    "stop": "Stop"
+  },
+  "status": {
+    "thinking": "Working…",
+    "paused": "Waiting for you"
+  },
+  "tool": {
+    "running": "Running",
+    "ok": "Done",
+    "error": "Failed",
+    "pending": "Waiting",
+    "skipped": "Skipped",
+    "undoable": "Can be undone with Ctrl+Z",
+    "audit": "Not undoable; recorded in the audit",
+    "task": "Started a task",
+    "details": "Details"
+  },
+  "approval": {
+    "title": "Confirm this step",
+    "irreversible": "This cannot be undone. The input below is exactly what will run.",
+    "approve": "Allow",
+    "deny": "Do not",
+    "risk": {
+      "spend": "Spends model credit",
+      "destroy": "Deletes content",
+      "export": "Writes a file"
+    }
+  },
+  "plan": {
+    "title": "Plan"
+  },
+  "question": {
+    "title": "The assistant asks",
+    "other": "Another answer…",
+    "answer": "Answer",
+    "dismiss": "Dismiss"
+  },
+  "sessions": {
+    "title": "Conversations",
+    "search": "Search conversations",
+    "empty": "No conversations yet",
+    "noMatch": "Nothing matches that search",
+    "messages": "{{count}} messages",
+    "rename": "Rename",
+    "delete": "Delete",
+    "confirmDelete": "Delete?",
+    "cancel": "Cancel",
+    "untitled": "New conversation",
+    "untitledShort": "Untitled"
+  },
+  "errors": {
+    "saveFirst": "Your last change has not been saved yet; the assistant needs the saved document. Save or resolve the conflict, then ask again.",
+    "emptyAnswer": "The model returned neither words nor a tool call. Try again, or check the model in Settings.",
+    "stepLimit": "The assistant stopped after {{count}} steps without finishing. Ask it to continue.",
+    "stopped": "Stopped.",
+    "denied": "You did not allow this step.",
+    "destinationCancelled": "No destination was chosen.",
+    "loadCatalog": "The tool list could not be loaded. Check the local server and try again."
+  },
+  "destination": {
+    "title": "Choose where to save for {{tool}}"
+  },
+  "tasks": {
+    "stillRunning": "Still running; you can ask again later"
+  },
+  "context": {
+    "warnings": "Some ids in the request no longer exist"
+  }
+}

@@ -18,6 +18,7 @@ import {
 } from "../../../api/projects";
 import { isApiError, nameProject } from "../../../api/client";
 import { i18n } from "../../../shared/i18n";
+import { useHistoryStore } from "./historyStore";
 import { useAppStore } from "./appStore";
 import { useOpenCanvases } from "./openCanvases";
 
@@ -87,6 +88,31 @@ interface ProjectState {
   integrateAssetEntry: (entry: ResourceEntry, result: SaveResult) => void;
   /** Folds a server-side asset removal into the local registry. */
   removeAssetEntry: (assetId: AssetId, result: SaveResult) => void;
+  /**
+   * Adopts commands a server tool already committed.
+   *
+   * The server has applied them, so they are not queued for saving; they go
+   * into the local document, the revision moves to the one the tool returned,
+   * and the inverse becomes one step of the reader's own undo history.
+   */
+  adoptAgentCommands: (
+    commands: DocumentCommand[],
+    revision: number,
+    updatedAt: string,
+    changeSetId: string,
+    label: string,
+  ) => void;
+  /**
+   * Holds automatic saving for one short tool call.
+   *
+   * Pending work is flushed first, so the tool plans from what the reader
+   * sees. Edits made while the lease is held stay pending and go out when it
+   * ends. The returned function releases it; the lease expires on its own
+   * after thirty seconds so a loop that dies cannot leave saving stopped.
+   */
+  holdWrites: () => Promise<() => void>;
+  /** Moves the local revision to what a server-side effect returned. */
+  setRevision: (revision: number, updatedAt: string) => void;
 }
 
 const FLUSH_DEBOUNCE_MS = 400;
@@ -108,6 +134,13 @@ let flushInFlight: Promise<void> | null = null;
 // record says about a run that just ended can be written after the document it
 // is about to describe has landed, rather than on the one being replaced.
 let readInFlight: Promise<boolean> | null = null;
+// Tool calls that committed on the server and whose commands this window has
+// already folded in. A retried response must not insert the same work twice.
+const appliedChangeSets = new Set<string>();
+// How many short tool calls are holding automatic saving. A count rather than
+// a flag because two windows' loops never share a store, but two overlapping
+// calls in one turn can.
+let writesHeld = 0;
 
 function activeCanvasOf(moka: MokaFile, activeCanvasId: CanvasId | null) {
   return (
@@ -120,8 +153,10 @@ function activeCanvasOf(moka: MokaFile, activeCanvasId: CanvasId | null) {
 export const useProjectStore = create<ProjectState>()((set, get) => {
   const scheduleFlush = () => {
     if (flushTimer) clearTimeout(flushTimer);
+    if (writesHeld > 0) return;
     flushTimer = setTimeout(() => {
       flushTimer = null;
+      if (writesHeld > 0) return;
       void get().flush();
     }, FLUSH_DEBOUNCE_MS);
   };
@@ -204,6 +239,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     hydrate(opened) {
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = null;
+      appliedChangeSets.clear();
+      writesHeld = 0;
       // A flush from the previously open project must not be awaited here.
       flushInFlight = null;
       // Every request from this window is about what the window is looking
@@ -361,6 +398,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     async flush() {
       const { moka, pending, saveStatus } = get();
+      if (writesHeld > 0) return;
       if (!moka || pending.length === 0 || saveStatus === "conflicted") return;
       if (flushInFlight) return flushInFlight;
       const batch = pending;
@@ -456,6 +494,61 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
             resources: { ...state.moka.resources, [category]: nextList },
           },
         };
+      });
+    },
+
+    adoptAgentCommands(commands, revision, updatedAt, changeSetId, label) {
+      if (appliedChangeSets.has(changeSetId)) return;
+      const { moka } = get();
+      if (!moka) return;
+      const { next, inverse } = applyToDocument(moka, commands);
+      appliedChangeSets.add(changeSetId);
+      set({
+        moka: {
+          ...next,
+          metadata: {
+            ...next.metadata,
+            revision,
+            updatedAt,
+          },
+        },
+      });
+      useHistoryStore.getState().record({
+        id: changeSetId,
+        label,
+        forwardCommands: commands,
+        inverseCommands: inverse,
+      });
+    },
+
+    async holdWrites() {
+      await get().flush();
+      writesHeld += 1;
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = null;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        writesHeld = Math.max(0, writesHeld - 1);
+        if (writesHeld === 0 && get().pending.length > 0) scheduleFlush();
+      };
+      const expiry = setTimeout(release, 30_000);
+      if (typeof expiry === "object" && expiry !== null && "unref" in expiry) {
+        (expiry as { unref?: () => void }).unref?.();
+      }
+      return release;
+    },
+
+    setRevision(revision, updatedAt) {
+      const { moka } = get();
+      if (!moka) return;
+      if (revision < moka.metadata.revision) return;
+      set({
+        moka: {
+          ...moka,
+          metadata: { ...moka.metadata, revision, updatedAt },
+        },
       });
     },
 
