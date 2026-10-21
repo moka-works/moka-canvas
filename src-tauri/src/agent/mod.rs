@@ -9,6 +9,10 @@
 pub mod catalog;
 pub mod chat;
 pub mod context;
+pub mod error;
+pub mod journal;
 pub mod prompt;
 pub mod protocol;
+pub mod runner;
 pub mod sessions;
+pub mod tools;

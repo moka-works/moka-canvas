@@ -2514,3 +2514,100 @@ pub async fn agent_session_update_message(
         serde_json::json!({ "session": summary, "trimmed": trimmed }),
     ))
 }
+
+// ---------------------------------------------------------------------------
+// Tool execution. The runner enforces the contract: a command is planned,
+// CAS-submitted, and recorded with its inverse; an effect runs once and gets
+// an audit instead.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallBody {
+    #[serde(default = "empty_object")]
+    input: serde_json::Value,
+    #[serde(default)]
+    dry_run: bool,
+    #[serde(default)]
+    acknowledge_risk: bool,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    actor: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    turn_id: Option<String>,
+}
+
+fn empty_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+pub async fn agent_tool_call(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(name): Path<String>,
+    Json(body): Json<ToolCallBody>,
+) -> Result<Json<crate::agent::runner::ToolResponse>, Problem> {
+    let actor = body.actor.unwrap_or_else(|| "http".into());
+    if !matches!(actor.as_str(), "ui" | "app" | "cli" | "mcp" | "http") {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            format!("unknown actor '{actor}'"),
+        ));
+    }
+    let request = crate::agent::runner::ToolRequest {
+        input: body.input,
+        dry_run: body.dry_run,
+        acknowledge_risk: body.acknowledge_risk,
+        idempotency_key: body.idempotency_key,
+        request_id: body.request_id,
+        actor,
+        session_id: body.session_id,
+        turn_id: body.turn_id,
+    };
+    let response = crate::agent::runner::invoke(&state, &session, &name, request)
+        .await
+        .map_err(Problem::from)?;
+    Ok(Json(response))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentChangesQuery {
+    limit: Option<usize>,
+}
+
+pub async fn agent_changes(
+    session: ProjectSession,
+    Query(query): Query<AgentChangesQuery>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session.0.project_root().await.map_err(Problem::from)?;
+    Ok(Json(serde_json::json!({
+        "changes": crate::agent::journal::list_changes(&root, query.limit.unwrap_or(50)),
+    })))
+}
+
+pub async fn agent_change_undo(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    crate::agent::runner::undo_change(&state, &session, &id)
+        .await
+        .map(Json)
+        .map_err(Problem::from)
+}
+
+pub async fn agent_audit(
+    session: ProjectSession,
+    Query(query): Query<AgentChangesQuery>,
+) -> Result<Json<serde_json::Value>, Problem> {
+    let root = session.0.project_root().await.map_err(Problem::from)?;
+    Ok(Json(serde_json::json!({
+        "audit": crate::agent::journal::list_audit(&root, query.limit.unwrap_or(50)),
+    })))
+}

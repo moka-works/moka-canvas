@@ -251,6 +251,36 @@ impl ProjectRegistry {
 }
 
 impl FsProjectStore {
+    /// Applies agent-planned commands and returns both the saved revision and
+    /// the commands that undo them.
+    ///
+    /// The document pipeline already computes the inverse; this is the same
+    /// apply with that inverse kept, so an agent change set and a reader's own
+    /// undo are the same kind of thing.
+    pub async fn apply_agent_commands(
+        &self,
+        expected_revision: i32,
+        commands: Vec<DocumentCommand>,
+    ) -> Result<(SaveResult, Vec<DocumentCommand>), ProjectError> {
+        let mut guard = self.state.lock().expect("store poisoned");
+        let state = guard
+            .as_mut()
+            .ok_or_else(|| ProjectError::domain("PROJECT_NOT_OPEN", "No project is open"))?;
+        if state.revision != expected_revision {
+            return Err(ProjectError::domain(
+                "REVISION_CONFLICT",
+                format!(
+                    "Expected revision {expected_revision} but the document is at {}",
+                    state.revision
+                ),
+            ));
+        }
+        let (next, inverse) = apply_commands(&state.moka, &commands)
+            .map_err(|error| ProjectError::domain(error.code, error.to_string()))?;
+        let saved = self.commit(state, next)?;
+        Ok((saved, inverse))
+    }
+
     pub fn new(config: Arc<AppConfig>) -> Self {
         Self {
             config,

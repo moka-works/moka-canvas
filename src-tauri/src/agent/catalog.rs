@@ -771,7 +771,7 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("srt", "string", "SRT document"),
             ("trackName", "string", "Text track name"),
         ])),
-        command("clip.export_srt", "clip", ToolRisk::Read, "Read a text track as SRT. Writes a file only when a destination is given.", schema(&["timelineId"], &[
+        effect("clip.export_srt", "clip", ToolRisk::Export, "Read a text track as SRT, or write it to a destination the caller named.", schema(&["timelineId"], &[
             ("timelineId", "string", "Timeline id"),
             ("trackId", "string", "Text track"),
             ("destination", "string", "Optional file path"),

@@ -42,6 +42,9 @@ pub struct ApiState {
     pub exports: Arc<ExportRegistry>,
     /// Project-local conversations, written beside the document.
     pub agent_sessions: Arc<crate::agent::sessions::AgentSessionStore>,
+    /// Answers from tasks that are not otherwise readable after they settle,
+    /// such as a recognition result an agent later writes onto a timeline.
+    pub agent_tasks: Arc<tokio::sync::Mutex<std::collections::HashMap<String, serde_json::Value>>>,
     /// Root directory of the models tree: one directory per converter, each
     /// carrying its own `model.json`.
     converter_root: PathBuf,
@@ -128,6 +131,7 @@ impl ApiState {
             clip_probe,
             exports: Arc::new(ExportRegistry::new()),
             agent_sessions: Arc::new(crate::agent::sessions::AgentSessionStore::new()),
+            agent_tasks: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             converter_root,
             nodes_root,
         }
@@ -376,6 +380,13 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/agent/sessions/{id}/messages/{messageId}",
             put(routes::agent_session_update_message),
         )
+        .route("/api/v1/agent/tools/{name}", post(routes::agent_tool_call))
+        .route("/api/v1/agent/changes", get(routes::agent_changes))
+        .route(
+            "/api/v1/agent/changes/{id}/undo",
+            post(routes::agent_change_undo),
+        )
+        .route("/api/v1/agent/audit", get(routes::agent_audit))
 }
 
 /// A generation request carries a prompt and references to assets already in
