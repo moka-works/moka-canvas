@@ -21,7 +21,8 @@ use super::error::ProviderError;
 use super::media::MediaInput;
 use super::models::ResolvedModel;
 use super::{
-    AsyncTask, Cancel, DeltaSink, GenerateRequest, GenerateResult, GeneratedItem, TaskState, Usage,
+    AsyncTask, Cancel, DeltaSink, GenerateRequest, GenerateResult, GeneratedItem, TaskState,
+    ToolCall, ToolCallDelta, Usage,
 };
 
 /// A provider that cannot answer in this long is not about to finish a
@@ -509,6 +510,12 @@ pub(crate) struct StreamEvent {
     pub(crate) complete: Option<String>,
     /// Totals, which some protocols send only with the last event.
     pub(crate) usage: Option<Usage>,
+    /// Tool calls, or pieces of them. A provider that streams tools sends the
+    /// name once and the arguments in fragments; what is executed is still the
+    /// aggregate read at the end.
+    pub(crate) tool_calls: Vec<ToolCallDelta>,
+    /// Why the model stopped, when the event says so.
+    pub(crate) finish_reason: Option<String>,
     /// The provider's own complaint, where the event carried one instead of a
     /// piece of the answer. A stream that has opened has no status left to
     /// refuse with, so some protocols say what went wrong here.
@@ -527,10 +534,21 @@ struct SseReader<'a, F> {
     data: Vec<String>,
     aggregate: String,
     usage: Option<Usage>,
+    /// Tool calls as they are being put together, keyed by the position the
+    /// provider gave them.
+    calls: std::collections::BTreeMap<usize, PartialCall>,
+    finish_reason: Option<String>,
     /// What the provider said instead of finishing the answer, where an event
     /// carried a complaint rather than a piece.
     failed: Option<String>,
     done: bool,
+}
+
+#[derive(Default)]
+struct PartialCall {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 impl<'a, F> SseReader<'a, F>
@@ -545,6 +563,8 @@ where
             data: Vec::new(),
             aggregate: String::new(),
             usage: None,
+            calls: std::collections::BTreeMap::new(),
+            finish_reason: None,
             failed: None,
             done: false,
         }
@@ -603,6 +623,21 @@ where
             if event.usage.is_some() {
                 self.usage = event.usage;
             }
+            if event.finish_reason.is_some() {
+                self.finish_reason = event.finish_reason;
+            }
+            for delta in event.tool_calls {
+                let call = self.calls.entry(delta.index).or_default();
+                if let Some(id) = delta.id.filter(|id| !id.is_empty()) {
+                    call.id = id;
+                }
+                if let Some(name) = delta.name.filter(|name| !name.is_empty()) {
+                    call.name = name;
+                }
+                if let Some(arguments) = delta.arguments_delta {
+                    call.arguments.push_str(&arguments);
+                }
+            }
         }
     }
 
@@ -613,12 +648,37 @@ where
         if let Some(failed) = self.failed {
             return Err(ProviderError::Rejected(failed));
         }
+        let tool_calls = self
+            .calls
+            .into_values()
+            .filter(|call| !call.name.is_empty())
+            .map(|call| ToolCall {
+                id: call.id,
+                name: call.name,
+                arguments: arguments_of(&call.arguments),
+            })
+            .collect();
         Ok(GenerateResult {
             text: (!self.aggregate.is_empty()).then_some(self.aggregate),
             items: Vec::new(),
             usage: self.usage,
+            tool_calls,
+            finish_reason: self.finish_reason,
         })
     }
+}
+
+/// A streamed call's arguments, which travel as text fragments.
+///
+/// What arrives should be one JSON object; a model that wrote something else
+/// is handed over as the text it wrote rather than dropped, so the caller can
+/// report the failure with the model's own words.
+fn arguments_of(raw: &str) -> serde_json::Value {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return serde_json::Value::Object(serde_json::Map::new());
+    }
+    serde_json::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()))
 }
 
 /// An image item with its mime sniffed and its size read from the header.
@@ -834,6 +894,7 @@ mod tests {
                     images: None,
                     seconds: None,
                 }),
+            ..StreamEvent::default()
         }
     }
 
@@ -948,6 +1009,55 @@ mod tests {
         assert!(error.to_string().contains("the service is busy"), "{error}");
         assert!(!error.retryable(), "the caller has already seen the pieces");
         assert_eq!(shown(&seen), "A lantern");
+    }
+
+    #[test]
+    fn streamed_tool_call_fragments_are_put_back_together() {
+        // Providers send a call's name once and its arguments in pieces; what
+        // is executed is the whole call, read after the stream has ended.
+        let parse = |payload: &Value| StreamEvent {
+            tool_calls: payload
+                .get("calls")
+                .and_then(Value::as_array)
+                .map(|calls| {
+                    calls
+                        .iter()
+                        .map(|call| ToolCallDelta {
+                            index: call.get("index").and_then(Value::as_u64).unwrap_or(0) as usize,
+                            id: call.get("id").and_then(Value::as_str).map(str::to_string),
+                            name: call.get("name").and_then(Value::as_str).map(str::to_string),
+                            arguments_delta: call
+                                .get("arguments")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            finish_reason: payload
+                .get("finish")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            ..StreamEvent::default()
+        };
+        let (sink, _) = watching();
+        let mut reader = SseReader::new(&parse, &sink);
+        for event in [
+            r#"{"calls":[{"index":0,"id":"call_1","name":"clip.trim","arguments":"{\"timeli"}]}"#,
+            r#"{"calls":[{"index":0,"arguments":"neId\":\"tl_1\"}"}]}"#,
+            r#"{"calls":[{"index":1,"id":"call_2","name":"task.get","arguments":"{\"kind\":\"run\"}"}],"finish":"tool_calls"}"#,
+        ] {
+            reader.feed(event_with(event).as_bytes());
+        }
+        let result = reader.finish().expect("the stream ended");
+        assert_eq!(result.tool_calls.len(), 2);
+        assert_eq!(result.tool_calls[0].id, "call_1");
+        assert_eq!(result.tool_calls[0].name, "clip.trim");
+        assert_eq!(result.tool_calls[0].arguments["timelineId"], "tl_1");
+        assert_eq!(result.tool_calls[1].name, "task.get");
+        assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+        assert!(result.text.is_none(), "no words were said");
+        assert!(!result.is_empty(), "a pure tool call is an answer");
     }
 
     fn reply(status: u16, body: &str) -> Reply {

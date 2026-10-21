@@ -80,6 +80,7 @@ impl ResolvedInputs {
                 .cloned()
                 .unwrap_or_default(),
             inputs: self.inputs.clone(),
+            ..GenerateRequest::default()
         }
     }
 }

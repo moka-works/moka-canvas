@@ -4064,3 +4064,136 @@ async fn a_minimax_recognition_answers_where_its_job_would_have_started() {
         "the language rides as a header"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_openai_chat_answer_can_be_a_tool_call_instead_of_words() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/chat/completions",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("chat", &headers, None);
+                recorded.note_body(&body);
+                Json(json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": null,
+                            "tool_calls": [{
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "clip.trim",
+                                    "arguments": "{\"timelineId\":\"tl_1\",\"edits\":[]}"
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 4}
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "openaiChat",
+        &base_url,
+        "gpt-tools",
+        Capability::Text,
+        "/v1/chat/completions",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "You act with tools."),
+            moka_canvas::generate::ChatMessage::text("user", "trim the first clip"),
+        ],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "clip.trim".into(),
+            description: "Trim clips".into(),
+            parameters: json!({"type": "object", "required": ["timelineId"]}),
+        }],
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer is read whole");
+
+    assert!(result.text.is_none(), "a pure tool call carries no words");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].id, "call_1");
+    assert_eq!(result.tool_calls[0].name, "clip.trim");
+    assert_eq!(result.tool_calls[0].arguments["timelineId"], "tl_1");
+    assert!(!result.is_empty(), "a tool call is not an empty answer");
+
+    // The conversation and the tool schema reached the provider in its own
+    // shape: this is what makes a native tool step possible at all.
+    let sent = recorded.body(0);
+    assert_eq!(sent["messages"][0]["role"], "system");
+    assert_eq!(sent["messages"][1]["content"], "trim the first clip");
+    assert_eq!(sent["tools"][0]["type"], "function");
+    assert_eq!(sent["tools"][0]["function"]["name"], "clip.trim");
+    assert_eq!(sent["tool_choice"], "auto");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_streamed_tool_call_is_put_back_together_before_it_is_returned() {
+    let base_url = serve(Router::new().route(
+        "/v1/chat/completions",
+        post(move || async move {
+            stream(&[
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"canvas.get","arguments":"{\"canvas"}}]}}]}"#,
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"Id\":\"cv_1\"}"}}]}}]}"#,
+                r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#,
+                "[DONE]",
+            ])
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "openaiChat",
+        &base_url,
+        "gpt-tools",
+        Capability::Text,
+        "/v1/chat/completions",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "read the canvas",
+        )],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+
+    assert_eq!(shown(&seen), "", "a tool call has no words to show");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+}

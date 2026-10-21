@@ -76,6 +76,106 @@ pub struct GenerateRequest {
     /// Reference media: what to edit, what to imitate, which frames to land on.
     #[serde(default)]
     pub inputs: Vec<GenerateInput>,
+    /// A conversation, when the request is a step of one.
+    ///
+    /// A generation with no messages keeps the old shape: the prompt and the
+    /// system instruction are the request. A conversation request carries the
+    /// turns instead, and a converter that knows how sends them as they are.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<ChatMessage>,
+    /// Tools the model may ask for. Empty for an ordinary generation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolDef>,
+    /// `auto`, `none`, or a tool name. Absent lets the provider decide.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>,
+}
+
+/// One turn of a conversation, in the project's own shape.
+///
+/// A tool result is a message of its own rather than a field of a text turn:
+/// providers that speak tools insist on the two being separate roles, and one
+/// shape here means the chat layer does not carry two.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    /// `system`, `user`, `assistant`, or `tool`.
+    pub role: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn text(role: &str, text: impl Into<String>) -> Self {
+        Self {
+            role: role.to_string(),
+            text: text.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn assistant_calls(calls: Vec<ToolCall>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            tool_calls: calls,
+            ..Self::default()
+        }
+    }
+
+    pub fn tool_result(call: &ToolCall, text: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            text: text.into(),
+            tool_call_id: Some(call.id.clone()),
+            name: Some(call.name.clone()),
+            ..Self::default()
+        }
+    }
+}
+
+/// One tool a model may call.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    /// A JSON Schema object describing the arguments.
+    pub parameters: serde_json::Value,
+}
+
+/// One call a model asked for.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    /// The arguments as the model sent them, decoded where that is possible.
+    #[serde(default)]
+    pub arguments: serde_json::Value,
+}
+
+/// One piece of a tool call arriving in a stream.
+///
+/// Providers send the name once and the arguments in fragments, keyed by
+/// position; a reader that executes nothing until the stream ends still has
+/// to put the fragments back together to know what was called.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallDelta {
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments_delta: Option<String>,
 }
 
 impl GenerateRequest {
@@ -196,13 +296,22 @@ pub struct GenerateResult {
     pub items: Vec<GeneratedItem>,
     /// For display and statistics only; nothing decides based on it.
     pub usage: Option<Usage>,
+    /// What the model asked to run. A pure tool call is an answer: there is
+    /// no text, and reporting it as `PROVIDER_NO_OUTPUT` would throw away a
+    /// step the caller is waiting to perform.
+    pub tool_calls: Vec<ToolCall>,
+    /// Why the model stopped: `stop`, `tool_calls`, `length`, or the
+    /// provider's own word.
+    pub finish_reason: Option<String>,
 }
 
 impl GenerateResult {
     /// A 200 that carried nothing usable, which the gateway reports as
     /// `PROVIDER_NO_OUTPUT` rather than handing back an empty answer.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty() && self.text.as_deref().unwrap_or_default().trim().is_empty()
+        self.items.is_empty()
+            && self.tool_calls.is_empty()
+            && self.text.as_deref().unwrap_or_default().trim().is_empty()
     }
 
     /// How much of it there is, counted the same way whoever is counting and
@@ -338,6 +447,7 @@ impl SettledAnswer {
             text: self.text.clone(),
             items,
             usage: self.usage,
+            ..GenerateResult::default()
         })
     }
 }
@@ -679,6 +789,7 @@ mod tests {
                 images: Some(1),
                 seconds: Some(1.5),
             }),
+            ..GenerateResult::default()
         };
         let carried = SettledAnswer::of(&result);
         // Written down and read back the way a job note travels.
@@ -790,6 +901,58 @@ mod tests {
         // And a reader's own sink stays a reader's through the same wrap.
         let watched = DeltaSink::new(Arc::new(|_| {})).tapped(Arc::new(|_| {}));
         assert!(watched.is_watched());
+    }
+
+    #[test]
+    fn a_conversation_request_carries_its_tools_in_camel_case() {
+        let request = GenerateRequest {
+            capability: Capability::Text,
+            messages: vec![
+                ChatMessage::text("user", "trim the first clip"),
+                ChatMessage::assistant_calls(vec![ToolCall {
+                    id: "call_1".into(),
+                    name: "clip.trim".into(),
+                    arguments: serde_json::json!({"timelineId":"tl_1"}),
+                }]),
+                ChatMessage::tool_result(
+                    &ToolCall {
+                        id: "call_1".into(),
+                        name: "clip.trim".into(),
+                        arguments: serde_json::Value::Null,
+                    },
+                    r#"{"ok":true}"#,
+                ),
+            ],
+            tools: vec![ToolDef {
+                name: "clip.trim".into(),
+                description: "Trim clips".into(),
+                parameters: serde_json::json!({"type":"object"}),
+            }],
+            ..GenerateRequest::default()
+        };
+        let wire = serde_json::to_value(&request).expect("a request encodes");
+        assert_eq!(wire["messages"][1]["toolCalls"][0]["name"], "clip.trim");
+        assert_eq!(wire["messages"][2]["toolCallId"], "call_1");
+        assert_eq!(wire["tools"][0]["name"], "clip.trim");
+        assert!(wire.get("toolChoice").is_none());
+        let read: GenerateRequest = serde_json::from_value(wire).expect("it reads back");
+        assert_eq!(read.messages.len(), 3);
+        assert_eq!(read.tools.len(), 1);
+    }
+
+    #[test]
+    fn a_pure_tool_call_is_an_answer_rather_than_an_empty_response() {
+        let result = GenerateResult {
+            tool_calls: vec![ToolCall {
+                id: "call_1".into(),
+                name: "canvas.get".into(),
+                arguments: serde_json::json!({}),
+            }],
+            finish_reason: Some("tool_calls".into()),
+            ..GenerateResult::default()
+        };
+        assert!(!result.is_empty());
+        assert_eq!(result.bytes(), 0);
     }
 
     #[test]

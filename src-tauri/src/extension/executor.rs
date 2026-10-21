@@ -1069,6 +1069,7 @@ impl ExtensionExecutor {
                         })
                     }
                 },
+                ..GenerateRequest::default()
             };
             let started = Instant::now();
             let remaining = control.remaining();

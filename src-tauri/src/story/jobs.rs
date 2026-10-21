@@ -860,6 +860,7 @@ impl StoryJobManager {
             system: item.system.clone(),
             params: item.params.as_object().cloned().unwrap_or_default(),
             inputs: item.inputs.clone(),
+            ..GenerateRequest::default()
         };
         let progress = {
             let sender = sender.clone();

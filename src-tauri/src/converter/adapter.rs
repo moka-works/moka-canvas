@@ -32,7 +32,7 @@ use crate::generate::error::ProviderError;
 use crate::generate::media::{MediaInput, MultipartBody};
 use crate::generate::{
     AsyncTask, Cancel, DeltaSink, GenerateRequest, GenerateResult, GeneratedItem, SettledAnswer,
-    TaskState, Usage,
+    TaskState, ToolCall, ToolCallDelta, Usage,
 };
 
 /// How many exchanges one step may take before a script is stopped.
@@ -368,6 +368,7 @@ impl ProviderAdapter for LuaAdapter {
                     text,
                     items,
                     usage: usage_of(result.and_then(|result| result.get("usage"))),
+                    ..GenerateResult::default()
                 }))
             }
             Some("pending") | None => {
@@ -512,6 +513,11 @@ impl Session {
                     .and_then(Value::as_str)
                     .map(str::to_string),
                 usage: usage_of(reply.get("usage")),
+                tool_calls: tool_deltas_of(reply.get("tool_calls")),
+                finish_reason: reply
+                    .get("finish_reason")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 failed: reply
                     .get("failed")
                     .and_then(Value::as_str)
@@ -679,6 +685,12 @@ async fn result_of(
         text,
         items,
         usage: usage_of(ended.reply.get("usage")),
+        tool_calls: tool_calls_of(ended.reply.get("tool_calls")),
+        finish_reason: ended
+            .reply
+            .get("finish_reason")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
@@ -824,6 +836,63 @@ fn usage_of(value: Option<&Value>) -> Option<Usage> {
         || usage.images.is_some()
         || usage.seconds.is_some())
     .then_some(usage)
+}
+
+/// Tool calls a reply described, with their arguments already decoded.
+///
+/// A provider sends the arguments as text; a script that has read them hands
+/// them back as a table. Both are accepted, because a script may legitimately
+/// pass through what it did not understand.
+fn tool_calls_of(value: Option<&Value>) -> Vec<ToolCall> {
+    let Some(list) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|call| {
+            let name = call.get("name").and_then(Value::as_str)?.to_string();
+            let id = call
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let arguments = match call.get("arguments") {
+                Some(Value::String(text)) => {
+                    serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
+                }
+                Some(value) => value.clone(),
+                None => Value::Object(Map::new()),
+            };
+            Some(ToolCall {
+                id,
+                name,
+                arguments,
+            })
+        })
+        .collect()
+}
+
+/// The pieces of a streamed tool call, as a script read them.
+fn tool_deltas_of(value: Option<&Value>) -> Vec<ToolCallDelta> {
+    let Some(list) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    list.iter()
+        .map(|delta| ToolCallDelta {
+            index: delta
+                .get("index")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+            id: delta.get("id").and_then(Value::as_str).map(str::to_string),
+            name: delta
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            arguments_delta: delta
+                .get("arguments_delta")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })
+        .collect()
 }
 
 /// One exchange: a request a script described, and the function that reads the
@@ -1049,11 +1118,38 @@ fn call_json(call: &ModelCall) -> Value {
 
 /// The request as a script reads it.
 fn request_json(request: &GenerateRequest) -> Value {
+    let messages: Vec<Value> = request
+        .messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": message.role,
+                "text": message.text,
+                "tool_calls": message.tool_calls,
+                "tool_call_id": message.tool_call_id,
+                "name": message.name,
+            })
+        })
+        .collect();
+    let tools: Vec<Value> = request
+        .tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            })
+        })
+        .collect();
     json!({
         "prompt": request.prompt,
         "system": request.instruction(),
         "capability": request.capability.as_str(),
         "params": request.params,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": request.tool_choice,
     })
 }
 

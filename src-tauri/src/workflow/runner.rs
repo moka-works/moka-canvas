@@ -1478,6 +1478,7 @@ impl RunManager {
             text: text.clone(),
             items,
             usage: None,
+            ..GenerateResult::default()
         };
         let resolved = snapshot.generation_inputs(&node.id);
         let entries = ingest_generated(store.as_ref(), run, node, &resolved, &result)
