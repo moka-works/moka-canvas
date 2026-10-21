@@ -17,6 +17,10 @@ use serde_json::{json, Value};
 
 const DEFAULT_SERVER: &str = "http://127.0.0.1:3000";
 
+/// The Agent Skill shipped with this binary. One file, embedded so `moka
+/// skills print` works from an installed package with no source tree.
+const SKILL: &str = include_str!("../../../skills/moka-canvas/SKILL.md");
+
 #[derive(Parser)]
 #[command(
     name = "moka",
@@ -85,6 +89,24 @@ enum Command {
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
+    },
+    /// The Agent Skill that teaches a third-party agent to use this CLI.
+    Skills {
+        #[command(subcommand)]
+        command: SkillsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsCommand {
+    /// Print the skill to stdout.
+    Print,
+    /// Write it under a directory an agent client reads.
+    Install {
+        #[arg(long)]
+        dir: String,
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -511,6 +533,39 @@ fn human_tool(answer: &Value) {
 
 async fn run(cli: Cli) -> Result<()> {
     let json = cli.json;
+    // The skill is a string in this binary; no server is involved.
+    if let Command::Skills { command } = &cli.command {
+        match command {
+            SkillsCommand::Print => {
+                if json {
+                    print_value(&json!({"name": "moka-canvas", "content": SKILL}), true);
+                } else {
+                    print!("{SKILL}");
+                }
+            }
+            SkillsCommand::Install { dir, force } => {
+                let target = PathBuf::from(dir).join("moka-canvas").join("SKILL.md");
+                if target.exists() && !force {
+                    return Err(CliError::Usage(format!(
+                        "{} already exists; pass --force to replace it",
+                        target.display()
+                    )));
+                }
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| CliError::Usage(error.to_string()))?;
+                }
+                std::fs::write(&target, SKILL)
+                    .map_err(|error| CliError::Usage(error.to_string()))?;
+                if json {
+                    print_value(&json!({"path": target}), true);
+                } else {
+                    println!("{}", target.display());
+                }
+            }
+        }
+        return Ok(());
+    }
     let mut client = Client::connect(&cli).await?;
     match cli.command {
         Command::Doctor => {
@@ -834,6 +889,7 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         },
+        Command::Skills { .. } => {}
         Command::Mcp { command } => match command {
             McpCommand::Serve {
                 allow_write,

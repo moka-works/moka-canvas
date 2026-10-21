@@ -113,31 +113,43 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Build the moka CLI
+        shell: bash
+        run: node scripts/build-cli.mjs --target "${{ matrix.target }}"
+
       - name: Build macOS bundles
         if: runner.os == 'macOS'
         shell: bash
-        run: npm run tauri build -- --target "${{ matrix.target }}" --bundles dmg
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles dmg
+
+      - name: Build combined macOS PKG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh scripts/package-macos-pkg.sh --target "${{ matrix.target }}"
 
       - name: Build Windows MSI
         if: runner.os == 'Windows'
         shell: bash
-        run: npm run tauri build -- --target "${{ matrix.target }}" --bundles msi
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles msi
 
       - name: Build Windows NSIS installer
         if: runner.os == 'Windows'
         shell: bash
-        run: npm run tauri build -- --target "${{ matrix.target }}" --bundles nsis
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles nsis
 
       - name: Build Linux bundles
         if: runner.os == 'Linux'
         shell: bash
         run: |
           for bundle in deb rpm appimage; do
-            npm run tauri build -- --target "${{ matrix.target }}" --bundles "$bundle"
+            npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles "$bundle"
           done
 
       - name: Collect release assets
         run: node scripts/collect-release.mjs
+
+      - name: Package the standalone CLI
+        run: node scripts/package-cli.mjs --target "${{ matrix.target }}"
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4
@@ -252,4 +264,4 @@ jobs:
               --title "Moka Canvas ${GITHUB_REF_NAME}" \
               --notes-file release-notes.md
           fi
-          gh release upload "${GITHUB_REF_NAME}" dist/moka-canvas-* dist/SHA256SUMS.txt --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/moka-canvas-* dist/moka-cli-* dist/SHA256SUMS.txt --clobber

@@ -1,0 +1,18 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/moka"],
+    "windows": {
+      "nsis": {
+        "template": "installer/installer.nsi",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/welcome.bmp",
+        "uninstallerHeaderImage": "installer/uninstall-header.bmp",
+        "languages": ["English", "SimpChinese"],
+        "displayLanguageSelector": true,
+        "installerHooks": "installer/cli-path.nsh"
+      }
+    }
+  }
+}

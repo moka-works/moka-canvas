@@ -1,0 +1,13 @@
+#!/bin/sh
+# The app installer carries the CLI inside the bundle. A package install is the
+# one macOS path that can put it on PATH, so it links the bundled binary rather
+# than copying a second one that would drift from the app's version.
+set -e
+
+APP="/Applications/Moka Canvas.app"
+if [ -x "$APP/Contents/MacOS/moka" ]; then
+  mkdir -p /usr/local/bin
+  ln -sf "$APP/Contents/MacOS/moka" /usr/local/bin/moka
+  ln -sf "$APP/Contents/MacOS/moka-canvas" /usr/local/bin/moka-canvas
+fi
+exit 0

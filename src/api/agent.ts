@@ -1,3 +1,4 @@
+import type { ResourceEntry } from "../shared/domain";
 import {
   ApiError,
   currentProject,

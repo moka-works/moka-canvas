@@ -35,7 +35,7 @@ export function buildScope(room: AgentRoom): AgentScope {
     const assets = useAssetsStore.getState();
     if (assets.inspectedAssetId) scope.assetId = assets.inspectedAssetId;
     scope.assetFilter = {
-      ...(assets.kind === "all" ? {} : { kind: assets.kind }),
+      kind: assets.kind,
       ...(assets.view === "unused" ? { unused: true } : {}),
     };
     return scope;

@@ -65,6 +65,9 @@ function targetName(group, filename) {
     if (lower.endsWith(".dmg")) {
       return `moka-canvas-${version}-macos-aarch64.dmg`;
     }
+    if (lower.endsWith(".pkg")) {
+      return `moka-canvas-${version}-macos-aarch64.pkg`;
+    }
   }
 
   if (group === "bundle-macos-x64") {
@@ -76,6 +79,9 @@ function targetName(group, filename) {
     }
     if (lower.endsWith(".dmg")) {
       return `moka-canvas-${version}-macos-x64.dmg`;
+    }
+    if (lower.endsWith(".pkg")) {
+      return `moka-canvas-${version}-macos-x64.pkg`;
     }
   }
 
@@ -104,6 +110,13 @@ function targetName(group, filename) {
     if (lower.endsWith(".rpm")) {
       return `moka-canvas-${version}-linux-x64.rpm`;
     }
+  }
+
+  if (
+    lower.startsWith("moka-cli-") &&
+    (lower.endsWith(".tar.gz") || lower.endsWith(".zip"))
+  ) {
+    return filename;
   }
 
   if (group === "bundle-web-linux-x64" && lower.endsWith(".tgz")) {
@@ -155,7 +168,13 @@ for (const file of files) {
 
 const required = [
   `moka-canvas-${version}-macos-aarch64.dmg`,
+  `moka-canvas-${version}-macos-aarch64.pkg`,
   `moka-canvas-${version}-macos-x64.dmg`,
+  `moka-canvas-${version}-macos-x64.pkg`,
+  `moka-cli-${version}-macos-aarch64.tar.gz`,
+  `moka-cli-${version}-macos-x64.tar.gz`,
+  `moka-cli-${version}-windows-x64.zip`,
+  `moka-cli-${version}-linux-x64.tar.gz`,
   `moka-canvas-${version}-windows-x64-setup.exe`,
   `moka-canvas-${version}-windows-x64.msi`,
   `moka-canvas-${version}-linux-x64.deb`,

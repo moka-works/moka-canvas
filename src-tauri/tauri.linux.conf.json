@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/bin/moka": "binaries/moka"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/bin/moka": "binaries/moka"
+        }
+      }
+    }
+  }
+}

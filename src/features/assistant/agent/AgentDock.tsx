@@ -230,7 +230,7 @@ export function AgentDock({
   const question = useAgentStore((state) => state.question);
   const historyOpen = useAgentStore((state) => state.historyOpen);
   const [other, setOther] = useState("");
-  const end = useRef<HTMLDivElement | null>(null);
+  const end = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
     useAgentStore.getState().setRoom(room);

@@ -6,6 +6,7 @@ HOST ?= 127.0.0.1
 PORT ?= 8080
 SOURCE ?= artifacts
 DEST ?= dist
+TAURI_RELEASE_CONFIG := src-tauri/tauri.release.conf.json
 
 # A linked worktree's src-tauri/target symlink is replaced with a directory of
 # its own by this script, so parallel worktrees do not share one cargo lock, one
@@ -34,7 +35,7 @@ export CARGO_INCREMENTAL ?= 0
 endif
 endif
 
-.PHONY: install check check-boundaries check-version release-check test web-build web-serve tauri-dev package-web package-macos package-macos-x86 package-windows package-linux cross-package-windows prepare-release set-version clean
+.PHONY: install check check-boundaries check-version release-check test web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
 
 ifeq (set-version,$(firstword $(MAKECMDGOALS)))
 SET_VERSION_ARG := $(word 2,$(MAKECMDGOALS))
@@ -91,38 +92,53 @@ web-serve: web-build
 tauri-dev: web-build
 	npm run tauri dev
 
+# The CLI is built ahead of every installer: the bundle asks for a sidecar and
+# a missing one fails the build long after the expensive compile.
+cli:
+	node scripts/build-cli.mjs
+
 package-web: web-build
-	cargo build --release --manifest-path $(CARGO_MANIFEST) --bin moka-server
+	cargo build --release --manifest-path $(CARGO_MANIFEST) --bin moka-server --bin moka
 	node scripts/package-web.mjs
 
-package-macos: web-build
+package-macos: web-build cli
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos must run on macOS.' >&2; exit 1)
-	npm run tauri build -- --bundles dmg
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles dmg
 	node scripts/collect-release.mjs
+	node scripts/package-cli.mjs
 
 # The target is named explicitly so one command covers both hosts: Apple
 # Silicon cross-compiles the Intel bundle, Intel builds it natively.
 package-macos-x86: web-build
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos-x86 must run on macOS.' >&2; exit 1)
 	@rustup target list --installed | grep -q "$(MACOS_X86_TARGET)" || rustup target add $(MACOS_X86_TARGET)
-	npm run tauri build -- --target $(MACOS_X86_TARGET) --bundles dmg
+	node scripts/build-cli.mjs --target $(MACOS_X86_TARGET)
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --target $(MACOS_X86_TARGET) --bundles dmg
 	node scripts/collect-release.mjs
+	node scripts/package-cli.mjs --target $(MACOS_X86_TARGET)
 
-package-windows: web-build
+# A DMG cannot run a postinstall; the combined PKG carries the same app and
+# links the bundled CLI into /usr/local/bin.
+package-macos-pkg: package-macos
+	sh scripts/package-macos-pkg.sh
+
+package-windows: web-build cli
 	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) printf '%s\n' 'package-windows must run on Windows.' >&2; exit 1;; esac
-	npm run tauri build -- --bundles msi,nsis
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles msi,nsis
 	node scripts/collect-release.mjs
+	node scripts/package-cli.mjs
 
 # One invocation per package kind: a single tauri-bundler process asked for two
 # or more kinds stalls after its last bundle — CPU pegged, nothing written, no
 # child running — while a process asked for exactly one always finishes. Same
 # binary and flags either way; only the grouping differs.
-package-linux: web-build
+package-linux: web-build cli
 	@test "$$(uname -s)" = "Linux" || (printf '%s\n' 'package-linux must run on Linux.' >&2; exit 1)
-	npm run tauri build -- --bundles deb
-	npm run tauri build -- --bundles rpm
-	npm run tauri build -- --bundles appimage
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles deb
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles rpm
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles appimage
 	node scripts/collect-release.mjs
+	node scripts/package-cli.mjs
 
 cross-package-windows: web-build
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'cross-package-windows must run on macOS.' >&2; exit 1)
@@ -132,8 +148,13 @@ cross-package-windows: web-build
 	LC_ALL=en_US.UTF-8 \
 	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
 	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR=x86_64-w64-mingw32-ar \
-	npm run tauri build -- --target $(WINDOWS_CROSS_TARGET) --bundles nsis
+	node scripts/build-cli.mjs --target $(WINDOWS_CROSS_TARGET)
+	LC_ALL=en_US.UTF-8 \
+	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR=x86_64-w64-mingw32-ar \
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --target $(WINDOWS_CROSS_TARGET) --bundles nsis
 	node scripts/collect-release.mjs
+	node scripts/package-cli.mjs --target $(WINDOWS_CROSS_TARGET)
 
 prepare-release:
 	node scripts/prepare-release.mjs \

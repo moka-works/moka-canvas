@@ -13,3 +13,4 @@ playwright-report/
 # The configuration one deployment actually reads. Only the example is tracked:
 # what lives here is a machine's addresses, ceilings and secrets.
 config/moka.yaml
+src-tauri/binaries/

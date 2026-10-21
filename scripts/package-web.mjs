@@ -12,6 +12,7 @@ const binary = join(
   "release",
   `moka-server${extension}`,
 );
+const cli = join(root, "src-tauri", "target", "release", `moka${extension}`);
 const destination = join(
   root,
   "release",
@@ -22,6 +23,15 @@ await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
 await cp(join(root, "dist"), join(destination, "dist"), { recursive: true });
 await cp(binary, join(destination, basename(binary)));
+// The web package carries the CLI too: a deployment on a server without a
+// desktop bundle still gets the same tools from `bin/moka`.
+await mkdir(join(destination, "bin"), { recursive: true });
+await cp(cli, join(destination, "bin", basename(cli)));
+await mkdir(join(destination, "skills", "moka-canvas"), { recursive: true });
+await cp(
+  join(root, "skills", "moka-canvas", "SKILL.md"),
+  join(destination, "skills", "moka-canvas", "SKILL.md"),
+);
 // The package ships the example only. A server with no config/moka.yaml runs on
 // built-in defaults, which is what a first run wants; the example is there to be
 // copied into a deployment's own file, not to be read as one.
@@ -32,6 +42,6 @@ await cp(
 );
 await writeFile(
   join(destination, "README.txt"),
-  `Moka Canvas ${pkg.version}\n\nRun ./moka-server${extension} --static-dir dist --port 8080, then open http://127.0.0.1:8080.\n\nTo change anything the server does — its address, what it waits for, what it refuses — copy config/moka.example.yaml to config/moka.yaml and edit that; with no such file every value stays at its default. The address alone can also be named here: --host 0.0.0.0 listens on every interface, and a server reachable from elsewhere has nothing checking who is calling.\n`,
+  `Moka Canvas ${pkg.version}\n\nRun ./moka-server${extension} --static-dir dist --port 8080, then open http://127.0.0.1:8080.\n\nbin/moka${extension} talks to that server. Its Agent Skill is in skills/moka-canvas/SKILL.md.\n\nTo change anything the server does — its address, what it waits for, what it refuses — copy config/moka.example.yaml to config/moka.yaml and edit that; with no such file every value stays at its default. The address alone can also be named here: --host 0.0.0.0 listens on every interface, and a server reachable from elsewhere has nothing checking who is calling.\n`,
 );
 console.log(`Created ${destination}`);
