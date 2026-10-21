@@ -2548,7 +2548,7 @@ fn empty_object() -> serde_json::Value {
 
 pub async fn agent_tool_call(
     State(state): State<ApiState>,
-    session: ProjectSession,
+    session: super::MaybeProjectSession,
     Path(name): Path<String>,
     Json(body): Json<ToolCallBody>,
 ) -> Result<Json<crate::agent::runner::ToolResponse>, Problem> {
@@ -2570,7 +2570,7 @@ pub async fn agent_tool_call(
         session_id: body.session_id,
         turn_id: body.turn_id,
     };
-    let response = crate::agent::runner::invoke(&state, &session, &name, request)
+    let response = crate::agent::runner::invoke(&state, session.0.as_ref(), &name, request)
         .await
         .map_err(Problem::from)?;
     Ok(Json(response))

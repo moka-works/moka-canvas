@@ -210,6 +210,29 @@ fn named_project(parts: &Parts) -> Option<String> {
 /// project another request opened in between.
 pub struct ProjectSession(pub Arc<FsProjectStore>);
 
+/// A request that may be about a project but does not need one.
+///
+/// Only the project lifecycle tools fit here: creating, opening, or importing
+/// a project has to work before any project is open. Everything else asks for
+/// [`ProjectSession`] and is refused with `PROJECT_NOT_OPEN`.
+pub struct MaybeProjectSession(pub Option<ProjectSession>);
+
+impl FromRequestParts<ApiState> for MaybeProjectSession {
+    type Rejection = problem::Problem;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &ApiState,
+    ) -> Result<Self, Self::Rejection> {
+        let named = named_project(parts);
+        match state.store.resolve(named.as_deref()) {
+            Ok(store) => Ok(Self(Some(ProjectSession(store)))),
+            Err(error) if error.code() == "PROJECT_NOT_OPEN" => Ok(Self(None)),
+            Err(error) => Err(problem::Problem::from(error)),
+        }
+    }
+}
+
 impl FromRequestParts<ApiState> for ProjectSession {
     type Rejection = problem::Problem;
 

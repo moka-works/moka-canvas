@@ -267,9 +267,24 @@ pub async fn run_command(
     }
 }
 
+/// The one command that reads project lists rather than a document.
+pub async fn run_without_project(
+    state: &ApiState,
+    name: &str,
+    _input: &Value,
+) -> Result<ToolOutcome, ToolError> {
+    match name {
+        "project.list_recent" => core::list_recent(state).await,
+        other => Err(ToolError::new(
+            "PROJECT_NOT_OPEN",
+            format!("{other} needs an open project"),
+        )),
+    }
+}
+
 pub async fn run_effect(
     state: &ApiState,
-    session: &ProjectSession,
+    session: Option<&ProjectSession>,
     name: &str,
     input: &Value,
     moka: &MokaFile,
@@ -282,15 +297,55 @@ pub async fn run_effect(
         | "project.remove_recent"
         | "project.export"
         | "task.cancel" => core::effect(state, session, name, input).await,
-        "canvas.run" => canvas::effect(state, session, input, session_id).await,
+        "canvas.run" => {
+            canvas::effect(
+                state,
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
+                input,
+                session_id,
+            )
+            .await
+        }
         "clip.transcribe" | "timeline.export" | "clip.export_srt" => {
-            clip::effect(state, session, name, input, moka).await
+            clip::effect(
+                state,
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
+                name,
+                input,
+                moka,
+            )
+            .await
         }
-        "asset.import_path" => assets::effect(state, session, name, input, moka).await,
+        "asset.import_path" => {
+            assets::effect(
+                state,
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
+                name,
+                input,
+                moka,
+            )
+            .await
+        }
         "asset.update" | "asset.delete" | "asset.copy" => {
-            assets::effect(state, session, name, input, moka).await
+            assets::effect(
+                state,
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
+                name,
+                input,
+                moka,
+            )
+            .await
         }
-        "story.start_job" => story::effect(state, session, name, input, moka).await,
+        "story.start_job" => {
+            story::effect(
+                state,
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
+                name,
+                input,
+                moka,
+            )
+            .await
+        }
         other => Err(ToolError::new(
             "TOOL_NOT_FOUND",
             format!("tool {other} is not implemented"),

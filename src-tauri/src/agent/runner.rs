@@ -81,7 +81,7 @@ pub struct ToolResponse {
 /// Runs one tool call end to end.
 pub async fn invoke(
     state: &ApiState,
-    session: &ProjectSession,
+    session: Option<&ProjectSession>,
     name: &str,
     request: ToolRequest,
 ) -> Result<ToolResponse, ToolError> {
@@ -124,7 +124,22 @@ pub async fn invoke(
         // the audit path below is where it belongs.
     }
     match spec.kind {
-        ToolKind::Command => run_command(state, session, &spec, &request).await,
+        ToolKind::Command => match session {
+            Some(session) => run_command(state, session, &spec, &request).await,
+            None if spec.name == "project.list_recent" => {
+                let outcome = tools::run_without_project(state, &spec.name, &request.input).await?;
+                Ok(response_of(
+                    &spec,
+                    &outcome,
+                    0,
+                    0,
+                    crate::domain::now_iso(),
+                    None,
+                    None,
+                ))
+            }
+            None => Err(ToolError::new("PROJECT_NOT_OPEN", "No project is open")),
+        },
         ToolKind::Effect => run_effect(state, session, &spec, &request).await,
     }
 }
@@ -216,10 +231,56 @@ async fn run_command(
 
 async fn run_effect(
     state: &ApiState,
-    session: &ProjectSession,
+    session: Option<&ProjectSession>,
     spec: &super::catalog::ToolSpec,
     request: &ToolRequest,
 ) -> Result<ToolResponse, ToolError> {
+    let Some(session) = session else {
+        // Project lifecycle happens before there is a project to keep an
+        // audit in. It runs, and its answer is the record the caller gets.
+        if !matches!(
+            spec.name.as_str(),
+            "project.create" | "project.open" | "project.import" | "project.remove_recent"
+        ) {
+            return Err(ToolError::new("PROJECT_NOT_OPEN", "No project is open"));
+        }
+        let outcome = tools::run_effect(
+            state,
+            None,
+            &spec.name,
+            &request.input,
+            &crate::domain::MokaFile {
+                version: crate::domain::MOKA_FILE_VERSION.into(),
+                metadata: crate::domain::ProjectMetadata {
+                    id: String::new(),
+                    name: String::new(),
+                    description: None,
+                    cover_path: None,
+                    revision: 0,
+                    created_at: crate::domain::now_iso(),
+                    updated_at: crate::domain::now_iso(),
+                },
+                resources: Default::default(),
+                folders: None,
+                timelines: None,
+                stories: None,
+                director_scenes: None,
+                canvas: Vec::new(),
+            },
+            None,
+        )
+        .await
+        .map_err(|error| error.with_tool(&spec.name))?;
+        return Ok(response_of(
+            spec,
+            &outcome,
+            0,
+            0,
+            crate::domain::now_iso(),
+            None,
+            None,
+        ));
+    };
     let root = session.0.project_root().await.map_err(ToolError::from)?;
     let input = prepare_effect_input(state, session, &root, spec, request).await?;
     let hash = journal::input_hash(&input);
@@ -243,7 +304,7 @@ async fn run_effect(
     let before = opened.moka.metadata.revision;
     let outcome = tools::run_effect(
         state,
-        session,
+        Some(session),
         &spec.name,
         &input,
         &opened.moka,

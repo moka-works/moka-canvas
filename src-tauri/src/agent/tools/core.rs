@@ -108,13 +108,7 @@ pub async fn command(
                 json!({"models": models}),
             ))
         }
-        "project.list_recent" => {
-            let recent = state.metadata.list_recent().await.map_err(metadata_error)?;
-            Ok(ToolOutcome::read(
-                format!("{} recent projects", recent.len()),
-                json!({"projects": recent}),
-            ))
-        }
+        "project.list_recent" => list_recent(state).await,
         "context.get" => {
             let args = Args::new(name, input)?;
             let scope = AgentScope {
@@ -167,7 +161,7 @@ pub async fn command(
 
 pub async fn effect(
     state: &ApiState,
-    session: &ProjectSession,
+    session: Option<&ProjectSession>,
     name: &str,
     input: &Value,
 ) -> Result<ToolOutcome, ToolError> {
@@ -272,6 +266,8 @@ pub async fn effect(
                 personal_history: args.opt_bool("includePersonalHistory", false),
                 referenced_assets_only: args.opt_bool("onlyReferencedAssets", false),
             };
+            let session =
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?;
             let report = session
                 .0
                 .export_package(&destination, args.opt_bool("allowIncomplete", false), scope)
@@ -296,9 +292,13 @@ pub async fn effect(
             let id = args.req_str("id")?;
             match kind {
                 "run" => {
+                    let session = session
+                        .ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?;
                     state.runs.cancel(&session.0, id).await?;
                 }
                 "storyJob" => {
+                    let session = session
+                        .ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?;
                     state.story_jobs.cancel(&session.0, id).await?;
                 }
                 "clipExport" => {
@@ -317,6 +317,8 @@ pub async fn effect(
                     )))
                 }
             }
+            let session =
+                session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?;
             let status = task_status(state, &session.0, kind, id).await?;
             Ok(ToolOutcome::effect(
                 format!("Cancelled {kind} {id}"),
@@ -328,6 +330,14 @@ pub async fn effect(
             format!("tool {other} is not a core effect"),
         )),
     }
+}
+
+pub async fn list_recent(state: &ApiState) -> Result<ToolOutcome, ToolError> {
+    let recent = state.metadata.list_recent().await.map_err(metadata_error)?;
+    Ok(ToolOutcome::read(
+        format!("{} recent projects", recent.len()),
+        json!({"projects": recent}),
+    ))
 }
 
 fn target_is_empty(directory: &Path) -> Result<bool, ToolError> {

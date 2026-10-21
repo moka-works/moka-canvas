@@ -1,6 +1,6 @@
 use std::{
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::Instant,
 };
@@ -28,6 +28,8 @@ use crate::project::ProjectStore;
 pub struct LocalServer {
     address: SocketAddr,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
+    /// The note a local CLI reads to find this server without being told.
+    runtime_note: PathBuf,
 }
 
 /// Where the server listens: `server.bind` with the `--host` and `--port` named
@@ -103,6 +105,27 @@ impl LocalServer {
                 "listening on {address}, which is not loopback: anything that can reach this port can read and write every project this process can open, and nothing in front of these routes asks who is calling (see docs/security.md)"
             );
         }
+        // A CLI on this machine finds the server without a flag: the note
+        // names the port that was actually bound, which a `:0` port only knows
+        // after binding. Written before serving, best-effort: a read-only
+        // metadata directory costs discovery, not startup.
+        let runtime_note = metadata_root.join("runtime.json");
+        let noted = serde_json::json!({
+            "pid": std::process::id(),
+            "port": address.port(),
+            "mode": match mode {
+                RuntimeMode::Native => "native",
+                RuntimeMode::Web => "web",
+            },
+            "url": navigable(address),
+            "updatedAt": crate::domain::now_iso(),
+        });
+        if let Err(error) = std::fs::write(
+            &runtime_note,
+            serde_json::to_vec_pretty(&noted).unwrap_or_default(),
+        ) {
+            tracing::warn!("runtime note could not be written: {error}");
+        }
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let app = router(state);
 
@@ -120,6 +143,7 @@ impl LocalServer {
         Ok(Self {
             address,
             shutdown: Mutex::new(Some(shutdown_sender)),
+            runtime_note,
         })
     }
 
@@ -147,6 +171,16 @@ impl LocalServer {
         if let Ok(mut sender) = self.shutdown.lock() {
             if let Some(sender) = sender.take() {
                 let _ = sender.send(());
+                // Only the note this process wrote is removed: a second
+                // server on the same metadata directory would have replaced
+                // it, and that one's note is still true.
+                if let Ok(raw) = std::fs::read_to_string(&self.runtime_note) {
+                    if let Ok(note) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        if note["pid"].as_u64() == Some(std::process::id() as u64) {
+                            let _ = std::fs::remove_file(&self.runtime_note);
+                        }
+                    }
+                }
             }
         }
     }
