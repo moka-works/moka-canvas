@@ -8843,13 +8843,20 @@ button > .story-spin {
 }
 
 .director-icon-button {
+  align-items: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  box-sizing: border-box;
   color: var(--muted);
   cursor: pointer;
+  display: inline-flex;
+  flex: none;
   font-size: 15px;
   height: 28px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
   width: 28px;
 }
 
