@@ -331,8 +331,8 @@ async function destinationFor(
   let name = "export";
   let extensions: string[] = [];
   if (spec.name === "project.export") {
-    name = fileSafeName(project?.metadata.name ?? "project");
-    extensions = ["moka"];
+    name = `${fileSafeName(project?.metadata.name ?? "project")}.mokapkg.zip`;
+    extensions = ["zip"];
   } else if (spec.name === "timeline.export") {
     const timelineId = input.timelineId;
     const timeline = project?.timelines?.find((each) => each.id === timelineId);

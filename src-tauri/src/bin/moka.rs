@@ -150,6 +150,12 @@ enum SessionsCommand {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Alias for `list --q`.
+    Search {
+        q: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
     Show {
         id: String,
         #[arg(long, default_value_t = 100)]
@@ -292,7 +298,13 @@ impl Client {
         if !is_path {
             return Ok(named.to_string());
         }
-        let path = std::path::absolute(named).unwrap_or_else(|_| PathBuf::from(named));
+        let path = if std::path::Path::new(named).is_absolute() {
+            PathBuf::from(named)
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(named))
+                .unwrap_or_else(|_| PathBuf::from(named))
+        };
         let opened: Value = self
             .send(
                 Method::POST,
@@ -453,9 +465,14 @@ fn read_input(input: Option<&str>) -> Result<Value> {
         return serde_json::from_str(&raw)
             .map_err(|error| CliError::Usage(format!("stdin is not JSON: {error}")));
     }
+    let trimmed = input.trim();
+    let looks_like_json = trimmed.starts_with('{') || trimmed.starts_with('[');
     let raw = if let Some(path) = input.strip_prefix('@') {
         std::fs::read_to_string(path)
             .map_err(|error| CliError::Usage(format!("{path}: {error}")))?
+    } else if !looks_like_json && std::path::Path::new(trimmed).is_file() {
+        std::fs::read_to_string(trimmed)
+            .map_err(|error| CliError::Usage(format!("{trimmed}: {error}")))?
     } else {
         input.to_string()
     };
@@ -571,29 +588,38 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Doctor => {
             let config = client.get("/api/v1/config").await?;
             let capabilities = client.get("/api/v1/agent/capabilities").await?;
-            println!("server: {}", client.base);
-            println!(
-                "version: {}",
-                config
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown")
-            );
-            println!(
-                "project: {}",
-                client.project.as_deref().unwrap_or("whichever is open")
-            );
-            println!(
-                "catalog: {} ({} tools)",
-                capabilities
-                    .get("catalogVersion")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown"),
-                capabilities
-                    .get("toolCount")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0)
-            );
+            let report = json!({
+                "cli": env!("CARGO_PKG_VERSION"),
+                "executable": std::env::current_exe().ok().map(|path| path.display().to_string()),
+                "server": client.base,
+                "serverVersion": config.get("version"),
+                "project": client.project,
+                "catalogVersion": capabilities.get("catalogVersion"),
+                "catalogHash": capabilities.get("catalogHash"),
+                "toolCount": capabilities.get("toolCount"),
+            });
+            if json {
+                print_value(&report, true);
+            } else {
+                println!("cli: {}", env!("CARGO_PKG_VERSION"));
+                if let Some(executable) = report["executable"].as_str() {
+                    println!("executable: {executable}");
+                }
+                println!("server: {}", report["server"].as_str().unwrap_or(""));
+                println!(
+                    "version: {}",
+                    report["serverVersion"].as_str().unwrap_or("unknown")
+                );
+                println!(
+                    "project: {}",
+                    report["project"].as_str().unwrap_or("whichever is open")
+                );
+                println!(
+                    "catalog: {} ({} tools)",
+                    report["catalogVersion"].as_str().unwrap_or("unknown"),
+                    report["toolCount"].as_u64().unwrap_or(0)
+                );
+            }
         }
         Command::Tools { command } => match command {
             ToolsCommand::List { pack, surface } => {
@@ -699,6 +725,21 @@ async fn run(cli: Cli) -> Result<()> {
                                 .get("messageCount")
                                 .and_then(Value::as_u64)
                                 .unwrap_or(0),
+                        );
+                    }
+                }
+            }
+            SessionsCommand::Search { q, limit } => {
+                let path = format!("/api/v1/agent/sessions?limit={limit}&q={}", urlencoding(&q));
+                let answer = client.get(&path).await?;
+                if json {
+                    print_value(&answer, true);
+                } else if let Some(sessions) = answer.get("sessions").and_then(Value::as_array) {
+                    for session in sessions {
+                        println!(
+                            "{:<36} {}",
+                            session.get("id").and_then(Value::as_str).unwrap_or(""),
+                            session.get("title").and_then(Value::as_str).unwrap_or(""),
                         );
                     }
                 }

@@ -246,7 +246,7 @@ fn clip_summary(moka: &MokaFile, scope: &AgentScope, warnings: &mut Vec<String>)
         .clips
         .iter()
         .filter(|clip| scope.clip_ids.iter().any(|id| id == &clip.id))
-        .map(|clip| clip_summary_of(clip))
+        .map(clip_summary_of)
         .collect();
     let nearby: Vec<Value> = match scope.playhead_ms {
         Some(playhead) => timeline
@@ -257,13 +257,13 @@ fn clip_summary(moka: &MokaFile, scope: &AgentScope, warnings: &mut Vec<String>)
                     || (clip.start_ms - playhead).abs() <= 15_000
             })
             .take(12)
-            .map(|clip| clip_summary_of(clip))
+            .map(clip_summary_of)
             .collect(),
         None => timeline
             .clips
             .iter()
             .take(12)
-            .map(|clip| clip_summary_of(clip))
+            .map(clip_summary_of)
             .collect(),
     };
     json!({

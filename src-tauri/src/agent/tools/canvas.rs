@@ -53,12 +53,7 @@ pub async fn command(
         "canvas.get" => {
             let canvas = super::canvas_of(moka, args.req_str("canvasId")?)?;
             let limit = args.opt_i64("nodeLimit").unwrap_or(100).clamp(1, 200) as usize;
-            let nodes: Vec<Value> = canvas
-                .nodes
-                .iter()
-                .take(limit)
-                .map(|node| node_summary(node))
-                .collect();
+            let nodes: Vec<Value> = canvas.nodes.iter().take(limit).map(node_summary).collect();
             let edges: Vec<Value> = canvas
                 .edges
                 .iter()

@@ -579,6 +579,7 @@ mod tests {
 
     fn display_url(address: &str) -> String {
         LocalServer {
+            runtime_note: PathBuf::new(),
             address: address.parse().unwrap(),
             shutdown: Mutex::new(None),
         }

@@ -252,7 +252,7 @@ pub async fn run_command(
         | "clip.import_srt"
         | "clip.apply_transcript"
         | "clip.add_transition"
-        | "clip.remove_transition" => clip::command(root, moka, name, input).await,
+        | "clip.remove_transition" => clip::command(Some(state), root, moka, name, input).await,
         "asset.list"
         | "asset.get"
         | "asset.detach_references"
@@ -351,6 +351,22 @@ pub async fn run_effect(
             format!("tool {other} is not implemented"),
         )),
     }
+}
+
+/// Whether this deployment may read paths on its own machine for a caller.
+///
+/// A server bound to a network interface is reachable by people who do not own
+/// the disk it runs on; a tool that reads an arbitrary path is then a file
+/// disclosure, not a convenience. The interface's own project and import flows
+/// are unchanged — this gate is for agent callers.
+pub fn local_paths_allowed(state: &ApiState) -> bool {
+    state
+        .config
+        .server
+        .bind
+        .parse::<std::net::SocketAddr>()
+        .map(|address| address.ip().is_loopback())
+        .unwrap_or(false)
 }
 
 /// Reads a timeline and fails with the id a reader can act on.

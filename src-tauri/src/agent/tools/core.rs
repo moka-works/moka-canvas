@@ -167,6 +167,12 @@ pub async fn effect(
 ) -> Result<ToolOutcome, ToolError> {
     match name {
         "project.create" => {
+            if !super::local_paths_allowed(state) {
+                return Err(ToolError::new(
+                    "VALIDATION_FAILED",
+                    "project lifecycle tools that take a path are only available on a loopback server",
+                ));
+            }
             let args = Args::new(name, input)?;
             let directory = PathBuf::from(args.req_str("directory")?);
             let project_name = args.req_str("name")?.to_string();
@@ -206,6 +212,12 @@ pub async fn effect(
             ))
         }
         "project.open" => {
+            if !super::local_paths_allowed(state) {
+                return Err(ToolError::new(
+                    "VALIDATION_FAILED",
+                    "project lifecycle tools that take a path are only available on a loopback server",
+                ));
+            }
             let args = Args::new(name, input)?;
             let path = PathBuf::from(args.req_str("path")?);
             let (_, opened) = state.store.open_project(&path).await?;
@@ -220,6 +232,12 @@ pub async fn effect(
             ))
         }
         "project.import" => {
+            if !super::local_paths_allowed(state) {
+                return Err(ToolError::new(
+                    "VALIDATION_FAILED",
+                    "project lifecycle tools that take a path are only available on a loopback server",
+                ));
+            }
             let args = Args::new(name, input)?;
             let archive = PathBuf::from(args.req_str("archivePath")?);
             let directory = PathBuf::from(args.req_str("directory")?);

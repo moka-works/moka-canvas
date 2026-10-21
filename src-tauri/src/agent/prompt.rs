@@ -48,7 +48,7 @@ pub fn system_prompt(
     prompt.push_str(&scope.room);
     prompt.push_str(".\n");
     if fallback {
-        prompt.push_str("\n");
+        prompt.push('\n');
         prompt.push_str(REACT_INSTRUCTIONS);
         prompt.push_str("\nTools:\n");
         for tool in tools {
@@ -141,7 +141,7 @@ mod tests {
         );
         assert!(prompt.contains("Moka Canvas"));
         assert!(!prompt.contains("\"tool\":"));
-        assert!(prompt.contains("answer in Chinese") == false);
+        assert!(!prompt.contains("answer in Chinese"));
     }
 
     #[test]

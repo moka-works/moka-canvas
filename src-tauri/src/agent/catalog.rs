@@ -258,6 +258,7 @@ fn schema(required: &[&str], props: Props) -> Value {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn base(
     name: &str,
     pack: &str,
@@ -536,13 +537,17 @@ fn core_tools() -> Vec<ToolSpec> {
                 ],
             ),
         ),
-        command(
-            "project.list_recent",
-            "core",
-            ToolRisk::Read,
-            "List recently opened projects. External agents only.",
-            none,
-        ),
+        {
+            let mut spec = command(
+                "project.list_recent",
+                "core",
+                ToolRisk::Read,
+                "List recently opened projects. External agents only.",
+                none,
+            );
+            spec.surface = ToolSurface::External;
+            spec
+        },
         external_effect(
             "project.remove_recent",
             ToolRisk::Write,
@@ -846,12 +851,16 @@ fn asset_tools() -> Vec<ToolSpec> {
             ("tags", "array", "Tags for the imported assets"),
             ("note", "string", "Note for the imported assets"),
         ])),
-        external_effect("asset.import_path", ToolRisk::Write, "Import files from paths on the server's machine. External agents only.", schema(&["paths"], &[
-            ("paths", "array", "Local file paths"),
-            ("categoryHint", "string", "Kind hint"),
-            ("tags", "array", "Tags"),
-            ("note", "string", "Note"),
-        ])),
+        {
+            let mut spec = external_effect("asset.import_path", ToolRisk::Write, "Import files from paths on the server's machine. External agents only.", schema(&["paths"], &[
+                ("paths", "array", "Local file paths"),
+                ("categoryHint", "string", "Kind hint"),
+                ("tags", "array", "Tags"),
+                ("note", "string", "Note"),
+            ]));
+            spec.pack = "assets".into();
+            spec
+        },
         command("asset.place_in_canvas", "assets", ToolRisk::Write, "Place assets on a canvas as cards.", schema(&["assetIds", "canvasId"], &[
             ("assetIds", "array", "Assets to place"),
             ("canvasId", "string", "Canvas id"),

@@ -471,7 +471,7 @@ async fn place_in_timeline(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutco
     if let Some(track_id) = args.opt_str("trackId") {
         request["trackId"] = json!(track_id);
     }
-    super::clip::command(std::path::Path::new(""), moka, "clip.add", &request).await
+    super::clip::command(None, std::path::Path::new(""), moka, "clip.add", &request).await
 }
 
 async fn place_in_story(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
@@ -611,6 +611,12 @@ pub async fn effect(
             ))
         }
         "asset.import_path" => {
+            if !super::local_paths_allowed(_state) {
+                return Err(ToolError::new(
+                    "VALIDATION_FAILED",
+                    "path imports are only available when the server is bound to loopback",
+                ));
+            }
             let args = Args::new(name, input)?;
             let paths = args.req_strings("paths")?;
             if paths.len() > 20 {

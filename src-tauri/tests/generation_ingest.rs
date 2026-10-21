@@ -119,6 +119,7 @@ fn answer(items: Vec<GeneratedItem>) -> GenerateResult {
         text: None,
         items,
         usage: None,
+        ..GenerateResult::default()
     }
 }
 
@@ -207,6 +208,7 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
         text: Some("Here is the poster.".into()),
         items: vec![image(make_test_png())],
         usage: None,
+        ..GenerateResult::default()
     };
 
     let entries = ingest_generated(store.as_ref(), &run, &node, &inputs, &result)
@@ -340,6 +342,7 @@ async fn an_answer_of_only_words_becomes_a_text_asset() {
         text: Some("A harvest festival poster, warm and crowded.".into()),
         items: Vec::new(),
         usage: None,
+        ..GenerateResult::default()
     };
 
     let entries = ingest_generated(
@@ -376,6 +379,7 @@ async fn an_answer_with_nothing_in_it_writes_nothing() {
         text: Some("   ".into()),
         items: Vec::new(),
         usage: None,
+        ..GenerateResult::default()
     };
     assert!(
         ingest_generated(store.as_ref(), &run, &node, &inputs, &blank)
@@ -496,6 +500,7 @@ async fn the_snapshot_is_the_spec_itself_minus_when_it_was_edited() {
         text: Some("A poster.".into()),
         items: Vec::new(),
         usage: None,
+        ..GenerateResult::default()
     };
 
     let entries = ingest_generated(

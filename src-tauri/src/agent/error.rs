@@ -116,26 +116,12 @@ pub fn status_for(code: &str) -> u16 {
         | "ASSET_IN_USE"
         | "TRACK_LOCKED"
         | "TRACK_NOT_EMPTY"
+        | "CLIP_OVERLAP"
         | "IDEMPOTENCY_KEY_REUSED"
         | "USER_CANCELLED"
         | "APPROVAL_DENIED" => 409,
         "APP_ONLY_UNAVAILABLE" => 410,
         _ => 500,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_refusal_can_name_the_tool_and_the_entity() {
-        let error = ToolError::validation("clip cl_1 does not exist")
-            .details(json!({"clipId": "cl_1"}))
-            .with_tool("clip.trim");
-        assert_eq!(error.status, 422);
-        assert_eq!(error.details.as_ref().unwrap()["tool"], "clip.trim");
-        assert_eq!(error.details.as_ref().unwrap()["clipId"], "cl_1");
     }
 }
 
@@ -157,4 +143,19 @@ impl From<ToolError> for crate::api::problem::Problem {
 fn reqwest_status(status: u16) -> axum::http::StatusCode {
     axum::http::StatusCode::from_u16(status)
         .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refusal_can_name_the_tool_and_the_entity() {
+        let error = ToolError::validation("clip cl_1 does not exist")
+            .details(json!({"clipId": "cl_1"}))
+            .with_tool("clip.trim");
+        assert_eq!(error.status, 422);
+        assert_eq!(error.details.as_ref().unwrap()["tool"], "clip.trim");
+        assert_eq!(error.details.as_ref().unwrap()["clipId"], "cl_1");
+    }
 }

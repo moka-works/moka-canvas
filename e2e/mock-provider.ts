@@ -235,6 +235,80 @@ async function streamText(
   response.end();
 }
 
+/** Every word in a conversation, for spotting a direction to the stand-in. */
+function conversationText(body: Record<string, unknown>): string {
+  const messages = body.messages;
+  if (!Array.isArray(messages)) return "";
+  return messages
+    .map((message) =>
+      typeof (message as { content?: unknown }).content === "string"
+        ? ((message as { content: string }).content as string)
+        : "",
+    )
+    .join("\n");
+}
+
+function toolResults(body: Record<string, unknown>): string[] {
+  const messages = body.messages;
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .filter((message) => (message as { role?: string }).role === "tool")
+    .map((message) =>
+      typeof (message as { content?: unknown }).content === "string"
+        ? ((message as { content: string }).content as string)
+        : "",
+    );
+}
+
+/** A native tool call streamed the way a provider sends one: name first, arguments in pieces. */
+async function streamToolCall(
+  response: ServerResponse,
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  response.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+  });
+  const write = (frame: unknown) =>
+    response.write(`data: ${JSON.stringify(frame)}\n\n`);
+  write({
+    choices: [
+      {
+        delta: {
+          tool_calls: [
+            {
+              index: 0,
+              id,
+              type: "function",
+              function: { name, arguments: "" },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const raw = JSON.stringify(args);
+  for (let at = 0; at < raw.length; at += 20) {
+    write({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              { index: 0, function: { arguments: raw.slice(at, at + 20) } },
+            ],
+          },
+        },
+      ],
+    });
+    await sleep(20);
+  }
+  write({ choices: [{ delta: {}, finish_reason: "tool_calls" }] });
+  write("[DONE]");
+  response.end();
+}
+
 /** A text cut into the pieces it arrives in, so an answer streams either way. */
 function inPieces(text: string): { text: string; pieces: string[] } {
   const third = Math.ceil(text.length / 3);
@@ -516,6 +590,42 @@ export async function startMockProvider(): Promise<MockProvider> {
       });
     }
     if (path === "/v1/chat/completions") {
+      // A scripted agent for the assistant's own loop. The marker asks for a
+      // canvas card; the stand-in lists the canvases, reads the id out of its
+      // own tool result, and then adds the card — the same two steps a model
+      // would take, so the loop's tool records are real ones.
+      const conversation = conversationText(body);
+      if (
+        Array.isArray(body.tools) &&
+        (body.tools as unknown[]).length > 0 &&
+        conversation.includes("[agent]")
+      ) {
+        const results = toolResults(body);
+        if (results.length === 0) {
+          return streamToolCall(response, "call_list", "canvas.list", {});
+        }
+        if (results.length === 1) {
+          let canvasId = "";
+          try {
+            const parsed = JSON.parse(results[0]) as {
+              data?: { canvases?: { id?: string }[] };
+            };
+            canvasId = parsed.data?.canvases?.[0]?.id ?? "";
+          } catch {
+            canvasId = "";
+          }
+          if (canvasId !== "") {
+            return streamToolCall(response, "call_add", "canvas.add_node", {
+              canvasId,
+              kind: "text",
+              title: "From the agent",
+              text: "Written through a tool call.",
+            });
+          }
+        }
+        const answer = inPieces("Added the note through the canvas tool.");
+        return streamText(response, false, answer);
+      }
       const json = jsonAnswer(prompt);
       if (body.stream !== true) {
         return send(200, {

@@ -310,3 +310,35 @@ excluded from exports under the credential rule above.
 - Changing the bundle identifier changes the metadata directory. Existing
   configuration is not migrated automatically; set `MOKA_METADATA_DIR` to the old
   path to keep using it.
+
+## The agent, its tools, and what it may reach
+
+The in-app assistant and the `moka` CLI / MCP server run the same tools. Their
+boundaries:
+
+- **No credential tool.** Model configurations and API keys are read-only to
+  the agent: it can list models by capability and label, never read a key,
+  endpoint, or metadata path, and cannot write one.
+- **Document writes are commands.** A command tool plans and the server
+  submits with revision CAS; an effect tool deletes or starts work and leaves
+  an audit record instead of a false undo.
+- **Path tools are loopback-only.** `asset.import_path`, `project.create`,
+  `project.open`, and `project.import` read or write paths on the server's
+  disk. They are refused unless `server.bind` is a loopback address, so a
+  server exposed on a network interface cannot be used to read its files.
+  The interface's own dialogs and project launcher are unchanged.
+- **Project lifecycle is external-only.** `project.create/open/import/
+list_recent/remove_recent` never enter an in-app model's tool set; only
+  CLI/MCP/HTTP callers see them.
+- **Conversations are project data.** `agent/sessions/`, `history/agent/
+changes`, `audit`, and `idempotency` live inside the project directory, are
+  never uploaded, and are carried only by a backup package — a work package
+  leaves them behind. They contain prompts and tool inputs; treat a project
+  folder with the same care as its generated assets.
+- **Approval is enforced server-side for risk.** Spend, destroy, and export
+  calls without `acknowledgeRisk` are refused before anything happens. The
+  interface asks first and then sends the acknowledgement; the CLI needs
+  `--yes`; MCP needs the matching `--allow-*` flag.
+- **Destinations are chosen, not inferred.** Export tools require a
+  destination; the interface opens a save dialog, and the CLI/MCP must pass a
+  path. No tool writes to a fixed output folder on its own.

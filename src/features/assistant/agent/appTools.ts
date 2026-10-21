@@ -1,4 +1,5 @@
-import { ApiError } from "../../../api";
+import { ApiError, assetsApi } from "../../../api";
+import { exportCanvasImage } from "../../editor/interactions/actions";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useEditorStore } from "../../editor/stores/editorStore";
 import { useClipStore } from "../../clip/stores/clipStore";
@@ -14,6 +15,8 @@ export const CLIENT_TOOLS = [
   "agent.ask",
   "agent.load_pack",
   "view.focus",
+  "asset.import_files",
+  "canvas.export_image",
 ] as const;
 
 const PACKS = new Set(["canvas", "clip", "assets", "story"]);
@@ -108,11 +111,90 @@ export async function runAppTool(
     return focus(input);
   }
 
+  if (name === "asset.import_files") {
+    return importFiles(input);
+  }
+
+  if (name === "canvas.export_image") {
+    await exportCanvasImage();
+    return { summary: "The canvas image was exported to the chosen file." };
+  }
+
   throw new ApiError({
     code: "APP_ONLY_UNAVAILABLE",
     message: `${name} is not implemented in this interface`,
     status: 410,
   });
+}
+
+/** The reader's own file picker; a cancelled pick is a cancelled tool. */
+function pickFiles(): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const finish = (files: File[]): void => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener("change", () => finish([...(input.files ?? [])]));
+    input.addEventListener("cancel", () => finish([]));
+    input.click();
+    // A browser that never fires cancel leaves the promise open rather than
+    // importing nothing behind the reader's back.
+  });
+}
+
+async function importFiles(
+  input: Record<string, unknown>,
+): Promise<AppToolAnswer> {
+  const files = await pickFiles();
+  if (files.length === 0) {
+    throw new ApiError({
+      code: "USER_CANCELLED",
+      message: "No files were chosen",
+      status: 409,
+    });
+  }
+  const tags = Array.isArray(input.tags)
+    ? input.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  const note = typeof input.note === "string" ? input.note : undefined;
+  const added: string[] = [];
+  const failures: { name: string; message: string }[] = [];
+  for (const file of files) {
+    try {
+      let change = await assetsApi.upload(file);
+      if (tags.length > 0 || note !== undefined) {
+        change = await assetsApi.patchShelf(change.entry.id, {
+          ...(tags.length > 0 ? { tags } : {}),
+          ...(note === undefined ? {} : { note }),
+        });
+      }
+      useProjectStore.getState().integrateAssetEntry(change.entry, {
+        revision: change.revision,
+        updatedAt: change.updatedAt,
+      });
+      added.push(change.entry.id);
+    } catch (error) {
+      failures.push({
+        name: file.name,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return {
+    summary:
+      failures.length === 0
+        ? `Imported ${added.length} files`
+        : `Imported ${added.length}; ${failures.length} failed`,
+    data: { assetsAdded: added, failures },
+  };
 }
 
 function focus(input: Record<string, unknown>): AppToolAnswer {

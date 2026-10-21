@@ -1259,7 +1259,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             let timeline = TimelineDocument {
                 id: crate::domain::new_id(),
                 name: timeline_name,
-                schema_version: crate::domain::CANVAS_SCHEMA_VERSION,
+                schema_version: crate::domain::timeline::TIMELINE_SCHEMA_VERSION,
                 settings,
                 tracks: vec![TimelineTrack {
                     id: track_id,

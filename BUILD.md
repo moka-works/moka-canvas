@@ -161,7 +161,7 @@ Lua 侧是一组钩子，全部可选，脚本导出了哪些钩子就是宿主�
 make package-web
 ```
 
-构建前端、编译 `moka-server` 发布二进制，并在 `release/moka-canvas-web-<version>-<platform>-<arch>/` 下暂存一份自包含发行版，包含 `dist/`、原生服务器二进制与一份 `README.txt`。运行暂存的服务器：
+构建前端、编译 `moka-server` 与 `moka` 发布二进制，并在 `release/moka-canvas-web-<version>-<platform>-<arch>/` 下暂存一份自包含发行版，包含 `dist/`、原生服务器二进制、`bin/moka`、`skills/moka-canvas/SKILL.md` 与一份 `README.txt`。运行暂存的服务器：
 
 ```sh
 ./moka-server --static-dir dist --port 8080
@@ -240,6 +240,23 @@ deb 与 rpm 交给系统包管理器安装，它们的运行期依赖由 Tauri �
 AppImage 由 linuxdeploy 生成：Tauri 从 GitHub 取 linuxdeploy、AppRun 与 gtk 插件，放在 `~/.cache/tauri/` 下，所以打包 AppImage 需要联网。那份缓存不在 `make clean` 的范围内——它是跨项目共用的工具，不是本仓库的产物。
 
 每种包各起一次 `npm run tauri build -- --bundles <kind>`，而不是把三种写进同一次运行：`@tauri-apps/cli` 2.11.4 内置的 tauri-bundler 2.9.4 进程被打包两种以上时，会在打完最后一种之后空转——CPU 满载、不再输出、也不落任何文件——而只要一种就总能收尾。两次运行的差别仅在这个分组，产物完全一致。
+
+### CLI 与 Agent Skill
+
+`make cli` 只构建 `moka`，其余打包目标会自动先调用它（`scripts/build-cli.mjs`）：
+
+1. 用 `--target <triple>`（未给则取宿主）编译 release 版 `moka`；
+2. 校验 `moka --version` 与 `package.json` 一致；
+3. 复制到 `src-tauri/binaries/moka-<triple>`（Tauri externalBin 需要这个名字）与 `src-tauri/binaries/moka`（Linux 包映射用）。
+
+Tauri 通过 `--config src-tauri/tauri.release.conf.json` 读取 `bundle.externalBin: ["binaries/moka"]`。各平台：
+
+- **macOS**：DMG 里 CLI 在 `Moka Canvas.app/Contents/MacOS/moka`。DMG 不能运行脚本，所以另有合并 PKG：`make package-macos-pkg` 用 `scripts/package-macos-pkg.sh` 打包应用，并由 `src-tauri/installer/macos/postinstall` 把 CLI 链接到 `/usr/local/bin/moka` 与 `/usr/local/bin/moka-canvas`。
+- **Windows**：NSIS 通过 `src-tauri/installer/cli-path.nsh` 把 `$INSTDIR` 加入用户 PATH（记住原值，卸载时只有在 PATH 未被读者改动时才恢复），因此安装后 `moka --version` 直接可用；MSI 不包含该 PATH 钩子。所有带 sidecar 的构建都必须先跑 CLI 构建步骤，否则 Tauri 会在链接/打包阶段报找不到 `binaries/moka-<triple>`。
+- **Linux**：deb/rpm 安装到 `/usr/bin/moka`，无需额外步骤；AppImage 内的 CLI 不在 PATH 上。
+- **独立 CLI 包**：`node scripts/package-cli.mjs` 生成 `release/moka-cli-<version>-<平台>-<架构>.tar.gz`（Windows `.zip`），含二进制、Skill、LICENSE；发布工作流在矩阵里对每个目标调用一次。
+
+`moka skills print|install --dir <目录>` 从二进制内嵌的 `skills/moka-canvas/SKILL.md` 输出或安装 Skill；改了 Skill 只需重新编译 CLI。
 
 ### 更新应用图标
 

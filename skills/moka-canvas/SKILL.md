@@ -19,7 +19,7 @@ moka doctor --json
 moka projects current --json
 ```
 
-`moka doctor` reports the CLI version, server URL, open project, PATH resolution, and whether this Skill is installed.
+`moka doctor` reports the CLI version, binary path, server URL, open project, and catalog version. It does not check PATH or Skill installation.
 
 - If `moka` is not found, tell the user to install Moka Canvas (the CLI is bundled) or add its install directory to `PATH`. The fallback binary name is `moka-canvas`.
 - If `projects current` fails with `TRANSPORT`/unreachable, ask the user to launch Moka Canvas (or start `moka-server`), then retry.

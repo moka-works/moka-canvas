@@ -82,8 +82,8 @@ npm run test:e2e  # Playwright: critical path, provider settings, a
 a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
      (`media`).
    - Take the shelf the other way with **From assets…** — from the
-     quick-add menu, from a node's reference bar, and from beside the
-     assistant's about line. The dialog says what the choice will come
+     quick-add menu, from a node's reference bar, and through the
+     assistant's file-import tool. The dialog says what the choice will come
      to before anything is taken. Choose two files from the menu and
      confirm two cards arrive where the menu was opened, all of them
      selected, with one undo taking both back; choose two from a node's
@@ -118,11 +118,11 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
      gone from the document while the prompt and parameters it was
      asked with stay, the inspector says the record did not come with
      the project, and **Run again** starts a new run rather than
-     retrying one that is not there. The conversations had over each
-     canvas travel on the same choice: unticked, `canvas.moka` holds
-     neither a `sessions` list nor an `assistantSessionId`, and the
-     imported project opens onto an empty assistant rather than onto
-     somebody else's asking.
+     retrying one that is not there. Agent conversations live in
+     `<project>/agent/sessions/` and change sets/audits in
+     `history/agent/`; a work package carries neither, a backup package
+     carries both. An imported work package opens onto an empty
+     conversation list rather than somebody else's asking.
    - Tick the referenced-assets-only choice on a project holding an
      asset no node points at. The question counts that asset and its
      size before the choice is made, and after the import the
@@ -291,38 +291,20 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
     go of half way through. The automated equivalents are
     `cargo test imaging`, `npm test`, and
     `npx playwright test picture-tools`.
-14. Hold a conversation over a canvas, which is the other half of asking.
-    Open the **Assistant** tab beside the inspector and confirm the head of
-    the panel says what the conversation is about in counts — the selected
-    cards and whatever feeds them — and that naming one more with `@` adds
-    it to that. Ask a question against a model you really configured and
-    confirm the answer arrives as it is written, then becomes a kept line;
-    reload and confirm the same conversation is still there, that the list
-    at the head offers every conversation this canvas has had, that a new
-    one starts empty, and that renaming or removing one is reflected after
-    another reload. Select a text card and choose **Rewrite**, then
-    **Replace selection**: the card's words change in one undo step and the
-    line it came from stays. From other lines confirm **Insert on canvas**
-    makes a card of its own, **Copy text** and **Download** do what they
-    say, and **Ask again** puts the question back in the field without
-    sending it twice. Choose **Image**: a card lands beside the cards it was
-    about, wired to them, the file is filed once under `assets/images/`
-    with provenance naming the run and the conversation that asked, and
-    both **Show on canvas** and **Show in assets** go where they promise.
-    Make one fail — remove the model, or point it at a provider
-    that gives up — and confirm the trouble is a line in the conversation
-    carrying the reason rather than a notice that fades, that **Ask the card
-    again** offered from it re-runs the card that is there rather than
-    adding a second one, and that the card still says nothing it never got.
-    For a words ask, choose how many earlier lines travel with the question
-    and confirm the panel counts the characters that go and the provider was
-    handed those lines; a media ask offers no such choice, since the cards
-    feed it over wires. A conversation longer than the column steps back in
-    increments, and a card a kept line was about that has since been deleted
-    says so rather than offering to find it. Finally remove the model for a
-    kind and confirm the panel names the kind that is missing and offers the
-    settings instead of answering the ask badly. The automated equivalents
-    are `npm test` and `npx playwright test assistant`.
+14. Work with the assistant, which now lives in every room. Open the
+    **Assistant** tab beside the canvas inspector, ask for a change against a
+    model you really configured, and confirm the answer streams, the tool
+    cards name what ran, and a command change can be undone with Ctrl+Z as
+    one step. Ask for something destructive (delete the canvas, run a
+    generation, export a file): the approval card shows the input and the
+    risk; **Do not** leaves the document untouched, **Allow** performs it,
+    and an effect says it is audited rather than undoable. Open the cutting
+    room and the shelf and confirm the same dock sits beside their
+    inspectors; open a story step and confirm it sits below the step's
+    confirm area. Start a second conversation, rename it, search for it, and
+    remove it from the list; reload and confirm the kept conversation is
+    still there and its tool results are intact. The automated equivalents
+    are `npm test` and `npx playwright test agent`.
 15. Switch the interface's language: Settings → Preferences → Language,
     pick 中文 — the screens, the messages, and the browser tab's title all
     change with it — then pick English and confirm they change back; leave

@@ -375,7 +375,7 @@ impl AgentSessionStore {
         let _guard = self.write.lock().await;
         let path = Self::path(root, id)?;
         let mut session = Self::read(&path).map_err(|_| SessionError::not_found(id))?;
-        normalize_message(&mut session, &mut message)?;
+        normalize_message(&mut message)?;
         if session
             .messages
             .iter()
@@ -437,7 +437,7 @@ impl AgentSessionStore {
             return Err(SessionError::validation("a message cannot change its role"));
         }
         message.created_at = existing.created_at.clone();
-        normalize_message(&mut session, &mut message)?;
+        normalize_message(&mut message)?;
         session.messages[index] = message;
         session.updated_at = crate::domain::now_iso();
         let trimmed = trim_to_size(&mut session)?;
@@ -480,8 +480,7 @@ fn first_line(text: &str) -> String {
         .collect()
 }
 
-fn normalize_message(session: &AgentSession, message: &mut AgentMessage) -> SessionResult<()> {
-    let _ = session;
+fn normalize_message(message: &mut AgentMessage) -> SessionResult<()> {
     if !matches!(message.role.as_str(), "user" | "assistant" | "error") {
         return Err(SessionError::validation(format!(
             "unknown message role '{}'",

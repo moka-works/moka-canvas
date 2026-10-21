@@ -194,11 +194,19 @@ async fn prepare(
         .clone()
         .filter(|model| !model.trim().is_empty())
         .unwrap_or_default();
-    let resolved = state
-        .models
-        .resolve(&model, Capability::Text)
-        .await
-        .map_err(Problem::from)?;
+    let resolved = if model.trim().is_empty() {
+        state
+            .models
+            .resolve_default(Capability::Text)
+            .await
+            .map_err(Problem::from)?
+    } else {
+        state
+            .models
+            .resolve(&model, Capability::Text)
+            .await
+            .map_err(Problem::from)?
+    };
     let fallback = resolved.protocol.wire_name() != "openaiChat";
 
     let context = chat_context(&opened.moka, &request.scope, 0);

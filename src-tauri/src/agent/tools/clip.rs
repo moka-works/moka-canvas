@@ -26,6 +26,7 @@ use super::ToolOutcome;
 use super::{Args, TaskRef};
 
 pub async fn command(
+    state: Option<&ApiState>,
     _root: &std::path::Path,
     moka: &MokaFile,
     name: &str,
@@ -110,7 +111,7 @@ pub async fn command(
             let timeline = TimelineDocument {
                 id: crate::domain::new_id(),
                 name: timeline_name.clone(),
-                schema_version: crate::domain::CANVAS_SCHEMA_VERSION,
+                schema_version: crate::domain::timeline::TIMELINE_SCHEMA_VERSION,
                 settings,
                 tracks,
                 clips: Vec::new(),
@@ -241,7 +242,11 @@ pub async fn command(
         "clip.align" => clip_align(moka, &args),
         "clip.add_text" => clip_add_text(moka, &args),
         "clip.import_srt" => clip_import_srt(moka, &args),
-        "clip.apply_transcript" => clip_apply_transcript(moka, &args).await,
+        "clip.apply_transcript" => {
+            let state =
+                state.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?;
+            clip_apply_transcript(state, moka, &args).await
+        }
         "clip.add_transition" => clip_add_transition(moka, &args),
         "clip.remove_transition" => clip_remove_transition(moka, &args),
         other => Err(ToolError::new(
@@ -378,15 +383,26 @@ fn validate_no_overlap(
             continue;
         }
         let other_end = clip.start_ms + clip.duration_ms;
-        if start < other_end && end > clip.start_ms {
-            return Err(ToolError::new(
-                "CLIP_OVERLAP",
-                format!(
-                    "that position overlaps \"{}\" on the same track",
-                    clip.label
-                ),
-            )
-            .details(json!({"clipId": clip.id})));
+        let overlap_start = start.max(clip.start_ms);
+        let overlap_end = end.min(other_end);
+        if overlap_start < overlap_end {
+            // A transition is a deliberate overlap: the follower sits inside
+            // the leader's tail by exactly the window the seam names.
+            let overlap = overlap_end - overlap_start;
+            let covered_by_seam = timeline.transitions.iter().any(|transition| {
+                transition.duration_ms >= overlap
+                    && (transition.after_clip_id == clip.id || transition.after_clip_id == track_id)
+            });
+            if !covered_by_seam {
+                return Err(ToolError::new(
+                    "CLIP_OVERLAP",
+                    format!(
+                        "that position overlaps \"{}\" on the same track",
+                        clip.label
+                    ),
+                )
+                .details(json!({"clipId": clip.id})));
+            }
         }
     }
     Ok(())
@@ -777,6 +793,14 @@ fn clip_split(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError
         right.duration_ms =
             (((right.out_point_ms - right.in_point_ms) as f64) / clip.speed).round() as i64;
         right.updated_at = now.clone();
+        if clip.kind == TrackKind::Text {
+            // A text clip's source window is its own duration: a split gives
+            // each half a fresh window rather than a slice of the other's.
+            left.in_point_ms = 0;
+            left.out_point_ms = left.duration_ms;
+            right.in_point_ms = 0;
+            right.out_point_ms = right.duration_ms;
+        }
         remove_clips.push(clip.id.clone());
         add_clips.push(left);
         add_clips.push(right.clone());
@@ -881,10 +905,15 @@ fn clip_duplicate(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolE
                 "a copy must land on a track of the same kind",
             ));
         }
-        let start = args
-            .opt_i64("offsetMs")
-            .map(|offset| clip.start_ms + offset)
-            .unwrap_or(clip.start_ms + clip.duration_ms);
+        let start = match args.opt_i64("offsetMs") {
+            Some(offset) => clip.start_ms + offset,
+            None => next_free_start(
+                timeline,
+                &track_id,
+                clip.start_ms + clip.duration_ms,
+                clip.duration_ms,
+            ),
+        };
         validate_no_overlap(timeline, &track_id, start, clip.duration_ms, None)?;
         let mut copy = clip.clone();
         copy.id = crate::domain::new_id();
@@ -904,6 +933,24 @@ fn clip_duplicate(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolE
             seams: None,
         }],
     ))
+}
+
+/// The first moment at or after `from` where a clip of this length fits.
+fn next_free_start(timeline: &TimelineDocument, track_id: &str, from: i64, duration: i64) -> i64 {
+    let mut start = from;
+    loop {
+        let hit = timeline
+            .clips
+            .iter()
+            .filter(|clip| clip.track_id == track_id && clip.start_ms < start + duration)
+            .max_by_key(|clip| clip.start_ms);
+        match hit {
+            Some(clip) if clip.start_ms + clip.duration_ms > start => {
+                start = clip.start_ms + clip.duration_ms;
+            }
+            _ => return start,
+        }
+    }
 }
 
 fn clip_align(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
@@ -1189,15 +1236,30 @@ fn clip_import_srt(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, Tool
     ))
 }
 
-async fn clip_apply_transcript(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+async fn clip_apply_transcript(
+    state: &ApiState,
+    moka: &MokaFile,
+    args: &Args<'_>,
+) -> Result<ToolOutcome, ToolError> {
     let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
     let source = clip_of(timeline, args.req_str("sourceClipId")?)?;
     let task_id = args.req_str("taskId")?;
-    let text = args.opt_str("text").map(str::to_string).ok_or_else(|| {
-        ToolError::validation(format!(
-            "clip.apply_transcript needs the transcript text from task {task_id}"
-        ))
-    })?;
+    let cached = state.agent_tasks.lock().await.get(task_id).cloned();
+    let text = args
+        .opt_str("text")
+        .map(str::to_string)
+        .or_else(|| {
+            cached
+                .as_ref()
+                .and_then(|status| status.pointer("/result/text"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .ok_or_else(|| {
+            ToolError::validation(format!(
+                "task {task_id} has no transcript yet; poll task.get until it succeeds"
+            ))
+        })?;
     let text = &text;
     let cues = split_cues(text, source.start_ms, source.duration_ms);
     if cues.is_empty() {
@@ -1278,7 +1340,7 @@ async fn clip_apply_transcript(moka: &MokaFile, args: &Args<'_>) -> Result<ToolO
 
 fn split_cues(text: &str, start_ms: i64, duration_ms: i64) -> Vec<Cue> {
     let sentences: Vec<String> = text
-        .split(|c: char| matches!(c, '。' | '！' | '？' | '!' | '?' | '\n'))
+        .split(['。', '！', '？', '!', '?', '\n'])
         .map(str::trim)
         .filter(|sentence| !sentence.is_empty())
         .map(str::to_string)

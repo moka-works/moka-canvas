@@ -114,8 +114,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   },
 
   async newSession() {
-    const previous = get().session;
-    if (previous && previous.messages.length === 0) return;
+    if (get().busy) get().stop();
+    if (get().messages.length === 0) return;
     set({
       session: null,
       messages: [],
@@ -129,6 +129,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   },
 
   async loadSession(id) {
+    if (get().busy) get().stop();
     set({ sessionsLoading: true, error: null, historyOpen: false });
     try {
       const answered = await agentSessionsApi.get(id, { limit: 200 });
@@ -218,7 +219,16 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
   stop() {
     get().abort?.abort();
-    set({ busy: false, abort: null });
+    // A loop stopped while a person was being asked is a loop whose promise
+    // would otherwise never settle.
+    settleApproval(false);
+    settleQuestion(null);
+    set({
+      busy: false,
+      abort: null,
+      approval: null,
+      question: null,
+    });
   },
 
   approve() {
