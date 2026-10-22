@@ -77,7 +77,6 @@ function build_request(call, req, inputs)
   end
 
   return {
-    state = {speakerLabel = req.params.speakerLabel},
     method = "POST",
     url = call.url,
     headers = {},
@@ -99,7 +98,6 @@ function parse_response(status, headers, body, state)
     return {error = payload.error.message or "the recording was refused"}
   end
 
-  local label = (state or {}).speakerLabel
   local duration = tonumber(payload.duration) or 0
   local blocks = {}
   local count = 0
