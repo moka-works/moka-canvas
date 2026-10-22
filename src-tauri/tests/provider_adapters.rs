@@ -1421,6 +1421,174 @@ async fn a_streamed_gemini_answer_is_asked_for_as_events_and_aggregated() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_gemini_conversation_carries_tools_and_reads_a_function_call() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1beta/models/gemini-2.5-flash:generateContent",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("generate", &headers, None);
+                recorded.note_body(&body);
+                Json(json!({
+                    "candidates": [{
+                        "content": { "role": "model", "parts": [{
+                            "functionCall": { "name": "canvas.get", "args": { "canvasId": "cv_1" } }
+                        }]},
+                        "finishReason": "STOP"
+                    }]
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = gemini_channel(&base_url, "gemini-2.5-flash", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "Act with tools."),
+            moka_canvas::generate::ChatMessage::text("user", "read the canvas"),
+            moka_canvas::generate::ChatMessage::assistant_calls(vec![
+                moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+            ]),
+            moka_canvas::generate::ChatMessage::tool_result(
+                &moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+                r#"{"ok":true,"canvases":[{"id":"cv_1"}]}"#,
+            ),
+        ],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {"canvasId": {"type": "string"}},
+                "required": ["canvasId"]
+            }),
+        }],
+        tool_choice: Some("auto".into()),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer is read whole");
+    assert!(result.text.is_none(), "a pure tool call carries no words");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert!(
+        !result.tool_calls[0].id.is_empty(),
+        "the protocol gives no ids, so one is made for the loop to tell calls apart"
+    );
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+
+    let sent = recorded.body(0);
+    assert_eq!(
+        sent["systemInstruction"]["parts"][0]["text"], "Act with tools.",
+        "the instruction is lifted out of the turns"
+    );
+    assert_eq!(
+        sent["tools"][0]["functionDeclarations"][0]["name"],
+        "canvas.get"
+    );
+    assert!(
+        sent["tools"][0]["functionDeclarations"][0]["parameters"]
+            .get("additionalProperties")
+            .is_none(),
+        "this protocol refuses schema keywords it does not know"
+    );
+    assert_eq!(sent["toolConfig"]["functionCallingConfig"]["mode"], "AUTO");
+    assert_eq!(sent["contents"][0]["role"], "user");
+    assert_eq!(sent["contents"][0]["parts"][0]["text"], "read the canvas");
+    assert_eq!(sent["contents"][1]["role"], "model");
+    assert_eq!(
+        sent["contents"][1]["parts"][0]["functionCall"]["name"],
+        "canvas.list"
+    );
+    assert_eq!(sent["contents"][2]["role"], "user");
+    assert_eq!(
+        sent["contents"][2]["parts"][0]["functionResponse"]["name"],
+        "canvas.list"
+    );
+    assert_eq!(
+        sent["contents"][2]["parts"][0]["functionResponse"]["response"]["ok"], true,
+        "the result travels as the object the function response reads"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_gemini_stream_can_ask_for_a_tool_instead_of_words() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+        post(
+            move |RawQuery(query): RawQuery, headers: HeaderMap, body: Bytes| {
+                let recorded = answering.clone();
+                async move {
+                    recorded.note("stream", &headers, query);
+                    recorded.note_body(&body);
+                    stream(&[
+                        r#"{"candidates":[{"content":{"parts":[{"text":"Checking "}]}}]}"#,
+                        r#"{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"canvas.get","args":{"canvasId":"cv_1"}}}]},"finishReason":"STOP"}]}"#,
+                    ])
+                }
+            },
+        ),
+    ))
+    .await;
+
+    let call = gemini_channel(&base_url, "gemini-2.5-flash", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "read the canvas",
+        )],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+    assert_eq!(shown(&seen), "Checking ");
+    assert_eq!(result.text.as_deref(), Some("Checking "));
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(
+        result.finish_reason.as_deref(),
+        Some("tool_calls"),
+        "a call is what ended the turn, even when the provider says STOP"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_prompt_a_gemini_model_blocked_is_explained_rather_than_reported_as_empty() {
     let base_url = serve(Router::new().route(
         "/v1beta/models/gemini-2.5-flash:generateContent",

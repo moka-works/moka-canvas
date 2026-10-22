@@ -60,6 +60,206 @@ local function divisor(a, b)
   return a
 end
 
+-- The keywords this protocol's schema reader knows. `additionalProperties`
+-- is not one of them, and a request that carries an unknown keyword is
+-- refused rather than read loosely, so the schema travels as the subset the
+-- protocol states.
+local SCHEMA_KEYS = {
+  type = true,
+  format = true,
+  description = true,
+  enum = true,
+  items = true,
+  properties = true,
+  required = true,
+  nullable = true,
+  minimum = true,
+  maximum = true,
+  minItems = true,
+  maxItems = true,
+  title = true,
+  default = true,
+  example = true,
+  anyOf = true,
+}
+
+local function clean_schema(schema)
+  if type(schema) ~= "table" then
+    return schema
+  end
+  local cleaned = {}
+  for key, value in pairs(schema) do
+    if SCHEMA_KEYS[key] then
+      if key == "properties" and type(value) == "table" then
+        local properties = {}
+        for name, property in pairs(value) do
+          properties[name] = clean_schema(property)
+        end
+        cleaned[key] = properties
+      elseif key == "items" then
+        cleaned[key] = clean_schema(value)
+      elseif key == "anyOf" and type(value) == "table" then
+        local options = {}
+        for _, option in ipairs(value) do
+          table.insert(options, clean_schema(option))
+        end
+        cleaned[key] = options
+      else
+        cleaned[key] = value
+      end
+    end
+  end
+  return cleaned
+end
+
+-- What the model may ask to run, under the names this protocol uses: the
+-- declarations sit inside a tool, and the choice is a mode rather than a
+-- word.
+local function tools_of(req)
+  local declarations = {}
+  for _, tool in ipairs(req.tools or {}) do
+    table.insert(declarations, {
+      name = tool.name,
+      description = tool.description,
+      parameters = clean_schema(tool.parameters or {type = "object"}),
+    })
+  end
+  if #declarations == 0 then
+    return nil
+  end
+  return {{functionDeclarations = declarations}}
+end
+
+local function tool_config(req)
+  local choice = req.tool_choice
+  if type(choice) ~= "string" or trimmed(choice) == "" then
+    return nil
+  end
+  if choice == "none" then
+    return {functionCallingConfig = {mode = "NONE"}}
+  end
+  if choice == "auto" then
+    return {functionCallingConfig = {mode = "AUTO"}}
+  end
+  return {functionCallingConfig = {mode = "ANY", allowedFunctionNames = {choice}}}
+end
+
+-- One call's arguments, which arrive as decoded JSON here but may be handed
+-- over as the text a script read: both are accepted, and neither is invented.
+local function arguments_of(raw)
+  if type(raw) == "string" then
+    local ok, decoded = pcall(json.decode, raw)
+    if ok and type(decoded) == "table" then
+      return decoded
+    end
+    return {}
+  end
+  if type(raw) == "table" then
+    return raw
+  end
+  return {}
+end
+
+-- What a tool's result says, as the object a function response carries.
+local function response_of(text)
+  local ok, decoded = pcall(json.decode, text or "")
+  if ok and type(decoded) == "table" then
+    return decoded
+  end
+  return {result = text or ""}
+end
+
+-- Calls are numbered here because this protocol gives them no ids of its
+-- own, and the loop that runs them tells two calls apart by id.
+local call_serial = 0
+local stream_serial = 0
+
+local function call_of(part)
+  local call = part.functionCall
+  if type(call) ~= "table" or type(call.name) ~= "string" then
+    return nil
+  end
+  call_serial = call_serial + 1
+  return {
+    id = "gemini_call_" .. call_serial,
+    name = call.name,
+    arguments = arguments_of(call.args),
+  }
+end
+
+-- The reason a candidate stopped, under the words the rest of the program
+-- acts on.
+local function finish_of(candidate)
+  local reason = candidate.finishReason
+  if reason == nil then
+    return nil
+  end
+  if reason == "MAX_TOKENS" then
+    return "length"
+  end
+  return trimmed(tostring(reason)):lower()
+end
+
+-- The conversation as contents, one turn per role, with the instruction
+-- lifted out of the turns because this protocol keeps it beside them. Tool
+-- results for one assistant turn are gathered into a single user turn: a
+-- function response is read as the user's answer to the calls, and splitting
+-- one answer into several turns would interleave it with the model's.
+local function conversation(req)
+  local contents = {}
+  local instruction = {}
+  if req.system and trimmed(req.system) ~= "" then
+    table.insert(instruction, {text = req.system})
+  end
+  local answers = {}
+
+  local function flush()
+    if #answers == 0 then
+      return
+    end
+    table.insert(contents, {role = "user", parts = answers})
+    answers = {}
+  end
+
+  for _, message in ipairs(req.messages or {}) do
+    if message.role == "system" then
+      if type(message.text) == "string" and trimmed(message.text) ~= "" then
+        table.insert(instruction, {text = message.text})
+      end
+    elseif message.role == "tool" then
+      table.insert(answers, {
+        functionResponse = {
+          name = message.name or "",
+          response = response_of(message.text),
+        },
+      })
+    else
+      flush()
+      local parts = {}
+      if type(message.text) == "string" and trimmed(message.text) ~= "" then
+        table.insert(parts, {text = message.text})
+      end
+      if message.role == "assistant" then
+        for _, call in ipairs(message.tool_calls or {}) do
+          table.insert(parts, {
+            functionCall = {
+              name = call.name,
+              args = arguments_of(call.arguments),
+            },
+          })
+        end
+        if #parts > 0 then
+          table.insert(contents, {role = "model", parts = parts})
+        end
+      elseif #parts > 0 then
+        table.insert(contents, {role = "user", parts = parts})
+      end
+    end
+  end
+  flush()
+  return contents, instruction
+end
+
 -- Two whole numbers out of the sides of a size, in whatever spacing it arrived.
 -- A side of nothing, of zero, or of a fraction describes no shape at all.
 local function sides(width, height)
@@ -149,20 +349,37 @@ local function generation_config(req)
 end
 
 local function question(req, inputs)
-  local parts = {}
-  if type(req.prompt) == "string" and trimmed(req.prompt) ~= "" then
-    table.insert(parts, {text = req.prompt})
-  end
-  -- Every reference travels inside the request, a mask among them: this
-  -- protocol has no field of its own for one, and dropping it would answer a
-  -- question that was not asked.
-  for _, input in ipairs(inputs or {}) do
-    table.insert(parts, {inlineData = {mimeType = input.mime, data = encoded(input)}})
-  end
+  local body = {}
+  if req.messages and #req.messages > 0 then
+    local contents, instruction = conversation(req)
+    body.contents = contents
+    if #instruction > 0 then
+      body.systemInstruction = {parts = instruction}
+    end
+  else
+    local parts = {}
+    if type(req.prompt) == "string" and trimmed(req.prompt) ~= "" then
+      table.insert(parts, {text = req.prompt})
+    end
+    -- Every reference travels inside the request, a mask among them: this
+    -- protocol has no field of its own for one, and dropping it would answer a
+    -- question that was not asked.
+    for _, input in ipairs(inputs or {}) do
+      table.insert(parts, {inlineData = {mimeType = input.mime, data = encoded(input)}})
+    end
 
-  local body = {contents = {{role = "user", parts = parts}}}
-  if type(req.system) == "string" and trimmed(req.system) ~= "" then
-    body.systemInstruction = {parts = {{text = req.system}}}
+    body.contents = {{role = "user", parts = parts}}
+    if type(req.system) == "string" and trimmed(req.system) ~= "" then
+      body.systemInstruction = {parts = {{text = req.system}}}
+    end
+  end
+  local tools = tools_of(req)
+  if tools ~= nil then
+    body.tools = tools
+    local choice = tool_config(req)
+    if choice ~= nil then
+      body.toolConfig = choice
+    end
   end
   local config = generation_config(req)
   if config ~= nil then
@@ -264,7 +481,12 @@ function parse_response(status, headers, body, state)
 
   local text = ""
   local items = {}
+  local calls = {}
+  local finish = nil
   for _, candidate in ipairs(candidates(payload)) do
+    if finish == nil then
+      finish = finish_of(candidate)
+    end
     for _, part in ipairs(parts_of(candidate)) do
       local inline = part.inlineData
       if type(inline) == "table" then
@@ -275,28 +497,67 @@ function parse_response(status, headers, body, state)
       elseif type(part.text) == "string" then
         text = text .. part.text
       end
+      local call = call_of(part)
+      if call ~= nil then
+        table.insert(calls, call)
+      end
     end
   end
   if trimmed(text) == "" then
     text = nil
   end
-  return {text = text, items = items, usage = tokens(payload)}
+  if #calls > 0 then
+    finish = "tool_calls"
+  end
+  return {
+    text = text,
+    items = items,
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end
 
--- One event: the piece written since the last one, and the totals where the
--- service reported them at the end.
+-- One event: the piece written since the last one, the calls it asked for,
+-- and the totals where the service reported them at the end. A function call
+-- arrives whole here rather than in fragments, so each one is handed over as
+-- a complete argument delta.
 function parse_event(event)
   local payload = json.decode(event)
   local text = ""
+  local calls = {}
+  local finish = nil
   for _, candidate in ipairs(candidates(payload)) do
+    if finish == nil then
+      finish = finish_of(candidate)
+    end
     for _, part in ipairs(parts_of(candidate)) do
       if type(part.text) == "string" then
         text = text .. part.text
+      end
+      local call = call_of(part)
+      if call ~= nil then
+        table.insert(calls, {
+          index = stream_serial,
+          id = call.id,
+          name = call.name,
+          arguments_delta = json.encode(call.arguments),
+        })
+        stream_serial = stream_serial + 1
       end
     end
   end
   if text == "" then
     text = nil
   end
-  return {text = text, complete = nil, usage = tokens(payload)}
+  if #calls > 0 then
+    finish = "tool_calls"
+  end
+  return {
+    text = text,
+    complete = nil,
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end

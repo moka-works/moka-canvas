@@ -5,5 +5,6 @@
   "script": "gemini.lua",
   "order": 30,
   "auth": { "header": "x-goog-api-key", "scheme": "" },
-  "version": 3
+  "features": { "toolCalling": true },
+  "version": 4
 }
