@@ -17,7 +17,7 @@ AgentDock（前端四房间）
 - **循环在界面前端**，因为它需要当前选择、播放头、故事步骤与本地撤销栈；关闭窗口即停止。
 - **模型选择**：助理右栏可选用任一已启用的文本模型；选择保存在会话的 `model` 上，继续该会话时沿用，未选时用部署默认。
 - **会话独立存放**：`<项目>/agent/sessions/<id>.json`，不进入 `canvas.moka`，不改变文档 revision，不升 schema，也不迁移旧的 `canvas[].sessions`。
-- **模型协议**：转换器在 `model.json` 的 `features.toolCalling` 里声明是否支持原生工具；内置的 `openaiChat` 与 `openaiResponses` 已实现，其余协议回退到 JSON ReAct（`agent/protocol.rs`）。回退步骤的协议 JSON 不会流式显示，支持一步内多个工具调用。
+- **模型协议**：转换器在 `model.json` 的 `features.toolCalling` 里声明是否支持原生工具；内置六种文本协议（`openaiChat`、`openaiResponses`、`gemini`、`bailianText`、`volcengineText`、`minimaxText`）均已实现原生工具调用。未声明该特性的自定义或旧版转换器回退到 JSON ReAct（`agent/protocol.rs`）；回退步骤的协议 JSON 不会流式显示，支持一步内多个工具调用。
 
 ## 工具契约
 
