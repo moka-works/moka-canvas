@@ -4,5 +4,6 @@
   "urlExample": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
   "script": "volcengine-chat.lua",
   "order": 50,
-  "version": 1
+  "features": { "toolCalling": true },
+  "version": 2
 }

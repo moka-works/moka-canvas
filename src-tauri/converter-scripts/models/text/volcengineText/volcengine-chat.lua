@@ -47,6 +47,138 @@ local function said(req, pictures)
   return content
 end
 
+-- One turn of a conversation in this shape. Tool calls travel with their
+-- arguments as text, and a tool result is a message of its own named by the
+-- call it answers.
+local function turn(message)
+  local content = message.text or ""
+  if message.role == "assistant" then
+    local sent = {role = "assistant", content = content}
+    local calls = message.tool_calls or {}
+    if #calls > 0 then
+      sent.tool_calls = {}
+      for _, call in ipairs(calls) do
+        local arguments = call.arguments
+        if type(arguments) ~= "string" then
+          arguments = json.encode(arguments or {})
+        end
+        table.insert(sent.tool_calls, {
+          id = call.id,
+          type = "function",
+          ["function"] = {name = call.name, arguments = arguments},
+        })
+      end
+    end
+    return sent
+  end
+  if message.role == "tool" then
+    local sent = {
+      role = "tool",
+      tool_call_id = message.tool_call_id,
+      content = content,
+    }
+    if message.name then
+      sent.name = message.name
+    end
+    return sent
+  end
+  return {role = message.role, content = content}
+end
+
+local function conversation(req)
+  local messages = {}
+  if req.system and trimmed(req.system) ~= "" then
+    table.insert(messages, {role = "system", content = req.system})
+  end
+  for _, message in ipairs(req.messages or {}) do
+    if message.role ~= "system" or #messages == 0 then
+      table.insert(messages, turn(message))
+    end
+  end
+  return messages
+end
+
+local function tools_of(req)
+  local tools = {}
+  for _, tool in ipairs(req.tools or {}) do
+    table.insert(tools, {
+      type = "function",
+      ["function"] = {
+        name = tool.name,
+        description = tool.description,
+        parameters = tool.parameters,
+      },
+    })
+  end
+  return tools
+end
+
+local function tool_choice_of(req)
+  local choice = req.tool_choice
+  if type(choice) ~= "string" or trimmed(choice) == "" then
+    return "auto"
+  end
+  if choice == "auto" or choice == "none" then
+    return choice
+  end
+  return {type = "function", ["function"] = {name = choice}}
+end
+
+-- A call's arguments, decoded where the service sent JSON and handed over as
+-- text otherwise, so a malformed call is reported rather than becoming empty.
+local function arguments_of(raw)
+  local arguments = raw
+  if type(raw) == "string" and trimmed(raw) ~= "" then
+    local ok, decoded = pcall(json.decode, raw)
+    if ok then
+      arguments = decoded
+    end
+  end
+  if arguments == nil then
+    arguments = {}
+  end
+  return arguments
+end
+
+local function call_of(call)
+  local part = call["function"] or {}
+  return {id = call.id, name = part.name, arguments = arguments_of(part.arguments)}
+end
+
+local function calls_of(message)
+  local list = message and message.tool_calls or {}
+  local calls = {}
+  for _, call in ipairs(list) do
+    local converted = call_of(call)
+    if type(converted.name) == "string" then
+      table.insert(calls, converted)
+    end
+  end
+  return calls
+end
+
+-- The pieces of a streamed call, keyed by the position the service gave them.
+local function call_deltas(delta)
+  local list = delta and delta.tool_calls or {}
+  local calls = {}
+  for position, part in ipairs(list) do
+    local function part_of()
+      return part["function"] or {}
+    end
+    local arguments = part_of().arguments
+    if type(arguments) == "table" then
+      arguments = json.encode(arguments)
+    end
+    table.insert(calls, {
+      index = part.index or (position - 1),
+      id = part.id,
+      name = part_of().name,
+      arguments_delta = arguments,
+    })
+  end
+  return calls
+end
+
 local function number_param(params, key)
   local value = params[key]
   if type(value) == "number" then
@@ -94,12 +226,21 @@ end
 
 local function describe(call, req, inputs, streaming)
   local messages = {}
-  if req.system and trimmed(req.system) ~= "" then
-    table.insert(messages, {role = "system", content = req.system})
+  if req.messages and #req.messages > 0 then
+    messages = conversation(req)
+  else
+    if req.system and trimmed(req.system) ~= "" then
+      table.insert(messages, {role = "system", content = req.system})
+    end
+    table.insert(messages, {role = "user", content = said(req, pictures_of(inputs))})
   end
-  table.insert(messages, {role = "user", content = said(req, pictures_of(inputs))})
 
   local body = {model = call.model, messages = messages}
+  local tools = tools_of(req)
+  if #tools > 0 then
+    body.tools = tools
+    body.tool_choice = tool_choice_of(req)
+  end
   if streaming then
     body.stream = true
     body.stream_options = {include_usage = true}
@@ -149,16 +290,28 @@ end
 function parse_response(status, headers, body)
   local payload = json.decode(body)
   local choice = (payload.choices or {})[1] or {}
-  local text = (choice.message or {}).content
+  local message = choice.message or {}
+  local text = message.content
   if type(text) ~= "string" or trimmed(text) == "" then
     text = nil
   end
-  return {text = text, usage = tokens(payload)}
+  local calls = calls_of(message)
+  local finish = choice.finish_reason
+  if #calls > 0 and finish == nil then
+    finish = "tool_calls"
+  end
+  return {
+    text = text,
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end
 
 -- One event: the piece written since the last one, the totals where the closing
--- event carried them, and a complaint where the service sent one instead of a
--- piece — a stream that has opened has no status left to refuse with.
+-- event carried them, the fragments of any tool call, and a complaint where the
+-- service sent one instead of a piece — a stream that has opened has no status
+-- left to refuse with.
 function parse_event(event)
   local payload = json.decode(event)
   if type(payload.error) == "table" then
@@ -179,5 +332,27 @@ function parse_event(event)
   if type(complete) ~= "string" or complete == "" then
     complete = nil
   end
-  return {text = text, complete = complete, usage = tokens(payload)}
+  local calls = call_deltas(delta)
+  if #calls == 0 then
+    local full = calls_of(choice.message)
+    for position, call in ipairs(full) do
+      calls[position] = {
+        index = position - 1,
+        id = call.id,
+        name = call.name,
+        arguments_delta = json.encode(call.arguments),
+      }
+    end
+  end
+  local finish = choice.finish_reason
+  if #calls > 0 and finish == nil then
+    finish = "tool_calls"
+  end
+  return {
+    text = text,
+    complete = complete,
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end
