@@ -4945,3 +4945,26 @@ async fn a_minimax_stream_puts_streamed_tool_call_fragments_back_together() {
         "canvas.get"
     );
 }
+
+#[tokio::test]
+async fn every_built_in_text_converter_declares_tool_calling() {
+    let root = converter_root().await;
+    let registry = moka_canvas::converter::ConverterRegistry::load(root);
+    for protocol in [
+        "openaiChat",
+        "openaiResponses",
+        "gemini",
+        "bailianText",
+        "volcengineText",
+        "minimaxText",
+    ] {
+        let entry = registry
+            .find(protocol)
+            .unwrap_or_else(|| panic!("{protocol} is a built-in text converter"));
+        assert_eq!(
+            entry.features.get("toolCalling"),
+            Some(&true),
+            "{protocol} maps native tools, so the chat must send them"
+        );
+    }
+}
