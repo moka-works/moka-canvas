@@ -2221,8 +2221,8 @@ async fn a_step_that_never_ends_is_stopped_at_the_ceiling() {
         .await
         .expect_err("the chain never ends");
     assert!(
-        error.to_string().contains("more than 8 exchanges"),
+        error.to_string().contains("more than 64 exchanges"),
         "{error}"
     );
-    assert_eq!(watched.times(), 8, "one exchange per step and no more");
+    assert_eq!(watched.times(), 64, "one exchange per step and no more");
 }

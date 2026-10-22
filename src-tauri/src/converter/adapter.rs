@@ -37,10 +37,10 @@ use crate::generate::{
 
 /// How many exchanges one step may take before a script is stopped.
 ///
-/// A protocol needs two or three; the ceiling is here because a reply that
-/// names the same handler again is a loop, and a loop would otherwise never
-/// end.
-const MAX_EXCHANGES: usize = 8;
+/// A protocol needs two or three; one that answers behind a poll needs one per
+/// look, so the ceiling is generous but finite: a reply that names the same
+/// handler again forever is a loop, and a loop would otherwise never end.
+const MAX_EXCHANGES: usize = 64;
 
 static CONVERTER_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
@@ -562,6 +562,7 @@ async fn follow(
     }
     let mut exchange_step = Exchange::asked(asked, fallback)?;
     let mut state = asked.get("state").cloned().unwrap_or(Value::Null);
+    let started = std::time::Instant::now();
     for _ in 0..MAX_EXCHANGES {
         step.cancel.check()?;
         // Looked up before the request goes out: a script that names a function
@@ -608,6 +609,23 @@ async fn follow(
         }
         let parsed = session.reply(&exchange_step.handler, &reply, state)?;
         if let Some(next) = exchange_step.asked_by(&parsed) {
+            // A protocol that answers behind a poll asks to be looked at
+            // again later rather than at once. The wait is bounded by the
+            // step's own budget, so a job that never finishes ends as a
+            // timeout rather than as a request that never returns.
+            if let Some(pause) = parsed.get("wait_ms").and_then(Value::as_u64) {
+                let budget = step.call.budgets.timeout_for(step.capability);
+                let spent = started.elapsed();
+                if spent >= budget {
+                    return Err(ProviderError::Timeout(format!(
+                        "{} generation did not finish within {} seconds",
+                        step.capability.as_str(),
+                        budget.as_secs()
+                    )));
+                }
+                let delay = std::time::Duration::from_millis(pause).min(budget - spent);
+                step.cancel.wait(delay).await?;
+            }
             exchange_step = next?;
             state = parsed.get("state").cloned().unwrap_or(Value::Null);
             continue;

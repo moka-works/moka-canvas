@@ -1,0 +1,9 @@
+{
+  "displayName": "Zhipu GLM · Image Generation",
+  "labels": { "zh": "智谱 GLM · 图像生成" },
+  "urlExample": "https://open.bigmodel.cn/api/paas/v4/images/generations",
+  "script": "zhipu-image.lua",
+  "order": 40,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

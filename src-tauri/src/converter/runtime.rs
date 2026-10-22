@@ -43,7 +43,11 @@
 //! ```
 //!
 //! as its reply, or may carry one under `next` beside the rest of what it
-//! answers. The host sends that request, calls `handler` with
+//! answers. A reply that asks to be looked at again later carries `wait_ms`,
+//! the pause before the next exchange — a job API's poll. The pause ends at
+//! once on cancellation, and the whole step is bounded by the capability's
+//! own timeout rather than by the number of looks. The host sends that
+//! request, calls `handler` with
 //! `(status, headers, body, state, raw)`, and repeats until a reply carries no
 //! `next`; the reply that ends the chain is that step's answer. Handlers are
 //! looked up before each request goes out, so a script that names a function it

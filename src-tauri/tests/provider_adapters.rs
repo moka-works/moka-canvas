@@ -5534,3 +5534,193 @@ async fn an_elevenlabs_line_is_asked_at_the_chosen_voice_and_stored_as_answered(
     assert_eq!(result.items[0].bytes, b"ID3-a-recording");
     assert_eq!(result.items[0].mime, "audio/mpeg");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_flux_job_is_looked_at_until_its_picture_is_ready() {
+    use std::sync::atomic::AtomicUsize;
+    use std::time::{Duration, Instant};
+
+    let key = Arc::new(Mutex::new(None::<String>));
+    let asked = Arc::new(Mutex::new(None::<Value>));
+    let polls = Arc::new(AtomicUsize::new(0));
+
+    let posted_key = key.clone();
+    let posted_body = asked.clone();
+    let polling = polls.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/v1/flux-3-image",
+                post(move |headers: HeaderMap, body: Bytes| {
+                    let key = posted_key.clone();
+                    let asked = posted_body.clone();
+                    async move {
+                        *key.lock().expect("not poisoned") = headers
+                            .get("x-key")
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string);
+                        *asked.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        let host = headers
+                            .get("host")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or("127.0.0.1")
+                            .to_string();
+                        Json(json!({
+                            "id": "job_1",
+                            "polling_url": format!("http://{host}/v1/get_result?id=job_1")
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/v1/get_result",
+                get(move |headers: HeaderMap| {
+                    let polls = polling.clone();
+                    async move {
+                        let look = polls.fetch_add(1, Ordering::SeqCst);
+                        if look == 0 {
+                            return Json(json!({"id": "job_1", "status": "Pending"}));
+                        }
+                        let host = headers
+                            .get("host")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or("127.0.0.1")
+                            .to_string();
+                        Json(json!({
+                            "id": "job_1",
+                            "status": "Ready",
+                            "result": {"sample": format!("http://{host}/made.png")}
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/made.png",
+                get(|| async { ([(axum::http::header::CONTENT_TYPE, "image/png")], png(4, 3)) }),
+            ),
+    )
+    .await;
+
+    let call = at(
+        "blackForestLabsImage",
+        &base_url,
+        "flux-3-image",
+        Capability::Image,
+        "/v1/flux-3-image",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Image,
+        prompt: "a lantern".into(),
+        params: json!({"size": "1024x1024"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let started = Instant::now();
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the picture is fetched");
+    assert!(
+        started.elapsed() >= Duration::from_millis(400),
+        "the poll pause is kept"
+    );
+    assert_eq!(key.lock().expect("not poisoned").as_deref(), Some(API_KEY));
+    let asked = asked
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the job started");
+    assert_eq!(asked["prompt"], "a lantern");
+    assert_eq!(asked["width"], 1024);
+    assert_eq!(asked["height"], 1024);
+    assert_eq!(
+        polls.load(Ordering::SeqCst),
+        2,
+        "one pending look, then ready"
+    );
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, png(4, 3));
+    assert_eq!(result.items[0].mime, "image/png");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_zhipu_picture_is_read_from_the_address_the_answer_names() {
+    let key = Arc::new(Mutex::new(None::<String>));
+    let asked = Arc::new(Mutex::new(None::<Value>));
+    let posted_key = key.clone();
+    let posted_body = asked.clone();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("an ephemeral port is available");
+    let address = listener.local_addr().expect("the socket has an address");
+    let base = format!("http://{address}");
+    let made = format!("{base}/made.png");
+    let app = Router::new()
+        .route(
+            "/api/paas/v4/images/generations",
+            post(move |headers: HeaderMap, body: Bytes| {
+                let key = posted_key.clone();
+                let asked = posted_body.clone();
+                let made = made.clone();
+                async move {
+                    *key.lock().expect("not poisoned") = headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    *asked.lock().expect("not poisoned") =
+                        Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                    Json(json!({"data": [{"url": made}]}))
+                }
+            }),
+        )
+        .route(
+            "/made.png",
+            get(|| async { ([(axum::http::header::CONTENT_TYPE, "image/png")], png(2, 2)) }),
+        );
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let call = at(
+        "zhipuImage",
+        &base,
+        "glm-image",
+        Capability::Image,
+        "/api/paas/v4/images/generations",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Image,
+        prompt: "a lantern".into(),
+        params: json!({"size": "1024x1024"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the picture is fetched");
+    assert_eq!(
+        key.lock().expect("not poisoned").as_deref(),
+        Some("Bearer sk-test-1234567890abcd")
+    );
+    let asked = asked
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the provider was asked");
+    assert_eq!(asked["model"], "glm-image");
+    assert_eq!(asked["size"], "1024x1024");
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, png(2, 2));
+    assert_eq!(result.items[0].mime, "image/png");
+}

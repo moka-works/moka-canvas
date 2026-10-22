@@ -1,0 +1,9 @@
+{
+  "displayName": "Black Forest Labs · FLUX Image Generation",
+  "labels": { "zh": "Black Forest Labs · FLUX 图像生成" },
+  "urlExample": "https://api.bfl.ai/v1/flux-3-image",
+  "script": "black-forest-labs-image.lua",
+  "order": 30,
+  "auth": { "header": "x-key", "scheme": "" },
+  "version": 1
+}
