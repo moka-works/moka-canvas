@@ -2,7 +2,9 @@ import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   createProject,
+  forgetHome,
   forgetProjects,
+  openAssetsRoom,
   openClipRoom,
   openRecent,
   projectHome,
@@ -214,4 +216,44 @@ test("the cutting room folds its columns beside its rail", async ({ page }) => {
   await unfoldLeft.click();
   await expect(page.locator(".clip-column")).toBeVisible();
   await expect(page.getByTestId("panel-fold-left")).toBeVisible();
+});
+
+test("the shelf folds each column from its own corner", async ({ page }) => {
+  const home = projectHome("panel-fold-assets");
+
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, join(home, "project"), "Shelf Fold");
+  await openAssetsRoom(page);
+
+  const column = page.locator(".assets-column");
+  const inspector = page.locator(".assets-inspector");
+  const foldLeft = page.getByTestId("panel-fold-left");
+  const foldRight = page.getByTestId("panel-fold-right");
+
+  // Each triangle stands in the corner its own column keeps beside the stage:
+  // the library's at its right edge, the inspector's at its left edge.
+  const library = await column.boundingBox();
+  const shelf = await inspector.boundingBox();
+  const left = await cornerOf(foldLeft);
+  const right = await cornerOf(foldRight);
+  expect(left.y).toBe(Math.round(library!.y));
+  expect(left.right).toBe(Math.round(library!.x + library!.width) - 1);
+  expect(right.y).toBe(Math.round(shelf!.y));
+  expect(right.x).toBe(Math.round(shelf!.x) + 1);
+
+  // Each folds only its own column; the other one still stands.
+  await foldLeft.click();
+  await expect(column).toHaveCount(0);
+  await expect(inspector).toBeVisible();
+  await page.getByTestId("panel-unfold-left").click();
+  await expect(column).toBeVisible();
+  await expect(foldRight).toBeVisible();
+  await foldRight.click();
+  await expect(inspector).toHaveCount(0);
+  await expect(column).toBeVisible();
+  await page.getByTestId("panel-unfold-right").click();
+  await expect(inspector).toBeVisible();
+
+  forgetHome(home);
 });
