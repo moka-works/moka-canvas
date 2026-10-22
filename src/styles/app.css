@@ -1374,6 +1374,13 @@ body.is-dragging-panel {
   padding-left: 10px;
 }
 
+/* The cutting room's and the shelf's right columns wear the same tabs as the
+   board's, beside the same corner fold. */
+.clip-inspector > .side-panel-tabs,
+.assets-inspector > .side-panel-tabs {
+  padding-left: 10px;
+}
+
 .editor-side > .side-resources {
   flex: 1;
   min-height: 0;
@@ -10375,32 +10382,6 @@ button > .story-spin {
   font-size: 11px;
   background: transparent;
   color: var(--ink);
-}
-
-/* The tabs that turn each room's right column between details and the agent. */
-.agent-panel-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 6px 8px 0;
-  border-bottom: 1px solid var(--border, #e5e5e7);
-}
-
-.agent-panel-tabs button {
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-  padding: 5px 8px;
-  border-radius: 6px 6px 0 0;
-  cursor: pointer;
-  opacity: 0.6;
-}
-
-.agent-panel-tabs button.is-active {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
-  font-weight: 600;
 }
 
 /* The model this conversation answers with, above its message list. */

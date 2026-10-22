@@ -63,7 +63,7 @@ export function ClipInspector() {
       id="clip-panel-right"
     >
       <PanelFold side="right" />
-      <div className="agent-panel-tabs" role="tablist">
+      <div className="side-panel-tabs" role="tablist">
         <button
           aria-selected={tab === "details"}
           className={tab === "details" ? "is-active" : ""}

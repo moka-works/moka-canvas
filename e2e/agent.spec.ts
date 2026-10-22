@@ -108,7 +108,7 @@ test("the cutting room and the shelf carry the assistant in their right column",
   await createProject(page, join(home, "project"), "Agent rooms");
 
   await openClipRoom(page);
-  const clipTabs = page.locator(".agent-panel-tabs");
+  const clipTabs = page.locator(".side-panel-tabs");
   await expect(clipTabs).toBeVisible();
   await clipTabs.getByRole("tab", { name: "Assistant" }).click();
   await expect(page.getByTestId("agent-dock")).toHaveAttribute(
@@ -117,7 +117,7 @@ test("the cutting room and the shelf carry the assistant in their right column",
   );
 
   await openAssetsRoom(page);
-  const assetTabs = page.locator(".agent-panel-tabs");
+  const assetTabs = page.locator(".side-panel-tabs");
   await expect(assetTabs).toBeVisible();
   await assetTabs.getByRole("tab", { name: "Assistant" }).click();
   await expect(page.getByTestId("agent-dock")).toHaveAttribute(
