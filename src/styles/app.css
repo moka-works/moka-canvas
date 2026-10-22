@@ -9888,13 +9888,13 @@ button > .story-spin {
   min-height: 0;
   height: 100%;
   width: 100%;
-  background: var(--surface, #fff);
-  color: var(--text, #1d1d1f);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 13px;
 }
 
 .agent-dock.is-compact {
-  border-top: 1px solid var(--border, #e5e5e7);
+  border-top: 1px solid var(--stroke);
   max-height: 380px;
   margin-top: 16px;
   border-radius: 10px;
@@ -9902,30 +9902,36 @@ button > .story-spin {
 
 .agent-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--border, #e5e5e7);
+  border-bottom: 1px solid var(--stroke);
 }
 
-.agent-head-words h3 {
+.agent-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-head-row h3 {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
 }
 
 .agent-context {
-  margin: 3px 0 0;
+  margin: 0;
   font-size: 11px;
   line-height: 1.35;
   opacity: 0.66;
-  max-width: 260px;
 }
 
 .agent-head-actions {
   display: flex;
   gap: 4px;
+  flex: none;
 }
 
 .agent-head-actions button,
@@ -9935,14 +9941,14 @@ button > .story-spin {
 .agent-question-other button,
 .agent-approval-actions button,
 .agent-composer-actions button {
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   background: transparent;
   border-radius: 6px;
   padding: 3px 7px;
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  color: inherit;
+  color: var(--ink);
 }
 
 .agent-head-actions button:hover,
@@ -9950,14 +9956,14 @@ button > .story-spin {
 .agent-question-actions button:hover,
 .agent-approval-actions button:hover,
 .agent-composer-actions button:hover {
-  background: rgba(0, 0, 0, 0.045);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .agent-composer-actions .is-primary,
 .agent-approval-actions .is-primary {
-  background: var(--accent, #0a84ff);
-  border-color: var(--accent, #0a84ff);
-  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 .agent-composer-actions .is-primary:disabled {
@@ -9999,13 +10005,13 @@ button > .story-spin {
 }
 
 .agent-line.is-user .agent-line-words {
-  background: rgba(10, 132, 255, 0.08);
+  background: var(--surface-raised);
   border-radius: 8px;
   padding: 7px 9px;
 }
 
 .agent-line.is-error .agent-line-words {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .agent-line-thinking {
@@ -10037,14 +10043,14 @@ button > .story-spin {
 }
 
 .agent-tool {
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 8px;
   padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.012);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .agent-tool.is-error {
-  border-color: rgba(180, 35, 24, 0.35);
+  border-color: rgba(255, 138, 128, 0.4);
 }
 
 .agent-tool-head {
@@ -10065,12 +10071,12 @@ button > .story-spin {
 
 .agent-tool.is-running .agent-tool-status,
 .agent-tool.is-pending .agent-tool-status {
-  color: var(--accent, #0a84ff);
+  color: var(--primary);
   opacity: 1;
 }
 
 .agent-tool.is-error .agent-tool-status {
-  color: #b42318;
+  color: var(--danger);
   opacity: 1;
 }
 
@@ -10083,7 +10089,7 @@ button > .story-spin {
 .agent-tool-error {
   margin: 3px 0 0;
   font-size: 11px;
-  color: #b42318;
+  color: var(--danger);
   white-space: pre-wrap;
 }
 
@@ -10116,7 +10122,7 @@ button > .story-spin {
   margin: 4px 0 0;
   padding: 6px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   font-size: 10px;
   line-height: 1.35;
 }
@@ -10124,7 +10130,7 @@ button > .story-spin {
 .agent-plan {
   margin: 0 12px 8px;
   padding: 8px 10px;
-  border: 1px dashed var(--border, #e5e5e7);
+  border: 1px dashed var(--stroke);
   border-radius: 8px;
 }
 
@@ -10167,14 +10173,14 @@ button > .story-spin {
 }
 
 .agent-plan li.is-doing .agent-plan-box {
-  background: var(--accent, #0a84ff);
-  border-color: var(--accent, #0a84ff);
+  background: var(--primary);
+  border-color: var(--primary);
   opacity: 1;
 }
 
 .agent-plan li.is-failed .agent-plan-box {
-  background: #b42318;
-  border-color: #b42318;
+  background: var(--danger);
+  border-color: var(--danger);
 }
 
 .agent-approval,
@@ -10213,7 +10219,7 @@ button > .story-spin {
 .agent-approval-irreversible {
   margin: 4px 0 0;
   font-size: 11px;
-  color: #b42318;
+  color: var(--danger);
 }
 
 .agent-approval-actions,
@@ -10229,20 +10235,21 @@ button > .story-spin {
 .agent-question-other input {
   flex: 1 1 120px;
   min-width: 100px;
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 6px;
   padding: 4px 6px;
   font: inherit;
   font-size: 12px;
   background: transparent;
+  color: var(--ink);
 }
 
 .agent-error {
   margin: 0 12px 6px;
   padding: 6px 8px;
   border-radius: 6px;
-  background: rgba(180, 35, 24, 0.08);
-  color: #b42318;
+  background: rgba(255, 138, 128, 0.12);
+  color: var(--danger);
   font-size: 11px;
   white-space: pre-wrap;
 }
@@ -10254,7 +10261,7 @@ button > .story-spin {
 }
 
 .agent-composer {
-  border-top: 1px solid var(--border, #e5e5e7);
+  border-top: 1px solid var(--stroke);
   padding: 8px 12px 10px;
   display: flex;
   flex-direction: column;
@@ -10263,14 +10270,14 @@ button > .story-spin {
 
 .agent-composer textarea {
   resize: vertical;
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 8px;
   padding: 7px 8px;
   font: inherit;
   font-size: 12px;
   line-height: 1.45;
   background: transparent;
-  color: inherit;
+  color: var(--ink);
 }
 
 .agent-composer-actions {
@@ -10279,7 +10286,7 @@ button > .story-spin {
 }
 
 .agent-sessions {
-  border-bottom: 1px solid var(--border, #e5e5e7);
+  border-bottom: 1px solid var(--stroke);
   padding: 8px 12px;
   max-height: 260px;
   overflow-y: auto;
@@ -10287,13 +10294,13 @@ button > .story-spin {
 
 .agent-search {
   width: 100%;
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 6px;
   padding: 5px 7px;
   font: inherit;
   font-size: 12px;
   background: transparent;
-  color: inherit;
+  color: var(--ink);
 }
 
 .agent-session-list {
@@ -10312,8 +10319,8 @@ button > .story-spin {
 }
 
 .agent-session-list li.is-current {
-  border-color: rgba(10, 132, 255, 0.35);
-  background: rgba(10, 132, 255, 0.05);
+  border-color: var(--stroke);
+  background: var(--surface-raised);
 }
 
 .agent-session-open {
@@ -10354,20 +10361,20 @@ button > .story-spin {
 }
 
 .agent-session-actions button.is-danger {
-  color: #b42318;
-  border-color: rgba(180, 35, 24, 0.4);
+  color: var(--danger);
+  border-color: rgba(255, 138, 128, 0.4);
 }
 
 .agent-session-rename input {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 5px;
   padding: 3px 5px;
   font: inherit;
   font-size: 11px;
   background: transparent;
-  color: inherit;
+  color: var(--ink);
 }
 
 /* The tabs that turn each room's right column between details and the agent. */
@@ -10402,7 +10409,7 @@ button > .story-spin {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border, #e5e5e7);
+  border-bottom: 1px solid var(--stroke);
   font-size: 11px;
 }
 
@@ -10414,11 +10421,11 @@ button > .story-spin {
 .agent-model select {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--border, #e5e5e7);
+  border: 1px solid var(--stroke);
   border-radius: 6px;
   padding: 3px 5px;
   font: inherit;
   font-size: 11px;
   background: transparent;
-  color: inherit;
+  color: var(--ink);
 }

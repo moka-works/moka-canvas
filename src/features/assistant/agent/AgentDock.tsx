@@ -278,30 +278,30 @@ export function AgentDock({
       data-room={room}
     >
       <header className="agent-head">
-        <div className="agent-head-words">
+        <div className="agent-head-row">
           <h3>{t("agent:title")}</h3>
-          <p className="agent-context">{contextLine ?? t("agent:emptyHint")}</p>
+          <div className="agent-head-actions">
+            <button
+              onClick={() => {
+                void useAgentStore.getState().newSession();
+              }}
+              title={t("agent:newSession")}
+              type="button"
+            >
+              {t("agent:newSession")}
+            </button>
+            <button
+              aria-expanded={historyOpen}
+              onClick={() =>
+                useAgentStore.getState().setHistoryOpen(!historyOpen)
+              }
+              type="button"
+            >
+              {t("agent:history")}
+            </button>
+          </div>
         </div>
-        <div className="agent-head-actions">
-          <button
-            onClick={() => {
-              void useAgentStore.getState().newSession();
-            }}
-            title={t("agent:newSession")}
-            type="button"
-          >
-            {t("agent:newSession")}
-          </button>
-          <button
-            aria-expanded={historyOpen}
-            onClick={() =>
-              useAgentStore.getState().setHistoryOpen(!historyOpen)
-            }
-            type="button"
-          >
-            {t("agent:history")}
-          </button>
-        </div>
+        <p className="agent-context">{contextLine ?? t("agent:emptyHint")}</p>
       </header>
 
       <div className="agent-model">
