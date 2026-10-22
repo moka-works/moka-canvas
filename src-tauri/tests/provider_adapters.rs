@@ -4975,8 +4975,10 @@ async fn every_built_in_text_converter_declares_tool_calling() {
 
 /// What the Anthropic tests' provider was handed: the two headers this
 /// protocol reads its credential and version from, and the body.
+type AnthropicArrival = (Option<String>, Option<String>, Value);
+
 #[derive(Clone, Default)]
-struct AnthropicSeen(Arc<Mutex<Option<(Option<String>, Option<String>, Value)>>>);
+struct AnthropicSeen(Arc<Mutex<Option<AnthropicArrival>>>);
 
 impl AnthropicSeen {
     fn note(&self, headers: &HeaderMap, body: &Bytes) {
@@ -5191,8 +5193,10 @@ fn recording_clip(name: &str) -> MediaInput {
 }
 
 /// What arrived at a provider that takes a recording in the body itself.
+type RawArrival = (Option<String>, Option<String>, Option<String>, Vec<u8>);
+
 #[derive(Clone, Default)]
-struct RawSeen(Arc<Mutex<Option<(Option<String>, Option<String>, Option<String>, Vec<u8>)>>>);
+struct RawSeen(Arc<Mutex<Option<RawArrival>>>);
 
 impl RawSeen {
     fn note(&self, headers: &HeaderMap, query: Option<String>, body: &Bytes) {
@@ -5725,8 +5729,8 @@ async fn a_zhipu_picture_is_read_from_the_address_the_answer_names() {
     assert_eq!(result.items[0].mime, "image/png");
 }
 
-fn video_route(path: &'static str) -> axum::routing::MethodRouter {
-    get(move || async {
+fn video_route() -> axum::routing::MethodRouter {
+    get(|| async {
         (
             [(axum::http::header::CONTENT_TYPE, "video/mp4")],
             b"film".to_vec(),
@@ -5766,7 +5770,7 @@ async fn a_luma_job_is_started_with_keyframes_and_collected() {
                     }))
                 }),
             )
-            .route("/film.mp4", video_route("/film.mp4")),
+            .route("/film.mp4", video_route()),
     )
     .await;
 
@@ -5862,7 +5866,7 @@ async fn a_runway_image_to_video_task_is_started_and_collected() {
                     }))
                 }),
             )
-            .route("/film.mp4", video_route("/film.mp4")),
+            .route("/film.mp4", video_route()),
     )
     .await;
 
@@ -5963,7 +5967,7 @@ async fn a_kling_job_is_started_and_its_answer_envelope_is_read() {
                     }))
                 }),
             )
-            .route("/film.mp4", video_route("/film.mp4")),
+            .route("/film.mp4", video_route()),
     )
     .await;
 
@@ -6039,7 +6043,7 @@ async fn a_zhipu_video_job_is_looked_at_where_its_result_lives() {
                     }))
                 }),
             )
-            .route("/film.mp4", video_route("/film.mp4")),
+            .route("/film.mp4", video_route()),
     )
     .await;
 
