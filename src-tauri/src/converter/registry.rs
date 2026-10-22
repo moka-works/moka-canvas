@@ -74,6 +74,56 @@ fn default_order() -> u32 {
     1000
 }
 
+/// What a converter declares about itself beyond speaking its protocol.
+///
+/// These are read by whichever part of the program knows the feature, so a
+/// name the program does not know is kept in `extra` rather than dropped. A
+/// built-in converter's document must not put anything there: a misspelled
+/// flag would otherwise be silently ignored, which is exactly what this type
+/// exists to prevent. A converter of the reader's own may still declare a
+/// flag a later build understands.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Features {
+    /// The protocol maps native tool calls rather than the JSON fallback.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub tool_calling: bool,
+    /// A voice has to be named; there is no default to fall back on.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub needs_voice: bool,
+    /// The voice is copied from a reference recording rather than named.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub needs_reference_audio: bool,
+    /// The protocol can carry a mask beside the picture it edits.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mask: bool,
+    /// The protocol answers through the task registry rather than in the
+    /// call that asked. Video and recognition always do; an image protocol
+    /// that needs a poll says so here.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub job: bool,
+    /// Flags this build does not know. Kept so a converter written for a
+    /// later build still loads here, and warned about from the registry.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl Features {
+    /// Whether the document declared nothing at all.
+    pub fn is_empty(&self) -> bool {
+        !self.tool_calling
+            && !self.needs_voice
+            && !self.needs_reference_audio
+            && !self.mask
+            && !self.job
+            && self.extra.is_empty()
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// One converter's `model.json`.
 ///
 /// The identifier is the name of the directory the document sits in, so the
@@ -107,7 +157,7 @@ pub struct ModelConfig {
     /// What a converter declares about itself beyond speaking its protocol,
     /// read by whichever part of the program knows that feature.
     #[serde(default)]
-    pub features: HashMap<String, bool>,
+    pub features: Features,
     /// The version of the built-in converter this document was deployed
     /// from, written for a built-in and absent for a directory a reader
     /// wrote by hand. Zero when absent, so any built-in version may take the
@@ -128,7 +178,7 @@ pub struct ProtocolEntry {
     pub url_example: String,
     pub order: u32,
     pub auth: AuthSpec,
-    pub features: HashMap<String, bool>,
+    pub features: Features,
 }
 
 /// Protocols grouped by capability: `text`, `image`, `audio`, `video`, `asr`.
@@ -212,6 +262,15 @@ impl ConverterRegistry {
         }
         let capability = capability_dir.file_name()?.to_str()?;
         let id = dir.file_name()?.to_str()?;
+        if !config.features.extra.is_empty() {
+            let mut unknown: Vec<&String> = config.features.extra.keys().collect();
+            unknown.sort();
+            tracing::warn!(
+                converter = id,
+                features = ?unknown,
+                "converter declares features this build does not know"
+            );
+        }
         Some(ProtocolEntry {
             script: format!("{capability}/{id}/{}", config.script),
             display_name: config.display_name,
@@ -387,7 +446,31 @@ mod tests {
                 scheme: String::new()
             }
         );
-        assert_eq!(entry.features.get("mask"), Some(&true));
+        assert!(entry.features.mask);
+    }
+
+    #[test]
+    fn a_feature_this_build_does_not_know_is_kept_and_not_mistaken_for_one_it_does() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("text"),
+            "typo",
+            r#"{"displayName": "Typo", "urlExample": "https://example.com", "script": "typo.lua", "features": {"toolCallng": true}}"#,
+            Some("typo.lua"),
+        );
+
+        let entry = ConverterRegistry::load(dir.path())
+            .find("typo")
+            .cloned()
+            .unwrap();
+        assert!(
+            !entry.features.tool_calling,
+            "the misspelling is not the flag"
+        );
+        assert_eq!(
+            entry.features.extra.get("toolCallng"),
+            Some(&serde_json::Value::Bool(true))
+        );
     }
 
     #[test]

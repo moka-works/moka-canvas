@@ -4965,9 +4965,8 @@ async fn every_built_in_text_converter_declares_tool_calling() {
         let entry = registry
             .find(protocol)
             .unwrap_or_else(|| panic!("{protocol} is a built-in text converter"));
-        assert_eq!(
-            entry.features.get("toolCalling"),
-            Some(&true),
+        assert!(
+            entry.features.tool_calling,
             "{protocol} maps native tools, so the chat must send them"
         );
     }

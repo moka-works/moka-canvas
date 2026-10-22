@@ -640,12 +640,8 @@ fn converter_features(protocol: &Protocol) -> Features {
         return Features::default();
     };
     Features {
-        needs_voice: entry.features.get("needsVoice").copied().unwrap_or(false),
-        needs_reference_audio: entry
-            .features
-            .get("needsReferenceAudio")
-            .copied()
-            .unwrap_or(false),
+        needs_voice: entry.features.needs_voice,
+        needs_reference_audio: entry.features.needs_reference_audio,
     }
 }
 

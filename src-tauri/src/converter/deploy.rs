@@ -125,6 +125,12 @@ mod tests {
             assert!(!config.display_name.is_empty(), "{}", def.id);
             assert!(!config.url_example.is_empty(), "{}", def.id);
             assert!(!def.script.is_empty(), "{}", def.id);
+            assert!(
+                config.features.extra.is_empty(),
+                "{} declares features this build does not know: {:?}",
+                def.id,
+                config.features.extra
+            );
             // Every embedded script is one a runtime can load: a syntax error
             // here would only surface when somebody configured that converter.
             LuaRuntime::new()

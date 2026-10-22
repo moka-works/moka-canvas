@@ -221,7 +221,7 @@ async fn prepare(
     // would ignore.
     let fallback = !crate::converter::ConverterRegistry::load(state.converter_root())
         .find(resolved.protocol.wire_name())
-        .and_then(|entry| entry.features.get("toolCalling").copied())
+        .map(|entry| entry.features.tool_calling)
         .unwrap_or(false);
 
     let context = chat_context(&opened.moka, &request.scope, 0);
