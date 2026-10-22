@@ -6931,7 +6931,7 @@ body.is-dragging-split {
   background: var(--surface);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   padding: 5px 8px;
   text-align: center;
   width: 64px;
@@ -6941,13 +6941,13 @@ body.is-dragging-split {
   background: var(--surface);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   padding: 4px 9px;
 }
 
 .story-outline-count .story-step-count:hover {
-  background: var(--hover);
+  background: var(--surface-raised);
 }
 
 .story-running {
@@ -7007,7 +7007,7 @@ body.is-dragging-split {
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   flex: 1;
   font-size: 14px;
   font-weight: 600;
@@ -7016,7 +7016,7 @@ body.is-dragging-split {
 
 .story-chapter-title:hover,
 .story-chapter-title:focus {
-  background: var(--bg);
+  background: var(--canvas);
   border-color: var(--stroke);
   outline: none;
 }
@@ -7041,14 +7041,14 @@ body.is-dragging-split {
 }
 
 .story-chapter-acts:hover {
-  color: var(--text);
+  color: var(--ink);
 }
 
 .story-chapter-synopsis {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   min-height: 62px;
   padding: 8px 10px;
@@ -7116,11 +7116,11 @@ body.is-dragging-split {
 }
 
 .story-answer-fix textarea {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   padding: 8px 10px;
   resize: vertical;
@@ -7174,7 +7174,7 @@ body.is-dragging-split {
 }
 
 .story-element-kind {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: 999px;
   color: var(--muted);
@@ -7187,7 +7187,7 @@ body.is-dragging-split {
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   flex: 1;
   font-size: 14px;
   min-width: 0;
@@ -7199,7 +7199,7 @@ body.is-dragging-split {
 }
 
 .story-element-name:focus {
-  background: var(--bg);
+  background: var(--canvas);
   border-color: var(--primary);
   outline: none;
 }
@@ -7247,14 +7247,14 @@ body.is-dragging-split {
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   padding: 5px 8px;
   text-align: left;
 }
 
 .story-chapter-choice:hover {
-  background: var(--hover);
+  background: var(--surface-raised);
 }
 
 .story-chapter-choice.is-on {
@@ -7263,10 +7263,10 @@ body.is-dragging-split {
 }
 
 .story-element-description {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
@@ -7396,7 +7396,7 @@ body.is-dragging-split {
 
 .story-slot-empty {
   align-items: center;
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px dashed var(--stroke);
   border-radius: var(--radius-sm);
   color: var(--muted);
@@ -7459,7 +7459,7 @@ button > .story-spin {
 }
 
 .story-slot-picture {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   cursor: zoom-in;
@@ -7480,7 +7480,7 @@ button > .story-spin {
   background: rgb(0 0 0 / 55%);
   border: 1px solid var(--stroke);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   font-size: 11px;
   padding: 2px 8px;
@@ -7492,7 +7492,7 @@ button > .story-spin {
 .story-slot-stamp.is-on {
   background: var(--success);
   border-color: var(--success);
-  color: var(--bg);
+  color: var(--canvas);
 }
 
 .story-slot-actions {
@@ -7537,7 +7537,7 @@ button > .story-spin {
 
 .story-lightbox-foot {
   align-items: center;
-  color: var(--text);
+  color: var(--ink);
   display: flex;
   gap: 12px;
   justify-content: center;
@@ -7573,7 +7573,7 @@ button > .story-spin {
 }
 
 .story-pick {
-  background: var(--bg);
+  background: var(--canvas);
   border: 2px solid var(--stroke);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -7615,7 +7615,7 @@ button > .story-spin {
   background: rgb(0 0 0 / 55%);
   border: 1px solid var(--stroke);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
@@ -7679,10 +7679,10 @@ button > .story-spin {
 .story-add-element input,
 .story-add-element textarea,
 .story-add-element select {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--ink);
   font-family: inherit;
   padding: 7px 9px;
   width: 100%;
@@ -7798,7 +7798,7 @@ button > .story-spin {
 }
 
 .story-insert button:hover {
-  border-color: var(--accent);
+  border-color: var(--primary);
   color: var(--ink);
 }
 
@@ -8069,7 +8069,7 @@ button > .story-spin {
 }
 
 .story-prompt-field {
-  background: var(--bg);
+  background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   display: inline-block;
@@ -8206,7 +8206,7 @@ button > .story-spin {
 }
 
 .story-kf-insert:hover {
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .story-kf-number {
