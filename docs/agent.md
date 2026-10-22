@@ -15,8 +15,9 @@ AgentDock（前端四房间）
 
 - **工具实现在 Rust 服务端**，所以 CLI、MCP、脚本和界面用的是同一套校验与副作用边界。
 - **循环在界面前端**，因为它需要当前选择、播放头、故事步骤与本地撤销栈；关闭窗口即停止。
+- **模型选择**：助理右栏可选用任一已启用的文本模型；选择保存在会话的 `model` 上，继续该会话时沿用，未选时用部署默认。
 - **会话独立存放**：`<项目>/agent/sessions/<id>.json`，不进入 `canvas.moka`，不改变文档 revision，不升 schema，也不迁移旧的 `canvas[].sessions`。
-- **模型协议**：OpenAI 兼容协议使用原生 tool calling；不支持原生工具的协议回退到 JSON ReAct（`agent/protocol.rs`）。
+- **模型协议**：转换器在 `model.json` 的 `features.toolCalling` 里声明是否支持原生工具；内置的 `openaiChat` 与 `openaiResponses` 已实现，其余协议回退到 JSON ReAct（`agent/protocol.rs`）。回退步骤的协议 JSON 不会流式显示，支持一步内多个工具调用。
 
 ## 工具契约
 
