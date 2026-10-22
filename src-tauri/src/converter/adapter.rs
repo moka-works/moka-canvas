@@ -14,6 +14,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use base64::Engine as _;
@@ -141,10 +142,12 @@ impl ProviderAdapter for LuaAdapter {
         // the answer, the chain the whole-answer path runs in `follow`.
         let mut exchange_step = Exchange::asked(&asked, "parse_response")?;
         let mut state = asked.get("state").cloned().unwrap_or(Value::Null);
+        let budget = call.budgets.timeout_for(request.capability);
+        let deadline = Instant::now() + budget;
         for _ in 0..MAX_EXCHANGES {
             cancel.check()?;
+            let left = step_time_left(deadline, request.capability, budget)?;
             let request_builder = builder(call, &session.entry, &exchange_step.request, inputs)?;
-            let deadline = call.budgets.timeout_for(request.capability);
             match open_stream(Kind::Stream, call, request_builder).await? {
                 Opened::Streaming(response, recording) => {
                     let parse = |payload: &Value| session.event(payload);
@@ -153,7 +156,7 @@ impl ProviderAdapter for LuaAdapter {
                         recording.map(|recording| *recording),
                         sink,
                         cancel,
-                        deadline,
+                        left,
                         parse,
                     )
                     .await;
@@ -562,9 +565,11 @@ async fn follow(
     }
     let mut exchange_step = Exchange::asked(asked, fallback)?;
     let mut state = asked.get("state").cloned().unwrap_or(Value::Null);
-    let started = std::time::Instant::now();
+    let budget = step.call.budgets.timeout_for(step.capability);
+    let deadline = Instant::now() + budget;
     for _ in 0..MAX_EXCHANGES {
         step.cancel.check()?;
+        let left = step_time_left(deadline, step.capability, budget)?;
         // Looked up before the request goes out: a script that names a function
         // it never wrote is refused rather than sending an upload of tens of
         // megabytes to a provider nobody will read.
@@ -584,7 +589,7 @@ async fn follow(
             step.kind,
             step.call,
             request_builder,
-            step.call.budgets.timeout_for(step.capability),
+            left,
             step.call.budgets.max_response_bytes,
         )
         .await?;
@@ -610,20 +615,12 @@ async fn follow(
         let parsed = session.reply(&exchange_step.handler, &reply, state)?;
         if let Some(next) = exchange_step.asked_by(&parsed) {
             // A protocol that answers behind a poll asks to be looked at
-            // again later rather than at once. The wait is bounded by the
-            // step's own budget, so a job that never finishes ends as a
+            // again later rather than at once. The pause is bounded by what
+            // is left of the step, so a job that never finishes ends as a
             // timeout rather than as a request that never returns.
             if let Some(pause) = parsed.get("wait_ms").and_then(Value::as_u64) {
-                let budget = step.call.budgets.timeout_for(step.capability);
-                let spent = started.elapsed();
-                if spent >= budget {
-                    return Err(ProviderError::Timeout(format!(
-                        "{} generation did not finish within {} seconds",
-                        step.capability.as_str(),
-                        budget.as_secs()
-                    )));
-                }
-                let delay = std::time::Duration::from_millis(pause).min(budget - spent);
+                let left = step_time_left(deadline, step.capability, budget)?;
+                let delay = Duration::from_millis(pause).min(left);
                 step.cancel.wait(delay).await?;
             }
             exchange_step = next?;
@@ -646,6 +643,28 @@ async fn follow(
     Err(ProviderError::invalid(format!(
         "the script asked for more than {MAX_EXCHANGES} exchanges in one step"
     )))
+}
+
+/// What is left of one step's budget, or the refusal that says it is spent.
+///
+/// Every exchange in a chain is bounded by the same deadline rather than by a
+/// fresh per-request timeout, so a script that keeps asking cannot turn sixty
+/// exchanges into sixty full timeouts.
+fn step_time_left(
+    deadline: Instant,
+    capability: Capability,
+    budget: Duration,
+) -> Result<Duration, ProviderError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|left| !left.is_zero())
+        .ok_or_else(|| {
+            ProviderError::Timeout(format!(
+                "{} generation did not finish within {} seconds",
+                capability.as_str(),
+                budget.as_secs()
+            ))
+        })
 }
 
 /// What one step of a chain is run with: the call it belongs to, the media the

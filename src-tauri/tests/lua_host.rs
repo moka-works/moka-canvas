@@ -22,7 +22,7 @@ use moka_canvas::domain::Capability;
 use moka_canvas::generate::adapters::{ModelCall, ProviderAdapter};
 use moka_canvas::generate::media::MediaInput;
 use moka_canvas::generate::models::ResolvedModel;
-use moka_canvas::generate::{Cancel, DeltaSink, GenerateRequest, InputRole};
+use moka_canvas::generate::{Cancel, DeltaSink, GenerateRequest, InputRole, ProviderError};
 use moka_canvas::metadata::Protocol;
 use serde_json::{json, Value};
 
@@ -977,4 +977,70 @@ end
     }
     assert_eq!(result.text.as_deref(), Some("a lantern on a windowsill"));
     assert_eq!(result.usage.and_then(|usage| usage.images), Some(3));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_chain_that_keeps_waiting_ends_at_the_steps_own_deadline() {
+    use std::time::{Duration, Instant};
+
+    place_plain(
+        "image",
+        "slowPoll",
+        r#"
+function build_request(call, req, inputs)
+  return {
+    state = {url = call.url},
+    method = "POST",
+    url = call.url,
+    headers = {["Content-Type"] = "application/json"},
+    body = "{}",
+  }
+end
+
+function parse_response(status, headers, body, state)
+  return {
+    state = state,
+    wait_ms = 5000,
+    next = {request = {method = "GET", url = state.url, headers = {}}, handler = "parse_response"},
+  }
+end
+"#,
+    )
+    .await;
+
+    let base_url = serve(Router::new().route(
+        "/generation",
+        post(|| async { Json(json!({"still": true})) }),
+    ))
+    .await;
+    let resolved = ResolvedModel {
+        config_id: "slow-config".into(),
+        model: "slow-model".into(),
+        display_name: "Slow".into(),
+        category: Capability::Image,
+        protocol: Protocol::from_wire_name("slowPoll"),
+        url: format!("{base_url}/generation"),
+        scene: None,
+    };
+    let budgets = GenerateConfig {
+        image_timeout_seconds: 1,
+        ..GenerateConfig::default()
+    };
+    let call = ModelCall::new(&resolved, API_KEY.to_string(), budgets).expect("a client builds");
+
+    let started = Instant::now();
+    let error = LuaAdapter::get()
+        .generate(
+            &call,
+            &generation(Capability::Image, "a slow picture"),
+            &[],
+            &Cancel::new(),
+        )
+        .await
+        .expect_err("the chain never finishes");
+    assert!(matches!(error, ProviderError::Timeout(_)), "{error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "the step ended at its deadline rather than after the pause"
+    );
 }
