@@ -6208,3 +6208,141 @@ async fn a_luma_uni_generation_is_looked_at_until_the_picture_is_ready() {
     assert_eq!(result.items[0].bytes, png(3, 3));
     assert_eq!(result.items[0].mime, "image/png");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bailian_multimodal_conversation_sends_its_instruction_as_words() {
+    // The multimodal service reads a system message as one string. Sending it
+    // as a document of parts is answered with a complaint about
+    // `messages.0.content` rather than about the question.
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/api/v1/services/aigc/multimodal-generation/generation",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("multimodal-generation", &headers, None);
+                recorded.note_body(&body);
+                Json(bailian_answer(json!([{ "text": "ok" }])))
+            }
+        }),
+    ))
+    .await;
+
+    let call = bailian_text_at(&base_url, "qwen3.8-flash", "multimodal-generation");
+    // The instruction as a message of the conversation, which is the shape a
+    // chat step builds.
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "SYS PROMPT"),
+            moka_canvas::generate::ChatMessage::text("user", "hello"),
+        ],
+        ..GenerateRequest::default()
+    };
+    scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer arrives");
+    let sent = recorded.body(0);
+    assert_eq!(sent["input"]["messages"][0]["role"], "system");
+    assert_eq!(
+        sent["input"]["messages"][0]["content"], "SYS PROMPT",
+        "this service reads a system message as one string, not as parts"
+    );
+    assert_eq!(sent["input"]["messages"][1]["content"][0]["text"], "hello");
+
+    // The instruction as its own field — what a preference sets beside the
+    // question — reads the same way at the same door.
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        prompt: "hello".into(),
+        system: Some("SYS PROMPT".into()),
+        ..GenerateRequest::default()
+    };
+    scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer arrives");
+    let sent = recorded.body(1);
+    assert_eq!(sent["input"]["messages"][0]["content"], "SYS PROMPT");
+    assert_eq!(sent["input"]["messages"][1]["content"][0]["text"], "hello");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bailian_stream_reads_the_refusal_it_was_handed() {
+    // While streaming, this service wraps its refusal in an event envelope.
+    // The complaint inside is what says the model answers at the sibling
+    // service; reading only whole-body json would give up on the question.
+    let recorded = Recorded::default();
+    let refusing = recorded.clone();
+    let answering = recorded.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/api/v1/services/aigc/text-generation/generation",
+                post(move |headers: HeaderMap, body: Bytes| {
+                    let recorded = refusing.clone();
+                    async move {
+                        recorded.note("text-generation", &headers, None);
+                        recorded.note_body(&body);
+                        let complaint = serde_json::to_string(&bailian_wrong_address())
+                            .expect("the complaint is json");
+                        (
+                            StatusCode::BAD_REQUEST,
+                            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                            format!(
+                                "id:1\nevent:error\n:HTTP_STATUS/400\ndata:{complaint}\n\n"
+                            ),
+                        )
+                            .into_response()
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/services/aigc/multimodal-generation/generation",
+                post(move |headers: HeaderMap, body: Bytes| {
+                    let recorded = answering.clone();
+                    async move {
+                        recorded.note("multimodal-generation", &headers, None);
+                        recorded.note_body(&body);
+                        stream(&[
+                            r#"{"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"A lantern drifts."}]},"finish_reason":"stop"}]}}"#,
+                        ])
+                    }
+                }),
+            ),
+    )
+    .await;
+
+    let call = bailian_text_at(&base_url, "qwen3.8-flash", "text-generation");
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({ "stream": true })
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "describe a lantern",
+        )],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the question is moved to the service the model answers at");
+
+    assert_eq!(
+        recorded.asked(),
+        ["text-generation", "multimodal-generation"],
+        "the refusal names the door the question belongs at"
+    );
+    assert_eq!(shown(&seen), "A lantern drifts.");
+    assert_eq!(result.text.as_deref(), Some("A lantern drifts."));
+}

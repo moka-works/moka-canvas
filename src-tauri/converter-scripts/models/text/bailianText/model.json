@@ -1,10 +1,17 @@
 {
   "displayName": "Alibaba Cloud · Bailian Text (Qwen)",
-  "labels": { "zh": "阿里云百炼 · 文本生成（通义千问）" },
+  "labels": {
+    "zh": "阿里云百炼 · 文本生成（通义千问）"
+  },
   "urlExample": "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
   "script": "bailian-text.lua",
   "order": 40,
-  "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "features": { "toolCalling": true },
-  "version": 3
+  "auth": {
+    "header": "Authorization",
+    "scheme": "Bearer"
+  },
+  "features": {
+    "toolCalling": true
+  },
+  "version": 4
 }

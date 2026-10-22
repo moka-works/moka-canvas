@@ -61,6 +61,11 @@ end
 
 -- One message's content as the chosen service reads it: a bare string where it
 -- reads one, and a document of parts where it reads that.
+--
+-- The system message is the exception at the multimodal door: that service
+-- reads a system prompt as one string whatever the door, and answers a parts
+-- document with a complaint about `messages.0.content` rather than about the
+-- question. So an instruction always travels as words.
 local function said(text, parts)
   if parts then
     return {{text = text}}
@@ -115,13 +120,16 @@ local function turn(message, parts)
       content = content,
     }
   end
+  if message.role == "system" then
+    return {role = "system", content = content}
+  end
   return {role = message.role, content = said(content, parts)}
 end
 
 local function conversation(req, parts)
   local messages = {}
   if req.system and trimmed(req.system) ~= "" then
-    table.insert(messages, {role = "system", content = said(req.system, parts)})
+    table.insert(messages, {role = "system", content = req.system})
   end
   for _, message in ipairs(req.messages or {}) do
     if message.role ~= "system" or #messages == 0 then
@@ -305,7 +313,7 @@ local function describe(call, req, pictures, url, parts, streaming)
     messages = conversation(req, parts)
   else
     if req.system and trimmed(req.system) ~= "" then
-      table.insert(messages, {role = "system", content = said(req.system, parts)})
+      table.insert(messages, {role = "system", content = req.system})
     end
     table.insert(messages, {role = "user", content = asked(req, pictures, parts)})
   end
@@ -378,15 +386,30 @@ local function wrong_address(status, payload)
   return tostring(payload.message or ""):find("url error", 1, true) ~= nil
 end
 
--- A refused answer's body as a document, where it is one: the rider of a
--- refusal is not always this service's json, and a body that does not read is
--- not a complaint this script can act on.
+-- A refused answer's body as a document, where it is one.
+--
+-- A refusal answered while streaming wears this service's event envelope —
+-- `id`, `event:error`, `:HTTP_STATUS/400`, then the complaint on a `data:`
+-- line — so the words of the refusal are the last readable event. Reading
+-- only the whole body as json would leave the script blind to its own
+-- complaint, neither moving the question to the service the model answers at
+-- nor passing the service's reason on.
 local function complaint_of(body)
   local ok, payload = pcall(json.decode, body)
-  if not ok or type(payload) ~= "table" then
-    return nil
+  if ok and type(payload) == "table" then
+    return payload
   end
-  return payload
+  local found = nil
+  for line in body:gmatch("[^\r\n]+") do
+    local data = line:match("^data:%s*(.+)$")
+    if data ~= nil then
+      local read, decoded = pcall(json.decode, data)
+      if read and type(decoded) == "table" then
+        found = decoded
+      end
+    end
+  end
+  return found
 end
 
 local function answered(status)
