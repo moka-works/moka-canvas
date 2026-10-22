@@ -43,7 +43,7 @@ fn document() -> Value {
         "script": "hello-wire.lua",
         "order": 5,
         "auth": { "header": "x-hello-key", "scheme": "" },
-        "features": { "mask": false },
+        "features": { "mask": true },
         "version": 1
     })
 }
@@ -245,7 +245,7 @@ async fn a_converter_dropped_into_the_models_tree_becomes_a_usable_protocol() {
     assert_eq!(offered["labels"]["zh"], "你好线 · 问候");
     assert_eq!(offered["urlExample"], "https://provider.test/v1/greeting");
     assert_eq!(offered["order"], 5);
-    assert_eq!(offered["features"]["mask"], false);
+    assert_eq!(offered["features"]["mask"], true);
     // The script the document names is what the host will run, from the
     // directory the document sits in.
     assert_eq!(offered["script"], format!("text/{ID}/hello-wire.lua"));
