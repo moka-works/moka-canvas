@@ -134,18 +134,18 @@ make set-version 1.2.3
 | `script`      | 本文档旁边的 Lua 文件。必填。                                                                                                                                                                                                      |
 | `order`       | 它在自己的能力内所处的位置，升序，同名按名称排（默认 1000）。                                                                                                                                                                      |
 | `auth`        | 凭据搭载在哪里：除非另有说明，是 `{"header": "Authorization", "scheme": "Bearer"}`；没有 scheme 的密钥用 `{"header": "x-goog-api-key", "scheme": ""}`；不接受凭据的端点用 `{"header": ""}`。只有配置端点同源之内的地址才会拿到它。 |
-| `features`    | 界面与宿主读取的标志：`mask` 表示图像协议有自己的蒙版字段，`job` 表示这类请求以任务启动、之后再轮询（视频与识别本就如此，图像可借此声明），另有 `toolCalling`、`needsVoice`、`needsReferenceAudio`。                                                       |
+| `features`    | 界面与宿主读取的标志：`mask` 表示图像协议有自己的蒙版字段，`job` 表示这类请求以任务启动、之后再轮询（视频与识别本就如此，图像可借此声明），另有 `toolCalling`、`needsVoice`、`needsReferenceAudio`。                               |
 | `version`     | 内置部署据此决定是否接管一个目录（见下）。手写的转换器省略此项。                                                                                                                                                                   |
 
 Lua 侧是一组钩子，全部可选，脚本导出了哪些钩子就是宿主认为自己能做什么：
 
-| 钩子                                         | 用途                                                                                                                                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build_request(call, req, inputs)`           | 描述一次调用：`{method, url, headers = {name = value}, body = …}`；当应答需要自己的函数来读取时用 `{request = …, handler = …}`；在发出任何东西之前就拒绝用 `{error = …}`。 |
-| `parse_response(status, headers, body)`      | 把该应答读成 `{text, items, usage, error}`；识别类结果用 `{cues = {{start_ms, end_ms, text}, …}}` 交回，由宿主写成 SRT。                                                        |
-| `build_stream_request(call, req, inputs)`    | 同上，用于以事件作答的端点；导出它就表示该转换器是流式的。每个事件由 `parse_event(event)` 读取。                                                                           |
-| `build_task_request` / `parse_task_response` | 启动一个比单次请求更长寿的任务；应答用 `{reference = …}` 点名服务商的句柄。                                                                                                |
-| `build_poll_request` / `parse_poll_response` | 看一眼那个任务：`{status = "pending"}`、`{status = "succeeded", result = {items = …}}`（识别结果在 `result.cues`）、`{status = "failed", error = …}` 或 `{status = "expired"}`。                          |
+| 钩子                                         | 用途                                                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build_request(call, req, inputs)`           | 描述一次调用：`{method, url, headers = {name = value}, body = …}`；当应答需要自己的函数来读取时用 `{request = …, handler = …}`；在发出任何东西之前就拒绝用 `{error = …}`。       |
+| `parse_response(status, headers, body)`      | 把该应答读成 `{text, items, usage, error}`；识别类结果用 `{cues = {{start_ms, end_ms, text}, …}}` 交回，由宿主写成 SRT。                                                         |
+| `build_stream_request(call, req, inputs)`    | 同上，用于以事件作答的端点；导出它就表示该转换器是流式的。每个事件由 `parse_event(event)` 读取。                                                                                 |
+| `build_task_request` / `parse_task_response` | 启动一个比单次请求更长寿的任务；应答用 `{reference = …}` 点名服务商的句柄。                                                                                                      |
+| `build_poll_request` / `parse_poll_response` | 看一眼那个任务：`{status = "pending"}`、`{status = "succeeded", result = {items = …}}`（识别结果在 `result.cues`）、`{status = "failed", error = …}` 或 `{status = "expired"}`。 |
 
 脚本内部，`call` 是 `{url, model}`（完整配置的端点与服务商的模型名），`req` 是 `{prompt, system, capability, params}`，每个输入是 `{role, filename, mime, data_url}`，字节以 base64 编码在 data URL 中。条目可以以 `{url = …}` 报告其字节（宿主去抓取，凭据遵循同样的同源规则）、`{data_url = …}`、`{base64 = …}`，或用 `{raw = true}` 表示应答自身的 body。宿主 API 是 `json`、`base64`、`log`、`util`、`url`（`clean`/`append`/`origin`/`drop`/`before`/`swap`/`set_query`/`query`/`replace`，地址不靠字符串拼接）与 `memo_get`/`memo_set`（按协议隔离的进程内记忆）；凭据从不交给脚本。
 
