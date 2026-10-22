@@ -4796,3 +4796,152 @@ async fn a_streamed_responses_tool_call_is_aggregated_from_its_deltas() {
     assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
     assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_minimax_conversation_carries_tools_and_reads_tool_calls() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/chat/completions",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("chat", &headers, None);
+                recorded.note_body(&body);
+                Json(json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": null,
+                            "tool_calls": [{
+                                "id": "call_2",
+                                "type": "function",
+                                "function": {
+                                    "name": "canvas.get",
+                                    "arguments": "{\"canvasId\":\"cv_1\"}"
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 4}
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = minimax_channel(&base_url, "MiniMax-M2.1", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "Act with tools."),
+            moka_canvas::generate::ChatMessage::text("user", "read the canvas"),
+            moka_canvas::generate::ChatMessage::assistant_calls(vec![
+                moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+            ]),
+            moka_canvas::generate::ChatMessage::tool_result(
+                &moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+                r#"{"ok":true,"canvases":[{"id":"cv_1"}]}"#,
+            ),
+        ],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        tool_choice: Some("auto".into()),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer is read whole");
+    assert!(result.text.is_none(), "a pure tool call carries no words");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].id, "call_2");
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+
+    let sent = recorded.body(0);
+    assert_eq!(sent["messages"][0]["role"], "system");
+    assert_eq!(sent["messages"][1]["content"], "read the canvas");
+    assert_eq!(sent["messages"][2]["role"], "assistant");
+    assert_eq!(
+        sent["messages"][2]["tool_calls"][0]["function"]["arguments"], "{}",
+        "arguments travel as text in this shape"
+    );
+    assert_eq!(sent["messages"][3]["role"], "tool");
+    assert_eq!(sent["messages"][3]["tool_call_id"], "call_1");
+    assert_eq!(sent["messages"][3]["name"], "canvas.list");
+    assert_eq!(sent["tools"][0]["function"]["name"], "canvas.get");
+    assert_eq!(sent["tool_choice"], "auto");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_minimax_stream_puts_streamed_tool_call_fragments_back_together() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/chat/completions",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("chat", &headers, None);
+                recorded.note_body(&body);
+                stream(&[
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"canvas.get","arguments":"{\"canvas"}}]}}]}"#,
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"Id\":\"cv_1\"}"}}]}}]}"#,
+                    r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#,
+                ])
+            }
+        }),
+    ))
+    .await;
+
+    let call = minimax_channel(&base_url, "MiniMax-M2.1", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "read the canvas",
+        )],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+    assert_eq!(shown(&seen), "", "a tool call has no words to show");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(
+        recorded.body(0)["tools"][0]["function"]["name"],
+        "canvas.get"
+    );
+}

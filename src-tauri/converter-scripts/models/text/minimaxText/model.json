@@ -4,5 +4,6 @@
   "urlExample": "https://api.minimaxi.com/v1/chat/completions",
   "script": "minimax-chat.lua",
   "order": 60,
-  "version": 1
+  "features": { "toolCalling": true },
+  "version": 2
 }
