@@ -455,6 +455,12 @@ fn stream_chat(
                         } else if let Some(answer) = step.answer {
                             text = answer;
                         }
+                    } else if text.trim_start().starts_with('{') {
+                        // A fallback step that looks like protocol JSON but
+                        // cannot be read is a failed step, not an answer; the
+                        // loop reports the empty answer rather than showing
+                        // the protocol as prose.
+                        text.clear();
                     }
                 }
                 for call in &calls {
