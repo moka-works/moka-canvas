@@ -28,18 +28,6 @@ local function chars(text)
   return utf8.len(text) or #text
 end
 
-local function set_query(url, key, value)
-  local pattern = "([?&])" .. key .. "=[^&]*"
-  if string.find(url, pattern) then
-    return (string.gsub(url, pattern, "%1" .. key .. "=" .. value, 1))
-  end
-  local separator = "?"
-  if string.find(url, "?", 1, true) then
-    separator = "&"
-  end
-  return url .. separator .. key .. "=" .. value
-end
-
 local function srt_time(ms)
   local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
   local hours = total // 3600000
@@ -146,22 +134,22 @@ function build_request(call, req, inputs)
   if inputs[1] == nil then
     return {error = "no recording was sent to be recognized"}
   end
-  local url = set_query(call.url, "model", call.model)
-  url = set_query(url, "smart_format", "true")
-  url = set_query(url, "punctuate", "true")
-  url = set_query(url, "utterances", "true")
+  local address = url.set_query(call.url, "model", call.model)
+  address = url.set_query(address, "smart_format", "true")
+  address = url.set_query(address, "punctuate", "true")
+  address = url.set_query(address, "utterances", "true")
   local language = trimmed(tostring(req.params.language or ""))
   if language ~= "" then
-    url = set_query(url, "language", language)
+    address = url.set_query(address, "language", language)
   end
   if req.params.speakerLabel ~= nil or tonumber(req.params.speakerCount or 0) > 0 then
-    url = set_query(url, "diarize", "true")
+    address = url.set_query(address, "diarize", "true")
   end
 
   return {
     state = {speakerLabel = req.params.speakerLabel},
     method = "POST",
-    url = url,
+    url = address,
     headers = {},
     body = {raw = {input = 1}},
   }

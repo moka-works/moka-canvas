@@ -9,6 +9,15 @@
 //! - `log.info(msg)`                   — tracing::info!
 //! - `log.warn(msg)`                   — tracing::warn!
 //! - `util.default_table()` → table    — empty table with safe __index
+//! - `url.append(base, part)` → string — a path appended with one slash
+//! - `url.origin(value)` → string      — scheme and host, without a path
+//! - `url.drop(value, suffix)` → string, boolean — a path suffix removed
+//! - `url.before(value, marker)` → string, boolean — a path cut before marker
+//! - `url.swap(value, from, to)` → string — a path suffix spelled otherwise
+//! - `url.set_query(value, key, text)` → string — one query parameter set
+//! - `url.query(value, key)` → string? — one query parameter read
+//! - `url.replace(value, name, text)` → string — `{name}` replaced and escaped
+//! - `url.clean(value)` → string       — trimmed, without trailing slashes
 //! - `memo_get(key)` → string?         — what was remembered, nil when nothing
 //! - `memo_set(key, value)`            — remember a string for a later call
 //!
@@ -35,6 +44,7 @@ pub fn register(lua: &Lua) -> LuaResult<()> {
     register_base64(lua)?;
     register_log(lua)?;
     register_util(lua)?;
+    register_url(lua)?;
     Ok(())
 }
 
@@ -120,6 +130,133 @@ fn register_util(lua: &Lua) -> LuaResult<()> {
     )?;
     lua.globals().set("util", util)?;
     Ok(())
+}
+
+fn register_url(lua: &Lua) -> LuaResult<()> {
+    let table = lua.create_table()?;
+
+    table.set(
+        "clean",
+        lua.create_function(|_, value: String| {
+            let cleaned = value.trim().trim_end_matches('/');
+            Ok(cleaned.to_string())
+        })?,
+    )?;
+    table.set(
+        "append",
+        lua.create_function(|_, (value, part): (String, String)| {
+            let base = value.trim().trim_end_matches('/');
+            let part = part.trim().trim_start_matches('/');
+            if part.is_empty() {
+                return Ok(base.to_string());
+            }
+            Ok(format!("{base}/{part}"))
+        })?,
+    )?;
+    table.set(
+        "origin",
+        lua.create_function(|_, value: String| {
+            let parsed = parse_url("url.origin", &value)?;
+            Ok(parsed.origin().ascii_serialization())
+        })?,
+    )?;
+    table.set(
+        "drop",
+        lua.create_function(|_, (value, suffix): (String, String)| {
+            let mut parsed = parse_url("url.drop", &value)?;
+            let path = parsed.path().trim_end_matches('/').to_string();
+            match path.strip_suffix(&suffix) {
+                Some(stripped) => {
+                    parsed.set_path(if stripped.is_empty() { "/" } else { stripped });
+                    Ok((parsed.to_string(), true))
+                }
+                None => Ok((parsed.to_string(), false)),
+            }
+        })?,
+    )?;
+    table.set(
+        "before",
+        lua.create_function(|_, (value, marker): (String, String)| {
+            let mut parsed = parse_url("url.before", &value)?;
+            let path = parsed.path().to_string();
+            match path.rfind(&marker) {
+                Some(at) => {
+                    let kept = &path[..at];
+                    parsed.set_path(if kept.is_empty() { "/" } else { kept });
+                    Ok((parsed.to_string(), true))
+                }
+                None => Ok((parsed.to_string(), false)),
+            }
+        })?,
+    )?;
+    table.set(
+        "swap",
+        lua.create_function(|_, (value, from, to): (String, String, String)| {
+            let mut parsed = parse_url("url.swap", &value)?;
+            let path = parsed.path().trim_end_matches('/').to_string();
+            if let Some(base) = path.strip_suffix(&from) {
+                parsed.set_path(&format!("{base}{to}"));
+            }
+            Ok(parsed.to_string())
+        })?,
+    )?;
+    table.set(
+        "set_query",
+        lua.create_function(|_, (value, key, text): (String, String, String)| {
+            let mut parsed = parse_url("url.set_query", &value)?;
+            let kept: Vec<(String, String)> = parsed
+                .query_pairs()
+                .filter(|(name, _)| name != key.as_str())
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect();
+            parsed.set_query(None);
+            {
+                let mut pairs = parsed.query_pairs_mut();
+                for (name, value) in kept {
+                    pairs.append_pair(&name, &value);
+                }
+                pairs.append_pair(&key, &text);
+            }
+            Ok(parsed.to_string())
+        })?,
+    )?;
+    table.set(
+        "query",
+        lua.create_function(|_, (value, key): (String, String)| {
+            let parsed = parse_url("url.query", &value)?;
+            Ok(parsed
+                .query_pairs()
+                .find(|(name, _)| name == key.as_str())
+                .map(|(_, value)| value.into_owned()))
+        })?,
+    )?;
+    table.set(
+        "replace",
+        lua.create_function(|_, (value, name, text): (String, String, String)| {
+            let placeholder = format!("{{{name}}}");
+            Ok(value.replace(&placeholder, &encode_segment(&text)))
+        })?,
+    )?;
+
+    lua.globals().set("url", table)?;
+    Ok(())
+}
+
+fn parse_url(name: &str, value: &str) -> LuaResult<url::Url> {
+    url::Url::parse(value.trim()).map_err(|e| mlua::Error::RuntimeError(format!("{name}: {e}")))
+}
+
+/// One path segment, percent-encoded the way a URL carries it.
+fn encode_segment(text: &str) -> String {    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        let plain = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
+        if plain {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
@@ -219,6 +356,36 @@ mod tests {
             local bytes = base64.decode("//79AAECAwQF")
             assert(#bytes == 9, "decoded length: " .. #bytes)
             assert(base64.encode(bytes) == "//79AAECAwQF", "roundtrip changed the bytes")
+            "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn url_helpers_keep_the_parts_a_converter_means_to_keep() {
+        let lua = Lua::new();
+        register(&lua).unwrap();
+        lua.load(
+            r#"
+            assert(url.clean(" https://example.com/v1/ ") == "https://example.com/v1")
+            assert(url.append("https://example.com/v1/generations/", "/gen_1") == "https://example.com/v1/generations/gen_1")
+            assert(url.origin("https://example.com:8443/v1/generations") == "https://example.com:8443")
+            assert(url.drop("https://example.com/v1/videos/generations", "/videos/generations") == "https://example.com/v1")
+            local kept, dropped = url.drop("https://example.com/v1/videos/generations", "/videos/generations")
+            assert(dropped == true)
+            local whole, untouched = url.drop("https://example.com/v1/videos", "/videos/generations")
+            assert(untouched == false and whole == "https://example.com/v1/videos")
+            assert(url.before("https://example.com/v1beta/models/gemini:generate", "/models/") == "https://example.com/v1beta")
+            local _, found = url.before("https://example.com/v1beta/models/gemini:generate", "/models/")
+            assert(found == true)
+            assert(url.swap("https://example.com/v1/images/generations", "/images/generations", "/images/edits") == "https://example.com/v1/images/edits")
+            assert(url.swap("https://example.com/v1beta/models/gemini:generateContent", ":generateContent", ":streamGenerateContent") == "https://example.com/v1beta/models/gemini:streamGenerateContent")
+            assert(url.swap("https://example.com/v1/other", "/images/generations", "/images/edits") == "https://example.com/v1/other")
+            local asked = url.set_query("https://example.com/v1?model=a&model=b&x=1", "model", "nova 3")
+            assert(asked == "https://example.com/v1?x=1&model=nova+3", asked)
+            assert(url.query(asked, "model") == "nova 3")
+            assert(url.replace("https://example.com/voice/{voiceId}", "voiceId", "a b") == "https://example.com/voice/a%20b")
             "#,
         )
         .exec()

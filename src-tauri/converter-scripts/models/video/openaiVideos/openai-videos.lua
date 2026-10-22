@@ -153,7 +153,7 @@ function build_poll_request(call, task)
   return {
     request = {
       method = "GET",
-      url = call.url .. "/" .. task.reference,
+      url = url.append(call.url, task.reference),
       headers = {},
     },
     handler = "parse_poll_response",
@@ -170,7 +170,7 @@ function parse_poll_response(status, headers, body, state)
       result = {
         items = {
           {
-            url = state.endpoint .. "/" .. state.reference .. "/content",
+            url = url.append(url.append(state.endpoint, state.reference), "content"),
             mime = "video/mp4",
           },
         },

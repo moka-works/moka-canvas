@@ -81,9 +81,8 @@ local function first_video(inputs)
   return nil
 end
 
-local function tasks_base(url)
-  local root = trimmed(url or ""):match("^(https?://[^/]+)")
-  return (root or "https://api.dev.runwayml.com") .. "/v1/tasks"
+local function tasks_base(address)
+  return url.append(url.origin(address or ""), "v1/tasks")
 end
 
 function build_task_request(call, req, inputs)
@@ -142,7 +141,7 @@ end
 function build_poll_request(call, task)
   return {
     method = "GET",
-    url = tasks_base(call.url) .. "/" .. task.reference,
+    url = url.append(tasks_base(call.url), task.reference),
     headers = {["X-Runway-Version"] = VERSION},
   }
 end

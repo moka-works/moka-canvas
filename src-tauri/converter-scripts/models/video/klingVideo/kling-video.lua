@@ -132,10 +132,9 @@ function parse_task_response(status, headers, body)
 end
 
 function build_poll_request(call, task)
-  local base = trimmed(call.url or ""):gsub("/+$", "")
   return {
     method = "GET",
-    url = base .. "/" .. task.reference,
+    url = url.append(call.url, task.reference),
     headers = {},
   }
 end

@@ -91,13 +91,8 @@ end
 -- Where every path of this service is derived from: the configured address
 -- without the operation it names.
 --   .../generations/video -> .../generations
-local function generations_base(url)
-  local base = trimmed(url or ""):gsub("/+$", "")
-  local without = base:gsub("/video$", "")
-  if without ~= base then
-    return without
-  end
-  return base
+local function generations_base(address)
+  return url.drop(address or "", "/video")
 end
 
 function build_task_request(call, req, inputs)
@@ -148,7 +143,7 @@ function build_poll_request(call, task)
   local base = generations_base(call.url)
   return {
     method = "GET",
-    url = base .. "/" .. task.reference,
+    url = url.append(base, task.reference),
     headers = {},
   }
 end

@@ -83,7 +83,7 @@ function build_poll_request(call, task)
     local base = derive_task_base(call.url)
     return {
         method = "GET",
-        url = base .. "/" .. task.reference,
+        url = url.append(base, task.reference),
         headers = {},
     }
 end
@@ -112,16 +112,13 @@ function parse_poll_response(status, headers, body)
     end
 end
 
-function derive_task_base(url)
+function derive_task_base(address)
     -- Input:  https://{ws}.{region}.maas.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis
     -- Output: https://{ws}.{region}.maas.aliyuncs.com/api/v1/tasks
-    local prefix, rest = string.match(url, "^(https?://[^/]+)(/.*)$")
-    if not prefix then return url end
-    -- Try to find the task base by stripping "services/aigc/video-generation/video-synthesis"
-    local idx = string.find(rest, "/services/")
-    if idx then
-        return prefix .. string.sub(rest, 1, idx - 1) .. "/tasks"
+    local base, under_services = url.before(address, "/services/")
+    if under_services then
+        return url.append(base, "tasks")
     end
     -- Fallback: just use the origin
-    return prefix .. "/api/v1/tasks"
+    return url.append(url.origin(address), "api/v1/tasks")
 end

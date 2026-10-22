@@ -32,22 +32,17 @@ local function trimmed(text)
   return (text:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function ends_with(text, suffix)
-  return text:sub(-#suffix) == suffix
-end
-
 -- The other service of the same deployment: an address that names either of
 -- the two is rewritten to name the one asked for, and any other address is
 -- left as it is, a sibling being nothing that can be derived from it.
-local function service_url(url, service)
-  local trimmed_url = url:gsub("/+$", "")
+local function service_url(address, service)
   for _, named in ipairs({WORDS, MULTIMODAL}) do
-    local suffix = "/" .. named .. "/generation"
-    if ends_with(trimmed_url, suffix) then
-      return trimmed_url:sub(1, #trimmed_url - #suffix) .. "/" .. service .. "/generation"
+    local base, names_service = url.drop(address, "/" .. named .. "/generation")
+    if names_service then
+      return url.append(base, service .. "/generation")
     end
   end
-  return url
+  return address
 end
 
 local function is_multimodal(url)

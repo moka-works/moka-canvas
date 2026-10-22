@@ -71,14 +71,6 @@ local function speaker_text(label, speaker)
   end))
 end
 
-local function api_base(url)
-  local root = trimmed(url or ""):match("^(https?://[^/]+)")
-  if root == nil then
-    return "https://api.assemblyai.com"
-  end
-  return root
-end
-
 local function cues_of(payload, label)
   local cues = {}
   for _, utterance in ipairs(payload.utterances or {}) do
@@ -158,7 +150,7 @@ function build_task_request(call, req, inputs)
     },
     request = {
       method = "POST",
-      url = api_base(call.url) .. "/v2/upload",
+      url = url.append(url.origin(call.url), "v2/upload"),
       headers = {["Content-Type"] = input.mime or "application/octet-stream"},
       -- The recording travels in the body itself; this service's upload
       -- takes the bytes rather than a form around them.
@@ -202,7 +194,7 @@ function parse_upload(status, headers, body, state)
     next = {
       request = {
         method = "POST",
-        url = api_base(state.url) .. "/v2/transcript",
+        url = url.append(url.origin(state.url), "v2/transcript"),
         headers = {["Content-Type"] = "application/json"},
         body = json.encode(transcript),
       },
@@ -231,7 +223,6 @@ function parse_task_response(status, headers, body, state)
 end
 
 function build_poll_request(call, task)
-  local base = api_base(call.url)
   local reference, label = string.match(task.reference, "^([^|]*)|?(.*)$")
   if reference == nil then
     reference = task.reference
@@ -239,7 +230,7 @@ function build_poll_request(call, task)
   return {
     state = {speakerLabel = label ~= "" and label or nil},
     method = "GET",
-    url = base .. "/v2/transcript/" .. reference,
+    url = url.append(url.append(url.origin(call.url), "v2/transcript"), reference),
     headers = {},
   }
 end

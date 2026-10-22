@@ -56,13 +56,8 @@ local function first_picture(inputs)
   return unlabelled
 end
 
-local function api_prefix(url)
-  local prefix = trimmed(url or ""):match("^(https?://[^/]+/api/paas/v4)/videos/")
-  if prefix ~= nil then
-    return prefix
-  end
-  local root = trimmed(url or ""):match("^(https?://[^/]+)")
-  return (root or "https://open.bigmodel.cn") .. "/api/paas/v4"
+local function api_prefix(address)
+  return url.drop(address or "", "/videos/generations")
 end
 
 function build_task_request(call, req, inputs)
@@ -122,7 +117,7 @@ end
 function build_poll_request(call, task)
   return {
     method = "GET",
-    url = api_prefix(call.url) .. "/async-result/" .. task.reference,
+    url = url.append(api_prefix(call.url), "async-result/" .. task.reference),
     headers = {},
   }
 end

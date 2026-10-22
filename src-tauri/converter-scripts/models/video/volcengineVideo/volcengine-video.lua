@@ -182,7 +182,7 @@ end
 function build_poll_request(call, task)
   return {
     method = "GET",
-    url = call.url .. "/" .. task.reference,
+    url = url.append(call.url, task.reference),
     headers = {},
   }
 end

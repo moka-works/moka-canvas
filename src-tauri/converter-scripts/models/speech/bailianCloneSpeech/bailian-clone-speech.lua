@@ -100,7 +100,7 @@ end
 function enrollment_request(call, reference)
     return {
         method = "POST",
-        url = (call.url:gsub("SpeechSynthesizer$", "customization")),
+        url = url.swap(call.url, "SpeechSynthesizer", "customization"),
         headers = {["Content-Type"] = "application/json"},
         body = json.encode({
             model = "voice-enrollment",

@@ -73,18 +73,6 @@ local function window_of(value)
   return word
 end
 
--- The address every path of this service is derived from: the configured
--- endpoint without the operation it names.
---   https://api.minimaxi.com/v1/video_generation -> https://api.minimaxi.com/v1
-local function base_of(url)
-  local base = trimmed(url or ""):gsub("/+$", "")
-  local without = base:gsub("/video_generation$", "")
-  if without ~= base then
-    return without
-  end
-  return base
-end
-
 -- A handle as the text it travelled as. This service numbers its files, and a
 -- number written into an address is the same handle as the text of it.
 local function handle_of(value)
@@ -214,12 +202,12 @@ end
 -- travels as state, because the reader of the answer is handed the answer
 -- alone rather than the address it was asked at.
 function build_poll_request(call, task)
-  local base = base_of(call.url)
+  local base = url.drop(call.url, "/video_generation")
   return {
     state = {base = base},
     request = {
       method = "GET",
-      url = base .. "/query/video_generation?task_id=" .. task.reference,
+      url = url.set_query(url.append(base, "query/video_generation"), "task_id", task.reference),
       headers = {},
     },
   }
@@ -244,7 +232,7 @@ function parse_poll_response(status, headers, body, state)
       next = {
         request = {
           method = "GET",
-          url = (state or {}).base .. "/files/retrieve?file_id=" .. handle,
+          url = url.set_query(url.append((state or {}).base, "files/retrieve"), "file_id", handle),
           headers = {},
         },
         handler = "parse_file_response",

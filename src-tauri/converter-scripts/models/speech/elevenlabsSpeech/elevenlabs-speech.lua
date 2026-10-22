@@ -39,41 +39,30 @@ local function output_format(format)
   return "mp3_44100_128"
 end
 
-local function with_query(url, key, value)
-  local pattern = "([?&])" .. key .. "=[^&]*"
-  if string.find(url, pattern) then
-    return (string.gsub(url, pattern, "%1" .. key .. "=" .. value, 1))
-  end
-  local separator = "?"
-  if string.find(url, "?", 1, true) then
-    separator = "&"
-  end
-  return url .. separator .. key .. "=" .. value
-end
-
 -- The address the chosen voice is asked at.
-local function voice_url(url, voice)
+local function voice_url(address, voice)
   local chosen = trimmed(tostring(voice or ""))
   if chosen == "" then
-    return url
+    return address
   end
-  local replaced = string.gsub(url, "{voiceId}", chosen)
-  replaced = string.gsub(replaced, "{voice}", chosen)
-  if replaced ~= url then
+  local replaced = url.replace(address, "voiceId", chosen)
+  replaced = url.replace(replaced, "voice", chosen)
+  if replaced ~= address then
     return replaced
   end
   -- A configuration that names the service rather than one voice ends where
   -- the voice goes.
-  if string.match(url, "/text%-to%-speech/?$") then
-    return (string.gsub(url, "/+$", "")) .. "/" .. chosen
+  local _, at_service = url.drop(address, "/text-to-speech")
+  if at_service then
+    return url.append(address, chosen)
   end
-  return url
+  return address
 end
 
 function build_request(call, req, inputs)
   local voice = req.params.voice
-  local url = voice_url(call.url, voice)
-  url = with_query(url, "output_format", output_format(req.params.format))
+  local address = voice_url(call.url, voice)
+  address = url.set_query(address, "output_format", output_format(req.params.format))
 
   local settings = {}
   local speed = number_param(req.params, "speed")
@@ -96,7 +85,7 @@ function build_request(call, req, inputs)
 
   return {
     method = "POST",
-    url = url,
+    url = address,
     headers = {["Content-Type"] = "application/json"},
     body = json.encode(body),
   }

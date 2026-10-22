@@ -17,18 +17,9 @@ local function trimmed(text)
   return (text:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function ends_with(text, suffix)
-  return text:sub(-#suffix) == suffix
-end
-
 -- The edit address of the generation address a configuration names.
-local function edit_url(url)
-  local trimmed_url = url:gsub("/+$", "")
-  local suffix = "/images/generations"
-  if ends_with(trimmed_url, suffix) then
-    return trimmed_url:sub(1, #trimmed_url - #suffix) .. "/images/edits"
-  end
-  return url
+local function edit_url(address)
+  return url.swap(address, "/images/generations", "/images/edits")
 end
 
 -- The width over the height a size stated as `16:9` describes, or nothing when

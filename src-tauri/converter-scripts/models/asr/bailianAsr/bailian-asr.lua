@@ -29,14 +29,12 @@ local CUE_MAX_CHARS = 48
 -- Where the provider's own API lives, derived from the configured endpoint:
 --   https://{ws}.{region}.maas.aliyuncs.com/api/v1/services/audio/asr/transcription
 --   -> https://{ws}.{region}.maas.aliyuncs.com/api/v1
-function api_base(url)
-    local prefix, rest = string.match(url, "^(https?://[^/]+)(/.*)$")
-    if not prefix then return url end
-    local idx = string.find(rest, "/services/")
-    if idx then
-        return prefix .. string.sub(rest, 1, idx - 1)
+function api_base(address)
+    local base, under_services = url.before(address, "/services/")
+    if under_services then
+        return base
     end
-    return prefix .. "/api/v1"
+    return url.append(url.origin(address), "api/v1")
 end
 
 -- The parameters the recognition is asked with. Absent ones are left out
@@ -82,6 +80,8 @@ function build_task_request(call, req, inputs)
     if not input then
         return {error = "no recording was sent to be recognized"}
     end
+    local policy = url.set_query(url.append(api_base(call.url), "uploads"), "action", "getPolicy")
+    policy = url.set_query(policy, "model", call.model)
     return {
         state = {
             url = call.url,
@@ -95,7 +95,7 @@ function build_task_request(call, req, inputs)
         },
         request = {
             method = "GET",
-            url = api_base(call.url) .. "/uploads?action=getPolicy&model=" .. call.model,
+            url = policy,
             headers = {},
         },
         handler = "parse_policy",
@@ -189,7 +189,7 @@ end
 function build_poll_request(call, task)
     return {
         method = "GET",
-        url = api_base(call.url) .. "/tasks/" .. task.reference,
+        url = url.append(url.append(api_base(call.url), "tasks"), task.reference),
         headers = {},
     }
 end

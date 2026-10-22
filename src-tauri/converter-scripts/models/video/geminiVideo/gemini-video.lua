@@ -143,29 +143,20 @@ end
 
 -- The root a job handle is relative to: everything before the `/models/`
 -- segment of the configured address.
-local function root_of(url)
-  local cut = nil
-  local at = 1
-  while true do
-    local found = url:find("/models/", at, true)
-    if found == nil then
-      break
-    end
-    cut = found
-    at = found + 1
-  end
-  if cut ~= nil then
-    return url:sub(1, cut - 1)
+local function root_of(address)
+  local root, under_models = url.before(address, "/models/")
+  if under_models then
+    return root
   end
   -- With no `/models/` to cut at, the handle is read against the host the
   -- configuration was reached on.
-  return url:match("^(%a+://[^/]+)") or ""
+  return url.origin(address)
 end
 
 function build_poll_request(call, task)
   return {
     method = "GET",
-    url = root_of(call.url) .. "/" .. task.reference,
+    url = url.append(root_of(call.url), task.reference),
     headers = {},
   }
 end

@@ -47,14 +47,10 @@ local function first_picture(inputs)
   return nil
 end
 
--- Where every generation of this service is looked at: the configured
--- address itself, since it already names the collection.
-local function collection(url)
-  local base = trimmed(url or ""):gsub("/+$", "")
-  if string.match(base, "/generations$") then
-    return base
-  end
-  return base .. "/generations"
+-- Where every generation of this service is looked at: the collection the
+-- configured address either names or sits beside.
+local function collection(address)
+  return url.append(url.drop(address or "", "/generations"), "generations")
 end
 
 local function picture_of(payload)
@@ -136,7 +132,7 @@ function parse_response(status, headers, body, state)
     if base == "" then
       return {error = "the generation did not say where it may be looked at"}
     end
-    polling = base .. "/" .. reference
+    polling = url.append(base, reference)
   end
   return {
     state = {polling_url = polling},

@@ -391,19 +391,8 @@ end
 -- The streaming form of a content address. A configuration that names some
 -- other action is streamed at the address it names, and the provider gets to
 -- refuse it.
-local function stream_url(url)
-  local prefix = url:match("^(.*):generateContent$")
-  if prefix == nil then
-    return url
-  end
-  return prefix .. ":streamGenerateContent"
-end
-
-local function asked_at(url, pair)
-  if url:find("?", 1, true) ~= nil then
-    return url .. "&" .. pair
-  end
-  return url .. "?" .. pair
+local function stream_url(address)
+  return url.swap(address, ":generateContent", ":streamGenerateContent")
 end
 
 local function described(call, req, inputs, url)
@@ -429,7 +418,7 @@ function build_stream_request(call, req, inputs)
   if req.capability ~= "text" then
     return {error = req.capability .. " generation does not stream"}
   end
-  return described(call, req, inputs, asked_at(stream_url(call.url), "alt=sse"))
+  return described(call, req, inputs, url.set_query(stream_url(call.url), "alt", "sse"))
 end
 
 local function tokens(payload)
