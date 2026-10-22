@@ -112,8 +112,21 @@ export interface ChatDone {
   catalogHash: string;
 }
 
+/** The counts the dock reads its context line from, in the room's own terms. */
+export interface ContextCounts {
+  room: AgentRoom;
+  nodes: number;
+  clips: number;
+  chapters: number;
+  matching: number;
+  canvases: number;
+  timelines: number;
+  stories: number;
+  assets: number;
+}
+
 export interface ChatContextEvent {
-  summary: string;
+  counts: ContextCounts;
   revision: number;
   warnings: string[];
 }

@@ -84,6 +84,20 @@
     "stillRunning": "仍在运行，可以稍后再问"
   },
   "context": {
+    "counts": {
+      "nodes": "{{count}} 个节点",
+      "canvases": "{{count}} 张画布",
+      "clips": "{{count}} 个片段",
+      "timelines": "{{count}} 条时间线",
+      "stories": "{{count}} 个故事",
+      "chapters": "{{count}} 章",
+      "files": "{{count}} 个文件",
+      "assets": "{{count}} 个素材"
+    },
+    "canvas": "画布 · {{nodes}} · 项目共 {{assets}}",
+    "clip": "剪辑 · {{clips}} · {{timelines}} · 项目共 {{assets}}",
+    "assets": "素材 · 当前 {{files}} · 项目共 {{assets}}",
+    "story": "故事 · {{chapters}} · {{stories}} · 项目共 {{assets}}",
     "warnings": "请求里有些对象已经不存在"
   },
   "model": {

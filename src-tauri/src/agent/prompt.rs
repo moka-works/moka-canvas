@@ -62,40 +62,23 @@ pub fn system_prompt(
     prompt
 }
 
-/// The summary line shown in the interface before the answer starts.
-pub fn context_line(scope: &AgentScope, context: &Value) -> String {
+/// The counts the dock shows under its title, as numbers rather than as a
+/// sentence: the wording belongs to the interface's own translations.
+pub fn context_counts(scope: &AgentScope, context: &Value) -> Value {
     let counts = &context["project"]["counts"];
-    let assets = counts["assets"].as_u64().unwrap_or(0);
-    let canvases = counts["canvases"].as_u64().unwrap_or(0);
-    let timelines = counts["timelines"].as_u64().unwrap_or(0);
-    let stories = counts["stories"].as_u64().unwrap_or(0);
-    match scope.room.as_str() {
-        "canvas" => format!(
-            "canvas · {} nodes · {} canvases · {assets} assets",
-            context["room"]["canvas"]["nodeCount"].as_u64().unwrap_or(0),
-            canvases
-        ),
-        "clip" => format!(
-            "cutting room · {} clips · {} timelines · {assets} assets",
-            context["room"]["timeline"]["selectedClips"]
-                .as_array()
-                .map(Vec::len)
-                .unwrap_or(0),
-            timelines
-        ),
-        "assets" => format!(
-            "assets · {} · {assets} total",
-            context["room"]["total"].as_u64().unwrap_or(0)
-        ),
-        "story" => format!(
-            "story · {} chapters · {stories} stories · {assets} assets",
-            context["room"]["story"]["chapters"]
-                .as_array()
-                .map(Vec::len)
-                .unwrap_or(0)
-        ),
-        _ => format!("{canvases} canvases · {assets} assets"),
-    }
+    let total = |key: &str| counts[key].as_u64().unwrap_or(0);
+    let listed = |value: &Value| value.as_array().map(Vec::len).unwrap_or(0) as u64;
+    serde_json::json!({
+        "room": scope.room,
+        "nodes": context["room"]["canvas"]["nodeCount"].as_u64().unwrap_or(0),
+        "clips": listed(&context["room"]["timeline"]["selectedClips"]),
+        "chapters": listed(&context["room"]["story"]["chapters"]),
+        "matching": context["room"]["total"].as_u64().unwrap_or(0),
+        "canvases": total("canvases"),
+        "timelines": total("timelines"),
+        "stories": total("stories"),
+        "assets": total("assets"),
+    })
 }
 
 #[cfg(test)]
@@ -142,6 +125,27 @@ mod tests {
         assert!(prompt.contains("Moka Canvas"));
         assert!(!prompt.contains("\"tool\":"));
         assert!(!prompt.contains("answer in Chinese"));
+    }
+
+    #[test]
+    fn the_dock_reads_counts_rather_than_a_sentence() {
+        let counts = context_counts(
+            &AgentScope {
+                room: "canvas".into(),
+                ..AgentScope::default()
+            },
+            &json!({
+                "project": {"counts": {"canvases": 2, "timelines": 1, "stories": 0, "assets": 13}},
+                "room": {"canvas": {"nodeCount": 9}},
+            }),
+        );
+        assert_eq!(counts["room"], "canvas");
+        assert_eq!(counts["nodes"], 9);
+        assert_eq!(counts["canvases"], 2);
+        assert_eq!(counts["assets"], 13);
+        // Counts a room does not carry stay zero rather than going missing.
+        assert_eq!(counts["clips"], 0);
+        assert_eq!(counts["matching"], 0);
     }
 
     #[test]

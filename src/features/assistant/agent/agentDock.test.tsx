@@ -71,7 +71,7 @@ beforeEach(() => {
     busy: false,
     draft: "",
     error: null,
-    contextLine: null,
+    context: null,
     warnings: [],
     plan: null,
     approval: null,

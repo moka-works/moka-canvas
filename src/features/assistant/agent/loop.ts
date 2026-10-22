@@ -170,7 +170,7 @@ export async function runTurn(text: string): Promise<void> {
           {
             onContext: (context) => {
               const state = useAgentStore.getState();
-              state.setContextLine(context.summary);
+              state.setContext(context.counts);
               state.setWarnings(context.warnings);
             },
             onText: (delta) => {

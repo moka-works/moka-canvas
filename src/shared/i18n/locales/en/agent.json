@@ -84,6 +84,28 @@
     "stillRunning": "Still running; you can ask again later"
   },
   "context": {
+    "counts": {
+      "nodes_one": "{{count}} node",
+      "nodes_other": "{{count}} nodes",
+      "canvases_one": "{{count}} canvas",
+      "canvases_other": "{{count}} canvases",
+      "clips_one": "{{count}} clip",
+      "clips_other": "{{count}} clips",
+      "timelines_one": "{{count}} timeline",
+      "timelines_other": "{{count}} timelines",
+      "stories_one": "{{count}} story",
+      "stories_other": "{{count}} stories",
+      "chapters_one": "{{count}} chapter",
+      "chapters_other": "{{count}} chapters",
+      "files_one": "{{count}} file",
+      "files_other": "{{count}} files",
+      "assets_one": "{{count}} asset",
+      "assets_other": "{{count}} assets"
+    },
+    "canvas": "canvas · {{nodes}} · {{assets}} in the project",
+    "clip": "cutting room · {{clips}} · {{timelines}} · {{assets}} in the project",
+    "assets": "shelf · {{files}} here · {{assets}} in the project",
+    "story": "story · {{chapters}} · {{stories}} · {{assets}} in the project",
     "warnings": "Some ids in the request no longer exist"
   },
   "model": {

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AgentRoom, AgentToolCallRecord } from "../../../api";
+import type { TFunction } from "i18next";
+import type {
+  AgentRoom,
+  AgentToolCallRecord,
+  ContextCounts,
+} from "../../../api";
 import {
   effectiveDefaultId,
   modelOptionsFor,
@@ -17,6 +22,36 @@ const RISK_KEYS = {
 
 function statusKey(status: AgentToolCallRecord["status"]): string {
   return `agent:tool.${status}`;
+}
+
+/** What the reader is standing in, in words rather than in a row of numbers. */
+function contextLine(context: ContextCounts, t: TFunction): string {
+  const count = (key: string, value: number): string =>
+    t(`agent:context.counts.${key}`, { count: value });
+  switch (context.room) {
+    case "clip":
+      return t("agent:context.clip", {
+        clips: count("clips", context.clips),
+        timelines: count("timelines", context.timelines),
+        assets: count("assets", context.assets),
+      });
+    case "assets":
+      return t("agent:context.assets", {
+        files: count("files", context.matching),
+        assets: count("assets", context.assets),
+      });
+    case "story":
+      return t("agent:context.story", {
+        chapters: count("chapters", context.chapters),
+        stories: count("stories", context.stories),
+        assets: count("assets", context.assets),
+      });
+    default:
+      return t("agent:context.canvas", {
+        nodes: count("nodes", context.nodes),
+        assets: count("assets", context.assets),
+      });
+  }
 }
 
 function ToolCard({ call }: { call: AgentToolCallRecord }) {
@@ -227,7 +262,7 @@ export function AgentDock({
   const busy = useAgentStore((state) => state.busy);
   const draft = useAgentStore((state) => state.draft);
   const error = useAgentStore((state) => state.error);
-  const contextLine = useAgentStore((state) => state.contextLine);
+  const standing = useAgentStore((state) => state.context);
   const warnings = useAgentStore((state) => state.warnings);
   const plan = useAgentStore((state) => state.plan);
   const approval = useAgentStore((state) => state.approval);
@@ -301,7 +336,9 @@ export function AgentDock({
             </button>
           </div>
         </div>
-        <p className="agent-context">{contextLine ?? t("agent:emptyHint")}</p>
+        <p className="agent-context">
+          {standing ? contextLine(standing, t) : t("agent:emptyHint")}
+        </p>
       </header>
 
       <div className="agent-model">

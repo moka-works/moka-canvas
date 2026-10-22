@@ -29,7 +29,7 @@ use crate::project::ProjectStore;
 
 use super::catalog::{catalog, ToolSurface};
 use super::context::{chat_context, AgentScope};
-use super::prompt::{context_line, system_prompt};
+use super::prompt::{context_counts, system_prompt};
 use super::protocol;
 
 /// Long enough for a large tool-rich system prompt and a normal conversation,
@@ -376,9 +376,9 @@ fn stream_chat(
     let gateway = Arc::clone(&state.gateway);
 
     tokio::spawn(async move {
-        let line = context_line(&request.scope, &prepared.context);
+        let counts = context_counts(&request.scope, &prepared.context);
         let context_event = json!({
-            "summary": line,
+            "counts": counts,
             "revision": prepared.revision,
             "warnings": prepared.warnings,
         });

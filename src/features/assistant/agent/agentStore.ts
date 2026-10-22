@@ -6,6 +6,7 @@ import {
   type AgentSession,
   type AgentSessionSummary,
   type AgentToolCallRecord,
+  type ContextCounts,
 } from "../../../api";
 import type {
   PlanItem,
@@ -32,7 +33,7 @@ interface AgentState {
   busy: boolean;
   draft: string;
   error: string | null;
-  contextLine: string | null;
+  context: ContextCounts | null;
   warnings: string[];
   plan: PlanItem[] | null;
   packs: string[];
@@ -69,7 +70,7 @@ interface AgentState {
   ) => void;
   setBusy: (busy: boolean, abort?: AbortController | null) => void;
   setError: (error: string | null) => void;
-  setContextLine: (line: string | null) => void;
+  setContext: (context: ContextCounts | null) => void;
   setWarnings: (warnings: string[]) => void;
   setPlan: (plan: PlanItem[] | null) => void;
   addPacks: (packs: string[]) => void;
@@ -87,7 +88,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   busy: false,
   draft: "",
   error: null,
-  contextLine: null,
+  context: null,
   warnings: [],
   plan: null,
   packs: [],
@@ -121,7 +122,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       messages: [],
       plan: null,
       error: null,
-      contextLine: null,
+      context: null,
       warnings: [],
       historyOpen: false,
       packs: [],
@@ -325,8 +326,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     set({ error });
   },
 
-  setContextLine(contextLine) {
-    set({ contextLine });
+  setContext(context) {
+    set({ context });
   },
 
   setWarnings(warnings) {
