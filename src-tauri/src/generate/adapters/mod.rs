@@ -648,7 +648,7 @@ where
         if let Some(failed) = self.failed {
             return Err(ProviderError::Rejected(failed));
         }
-        let tool_calls = self
+        let tool_calls: Vec<ToolCall> = self
             .calls
             .into_values()
             .filter(|call| !call.name.is_empty())
@@ -658,12 +658,21 @@ where
                 arguments: arguments_of(&call.arguments),
             })
             .collect();
+        let finish_reason = if !tool_calls.is_empty()
+            && self.finish_reason.as_deref() != Some("length")
+        {
+            // A provider that reports the end of a stream as `stop` has still
+            // asked for tools; the calls are the reason the turn ended.
+            Some("tool_calls".to_string())
+        } else {
+            self.finish_reason
+        };
         Ok(GenerateResult {
             text: (!self.aggregate.is_empty()).then_some(self.aggregate),
             items: Vec::new(),
             usage: self.usage,
             tool_calls,
-            finish_reason: self.finish_reason,
+            finish_reason,
         })
     }
 }

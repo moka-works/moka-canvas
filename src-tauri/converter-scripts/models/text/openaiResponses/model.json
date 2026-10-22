@@ -5,5 +5,6 @@
   "script": "openai-responses.lua",
   "order": 20,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "version": 3
+  "features": { "toolCalling": true },
+  "version": 4
 }

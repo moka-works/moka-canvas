@@ -5,5 +5,6 @@
   "script": "openai-chat.lua",
   "order": 10,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "version": 3
+  "features": { "toolCalling": true },
+  "version": 4
 }

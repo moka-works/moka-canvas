@@ -4197,3 +4197,120 @@ async fn a_streamed_tool_call_is_put_back_together_before_it_is_returned() {
     assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
     assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_responses_answer_can_be_a_tool_call_instead_of_words() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/responses",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("responses", &headers, None);
+                recorded.note_body(&body);
+                Json(json!({
+                    "output": [{
+                        "type": "function_call",
+                        "call_id": "call_1",
+                        "name": "canvas.get",
+                        "arguments": "{\"canvasId\":\"cv_1\"}"
+                    }],
+                    "usage": {"input_tokens": 3, "output_tokens": 5}
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "openaiResponses",
+        &base_url,
+        "gpt-tools",
+        Capability::Text,
+        "/v1/responses",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "Act with tools."),
+            moka_canvas::generate::ChatMessage::text("user", "read the canvas"),
+        ],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer is read whole");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].id, "call_1");
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+
+    let sent = recorded.body(0);
+    assert_eq!(sent["input"][0]["role"], "user");
+    assert_eq!(sent["input"][0]["content"][0]["type"], "input_text");
+    assert_eq!(sent["input"][0]["content"][0]["text"], "read the canvas");
+    assert_eq!(sent["instructions"], "Act with tools.");
+    assert_eq!(sent["tools"][0]["name"], "canvas.get");
+    assert_eq!(sent["tool_choice"], "auto");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_streamed_responses_tool_call_is_aggregated_from_its_deltas() {
+    let base_url = serve(Router::new().route(
+        "/v1/responses",
+        post(move || async move {
+            stream(&[
+                r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"canvas.get","arguments":""}}"#,
+                r#"{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"canvasId\":\"cv_"}"#,
+                r#"{"type":"response.function_call_arguments.delta","output_index":0,"delta":"1\"}"}"#,
+                r#"{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":5}}}"#,
+                "[DONE]",
+            ])
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "openaiResponses",
+        &base_url,
+        "gpt-tools",
+        Capability::Text,
+        "/v1/responses",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true}).as_object().cloned().unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "read the canvas",
+        )],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+    assert_eq!(shown(&seen), "", "a tool call has no words");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+}

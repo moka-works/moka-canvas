@@ -207,7 +207,15 @@ async fn prepare(
             .await
             .map_err(Problem::from)?
     };
-    let fallback = resolved.protocol.wire_name() != "openaiChat";
+    // What a converter declares about itself decides the protocol, not its
+    // name: a script that maps tools says so, and one that does not is not
+    // asked to pretend. A converter deployed by an older build declares
+    // nothing and therefore falls back rather than being sent fields it
+    // would ignore.
+    let fallback = !crate::converter::ConverterRegistry::load(state.converter_root())
+        .find(resolved.protocol.wire_name())
+        .and_then(|entry| entry.features.get("toolCalling").copied())
+        .unwrap_or(false);
 
     let context = chat_context(&opened.moka, &request.scope, 0);
     let system = system_prompt(
