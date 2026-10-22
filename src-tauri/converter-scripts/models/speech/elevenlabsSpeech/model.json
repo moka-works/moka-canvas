@@ -1,0 +1,10 @@
+{
+  "displayName": "ElevenLabs · Text to Speech",
+  "labels": { "zh": "ElevenLabs · 语音合成" },
+  "urlExample": "https://api.elevenlabs.io/v1/text-to-speech/{voiceId}",
+  "script": "elevenlabs-speech.lua",
+  "order": 30,
+  "auth": { "header": "xi-api-key", "scheme": "" },
+  "features": { "needsVoice": true },
+  "version": 1
+}

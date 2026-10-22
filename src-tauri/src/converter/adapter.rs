@@ -948,6 +948,9 @@ enum Body {
     Text(String),
     /// A form, with the bytes and the content type that names its boundary.
     Multipart(Vec<u8>, String),
+    /// One input's bytes as they are, with the type that names them. Some
+    /// recognizers take a recording in the body rather than in a form.
+    Raw(Vec<u8>, String),
 }
 
 /// The request a description asks for, ready to be sent.
@@ -992,6 +995,12 @@ fn builder(
         Body::Multipart(bytes, content_type) => {
             Ok(builder.header("Content-Type", content_type).body(bytes))
         }
+        // The type is the input's own unless the script named one, and it is
+        // set after the script's headers for the same reason a form's
+        // boundary is: what travels is these bytes, not a claim about them.
+        Body::Raw(bytes, content_type) => {
+            Ok(builder.header("Content-Type", content_type).body(bytes))
+        }
     }
 }
 
@@ -1001,6 +1010,9 @@ fn described_body(request_def: &Value, inputs: &[MediaInput]) -> Result<Body, Pr
         None | Some(Value::Null) => Ok(Body::None),
         Some(Value::String(text)) => Ok(Body::Text(text.clone())),
         Some(Value::Object(shape)) => {
+            if let Some(raw) = shape.get("raw") {
+                return raw_body(raw, inputs);
+            }
             let multipart = shape.get("multipart").ok_or_else(|| {
                 ProviderError::invalid("the script described a body this host cannot send")
             })?;
@@ -1008,9 +1020,34 @@ fn described_body(request_def: &Value, inputs: &[MediaInput]) -> Result<Body, Pr
             Ok(Body::Multipart(bytes, content_type))
         }
         Some(_) => Err(ProviderError::invalid(
-            "the script described a body that is neither text nor a multipart form",
+            "the script described a body that is neither text, a multipart form, nor an input's bytes",
         )),
     }
+}
+
+/// One input's bytes as the body itself.
+///
+/// A recognizer that reads a recording from the request rather than from a
+/// form is told which input it is — counting from one, as Lua counts — and the
+/// type travels with the bytes unless the script named one.
+fn raw_body(raw: &Value, inputs: &[MediaInput]) -> Result<Body, ProviderError> {
+    let index = raw.get("input").and_then(Value::as_u64).unwrap_or(1);
+    let media = inputs
+        .get(index.saturating_sub(1) as usize)
+        .ok_or_else(|| {
+            ProviderError::invalid(format!(
+                "the script sent input {index} as the body, and the request carried {}",
+                inputs.len()
+            ))
+        })?;
+    let content_type = raw
+        .get("mime")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|mime| !mime.is_empty())
+        .unwrap_or(&media.mime)
+        .to_string();
+    Ok(Body::Raw(media.bytes.clone(), content_type))
 }
 
 /// A multipart form: the script's fields, and the inputs that travel as files.

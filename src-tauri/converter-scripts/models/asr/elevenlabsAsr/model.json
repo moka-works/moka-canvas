@@ -1,0 +1,9 @@
+{
+  "displayName": "ElevenLabs · Scribe Speech Recognition",
+  "labels": { "zh": "ElevenLabs · Scribe 语音识别" },
+  "urlExample": "https://api.elevenlabs.io/v1/speech-to-text",
+  "script": "elevenlabs-asr.lua",
+  "order": 20,
+  "auth": { "header": "xi-api-key", "scheme": "" },
+  "version": 1
+}

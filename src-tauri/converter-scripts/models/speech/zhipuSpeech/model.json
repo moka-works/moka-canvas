@@ -1,0 +1,10 @@
+{
+  "displayName": "Zhipu GLM · Text to Speech",
+  "labels": { "zh": "智谱 GLM · 语音合成" },
+  "urlExample": "https://open.bigmodel.cn/api/paas/v4/audio/speech",
+  "script": "zhipu-speech.lua",
+  "order": 45,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "needsVoice": true },
+  "version": 1
+}

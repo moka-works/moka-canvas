@@ -1,0 +1,9 @@
+{
+  "displayName": "Deepgram · Pre-recorded Speech Recognition",
+  "labels": { "zh": "Deepgram · 录音语音识别" },
+  "urlExample": "https://api.deepgram.com/v1/listen?model=nova-3",
+  "script": "deepgram-asr.lua",
+  "order": 30,
+  "auth": { "header": "Authorization", "scheme": "Token" },
+  "version": 1
+}

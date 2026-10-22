@@ -103,6 +103,7 @@ pub async fn ensure_deployed(root: &Path) -> Result<(), Box<dyn std::error::Erro
 mod tests {
     use super::*;
     use crate::converter::registry::ConverterRegistry;
+    use crate::converter::runtime::LuaRuntime;
 
     async fn deploy(dir: &Path) {
         ensure_deployed(dir).await.unwrap();
@@ -124,6 +125,11 @@ mod tests {
             assert!(!config.display_name.is_empty(), "{}", def.id);
             assert!(!config.url_example.is_empty(), "{}", def.id);
             assert!(!def.script.is_empty(), "{}", def.id);
+            // Every embedded script is one a runtime can load: a syntax error
+            // here would only surface when somebody configured that converter.
+            LuaRuntime::new()
+                .and_then(|runtime| runtime.load_source(def.id, def.script))
+                .unwrap_or_else(|e| panic!("{} does not load: {e}", def.id));
             assert!(
                 !named.contains(&(def.capability, def.id)),
                 "{}/{} is declared twice",
@@ -168,10 +174,15 @@ mod tests {
         assert!(registry.find("openaiChat").is_some());
         assert!(registry.find("bailianAsr").is_some());
         assert!(registry.find("minimaxAsr").is_some());
+        assert!(registry.find("openaiAsr").is_some());
+        assert!(registry.find("elevenlabsAsr").is_some());
+        assert!(registry.find("deepgramAsr").is_some());
+        assert!(registry.find("cartesiaAsr").is_some());
+        assert!(registry.find("assemblyaiAsr").is_some());
         assert!(registry.find("bailianMusic").is_some());
         assert_eq!(
             registry.protocols_for("asr").unwrap().len(),
-            2,
+            7,
             "the recognitions this build ships"
         );
         // What the registry reports is what is on the disk: the document and

@@ -1,0 +1,9 @@
+{
+  "displayName": "Cartesia · Ink Speech Recognition",
+  "labels": { "zh": "Cartesia · Ink 语音识别" },
+  "urlExample": "https://api.cartesia.ai/stt",
+  "script": "cartesia-asr.lua",
+  "order": 40,
+  "auth": { "header": "Authorization", "scheme": "" },
+  "version": 1
+}

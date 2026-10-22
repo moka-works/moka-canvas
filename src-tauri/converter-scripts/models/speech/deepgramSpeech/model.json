@@ -1,0 +1,9 @@
+{
+  "displayName": "Deepgram · Aura Text to Speech",
+  "labels": { "zh": "Deepgram · Aura 语音合成" },
+  "urlExample": "https://api.deepgram.com/v1/speak?model=aura-2-thalia-en&encoding=mp3",
+  "script": "deepgram-speech.lua",
+  "order": 35,
+  "auth": { "header": "Authorization", "scheme": "Token" },
+  "version": 1
+}

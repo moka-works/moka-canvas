@@ -1,0 +1,10 @@
+{
+  "displayName": "Cartesia · Sonic Text to Speech",
+  "labels": { "zh": "Cartesia · Sonic 语音合成" },
+  "urlExample": "https://api.cartesia.ai/tts/bytes",
+  "script": "cartesia-speech.lua",
+  "order": 40,
+  "auth": { "header": "Authorization", "scheme": "" },
+  "features": { "needsVoice": true },
+  "version": 1
+}

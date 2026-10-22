@@ -1,0 +1,9 @@
+{
+  "displayName": "OpenAI-compatible · Audio Transcriptions",
+  "labels": { "zh": "OpenAI 兼容 · 语音转写" },
+  "urlExample": "https://api.openai.com/v1/audio/transcriptions",
+  "script": "openai-asr.lua",
+  "order": 5,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

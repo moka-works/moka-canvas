@@ -1,0 +1,10 @@
+{
+  "displayName": "Volcengine · Seed TTS",
+  "labels": { "zh": "火山引擎 · Seed 语音合成" },
+  "urlExample": "https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse",
+  "script": "volcengine-speech.lua",
+  "order": 50,
+  "auth": { "header": "X-Api-Key", "scheme": "" },
+  "features": { "needsVoice": true },
+  "version": 1
+}

@@ -5160,3 +5160,377 @@ async fn an_anthropic_stream_puts_tool_fragments_back_together() {
     assert_eq!(result.usage.map(|usage| usage.input_tokens), Some(Some(5)));
     assert_eq!(result.usage.map(|usage| usage.output_tokens), Some(Some(9)));
 }
+
+/// A wave header and a little silence, so a recognizer is sent a recording
+/// that says what it is rather than arbitrary bytes.
+fn wave() -> Vec<u8> {
+    let mut bytes = Vec::from(*b"RIFF");
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&8000u32.to_le_bytes());
+    bytes.extend_from_slice(&8000u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&8u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&8u32.to_le_bytes());
+    bytes.extend_from_slice(&[128, 128, 128, 128, 128, 128, 128, 128]);
+    bytes
+}
+
+fn recording_clip(name: &str) -> MediaInput {
+    MediaInput {
+        role: InputRole::Reference,
+        asset_id: name.into(),
+        name: "clip.wav".into(),
+        bytes: wave(),
+        mime: "audio/wav".into(),
+    }
+}
+
+/// What arrived at a provider that takes a recording in the body itself.
+#[derive(Clone, Default)]
+struct RawSeen(Arc<Mutex<Option<(Option<String>, Option<String>, Option<String>, Vec<u8>)>>>);
+
+impl RawSeen {
+    fn note(&self, headers: &HeaderMap, query: Option<String>, body: &Bytes) {
+        let header = |name: &str| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        };
+        *self.0.lock().expect("not poisoned") = Some((
+            header("authorization"),
+            header("content-type"),
+            query,
+            body.to_vec(),
+        ));
+    }
+
+    fn seen(self) -> (Option<String>, Option<String>, Option<String>, Vec<u8>) {
+        self.0
+            .lock()
+            .expect("not poisoned")
+            .take()
+            .expect("the provider was asked")
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_deepgram_recognition_sends_the_recording_as_the_body_and_reads_its_cues() {
+    let recorded = RawSeen::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/listen",
+        post(
+            move |headers: HeaderMap,
+                  axum::extract::RawQuery(query): axum::extract::RawQuery,
+                  body: Bytes| {
+                let recorded = answering.clone();
+                async move {
+                    recorded.note(&headers, query, &body);
+                    Json(json!({
+                        "metadata": {"duration": 3.2},
+                        "results": {
+                            "channels": [{"alternatives": [{"transcript": "Hello world"}]}],
+                            "utterances": [
+                                {"speaker": 0, "start": 0.0, "end": 1.2, "transcript": "Hello"},
+                                {"speaker": 1, "start": 1.3, "end": 3.2, "transcript": "world"}
+                            ]
+                        }
+                    }))
+                }
+            },
+        ),
+    ))
+    .await;
+
+    let call = at(
+        "deepgramAsr",
+        &base_url,
+        "nova-3",
+        Capability::Asr,
+        "/v1/listen",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Asr,
+        params: json!({"language": "en", "speakerLabel": "S{id}-"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[recording_clip("clip")], &Cancel::new())
+        .await
+        .expect("the answer is read");
+    let (authorization, content_type, query, body) = recorded.seen();
+    assert_eq!(
+        authorization.as_deref(),
+        Some("Token sk-test-1234567890abcd")
+    );
+    assert_eq!(content_type.as_deref(), Some("audio/wav"));
+    assert_eq!(body, wave());
+    let query = query.unwrap_or_default();
+    assert!(query.contains("model=nova-3"), "{query}");
+    assert!(query.contains("language=en"), "{query}");
+    assert!(query.contains("diarize=true"), "{query}");
+    let text = result.text.expect("the transcript is text");
+    assert!(text.contains("S1-Hello"), "{text}");
+    assert!(text.contains("S2-world"), "{text}");
+    assert!(text.contains("-->"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_assemblyai_recognition_uploads_submits_and_polls() {
+    let uploaded = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let submitted = Arc::new(Mutex::new(None::<Value>));
+    let upload_auth = Arc::new(Mutex::new(None::<String>));
+
+    let uploading = uploaded.clone();
+    let seen_auth = upload_auth.clone();
+    let submitted_route = submitted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/v2/upload",
+                post(move |headers: HeaderMap, body: Bytes| {
+                    let uploading = uploading.clone();
+                    let seen_auth = seen_auth.clone();
+                    async move {
+                        *uploading.lock().expect("not poisoned") = body.to_vec();
+                        *seen_auth.lock().expect("not poisoned") = headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string);
+                        Json(json!({"upload_url": "https://assemblyai.test/v2/uploaded"}))
+                    }
+                }),
+            )
+            .route(
+                "/v2/transcript",
+                post(move |body: Bytes| {
+                    let submitted = submitted_route.clone();
+                    async move {
+                        *submitted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({"id": "tr_1"}))
+                    }
+                }),
+            )
+            .route(
+                "/v2/transcript/tr_1",
+                get(|| async {
+                    Json(json!({
+                        "status": "completed",
+                        "text": "Hello world",
+                        "audio_duration": 3.2,
+                        "utterances": [
+                            {"speaker": 0, "start": 0, "end": 1200, "text": "Hello"},
+                            {"speaker": 1, "start": 1300, "end": 3200, "text": "world"}
+                        ]
+                    }))
+                }),
+            ),
+    )
+    .await;
+
+    let call = at(
+        "assemblyaiAsr",
+        &base_url,
+        "universal-3-5-pro",
+        Capability::Asr,
+        "/v2/transcript",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Asr,
+        params: json!({"speakerLabel": "S{id}-"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let task = scripted()
+        .await
+        .create_task(&call, &request, &[recording_clip("clip")], &Cancel::new())
+        .await
+        .expect("the job starts");
+    let state = scripted()
+        .await
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the job is looked at");
+
+    assert_eq!(
+        uploaded.lock().expect("not poisoned").as_slice(),
+        wave(),
+        "the recording travels as the body itself"
+    );
+    assert_eq!(
+        upload_auth.lock().expect("not poisoned").as_deref(),
+        Some(API_KEY),
+        "this service takes the key without a scheme"
+    );
+    let asked = submitted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the job was submitted");
+    assert_eq!(asked["audio_url"], "https://assemblyai.test/v2/uploaded");
+    assert_eq!(asked["speaker_labels"], true);
+    let TaskState::Succeeded(result) = state else {
+        panic!("the job did not finish");
+    };
+    let text = result.text.expect("the transcript is text");
+    assert!(text.contains("S1-Hello"), "{text}");
+    assert!(text.contains("S2-world"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_volcengine_tts_joins_decoded_chunks_into_one_recording() {
+    let recorded = Arc::new(Mutex::new(None::<(Option<String>, Option<String>, Value)>));
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/api/v3/tts/unidirectional/sse",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                let text = |name: &str| {
+                    headers
+                        .get(name)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string)
+                };
+                *recorded.lock().expect("not poisoned") = Some((
+                    text("x-api-key"),
+                    text("x-api-resource-id"),
+                    serde_json::from_slice(&body).expect("the body is JSON"),
+                ));
+                stream(&[
+                    r#"{"code":0,"message":"","data":"YWJj"}"#,
+                    r#"{"code":0,"message":"","data":"ZGVm"}"#,
+                    r#"{"code":20000000,"message":"OK","data":""}"#,
+                ])
+            }
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "volcengineSpeech",
+        &base_url,
+        "seed-tts-2.0",
+        Capability::Speech,
+        "/api/v3/tts/unidirectional/sse",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Speech,
+        prompt: "A lantern.".into(),
+        params: json!({"voice": "BV700_streaming", "format": "mp3"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the recording is read");
+    let (key, resource, asked) = recorded
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the provider was asked");
+    assert_eq!(key.as_deref(), Some(API_KEY));
+    assert_eq!(resource.as_deref(), Some("seed-tts-2.0"));
+    assert_eq!(asked["req_params"]["speaker"], "BV700_streaming");
+    assert_eq!(asked["req_params"]["text"], "A lantern.");
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, b"abcdef");
+    assert_eq!(result.items[0].mime, "audio/mpeg");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_elevenlabs_line_is_asked_at_the_chosen_voice_and_stored_as_answered() {
+    let recorded = Arc::new(Mutex::new(
+        None::<(String, Option<String>, Option<String>, Value)>,
+    ));
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/text-to-speech/{voice}",
+        post(
+            move |axum::extract::Path(voice): axum::extract::Path<String>,
+                  headers: HeaderMap,
+                  axum::extract::RawQuery(query): axum::extract::RawQuery,
+                  body: Bytes| {
+                let recorded = answering.clone();
+                async move {
+                    let key = headers
+                        .get("xi-api-key")
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_string);
+                    let asked = serde_json::from_slice(&body).expect("the body is JSON");
+                    *recorded.lock().expect("not poisoned") = Some((voice, key, query, asked));
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "audio/mpeg")],
+                        b"ID3-a-recording".to_vec(),
+                    )
+                }
+            },
+        ),
+    ))
+    .await;
+
+    let call = at(
+        "elevenlabsSpeech",
+        &base_url,
+        "eleven_v4",
+        Capability::Speech,
+        "/v1/text-to-speech/{voiceId}",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Speech,
+        prompt: "A lantern.".into(),
+        params: json!({"voice": "voice-42", "format": "mp3", "speed": 1.5})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the recording is read");
+    let (voice, key, query, asked) = recorded
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the provider was asked");
+    assert_eq!(
+        voice, "voice-42",
+        "the chosen voice takes the address's place"
+    );
+    assert_eq!(key.as_deref(), Some(API_KEY));
+    assert!(query
+        .unwrap_or_default()
+        .contains("output_format=mp3_44100_128"));
+    assert_eq!(asked["model_id"], "eleven_v4");
+    assert_eq!(asked["text"], "A lantern.");
+    assert_eq!(
+        asked["voice_settings"]["speed"], 1.2,
+        "a pace is kept in range"
+    );
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, b"ID3-a-recording");
+    assert_eq!(result.items[0].mime, "audio/mpeg");
+}

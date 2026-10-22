@@ -64,7 +64,14 @@
 //! ```
 //!
 //! `file = {part = ..., input = ...}` describes one form with a single part,
-//! which is what most uploads are.
+//! which is what most uploads are. A body may also be one input's bytes as
+//! they are, for a service that reads a recording from the request itself:
+//!
+//! ```lua
+//! body = {raw = {input = 1, mime = "audio/wav"}}
+//! ```
+//!
+//! The type is the input's own unless `mime` names one.
 //!
 //! # What a step may answer
 //!

@@ -1,0 +1,9 @@
+{
+  "displayName": "AssemblyAI · Speech Recognition",
+  "labels": { "zh": "AssemblyAI · 语音识别" },
+  "urlExample": "https://api.assemblyai.com/v2/transcript",
+  "script": "assemblyai-asr.lua",
+  "order": 50,
+  "auth": { "header": "authorization", "scheme": "" },
+  "version": 1
+}
