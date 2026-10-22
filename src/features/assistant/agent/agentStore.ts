@@ -138,7 +138,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         messages: answered.session.messages,
         sessionsLoading: false,
         plan: null,
-        catalogHash: get().catalogHash,
+        model: answered.session.model ?? null,
       });
     } catch (error) {
       set({
@@ -199,6 +199,24 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
   setModel(model) {
     set({ model });
+    const session = get().session;
+    if (!session) return;
+    void agentSessionsApi
+      .patch(session.id, { model: model ?? "" })
+      .then((answered) => {
+        set((state) => ({
+          sessions: state.sessions.map((each) =>
+            each.id === session.id ? answered.session : each,
+          ),
+          session:
+            state.session?.id === session.id
+              ? { ...state.session, model: answered.session.model ?? null }
+              : state.session,
+        }));
+      })
+      .catch((error: unknown) => {
+        set({ error: error instanceof Error ? error.message : String(error) });
+      });
   },
 
   async send() {
@@ -350,7 +368,12 @@ useAgentStore.setState({
 export async function ensureSession(scope: AgentScope): Promise<AgentSession> {
   const existing = useAgentStore.getState().session;
   if (existing) return existing;
-  const created = await agentSessionsApi.create({ scope });
+  const created = await agentSessionsApi.create({
+    scope,
+    ...(useAgentStore.getState().model
+      ? { model: useAgentStore.getState().model }
+      : {}),
+  });
   const summary = created.session;
   const session: AgentSession = {
     id: summary.id,

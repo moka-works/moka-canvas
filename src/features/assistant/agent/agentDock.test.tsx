@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentDock } from "./AgentDock";
+import { useModelStore } from "../../settings/modelStore";
 import { useAgentStore } from "./agentStore";
 import { requestApproval, requestQuestion } from "./interaction";
 
@@ -26,6 +27,22 @@ function storeBody(url: string): unknown {
     return { ...catalog, surfaces: [], toolCount: 0 };
   }
   if (url.startsWith("/api/v1/agent/sessions")) return { sessions: [] };
+  if (url.startsWith("/api/v1/models")) {
+    return {
+      version: 1,
+      revision: 0,
+      models: [],
+      defaults: {
+        text: null,
+        image: null,
+        speech: null,
+        music: null,
+        video: null,
+        asr: null,
+      },
+      preferences: {},
+    };
+  }
   return {};
 }
 
@@ -45,6 +62,7 @@ beforeEach(() => {
       });
     }),
   );
+  useModelStore.setState({ view: null });
   useAgentStore.setState({
     room: "canvas",
     sessions: [],
@@ -149,6 +167,34 @@ describe("AgentDock", () => {
     await screen.findByTestId("agent-question");
     fireEvent.click(screen.getByText("Keep"));
     await expect(answered).resolves.toBe("Keep");
+  });
+
+  it("lets the reader pick the model this conversation answers with", () => {
+    useModelStore.setState({
+      view: {
+        version: 1,
+        revision: 0,
+        models: [
+          {
+            id: "writer",
+            category: "text",
+            protocol: "openaiChat",
+            url: "http://example/v1/chat/completions",
+            model: "writer",
+            displayName: "Writer",
+            enabled: true,
+          },
+        ],
+        defaults: { text: "writer" },
+        preferences: {},
+      } as never,
+    });
+    render(<AgentDock room="canvas" />);
+    const select = screen.getByLabelText("Model");
+    expect(select).toHaveValue("");
+    fireEvent.change(select, { target: { value: "writer" } });
+    expect(useAgentStore.getState().model).toBe("writer");
+    expect(select).toHaveValue("writer");
   });
 
   it("draws the plan the model is keeping", () => {

@@ -85,5 +85,10 @@
   },
   "context": {
     "warnings": "请求里有些对象已经不存在"
+  },
+  "model": {
+    "label": "模型",
+    "default": "默认模型",
+    "defaultNamed": "默认 · {{name}}"
   }
 }

@@ -10395,3 +10395,30 @@ button > .story-spin {
   background: rgba(0, 0, 0, 0.05);
   font-weight: 600;
 }
+
+/* The model this conversation answers with, above its message list. */
+.agent-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, #e5e5e7);
+  font-size: 11px;
+}
+
+.agent-model label {
+  opacity: 0.6;
+  flex: none;
+}
+
+.agent-model select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border, #e5e5e7);
+  border-radius: 6px;
+  padding: 3px 5px;
+  font: inherit;
+  font-size: 11px;
+  background: transparent;
+  color: inherit;
+}

@@ -85,5 +85,10 @@
   },
   "context": {
     "warnings": "Some ids in the request no longer exist"
+  },
+  "model": {
+    "label": "Model",
+    "default": "Default model",
+    "defaultNamed": "Default · {{name}}"
   }
 }

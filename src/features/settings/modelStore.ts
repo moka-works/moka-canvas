@@ -32,7 +32,7 @@ export function modelOptionsFor(
   view: ModelsView | null,
   capability: Capability,
 ): ModelOption[] {
-  if (!view) return [];
+  if (!view || !Array.isArray(view.models)) return [];
   return view.models
     .filter((model) => model.enabled && model.category === capability)
     .map((model) => ({ reference: model.id, label: model.displayName }));
@@ -48,7 +48,7 @@ export function effectiveDefaultId(
   view: ModelsView | null,
   capability: Capability,
 ): string | null {
-  if (!view) return null;
+  if (!view || !Array.isArray(view.models)) return null;
   const serving = view.models.filter(
     (model) => model.enabled && model.category === capability,
   );
@@ -355,8 +355,22 @@ export const useModelStore = create<ModelState>()((set, get) => {
       if (get().loading) return;
       set({ loading: true });
       try {
+        const view = await modelsApi.list();
+        // A response with no model list is not a configuration; keeping it
+        // would make every reader of `view` treat an answer that is not one
+        // as the settings it asked for.
+        if (
+          !view ||
+          !Array.isArray(view.models) ||
+          typeof view.preferences !== "object" ||
+          view.preferences === null ||
+          typeof view.defaults !== "object" ||
+          view.defaults === null
+        ) {
+          throw new Error("the models answer is not a configuration");
+        }
         set({
-          view: await modelsApi.list(),
+          view,
           loading: false,
           error: null,
           errorCode: null,

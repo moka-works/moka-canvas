@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentRoom, AgentToolCallRecord } from "../../../api";
-import { useAgentStore } from "./agentStore";
-import { loadCatalog } from "./agentStore";
+import {
+  effectiveDefaultId,
+  modelOptionsFor,
+  useModelStore,
+} from "../../settings/modelStore";
+import { useAgentStore, loadCatalog } from "./agentStore";
 import type { DockMessage } from "./types";
 
 const RISK_KEYS = {
@@ -229,6 +233,12 @@ export function AgentDock({
   const approval = useAgentStore((state) => state.approval);
   const question = useAgentStore((state) => state.question);
   const historyOpen = useAgentStore((state) => state.historyOpen);
+  const model = useAgentStore((state) => state.model);
+  const modelsView = useModelStore((state) => state.view);
+  const models = modelOptionsFor(modelsView, "text");
+  const defaultModel = models.find(
+    (option) => option.reference === effectiveDefaultId(modelsView, "text"),
+  );
   const [other, setOther] = useState("");
   const end = useRef<HTMLLIElement | null>(null);
 
@@ -242,6 +252,12 @@ export function AgentDock({
       useAgentStore.getState().setError(t("agent:errors.loadCatalog"));
     });
   }, [t]);
+
+  useEffect(() => {
+    if (useModelStore.getState().view === null) {
+      void useModelStore.getState().load();
+    }
+  }, [room]);
 
   useEffect(() => {
     if (typeof end.current?.scrollIntoView === "function") {
@@ -287,6 +303,29 @@ export function AgentDock({
           </button>
         </div>
       </header>
+
+      <div className="agent-model">
+        <label htmlFor={`agent-model-${room}`}>{t("agent:model.label")}</label>
+        <select
+          disabled={busy}
+          id={`agent-model-${room}`}
+          onChange={(event) =>
+            useAgentStore.getState().setModel(event.target.value || null)
+          }
+          value={model ?? ""}
+        >
+          <option value="">
+            {defaultModel
+              ? t("agent:model.defaultNamed", { name: defaultModel.label })
+              : t("agent:model.default")}
+          </option>
+          {models.map((option) => (
+            <option key={option.reference} value={option.reference}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {historyOpen && <SessionsPanel />}
 

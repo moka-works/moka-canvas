@@ -49,6 +49,12 @@ test("the canvas assistant runs tool turns, adopts the change, and keeps the con
   const dock = page.getByTestId("agent-dock");
   await expect(dock).toBeVisible();
 
+  // The conversation can choose among the configured text models rather than
+  // being pinned to the deployment's default.
+  const model = dock.getByLabel("Model");
+  await expect(model.locator('option[value="storyteller"]')).toHaveCount(1);
+  await model.selectOption("storyteller");
+
   await dock.getByLabel("Ask the assistant…").fill("[agent] add a note");
   await dock.getByRole("button", { name: "Send" }).click();
 
