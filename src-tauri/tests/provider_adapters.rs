@@ -2634,6 +2634,168 @@ async fn a_bailian_answer_without_a_message_is_read_from_its_bare_text() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bailian_conversation_carries_tools_and_reads_tool_calls() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/api/v1/services/aigc/text-generation/generation",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("text-generation", &headers, None);
+                recorded.note_body(&body);
+                Json(json!({
+                    "output": {
+                        "choices": [{
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [{
+                                    "id": "call_2",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "canvas.get",
+                                        "arguments": "{\"canvasId\":\"cv_1\"}"
+                                    }
+                                }]
+                            },
+                            "finish_reason": "tool_calls"
+                        }]
+                    },
+                    "usage": {"input_tokens": 9, "output_tokens": 4}
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = bailian_channel(&base_url, "qwen3-max", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        messages: vec![
+            moka_canvas::generate::ChatMessage::text("system", "Act with tools."),
+            moka_canvas::generate::ChatMessage::text("user", "read the canvas"),
+            moka_canvas::generate::ChatMessage::assistant_calls(vec![
+                moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+            ]),
+            moka_canvas::generate::ChatMessage::tool_result(
+                &moka_canvas::generate::ToolCall {
+                    id: "call_1".into(),
+                    name: "canvas.list".into(),
+                    arguments: json!({}),
+                },
+                r#"{"ok":true,"canvases":[{"id":"cv_1"}]}"#,
+            ),
+        ],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        tool_choice: Some("auto".into()),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the answer is read whole");
+    assert!(result.text.is_none(), "a pure tool call carries no words");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].id, "call_2");
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+
+    let sent = recorded.body(0);
+    // This platform keeps the tools beside the generation parameters rather
+    // than at the top of the body.
+    assert_eq!(sent["parameters"]["result_format"], "message");
+    assert_eq!(
+        sent["parameters"]["tools"][0]["function"]["name"],
+        "canvas.get"
+    );
+    assert_eq!(sent["parameters"]["tool_choice"], "auto");
+    assert_eq!(sent["input"]["messages"][0]["role"], "system");
+    assert_eq!(sent["input"]["messages"][1]["content"], "read the canvas");
+    assert_eq!(sent["input"]["messages"][2]["role"], "assistant");
+    assert_eq!(
+        sent["input"]["messages"][2]["tool_calls"][0]["function"]["arguments"], "{}",
+        "arguments travel as text in this shape"
+    );
+    assert_eq!(sent["input"]["messages"][3]["role"], "tool");
+    assert_eq!(
+        sent["input"]["messages"][3]["tool_call_id"], "call_1",
+        "a tool result is named by the call it answers"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bailian_stream_puts_streamed_tool_call_fragments_back_together() {
+    let recorded = Recorded::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/api/v1/services/aigc/text-generation/generation",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note("text-generation", &headers, None);
+                recorded.note_body(&body);
+                stream(&[
+                    r#"{"output":{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"canvas.get","arguments":"{\"canvas"}}]}}]}}"#,
+                    r#"{"output":{"choices":[{"message":{"content":"","tool_calls":[{"index":0,"function":{"arguments":"Id\":\"cv_1\"}"}}]}}]}}"#,
+                    r#"{"output":{"choices":[{"message":{"content":""},"finish_reason":"tool_calls"}]}}"#,
+                ])
+            }
+        }),
+    ))
+    .await;
+
+    let call = bailian_channel(&base_url, "qwen3-max", Capability::Text);
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text(
+            "user",
+            "read the canvas",
+        )],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+    assert_eq!(shown(&seen), "", "a tool call has no words to show");
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+
+    let sent = recorded.body(0);
+    assert_eq!(sent["parameters"]["incremental_output"], true);
+    assert_eq!(
+        sent["parameters"]["tools"][0]["function"]["name"],
+        "canvas.get"
+    );
+}
+
 // ------------------------------------------------------------- volcengine
 
 /// The paths this platform's converters are spoken at, each under the endpoint

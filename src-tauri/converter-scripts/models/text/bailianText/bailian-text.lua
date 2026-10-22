@@ -89,6 +89,142 @@ local function asked(req, pictures, parts)
   return content
 end
 
+-- One turn of a conversation in this shape. Tool calls travel with their
+-- arguments as text, and a tool result is a message of its own named by the
+-- call it answers.
+local function turn(message, parts)
+  local content = message.text or ""
+  if message.role == "assistant" then
+    local sent = {role = "assistant", content = content}
+    local calls = message.tool_calls or {}
+    if #calls > 0 then
+      sent.tool_calls = {}
+      for _, call in ipairs(calls) do
+        local arguments = call.arguments
+        if type(arguments) ~= "string" then
+          arguments = json.encode(arguments or {})
+        end
+        table.insert(sent.tool_calls, {
+          id = call.id,
+          type = "function",
+          ["function"] = {name = call.name, arguments = arguments},
+        })
+      end
+    end
+    return sent
+  end
+  if message.role == "tool" then
+    return {
+      role = "tool",
+      tool_call_id = message.tool_call_id,
+      content = content,
+    }
+  end
+  return {role = message.role, content = said(content, parts)}
+end
+
+local function conversation(req, parts)
+  local messages = {}
+  if req.system and trimmed(req.system) ~= "" then
+    table.insert(messages, {role = "system", content = said(req.system, parts)})
+  end
+  for _, message in ipairs(req.messages or {}) do
+    if message.role ~= "system" or #messages == 0 then
+      table.insert(messages, turn(message, parts))
+    end
+  end
+  return messages
+end
+
+-- What the model may ask to run, under the names this platform reads: a tool
+-- is a function beside the parameters, and the choice is a word or a named
+-- function.
+local function tools_of(req)
+  local tools = {}
+  for _, tool in ipairs(req.tools or {}) do
+    table.insert(tools, {
+      type = "function",
+      ["function"] = {
+        name = tool.name,
+        description = tool.description,
+        parameters = tool.parameters,
+      },
+    })
+  end
+  return tools
+end
+
+local function choice_of(req)
+  local choice = req.tool_choice
+  if type(choice) ~= "string" or trimmed(choice) == "" then
+    return nil
+  end
+  if choice == "auto" or choice == "none" then
+    return choice
+  end
+  return {type = "function", ["function"] = {name = choice}}
+end
+
+-- A call's arguments, decoded where the service sent JSON and handed over as
+-- text otherwise, so a malformed call is reported rather than becoming empty.
+local function arguments_of(raw)
+  local arguments = raw
+  if type(raw) == "string" and trimmed(raw) ~= "" then
+    local ok, decoded = pcall(json.decode, raw)
+    if ok then
+      arguments = decoded
+    end
+  end
+  if arguments == nil then
+    arguments = {}
+  end
+  return arguments
+end
+
+local function call_of(call)
+  local part = call["function"] or {}
+  return {id = call.id, name = part.name, arguments = arguments_of(part.arguments)}
+end
+
+local function calls_of(message)
+  local list = message and message.tool_calls or {}
+  local calls = {}
+  for _, call in ipairs(list) do
+    local converted = call_of(call)
+    if type(converted.name) == "string" then
+      table.insert(calls, converted)
+    end
+  end
+  return calls
+end
+
+-- The pieces of a streamed call: this service keeps them in the message as
+-- written so far, and the host puts the fragments back together.
+local function call_deltas(message, delta)
+  local list = (message and message.tool_calls) or (delta and delta.tool_calls) or {}
+  local calls = {}
+  for position, part in ipairs(list) do
+    local function part_of()
+      return part["function"] or {}
+    end
+    local arguments = part_of().arguments
+    if type(arguments) == "table" then
+      arguments = json.encode(arguments)
+    end
+    table.insert(calls, {
+      index = part.index or (position - 1),
+      id = part.id,
+      name = part_of().name,
+      arguments_delta = arguments,
+    })
+  end
+  return calls
+end
+
+local function finish_of(choice)
+  return choice.finish_reason or choice.finishReason
+end
+
 local function integer_param(params, key)
   local value = params[key]
   if value == nil then
@@ -170,10 +306,23 @@ end
 -- whether that service reads a message as parts rather than as one string.
 local function describe(call, req, pictures, url, parts, streaming)
   local messages = {}
-  if req.system and trimmed(req.system) ~= "" then
-    table.insert(messages, {role = "system", content = said(req.system, parts)})
+  if req.messages and #req.messages > 0 then
+    messages = conversation(req, parts)
+  else
+    if req.system and trimmed(req.system) ~= "" then
+      table.insert(messages, {role = "system", content = said(req.system, parts)})
+    end
+    table.insert(messages, {role = "user", content = asked(req, pictures, parts)})
   end
-  table.insert(messages, {role = "user", content = asked(req, pictures, parts)})
+  local told = parameters(req, streaming)
+  local tools = tools_of(req)
+  if #tools > 0 then
+    told.tools = tools
+    local choice = choice_of(req)
+    if choice ~= nil then
+      told.tool_choice = choice
+    end
+  end
   return {
     method = "POST",
     url = url,
@@ -181,7 +330,7 @@ local function describe(call, req, pictures, url, parts, streaming)
     body = json.encode({
       model = call.model,
       input = {messages = messages},
-      parameters = parameters(req, streaming),
+      parameters = told,
     }),
   }
 end
@@ -326,7 +475,18 @@ function parse_response(status, headers, body, state)
   if refused ~= nil then
     return {error = refused}
   end
-  return {text = choice_content(payload), usage = tokens(payload)}
+  local choice = ((payload.output or {}).choices or {})[1] or {}
+  local calls = calls_of(choice.message)
+  local finish = finish_of(choice)
+  if #calls > 0 and finish == nil then
+    finish = "tool_calls"
+  end
+  return {
+    text = choice_content(payload),
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end
 
 -- One event in a stream, which carries the piece written since the last one
@@ -339,5 +499,23 @@ function parse_event(event)
   if refused ~= nil then
     return {failed = refused}
   end
-  return {text = choice_content(payload), usage = tokens(payload)}
+  local choice = ((payload.output or {}).choices or {})[1] or {}
+  local text = choice_content(payload)
+  if text == nil then
+    local delta = choice.delta or {}
+    if type(delta.content) == "string" and trimmed(delta.content) ~= "" then
+      text = delta.content
+    end
+  end
+  local calls = call_deltas(choice.message, choice.delta)
+  local finish = finish_of(choice)
+  if #calls > 0 and finish == nil then
+    finish = "tool_calls"
+  end
+  return {
+    text = text,
+    usage = tokens(payload),
+    tool_calls = calls,
+    finish_reason = finish,
+  }
 end
