@@ -1,0 +1,9 @@
+{
+  "displayName": "Luma AI · Dream Machine Video",
+  "labels": { "zh": "Luma AI · Dream Machine 视频生成" },
+  "urlExample": "https://api.lumalabs.ai/dream-machine/v1/generations/video",
+  "script": "luma-video.lua",
+  "order": 60,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

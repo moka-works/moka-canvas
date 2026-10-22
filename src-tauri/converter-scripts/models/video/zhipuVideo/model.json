@@ -1,0 +1,9 @@
+{
+  "displayName": "Zhipu GLM · CogVideoX Video Generation",
+  "labels": { "zh": "智谱 GLM · CogVideoX 视频生成" },
+  "urlExample": "https://open.bigmodel.cn/api/paas/v4/videos/generations",
+  "script": "zhipu-video.lua",
+  "order": 90,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

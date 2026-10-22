@@ -1,0 +1,9 @@
+{
+  "displayName": "Runway · Video Generation",
+  "labels": { "zh": "Runway · 视频生成" },
+  "urlExample": "https://api.dev.runwayml.com/v1/text_to_video",
+  "script": "runway-video.lua",
+  "order": 70,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

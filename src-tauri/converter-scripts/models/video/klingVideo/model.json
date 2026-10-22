@@ -1,0 +1,9 @@
+{
+  "displayName": "Kling AI · Video Generation",
+  "labels": { "zh": "可灵 AI · 视频生成" },
+  "urlExample": "https://api-singapore.klingai.com/v1/videos/text2video",
+  "script": "kling-video.lua",
+  "order": 80,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}

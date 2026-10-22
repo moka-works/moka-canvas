@@ -5724,3 +5724,373 @@ async fn a_zhipu_picture_is_read_from_the_address_the_answer_names() {
     assert_eq!(result.items[0].bytes, png(2, 2));
     assert_eq!(result.items[0].mime, "image/png");
 }
+
+fn video_route(path: &'static str) -> axum::routing::MethodRouter {
+    get(move || async {
+        (
+            [(axum::http::header::CONTENT_TYPE, "video/mp4")],
+            b"film".to_vec(),
+        )
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_luma_job_is_started_with_keyframes_and_collected() {
+    let posted = Arc::new(Mutex::new(None::<Value>));
+    let answering = posted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/generations/video",
+                post(move |body: Bytes| {
+                    let posted = answering.clone();
+                    async move {
+                        *posted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({"id": "gen_1", "state": "queued"}))
+                    }
+                }),
+            )
+            .route(
+                "/generations/gen_1",
+                get(|headers: HeaderMap| async move {
+                    let host = headers
+                        .get("host")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    Json(json!({
+                        "id": "gen_1",
+                        "state": "completed",
+                        "assets": {"video": format!("http://{host}/film.mp4")}
+                    }))
+                }),
+            )
+            .route("/film.mp4", video_route("/film.mp4")),
+    )
+    .await;
+
+    let call = at(
+        "lumaVideo",
+        &base_url,
+        "ray-3.2",
+        Capability::Video,
+        "/generations/video",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Video,
+        prompt: "a lantern".into(),
+        params: json!({"ratio": "16:9", "seconds": 5})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let task = scripted()
+        .await
+        .create_task(
+            &call,
+            &request,
+            &[reference("opening", InputRole::FirstFrame)],
+            &Cancel::new(),
+        )
+        .await
+        .expect("the job starts");
+    let state = scripted()
+        .await
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the job is looked at");
+    let asked = posted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the job was started");
+    assert_eq!(asked["model"], "ray-3.2");
+    assert_eq!(asked["aspect_ratio"], "16:9");
+    assert_eq!(asked["duration"], "5s");
+    assert!(
+        asked["keyframes"]["frame0"]["url"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("data:image/png;base64,"),
+        "{asked}"
+    );
+    let TaskState::Succeeded(result) = state else {
+        panic!("the job did not finish");
+    };
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, b"film");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_runway_image_to_video_task_is_started_and_collected() {
+    let version = Arc::new(Mutex::new(None::<String>));
+    let posted = Arc::new(Mutex::new(None::<Value>));
+    let answering_version = version.clone();
+    let answering_body = posted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/v1/image_to_video",
+                post(move |headers: HeaderMap, body: Bytes| {
+                    let version = answering_version.clone();
+                    let posted = answering_body.clone();
+                    async move {
+                        *version.lock().expect("not poisoned") = headers
+                            .get("x-runway-version")
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string);
+                        *posted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({"id": "run_1"}))
+                    }
+                }),
+            )
+            .route(
+                "/v1/tasks/run_1",
+                get(|headers: HeaderMap| async move {
+                    let host = headers
+                        .get("host")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    Json(json!({
+                        "status": "SUCCEEDED",
+                        "output": [format!("http://{host}/film.mp4")]
+                    }))
+                }),
+            )
+            .route("/film.mp4", video_route("/film.mp4")),
+    )
+    .await;
+
+    let call = at(
+        "runwayVideo",
+        &base_url,
+        "gen4.5",
+        Capability::Video,
+        "/v1/image_to_video",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Video,
+        prompt: "a lantern sways".into(),
+        params: json!({"ratio": "1280:720", "seconds": 5})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let task = scripted()
+        .await
+        .create_task(
+            &call,
+            &request,
+            &[reference("opening", InputRole::FirstFrame)],
+            &Cancel::new(),
+        )
+        .await
+        .expect("the task starts");
+    let state = scripted()
+        .await
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the task is looked at");
+    assert_eq!(
+        version.lock().expect("not poisoned").as_deref(),
+        Some("2024-11-06")
+    );
+    let asked = posted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the task was started");
+    assert_eq!(asked["model"], "gen4.5");
+    assert_eq!(asked["ratio"], "1280:720");
+    assert_eq!(asked["duration"], 5);
+    assert!(
+        asked["promptImage"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("data:image/png;base64,"),
+        "{asked}"
+    );
+    let TaskState::Succeeded(result) = state else {
+        panic!("the task did not finish");
+    };
+    assert_eq!(result.items[0].bytes, b"film");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_kling_job_is_started_and_its_answer_envelope_is_read() {
+    let posted = Arc::new(Mutex::new(None::<Value>));
+    let answering = posted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/v1/videos/text2video",
+                post(move |body: Bytes| {
+                    let posted = answering.clone();
+                    async move {
+                        *posted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({
+                            "code": 0,
+                            "message": "SUCCEED",
+                            "data": {"task_id": "task_1", "task_status": "submitted"}
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/v1/videos/text2video/task_1",
+                get(|headers: HeaderMap| async move {
+                    let host = headers
+                        .get("host")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    Json(json!({
+                        "code": 0,
+                        "message": "SUCCEED",
+                        "data": {
+                            "task_id": "task_1",
+                            "task_status": "succeed",
+                            "task_result": {"videos": [{"url": format!("http://{host}/film.mp4")}]}
+                        }
+                    }))
+                }),
+            )
+            .route("/film.mp4", video_route("/film.mp4")),
+    )
+    .await;
+
+    let call = at(
+        "klingVideo",
+        &base_url,
+        "kling-3.0",
+        Capability::Video,
+        "/v1/videos/text2video",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Video,
+        prompt: "a lantern".into(),
+        params: json!({"ratio": "16:9", "seconds": 5})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let task = scripted()
+        .await
+        .create_task(&call, &request, &[], &Cancel::new())
+        .await
+        .expect("the job starts");
+    let state = scripted()
+        .await
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the job is looked at");
+    let asked = posted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the job was started");
+    assert_eq!(asked["model_name"], "kling-3.0");
+    assert_eq!(asked["duration"], "5");
+    assert_eq!(asked["aspect_ratio"], "16:9");
+    let TaskState::Succeeded(result) = state else {
+        panic!("the job did not finish");
+    };
+    assert_eq!(result.items[0].bytes, b"film");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_zhipu_video_job_is_looked_at_where_its_result_lives() {
+    let posted = Arc::new(Mutex::new(None::<Value>));
+    let answering = posted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/api/paas/v4/videos/generations",
+                post(move |body: Bytes| {
+                    let posted = answering.clone();
+                    async move {
+                        *posted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({"id": "job_1", "task_status": "PROCESSING"}))
+                    }
+                }),
+            )
+            .route(
+                "/api/paas/v4/async-result/job_1",
+                get(|headers: HeaderMap| async move {
+                    let host = headers
+                        .get("host")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    Json(json!({
+                        "task_status": "SUCCESS",
+                        "video_result": [{"url": format!("http://{host}/film.mp4")}]
+                    }))
+                }),
+            )
+            .route("/film.mp4", video_route("/film.mp4")),
+    )
+    .await;
+
+    let call = at(
+        "zhipuVideo",
+        &base_url,
+        "cogvideox-3",
+        Capability::Video,
+        "/api/paas/v4/videos/generations",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Video,
+        prompt: "a lantern".into(),
+        params: json!({"size": "1920x1080", "seconds": 5})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let task = scripted()
+        .await
+        .create_task(
+            &call,
+            &request,
+            &[reference("opening", InputRole::FirstFrame)],
+            &Cancel::new(),
+        )
+        .await
+        .expect("the job starts");
+    let state = scripted()
+        .await
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the job is looked at");
+    let asked = posted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the job was started");
+    assert_eq!(asked["model"], "cogvideox-3");
+    assert_eq!(asked["size"], "1920x1080");
+    assert!(
+        asked["image_url"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("data:image/png;base64,"),
+        "{asked}"
+    );
+    let TaskState::Succeeded(result) = state else {
+        panic!("the job did not finish");
+    };
+    assert_eq!(result.items[0].bytes, b"film");
+}
