@@ -272,11 +272,13 @@ async fn prepare(
     } else {
         String::new()
     };
-    let mut messages = Vec::new();
-    if !fallback {
-        messages.push(ChatMessage::text("system", system.clone()));
-        messages.extend(conversation);
-    }
+    // The instruction travels in the request's `system` field rather than as
+    // a message of the conversation. That field is what the gateway reads to
+    // decide whether to frame the ask with the preference set for generation,
+    // and the assistant's own instruction — persona, tools, protocol — must
+    // not be replaced by it. It is also the single instruction every provider
+    // gets, so no protocol has to pick between two system messages.
+    let messages = if fallback { Vec::new() } else { conversation };
 
     let toolset_hash = {
         use sha2::{Digest, Sha256};
@@ -389,12 +391,12 @@ fn stream_chat(
         let mut generate = GenerateRequest {
             capability: Capability::Text,
             model: prepared.model.clone(),
+            system: Some(prepared.system.clone()),
             messages: prepared.messages.clone(),
             ..GenerateRequest::default()
         };
         if prepared.fallback {
             generate.prompt = prepared.fallback_prompt.clone();
-            generate.system = Some(prepared.system.clone());
             generate.messages.clear();
         } else {
             generate.tools = prepared.tools.iter().map(|tool| tool.model_def()).collect();
