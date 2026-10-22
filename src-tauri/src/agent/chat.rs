@@ -37,6 +37,11 @@ use super::protocol;
 const MAX_MESSAGES: usize = 60;
 const MAX_MESSAGE_CHARS: usize = 16_000;
 const STREAM_BUFFER_BYTES: usize = 64 * 1024;
+/// How much of a fallback conversation is folded into one prompt. A model
+/// with no native tool channel reads the transcript as text, and the whole of
+/// a long session does not fit any context; the recent part is what a step
+/// acts on.
+const MAX_FALLBACK_CHARS: usize = 48_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +108,8 @@ struct Prepared {
     toolset_hash: String,
     catalog_hash: String,
     messages: Vec<ChatMessage>,
+    system: String,
+    fallback_prompt: String,
 }
 
 fn problem(code: &str, message: impl Into<String>) -> Problem {
@@ -226,8 +233,7 @@ async fn prepare(
         request.locale.as_deref().unwrap_or("en"),
     );
 
-    let mut messages = Vec::with_capacity(request.messages.len() + 1);
-    messages.push(ChatMessage::text("system", system.clone()));
+    let mut conversation = Vec::with_capacity(request.messages.len());
     for turn in &request.messages {
         if !matches!(turn.role.as_str(), "user" | "assistant" | "tool") {
             return Err(problem(
@@ -241,7 +247,7 @@ async fn prepare(
                 "a message is longer than 16000 characters",
             ));
         }
-        messages.push(ChatMessage {
+        conversation.push(ChatMessage {
             role: turn.role.clone(),
             text: turn.text.clone(),
             tool_calls: turn
@@ -256,6 +262,20 @@ async fn prepare(
             tool_call_id: turn.tool_call_id.clone(),
             name: turn.name.clone(),
         });
+    }
+
+    // A converter without native tools reads `prompt`, not `messages`: the
+    // conversation is folded into one transcript rather than sent as roles it
+    // would ignore, and the system prompt travels in its own field.
+    let fallback_prompt = if fallback {
+        flatten_conversation(&conversation)
+    } else {
+        String::new()
+    };
+    let mut messages = Vec::new();
+    if !fallback {
+        messages.push(ChatMessage::text("system", system.clone()));
+        messages.extend(conversation);
     }
 
     let toolset_hash = {
@@ -287,7 +307,49 @@ async fn prepare(
         toolset_hash,
         catalog_hash,
         messages,
+        system,
+        fallback_prompt,
     })
+}
+
+/// The conversation as one document a converter can send as a prompt.
+fn flatten_conversation(messages: &[ChatMessage]) -> String {
+    let mut out = String::new();
+    for message in messages {
+        let part = match message.role.as_str() {
+            "user" => format!("USER:\n{}\n\n", message.text),
+            "assistant" => {
+                let mut said = String::new();
+                if !message.text.trim().is_empty() {
+                    said.push_str(&format!("ASSISTANT:\n{}\n\n", message.text));
+                }
+                for call in &message.tool_calls {
+                    said.push_str(&format!(
+                        "ASSISTANT CALLED {} WITH {}\n\n",
+                        call.name,
+                        serde_json::to_string(&call.arguments).unwrap_or_default()
+                    ));
+                }
+                said
+            }
+            "tool" => format!(
+                "TOOL {} RESULT:\n{}\n\n",
+                message.name.as_deref().unwrap_or(""),
+                message.text
+            ),
+            _ => String::new(),
+        };
+        if out.chars().count() + part.chars().count() > MAX_FALLBACK_CHARS {
+            // Keep the newest part whole when it alone overflows; otherwise
+            // stop rather than cut a turn in half.
+            if out.is_empty() {
+                out.extend(part.chars().take(MAX_FALLBACK_CHARS));
+            }
+            break;
+        }
+        out.push_str(&part);
+    }
+    out
 }
 
 fn stream_chat(
@@ -298,9 +360,17 @@ fn stream_chat(
 ) -> Response {
     let (mut writer, reader) = tokio::io::duplex(STREAM_BUFFER_BYTES);
     let (deltas, mut received) = mpsc::unbounded_channel::<String>();
-    let sink = DeltaSink::new(Arc::new(move |chunk: &str| {
-        let _ = deltas.send(chunk.to_string());
-    }));
+    // A fallback answer is protocol JSON until it is parsed; showing it
+    // piece by piece would put `{"thought":...` in the conversation. The
+    // provider is still asked for a stream, and the pieces are dropped until
+    // the whole object can be read.
+    let sink = if prepared.fallback {
+        DeltaSink::unwatched()
+    } else {
+        DeltaSink::new(Arc::new(move |chunk: &str| {
+            let _ = deltas.send(chunk.to_string());
+        }))
+    };
     let cancel = Cancel::new();
     let watching = cancel.clone();
     let gateway = Arc::clone(&state.gateway);
@@ -322,7 +392,11 @@ fn stream_chat(
             messages: prepared.messages.clone(),
             ..GenerateRequest::default()
         };
-        if !prepared.fallback {
+        if prepared.fallback {
+            generate.prompt = prepared.fallback_prompt.clone();
+            generate.system = Some(prepared.system.clone());
+            generate.messages.clear();
+        } else {
             generate.tools = prepared.tools.iter().map(|tool| tool.model_def()).collect();
             generate.tool_choice = Some("auto".into());
         }
@@ -369,12 +443,14 @@ fn stream_chat(
                 // rest of the text is what the model wanted to say.
                 if calls.is_empty() && prepared.fallback {
                     if let Some(step) = protocol::parse(&text) {
-                        if let Some(call) = step.tool {
-                            calls.push(json!({
-                                "id": format!("call_{}", uuid::Uuid::now_v7()),
-                                "name": call.name,
-                                "arguments": call.input,
-                            }));
+                        if !step.tools.is_empty() {
+                            for call in step.tools {
+                                calls.push(json!({
+                                    "id": format!("call_{}", uuid::Uuid::now_v7()),
+                                    "name": call.name,
+                                    "arguments": call.input,
+                                }));
+                            }
                             text = step.thought.unwrap_or_default();
                         } else if let Some(answer) = step.answer {
                             text = answer;
@@ -485,6 +561,24 @@ mod tests {
         assert_eq!(request.scope.room, "clip");
         assert_eq!(request.scope.clip_ids, ["cl_1"]);
         assert!(request.messages[0].tool_calls.is_empty());
+    }
+
+    #[test]
+    fn a_fallback_transcript_carries_calls_and_results_as_text() {
+        let call = crate::generate::ToolCall {
+            id: "call_1".into(),
+            name: "canvas.list".into(),
+            arguments: serde_json::json!({}),
+        };
+        let prompt = flatten_conversation(&[
+            ChatMessage::text("user", "add a note"),
+            ChatMessage::assistant_calls(vec![call.clone()]),
+            ChatMessage::tool_result(&call, r#"{"ok":true,"data":{"canvases":[]}}"#),
+        ]);
+        assert!(prompt.contains("USER:\nadd a note"));
+        assert!(prompt.contains("ASSISTANT CALLED canvas.list"));
+        assert!(prompt.contains("TOOL canvas.list RESULT:"));
+        assert!(prompt.contains("\"ok\":true"));
     }
 
     #[test]

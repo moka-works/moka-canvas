@@ -6,7 +6,7 @@
 //! guessing:
 //!
 //! ```json
-//! {"thought": "I need the timeline first.", "tool": "timeline.get", "input": {"timelineId": "tl_1"}}
+//! {"thought": "I need the timeline first.", "tools": [{"name": "timeline.get", "input": {"timelineId": "tl_1"}}]}
 //! {"thought": "Done.", "answer": "Trimmed both clips to 20 seconds."}
 //! ```
 //!
@@ -21,7 +21,9 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReActStep {
     pub thought: Option<String>,
-    pub tool: Option<ReActCall>,
+    /// One step may ask for several independent reads or edits; the loop
+    /// executes them in the order they were written.
+    pub tools: Vec<ReActCall>,
     pub answer: Option<String>,
 }
 
@@ -33,7 +35,7 @@ pub struct ReActCall {
 
 /// The instructions a model is given when it has no native tool channel.
 pub const REACT_INSTRUCTIONS: &str = r#"You act by writing exactly one JSON object per step and nothing else.
-To call a tool: {"thought":"why","tool":"<tool name>","input":{...}}
+To call tools: {"thought":"why","tools":[{"name":"<tool name>","input":{...}}]}
 To finish: {"thought":"why","answer":"what you did, briefly"}
 Use only tools from the list. Times are integer milliseconds. Read before writing.
 Never claim a change succeeded unless a tool result says it did."#;
@@ -43,12 +45,23 @@ Never claim a change succeeded unless a tool result says it did."#;
 struct StepWire {
     #[serde(default)]
     thought: Option<String>,
+    /// The older single-call shape, still read so a model that learned the
+    /// first form keeps working.
     #[serde(default)]
     tool: Option<String>,
     #[serde(default)]
     input: Option<Value>,
     #[serde(default)]
+    tools: Vec<WireCall>,
+    #[serde(default)]
     answer: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct WireCall {
+    name: String,
+    #[serde(default)]
+    input: Option<Value>,
 }
 
 /// Reads the first protocol object in an answer.
@@ -59,22 +72,42 @@ struct StepWire {
 pub fn parse(text: &str) -> Option<ReActStep> {
     let candidate = extract_object(text)?;
     let step: StepWire = serde_json::from_str(&candidate).ok()?;
-    let tool = step
-        .tool
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(|name| ReActCall {
-            name: name.to_string(),
-            input: step
-                .input
-                .unwrap_or_else(|| Value::Object(Default::default())),
-        });
+    let mut tools: Vec<ReActCall> = step
+        .tools
+        .into_iter()
+        .filter_map(|call| {
+            let name = call.name.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some(ReActCall {
+                name,
+                input: call
+                    .input
+                    .unwrap_or_else(|| Value::Object(Default::default())),
+            })
+        })
+        .collect();
+    if tools.is_empty() {
+        if let Some(name) = step
+            .tool
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            tools.push(ReActCall {
+                name: name.to_string(),
+                input: step
+                    .input
+                    .unwrap_or_else(|| Value::Object(Default::default())),
+            });
+        }
+    }
     let answer = step
         .answer
         .map(|answer| answer.trim().to_string())
         .filter(|answer| !answer.is_empty());
-    if tool.is_none() && answer.is_none() {
+    if tools.is_empty() && answer.is_none() {
         return None;
     }
     Some(ReActStep {
@@ -82,7 +115,7 @@ pub fn parse(text: &str) -> Option<ReActStep> {
             .thought
             .map(|thought| thought.trim().to_string())
             .filter(|thought| !thought.is_empty()),
-        tool,
+        tools,
         answer,
     })
 }
@@ -158,8 +191,8 @@ mod tests {
         )
         .expect("a step");
         assert_eq!(step.thought.as_deref(), Some("need the timeline"));
-        assert_eq!(step.tool.as_ref().expect("a call").name, "timeline.get");
-        assert_eq!(step.tool.unwrap().input["timelineId"], "tl_1");
+        assert_eq!(step.tools.first().expect("a call").name, "timeline.get");
+        assert_eq!(step.tools[0].input["timelineId"], "tl_1");
         assert!(step.answer.is_none());
     }
 
@@ -167,14 +200,14 @@ mod tests {
     fn a_fenced_answer_is_read_as_the_end_of_the_turn() {
         let step = parse("```json\n{\"answer\":\"Trimmed both clips.\"}\n```").expect("a step");
         assert_eq!(step.answer.as_deref(), Some("Trimmed both clips."));
-        assert!(step.tool.is_none());
+        assert!(step.tools.is_empty());
     }
 
     #[test]
     fn braces_inside_strings_do_not_end_the_object_early() {
         let step =
             parse(r#"{"tool":"asset.update","input":{"note":"a { and a }"}}"#).expect("a step");
-        assert_eq!(step.tool.unwrap().input["note"], "a { and a }");
+        assert_eq!(step.tools[0].input["note"], "a { and a }");
     }
 
     #[test]
@@ -182,6 +215,21 @@ mod tests {
         assert!(parse("{\"thought\":\"hmm\"}").is_none());
         assert!(parse("no object here").is_none());
         assert!(parse("{\"tool\":\"\"}").is_none());
+    }
+
+    #[test]
+    fn several_calls_in_one_step_are_read_in_order() {
+        let step = parse(
+            r#"{"thought":"two reads","tools":[
+                {"name":"canvas.list","input":{}},
+                {"name":"asset.list","input":{"unused":true}}
+            ]}"#,
+        )
+        .expect("a step");
+        assert_eq!(step.tools.len(), 2);
+        assert_eq!(step.tools[0].name, "canvas.list");
+        assert_eq!(step.tools[1].input["unused"], true);
+        assert!(step.answer.is_none());
     }
 
     #[test]

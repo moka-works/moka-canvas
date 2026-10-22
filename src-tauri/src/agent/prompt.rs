@@ -156,7 +156,7 @@ mod tests {
             true,
             "zh",
         );
-        assert!(prompt.contains("\"tool\":"));
+        assert!(prompt.contains("\"tools\":"));
         assert!(prompt.contains("clip.trim: does a thing"));
         assert!(prompt.contains("answer in Chinese"));
     }
