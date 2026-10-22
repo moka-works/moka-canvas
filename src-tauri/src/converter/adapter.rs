@@ -363,10 +363,7 @@ impl ProviderAdapter for LuaAdapter {
                 // Words travel the same way media does. A job that answers with
                 // them — a transcript, the point of a recognition job — has
                 // nothing to download and everything to say.
-                let text = result
-                    .and_then(|result| result.get("text"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
+                let text = text_of(result)?;
                 Ok(TaskState::Succeeded(GenerateResult {
                     text,
                     items,
@@ -699,6 +696,72 @@ fn nothing_said(reply: &Value) -> bool {
     })
 }
 
+/// The words one answer carries: a whole text, or timed cues written as the
+/// subtitle document the rest of the program reads.
+///
+/// A recognition's answer is its sentences with the times they were said at,
+/// which every service states in a shape of its own. Writing the document here
+/// rather than in each script is what keeps the same words formatted the same
+/// way, whichever provider heard them.
+fn text_of(reply: Option<&Value>) -> Result<Option<String>, ProviderError> {
+    let Some(reply) = reply else {
+        return Ok(None);
+    };
+    if let Some(text) = reply.get("text").and_then(Value::as_str) {
+        return Ok(Some(text.to_string()));
+    }
+    let Some(cues) = reply.get("cues") else {
+        return Ok(None);
+    };
+    let list = match cues.as_array() {
+        Some(list) => list,
+        None if cues.as_object().is_some_and(|shape| shape.is_empty()) => return Ok(None),
+        None => {
+            return Err(ProviderError::invalid(
+                "the script described cues that are not a list",
+            ))
+        }
+    };
+    if list.is_empty() {
+        return Ok(None);
+    }
+
+    let mut blocks = Vec::with_capacity(list.len());
+    for (index, cue) in list.iter().enumerate() {
+        let words = cue
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ProviderError::invalid("a cue describes no words"))?;
+        let start = cue.get("start_ms").and_then(Value::as_f64).ok_or_else(|| {
+            ProviderError::invalid("a cue's start is not a number of milliseconds")
+        })?;
+        let end = cue
+            .get("end_ms")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| ProviderError::invalid("a cue's end is not a number of milliseconds"))?;
+        blocks.push(format!(
+            "{}\n{} --> {}\n{}",
+            index + 1,
+            srt_time(start),
+            srt_time(end),
+            words
+        ));
+    }
+    Ok(Some(format!("{}\n", blocks.join("\n\n"))))
+}
+
+/// Milliseconds as a subtitle clock: HH:MM:SS,mmm.
+fn srt_time(ms: f64) -> String {
+    let total = (ms.max(0.0) + 0.5).floor() as i64;
+    format!(
+        "{:02}:{:02}:{:02},{:03}",
+        total / 3_600_000,
+        (total / 60_000) % 60,
+        (total / 1_000) % 60,
+        total % 1_000
+    )
+}
+
 /// The answer one step ended with, read as media and words.
 async fn result_of(
     session: &Session,
@@ -713,13 +776,8 @@ async fn result_of(
         Some(list) => items_of(list, &ended.body, call, capability, &session.entry.auth).await?,
         None => Vec::new(),
     };
-    let text = ended
-        .reply
-        .get("text")
-        .and_then(Value::as_str)
-        .map(str::to_string);
     Ok(GenerateResult {
-        text,
+        text: text_of(Some(&ended.reply))?,
         items,
         usage: usage_of(ended.reply.get("usage")),
         tool_calls: tool_calls_of(ended.reply.get("tool_calls")),
@@ -1253,4 +1311,49 @@ fn inputs_json(inputs: &[MediaInput]) -> Value {
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(sha2::Sha256::digest(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cues_are_written_as_a_subtitle_document_at_the_times_they_were_said() {
+        let reply = json!({
+            "cues": [
+                {"start_ms": 100.4, "end_ms": 1234.6, "text": "Hello there."},
+                {"start_ms": -5, "end_ms": 7000, "text": "Second."}
+            ]
+        });
+        assert_eq!(
+            text_of(Some(&reply)).unwrap().as_deref(),
+            Some(
+                "1\n00:00:00,100 --> 00:00:01,235\nHello there.\n\n\
+                 2\n00:00:00,000 --> 00:00:07,000\nSecond.\n"
+            )
+        );
+    }
+
+    #[test]
+    fn a_reply_that_states_no_words_is_read_as_no_words() {
+        assert_eq!(text_of(Some(&json!({"items": []}))).unwrap(), None);
+        assert_eq!(text_of(Some(&json!({"cues": {}}))).unwrap(), None);
+    }
+
+    #[test]
+    fn a_cue_without_words_is_refused_rather_than_silently_dropped() {
+        let reply = json!({"cues": [{"start_ms": 0, "end_ms": 1000}]});
+        let refused = text_of(Some(&reply)).expect_err("the cue says nothing");
+        assert!(refused.to_string().contains("no words"), "{refused}");
+    }
+
+    #[test]
+    fn a_whole_text_is_left_as_it_arrived() {
+        let reply = json!({"text": "plain words", "cues": []});
+        assert_eq!(
+            text_of(Some(&reply)).unwrap().as_deref(),
+            Some("plain words")
+        );
+    }
 }

@@ -32,25 +32,6 @@ local function language_of(value)
   return word
 end
 
-local function srt_time(ms)
-  local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-  local hours = total // 3600000
-  local minutes = (total // 60000) % 60
-  local seconds = (total // 1000) % 60
-  local millis = total % 1000
-  return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
-end
-
-local function srt_block(index, begin_ms, end_ms, text)
-  return tostring(index)
-    .. "\n"
-    .. srt_time(begin_ms)
-    .. " --> "
-    .. srt_time(end_ms)
-    .. "\n"
-    .. text
-end
-
 -- The first sentence's length stands in for a recognizer that gave no length
 -- at all: a subtitle needs an end, and words per second is a better guess than
 -- a cue that never closes.
@@ -99,8 +80,7 @@ function parse_response(status, headers, body, state)
   end
 
   local duration = tonumber(payload.duration) or 0
-  local blocks = {}
-  local count = 0
+  local cues = {}
   for _, segment in ipairs(payload.segments or {}) do
     local words = clean(segment.text)
     if words ~= "" then
@@ -109,12 +89,11 @@ function parse_response(status, headers, body, state)
       if end_ms < begin_ms then
         end_ms = begin_ms
       end
-      count = count + 1
-      table.insert(blocks, srt_block(count, begin_ms, end_ms, words))
+      table.insert(cues, {start_ms = begin_ms, end_ms = end_ms, text = words})
     end
   end
 
-  if count == 0 then
+  if #cues == 0 then
     local whole = clean(payload.text)
     if whole == "" then
       return {error = "no speech was found in the recording"}
@@ -123,13 +102,12 @@ function parse_response(status, headers, body, state)
     if end_ms <= 0 then
       end_ms = guessed_ms(whole)
     end
-    count = 1
-    table.insert(blocks, srt_block(1, 0, end_ms, whole))
+    table.insert(cues, {start_ms = 0, end_ms = end_ms, text = whole})
   end
 
   local usage = nil
   if duration > 0 then
     usage = {seconds = duration}
   end
-  return {text = table.concat(blocks, "\n\n") .. "\n", usage = usage}
+  return {cues = cues, usage = usage}
 end

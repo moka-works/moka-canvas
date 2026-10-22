@@ -4,9 +4,8 @@
 --   https://docs.cartesia.ai/api-reference/stt/transcribe
 --
 -- The recording travels as the file part of a multipart request; the words
--- come back with their times, and the subtitle file gathers them into cues
--- short enough to read. The version the request is read as travels in a
--- header of its own.
+-- come back with their times, and they are gathered into cues short enough to
+-- read. The version the request is read as travels in a header of its own.
 
 local VERSION = "2024-06-10"
 local CUE_MAX_MS = 12000
@@ -28,25 +27,6 @@ local function chars(text)
   return utf8.len(text) or #text
 end
 
-local function srt_time(ms)
-  local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-  local hours = total // 3600000
-  local minutes = (total // 60000) % 60
-  local seconds = (total // 1000) % 60
-  local millis = total % 1000
-  return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
-end
-
-local function srt_block(index, begin_ms, end_ms, text)
-  return tostring(index)
-    .. "\n"
-    .. srt_time(begin_ms)
-    .. " --> "
-    .. srt_time(end_ms)
-    .. "\n"
-    .. text
-end
-
 local function cues_of(payload)
   local cues = {}
   local held = nil
@@ -60,18 +40,18 @@ local function cues_of(payload)
   for _, word in ipairs(payload.words or {}) do
     local text = clean(word.word or word.text)
     if text ~= "" then
-      local begin_ms = (tonumber(word.start) or 0) * 1000
+      local start_ms = (tonumber(word.start) or 0) * 1000
       local end_ms = (tonumber(word["end"]) or 0) * 1000
       local same = held ~= nil
-        and (begin_ms - held.end_ms) <= 800
-        and (end_ms - held.begin_ms) <= CUE_MAX_MS
+        and (start_ms - held.end_ms) <= 800
+        and (end_ms - held.start_ms) <= CUE_MAX_MS
         and (chars(held.text) + chars(text)) <= CUE_MAX_CHARS
       if same then
         held.end_ms = end_ms
         held.text = held.text .. " " .. text
       else
         flush()
-        held = {begin_ms = begin_ms, end_ms = end_ms, text = text}
+        held = {start_ms = start_ms, end_ms = end_ms, text = text}
       end
     end
   end
@@ -127,17 +107,12 @@ function parse_response(status, headers, body)
     if end_ms <= 0 then
       end_ms = math.min(30000, math.max(2000, chars(whole) * 150))
     end
-    table.insert(cues, {begin_ms = 0, end_ms = end_ms, text = whole})
-  end
-
-  local blocks = {}
-  for index, cue in ipairs(cues) do
-    table.insert(blocks, srt_block(index, cue.begin_ms, cue.end_ms, cue.text))
+    table.insert(cues, {start_ms = 0, end_ms = end_ms, text = whole})
   end
 
   local usage = nil
   if duration > 0 then
     usage = {seconds = duration}
   end
-  return {text = table.concat(blocks, "\n\n") .. "\n", usage = usage}
+  return {cues = cues, usage = usage}
 end

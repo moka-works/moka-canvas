@@ -247,7 +247,8 @@ fn parse_url(name: &str, value: &str) -> LuaResult<url::Url> {
 }
 
 /// One path segment, percent-encoded the way a URL carries it.
-fn encode_segment(text: &str) -> String {    let mut encoded = String::with_capacity(text.len());
+fn encode_segment(text: &str) -> String {
+    let mut encoded = String::with_capacity(text.len());
     for byte in text.bytes() {
         let plain = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
         if plain {

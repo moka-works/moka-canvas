@@ -5,8 +5,8 @@
 --
 -- The recording travels as the file part of one multipart request and the
 -- words come back in the answer, each with the time it was said and, where
--- more than one voice was heard, who said it. The subtitle file is those
--- words gathered into cues short enough to read.
+-- more than one voice was heard, who said it. The cues are those words
+-- gathered short enough to read.
 
 local CUE_MAX_MS = 12000
 local CUE_MAX_CHARS = 48
@@ -55,25 +55,6 @@ local function join_words(held, word)
   return held .. " " .. word
 end
 
-local function srt_time(ms)
-  local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-  local hours = total // 3600000
-  local minutes = (total // 60000) % 60
-  local seconds = (total // 1000) % 60
-  local millis = total % 1000
-  return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
-end
-
-local function srt_block(index, begin_ms, end_ms, text)
-  return tostring(index)
-    .. "\n"
-    .. srt_time(begin_ms)
-    .. " --> "
-    .. srt_time(end_ms)
-    .. "\n"
-    .. text
-end
-
 -- This service names its speakers `speaker_0`; a viewer counts from one.
 local function speaker_number(speaker)
   if speaker == nil then
@@ -106,7 +87,7 @@ local function cues_of(payload, label)
         prefix = speaker_text(label, speaker)
       end
       table.insert(cues, {
-        begin_ms = (tonumber(utterance.start) or 0) * 1000,
+        start_ms = (tonumber(utterance.start) or 0) * 1000,
         end_ms = (tonumber(utterance["end"]) or 0) * 1000,
         speaker = speaker,
         text = prefix .. words,
@@ -130,7 +111,7 @@ local function cues_of(payload, label)
     local kind = word.type
     if text ~= "" and (kind == nil or kind == "word") then
       local speaker = speaker_number(word.speaker_id or word.speaker)
-      local begin_ms = (tonumber(word.start) or 0) * 1000
+      local start_ms = (tonumber(word.start) or 0) * 1000
       local end_ms = (tonumber(word["end"]) or 0) * 1000
       local prefix = ""
       if type(label) == "string" and speaker ~= nil then
@@ -138,8 +119,8 @@ local function cues_of(payload, label)
       end
       local same = held ~= nil
         and held.speaker == speaker
-        and (begin_ms - held.end_ms) <= CUE_GAP_MS
-        and (end_ms - held.begin_ms) <= CUE_MAX_MS
+        and (start_ms - held.end_ms) <= CUE_GAP_MS
+        and (end_ms - held.start_ms) <= CUE_MAX_MS
         and (chars(held.text) + chars(text)) <= CUE_MAX_CHARS
       if same then
         held.end_ms = end_ms
@@ -147,7 +128,7 @@ local function cues_of(payload, label)
       else
         flush()
         held = {
-          begin_ms = begin_ms,
+          start_ms = start_ms,
           end_ms = end_ms,
           speaker = speaker,
           text = prefix .. text,
@@ -215,17 +196,12 @@ function parse_response(status, headers, body, state)
     if end_ms <= 0 then
       end_ms = math.min(30000, math.max(2000, chars(whole) * 150))
     end
-    table.insert(cues, {begin_ms = 0, end_ms = end_ms, text = whole})
-  end
-
-  local blocks = {}
-  for index, cue in ipairs(cues) do
-    table.insert(blocks, srt_block(index, cue.begin_ms, cue.end_ms, cue.text))
+    table.insert(cues, {start_ms = 0, end_ms = end_ms, text = whole})
   end
 
   local usage = nil
   if duration > 0 then
     usage = {seconds = duration}
   end
-  return {text = table.concat(blocks, "\n\n") .. "\n", usage = usage}
+  return {cues = cues, usage = usage}
 end

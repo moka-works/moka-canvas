@@ -142,12 +142,12 @@ Lua 侧是一组钩子，全部可选，脚本导出了哪些钩子就是宿主�
 | 钩子                                         | 用途                                                                                                                                                                       |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `build_request(call, req, inputs)`           | 描述一次调用：`{method, url, headers = {name = value}, body = …}`；当应答需要自己的函数来读取时用 `{request = …, handler = …}`；在发出任何东西之前就拒绝用 `{error = …}`。 |
-| `parse_response(status, headers, body)`      | 把该应答读成 `{text, items, usage, error}`。                                                                                                                               |
+| `parse_response(status, headers, body)`      | 把该应答读成 `{text, items, usage, error}`；识别类结果用 `{cues = {{start_ms, end_ms, text}, …}}` 交回，由宿主写成 SRT。                                                        |
 | `build_stream_request(call, req, inputs)`    | 同上，用于以事件作答的端点；导出它就表示该转换器是流式的。每个事件由 `parse_event(event)` 读取。                                                                           |
 | `build_task_request` / `parse_task_response` | 启动一个比单次请求更长寿的任务；应答用 `{reference = …}` 点名服务商的句柄。                                                                                                |
-| `build_poll_request` / `parse_poll_response` | 看一眼那个任务：`{status = "pending"}`、`{status = "succeeded", result = {items = …}}`、`{status = "failed", error = …}` 或 `{status = "expired"}`。                       |
+| `build_poll_request` / `parse_poll_response` | 看一眼那个任务：`{status = "pending"}`、`{status = "succeeded", result = {items = …}}`（识别结果在 `result.cues`）、`{status = "failed", error = …}` 或 `{status = "expired"}`。                          |
 
-脚本内部，`call` 是 `{url, model}`（完整配置的端点与服务商的模型名），`req` 是 `{prompt, system, capability, params}`，每个输入是 `{role, filename, mime, data_url}`，字节以 base64 编码在 data URL 中。条目可以以 `{url = …}` 报告其字节（宿主去抓取，凭据遵循同样的同源规则）、`{data_url = …}`、`{base64 = …}`，或用 `{raw = true}` 表示应答自身的 body。宿主 API 是 `json`、`base64`、`log` 与 `util`；凭据从不交给脚本。
+脚本内部，`call` 是 `{url, model}`（完整配置的端点与服务商的模型名），`req` 是 `{prompt, system, capability, params}`，每个输入是 `{role, filename, mime, data_url}`，字节以 base64 编码在 data URL 中。条目可以以 `{url = …}` 报告其字节（宿主去抓取，凭据遵循同样的同源规则）、`{data_url = …}`、`{base64 = …}`，或用 `{raw = true}` 表示应答自身的 body。宿主 API 是 `json`、`base64`、`log`、`util`、`url`（`clean`/`append`/`origin`/`drop`/`before`/`swap`/`set_query`/`query`/`replace`，地址不靠字符串拼接）与 `memo_get`/`memo_set`（按协议隔离的进程内记忆）；凭据从不交给脚本。
 
 内置转换器随程序发布：`src-tauri/build.rs` 在编译时嵌入 `src-tauri/converter-scripts/models/` 下的每个目录（畸形的目录会使构建失败），启动时把每一个写入模型根目录，除非那里已部署的版本至少同样新——因此读者编辑过的转换器会保留，直到更高版本的内置版本超过它。本构建不认识的目录永远不会被读取、写入或移除。
 

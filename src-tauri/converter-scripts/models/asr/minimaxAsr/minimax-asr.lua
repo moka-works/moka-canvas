@@ -11,10 +11,10 @@
 --
 -- The answer is asked for in its verbose shape, where the sentences carry
 -- their own times and, where more than one voice was heard, who spoke: the
--- subtitle file is those sentences, one cue each, measured from the beginning
--- of the audio that was sent. Where the answer came back without them the
--- words are one cue under the recording's own length, which is what a
--- recognizer that heard one thing has to say.
+-- cues are those sentences, one each, measured from the beginning of the
+-- audio that was sent. Where the answer came back without them the words are
+-- one cue under the recording's own length, which is what a recognizer that
+-- heard one thing has to say.
 --
 -- The language rides as a header of the request rather than as a field of the
 -- form. A room's field is free text, so a value that is no language tag is
@@ -44,26 +44,6 @@ local function language_of(value)
     return nil
   end
   return word
-end
-
--- Milliseconds as a subtitle clock: HH:MM:SS,mmm.
-local function srt_time(ms)
-  local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-  local hours = total // 3600000
-  local minutes = (total // 60000) % 60
-  local seconds = (total // 1000) % 60
-  local millis = total % 1000
-  return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
-end
-
-local function srt_block(index, begin_ms, end_ms, text)
-  return tostring(index)
-    .. "\n"
-    .. srt_time(begin_ms)
-    .. " --> "
-    .. srt_time(end_ms)
-    .. "\n"
-    .. text
 end
 
 -- "说话人{id}：" with the speaker filled in. The service names its speakers
@@ -114,8 +94,7 @@ function parse_response(status, headers, body, state)
   local duration = tonumber(payload.duration) or 0
   local durationMs = duration * 1000.0
 
-  local blocks = {}
-  local count = 0
+  local cues = {}
   for _, sentence in ipairs(payload.segments or {}) do
     local words = clean(sentence.text)
     if words ~= "" then
@@ -129,12 +108,11 @@ function parse_response(status, headers, body, state)
       if endMs < beginMs then
         endMs = beginMs
       end
-      count = count + 1
-      table.insert(blocks, srt_block(count, beginMs, endMs, prefix .. words))
+      table.insert(cues, {start_ms = beginMs, end_ms = endMs, text = prefix .. words})
     end
   end
 
-  if count == 0 then
+  if #cues == 0 then
     -- No sentences, so whatever was heard is one cue under the recording's
     -- own length; a recording with nothing to say is a refusal rather than an
     -- empty subtitle.
@@ -142,13 +120,12 @@ function parse_response(status, headers, body, state)
     if whole == "" then
       return {error = "no speech was found in the recording"}
     end
-    count = 1
-    table.insert(blocks, srt_block(1, 0, durationMs, whole))
+    table.insert(cues, {start_ms = 0, end_ms = durationMs, text = whole})
   end
 
   local usage = nil
   if duration > 0 then
     usage = {seconds = duration}
   end
-  return {text = table.concat(blocks, "\n\n") .. "\n", usage = usage}
+  return {cues = cues, usage = usage}
 end

@@ -16,9 +16,10 @@
 --   4. GET  {api}/tasks/{task_id}                         poll until done
 --   5. GET  {transcription_url}                           the transcript itself
 --
--- The answer is a subtitle document: one cue per sentence, times measured from
--- the beginning of the audio that was sent. Where that audio sits on a
--- timeline is the caller's business, not this script's.
+-- The answer is read as timed cues: one per sentence, times measured from the
+-- beginning of the audio that was sent. The host writes them as the subtitle
+-- document; where that audio sits on a timeline is the caller's business, not
+-- this script's.
 
 -- How long one speaker's cue may run before the next sentence starts a new
 -- one, and how much of it may say. A recognizer's sentence is often a clause;
@@ -239,34 +240,32 @@ function transcript_url(output)
     return nil
 end
 
--- The last call: the document itself, read into a subtitle file.
+-- The last call: the document itself, read into timed cues.
 function parse_transcription(status, headers, body, state)
     if status < 200 or status >= 300 then
         return {error = "the transcript could not be read (HTTP " .. tostring(status) .. ")"}
     end
     local document = json.decode(body) or {}
     local label = state and state.speakerLabel or nil
-    local srt, cues = transcript_srt(document, label)
-    if cues == 0 then
+    local cues = transcript_cues(document, label)
+    if #cues == 0 then
         return {error = "no speech was found in the recording"}
     end
-    return {status = "succeeded", result = {text = srt}}
+    return {status = "succeeded", result = {cues = cues}}
 end
 
--- The sentences, as a subtitle file.
+-- The sentences, as cues.
 --
 -- Without speaker labels this is one cue per sentence. With them, consecutive
 -- sentences from one speaker are gathered into a cue — a turn rather than a
 -- clause — while the cue stays short enough to read.
-function transcript_srt(document, label)
-    local blocks = {}
-    local count = 0
+function transcript_cues(document, label)
+    local cues = {}
     local held = nil
 
     local function flush()
         if not held then return end
-        count = count + 1
-        table.insert(blocks, srt_block(count, held.beginMs, held.endMs, held.text))
+        table.insert(cues, {start_ms = held.start_ms, end_ms = held.end_ms, text = held.text})
         held = nil
     end
 
@@ -279,25 +278,25 @@ function transcript_srt(document, label)
                 if label and speaker ~= nil then
                     prefix = speaker_text(label, speaker)
                 end
-                local beginMs = sentence.begin_time or 0
-                local endMs = sentence.end_time or beginMs
+                local start_ms = sentence.begin_time or 0
+                local end_ms = sentence.end_time or start_ms
                 local grouped = label and speaker ~= nil
                 -- The label is already part of what is held, so only the words
                 -- joining it are counted.
                 local same = grouped
                     and held
                     and held.speaker == speaker
-                    and (endMs - held.beginMs) <= CUE_MAX_MS
+                    and (end_ms - held.start_ms) <= CUE_MAX_MS
                     and (chars(held.text) + chars(words) + 1) <= CUE_MAX_CHARS
                 if same then
-                    held.endMs = endMs
+                    held.end_ms = end_ms
                     held.text = held.text .. " " .. words
                 else
                     flush()
                     held = {
                         speaker = speaker,
-                        beginMs = beginMs,
-                        endMs = endMs,
+                        start_ms = start_ms,
+                        end_ms = end_ms,
                         text = prefix .. words,
                     }
                 end
@@ -305,7 +304,7 @@ function transcript_srt(document, label)
         end
     end
     flush()
-    return table.concat(blocks, "\n\n") .. "\n", count
+    return cues
 end
 
 -- "说话人{id}：" with the number filled in. The provider counts speakers from
@@ -317,26 +316,6 @@ function speaker_text(label, speaker)
         return tostring(speaker + 1)
     end)
     return text
-end
-
-function srt_block(index, beginMs, endMs, text)
-    return tostring(index)
-        .. "\n"
-        .. srt_time(beginMs)
-        .. " --> "
-        .. srt_time(endMs)
-        .. "\n"
-        .. text
-end
-
--- Milliseconds as a subtitle clock: HH:MM:SS,mmm.
-function srt_time(ms)
-    local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-    local hours = total // 3600000
-    local minutes = (total // 60000) % 60
-    local seconds = (total // 1000) % 60
-    local millis = total % 1000
-    return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
 end
 
 -- A sentence's words on one line, whatever the recognizer spaced them with.

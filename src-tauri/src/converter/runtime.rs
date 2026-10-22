@@ -1184,8 +1184,9 @@ mod tests {
             "https://result.test/1.json"
         );
 
-        // And the document becomes a subtitle file, its times measured from
-        // the beginning of the audio that was sent.
+        // And the document becomes timed cues, their times measured from the
+        // beginning of the audio that was sent. The host writes the subtitle
+        // document; the script says what was said and when.
         let done = rt
             .call_json_value(
                 &asr,
@@ -1200,11 +1201,21 @@ mod tests {
             .unwrap();
         assert_eq!(done["status"], "succeeded");
         assert_eq!(
-            done["result"]["text"],
-            "1\n00:00:00,100 --> 00:00:05,200\n\
-             说话人1：Hello world, 这里是阿里巴巴语音实验室。 第二句。\n\n\
-             2\n00:00:06,000 --> 00:00:07,000\n说话人2：换人了。\n"
+            done["result"]["cues"],
+            serde_json::json!([
+                {
+                    "start_ms": 100,
+                    "end_ms": 5200,
+                    "text": "说话人1：Hello world, 这里是阿里巴巴语音实验室。 第二句。"
+                },
+                {
+                    "start_ms": 6000,
+                    "end_ms": 7000,
+                    "text": "说话人2：换人了。"
+                }
+            ])
         );
+        assert_eq!(done["result"]["text"], serde_json::Value::Null);
     }
 
     #[test]
@@ -1246,10 +1257,24 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            done["result"]["text"],
-            "1\n00:00:00,100 --> 00:00:03,820\nHello world, 这里是阿里巴巴语音实验室。\n\n\
-             2\n00:00:04,000 --> 00:00:05,200\n第二句。\n\n\
-             3\n00:00:06,000 --> 00:00:07,000\n换人了。\n"
+            done["result"]["cues"],
+            serde_json::json!([
+                {
+                    "start_ms": 100,
+                    "end_ms": 3820,
+                    "text": "Hello world, 这里是阿里巴巴语音实验室。"
+                },
+                {
+                    "start_ms": 4000,
+                    "end_ms": 5200,
+                    "text": "第二句。"
+                },
+                {
+                    "start_ms": 6000,
+                    "end_ms": 7000,
+                    "text": "换人了。"
+                }
+            ])
         );
     }
 

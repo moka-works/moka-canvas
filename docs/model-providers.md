@@ -55,7 +55,7 @@
 
 | 厂商              | 转换器          | 认证 / 要点                                    |
 | ----------------- | --------------- | ---------------------------------------------- |
-| OpenAI 兼容       | `openaiAsr`     | 表单上传；`verbose_json` 的分段写成 SRT        |
+| OpenAI 兼容       | `openaiAsr`     | 表单上传；读 `verbose_json` 的分段              |
 | ElevenLabs Scribe | `elevenlabsAsr` | `xi-api-key`；逐词时间与说话人                 |
 | Deepgram          | `deepgramAsr`   | `Authorization: Token`；录音以原始字节发送     |
 | Cartesia Ink      | `cartesiaAsr`   | `Authorization: <key>`；`Cartesia-Version`     |
@@ -63,7 +63,7 @@
 | 阿里云百炼        | `bailianAsr`    | 临时存储上传后异步转写                         |
 | MiniMax           | `minimaxAsr`    | 表单上传，一次返回                             |
 
-识别结果统一写成 SRT；带说话人模板时按模板加前缀，说话人从 1 开始编号。
+转换器只交回带时间的句子（`cues`：`start_ms`、`end_ms`、`text`），SRT 由宿主统一写成；带说话人模板时按模板加前缀，说话人从 1 开始编号。
 
 实时语音（WebSocket / Realtime）不在画布的生成节点模型内：画布按一次请求、一份结果接入，因此各家的批处理接口是这里覆盖的范围。
 

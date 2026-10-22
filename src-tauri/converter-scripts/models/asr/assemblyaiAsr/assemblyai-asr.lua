@@ -35,25 +35,6 @@ local function chars(text)
   return utf8.len(text) or #text
 end
 
-local function srt_time(ms)
-  local total = math.max(0, math.floor((tonumber(ms) or 0) + 0.5))
-  local hours = total // 3600000
-  local minutes = (total // 60000) % 60
-  local seconds = (total // 1000) % 60
-  local millis = total % 1000
-  return string.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
-end
-
-local function srt_block(index, begin_ms, end_ms, text)
-  return tostring(index)
-    .. "\n"
-    .. srt_time(begin_ms)
-    .. " --> "
-    .. srt_time(end_ms)
-    .. "\n"
-    .. text
-end
-
 local function speaker_number(speaker)
   if speaker == nil then
     return nil
@@ -82,7 +63,7 @@ local function cues_of(payload, label)
         prefix = speaker_text(label, speaker)
       end
       table.insert(cues, {
-        begin_ms = tonumber(utterance.start) or 0,
+        start_ms = tonumber(utterance.start) or 0,
         end_ms = tonumber(utterance["end"]) or 0,
         speaker = speaker,
         text = prefix .. words,
@@ -105,7 +86,7 @@ local function cues_of(payload, label)
     local text = clean(word.text)
     if text ~= "" then
       local speaker = speaker_number(word.speaker)
-      local begin_ms = tonumber(word.start) or 0
+      local start_ms = tonumber(word.start) or 0
       local end_ms = tonumber(word["end"]) or 0
       local prefix = ""
       if type(label) == "string" and speaker ~= nil then
@@ -113,8 +94,8 @@ local function cues_of(payload, label)
       end
       local same = held ~= nil
         and held.speaker == speaker
-        and (begin_ms - held.end_ms) <= 800
-        and (end_ms - held.begin_ms) <= CUE_MAX_MS
+        and (start_ms - held.end_ms) <= 800
+        and (end_ms - held.start_ms) <= CUE_MAX_MS
         and (chars(held.text) + chars(text)) <= CUE_MAX_CHARS
       if same then
         held.end_ms = end_ms
@@ -122,7 +103,7 @@ local function cues_of(payload, label)
       else
         flush()
         held = {
-          begin_ms = begin_ms,
+          start_ms = start_ms,
           end_ms = end_ms,
           speaker = speaker,
           text = prefix .. text,
@@ -263,15 +244,10 @@ function parse_poll_response(status, headers, body, state)
     if end_ms <= 0 then
       end_ms = math.min(30000, math.max(2000, chars(whole) * 150))
     end
-    table.insert(cues, {begin_ms = 0, end_ms = end_ms, text = whole})
+    table.insert(cues, {start_ms = 0, end_ms = end_ms, text = whole})
   end
 
-  local blocks = {}
-  for index, cue in ipairs(cues) do
-    table.insert(blocks, srt_block(index, cue.begin_ms, cue.end_ms, cue.text))
-  end
-
-  local result = {text = table.concat(blocks, "\n\n") .. "\n"}
+  local result = {cues = cues}
   if duration > 0 then
     result.usage = {seconds = duration}
   end
