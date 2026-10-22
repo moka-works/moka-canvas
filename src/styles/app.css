@@ -5792,6 +5792,7 @@ body.is-dragging-split {
   gap: 10px;
   overflow: hidden;
   padding: 16px 12px 0;
+  position: relative;
   width: var(--panel-left-width, 300px);
 }
 
@@ -6159,6 +6160,7 @@ body.is-dragging-split {
   gap: 14px;
   overflow-y: auto;
   padding: 16px;
+  position: relative;
   width: var(--panel-right-width, 300px);
 }
 
