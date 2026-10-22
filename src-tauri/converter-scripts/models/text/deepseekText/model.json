@@ -1,0 +1,10 @@
+{
+  "displayName": "DeepSeek · Chat Completions",
+  "labels": { "zh": "DeepSeek · Chat Completions" },
+  "urlExample": "https://api.deepseek.com/chat/completions",
+  "script": "deepseek-chat.lua",
+  "order": 25,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "toolCalling": true },
+  "version": 1
+}

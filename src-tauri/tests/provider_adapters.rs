@@ -4957,6 +4957,10 @@ async fn every_built_in_text_converter_declares_tool_calling() {
         "bailianText",
         "volcengineText",
         "minimaxText",
+        "anthropicMessages",
+        "deepseekText",
+        "moonshotText",
+        "zhipuText",
     ] {
         let entry = registry
             .find(protocol)
@@ -4967,4 +4971,192 @@ async fn every_built_in_text_converter_declares_tool_calling() {
             "{protocol} maps native tools, so the chat must send them"
         );
     }
+}
+
+/// What the Anthropic tests' provider was handed: the two headers this
+/// protocol reads its credential and version from, and the body.
+#[derive(Clone, Default)]
+struct AnthropicSeen(Arc<Mutex<Option<(Option<String>, Option<String>, Value)>>>);
+
+impl AnthropicSeen {
+    fn note(&self, headers: &HeaderMap, body: &Bytes) {
+        let text = |name: &str| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        };
+        let asked = serde_json::from_slice(body).expect("the body is JSON");
+        *self.0.lock().expect("not poisoned") =
+            Some((text("x-api-key"), text("anthropic-version"), asked));
+    }
+
+    fn seen(self) -> (Option<String>, Option<String>, Value) {
+        self.0
+            .lock()
+            .expect("not poisoned")
+            .take()
+            .expect("the provider was asked")
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn anthropic_messages_carry_their_version_key_tools_and_picture() {
+    let recorded = AnthropicSeen::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/messages",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note(&headers, &body);
+                Json(json!({
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Let me look."},
+                        {"type": "tool_use", "id": "call_1", "name": "canvas.get", "input": {"canvasId": "cv_1"}}
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 12, "output_tokens": 7}
+                }))
+            }
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "anthropicMessages",
+        &base_url,
+        "claude-test",
+        Capability::Text,
+        "/v1/messages",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        prompt: "read the canvas".into(),
+        system: Some("be brief".into()),
+        params: json!({"maxTokens": 2048})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        inputs: vec![moka_canvas::generate::GenerateInput {
+            role: InputRole::Reference,
+            asset_id: "plate".into(),
+            window: None,
+        }],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object", "properties": {"canvasId": {"type": "string"}}}),
+        }],
+        tool_choice: Some("auto".into()),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(
+            &call,
+            &request,
+            &[reference("plate", InputRole::Reference)],
+            &Cancel::new(),
+        )
+        .await
+        .expect("the answer is read");
+
+    let (key, version, asked) = recorded.seen();
+    assert_eq!(key.as_deref(), Some(API_KEY));
+    assert_eq!(version.as_deref(), Some("2023-06-01"));
+    assert_eq!(asked["model"], "claude-test");
+    assert_eq!(asked["max_tokens"], 2048);
+    assert_eq!(asked["system"], "be brief");
+    // The system instruction is a field of the request, never a message.
+    assert_eq!(asked["messages"].as_array().map(Vec::len), Some(1));
+    assert_eq!(asked["messages"][0]["role"], "user");
+    assert_eq!(asked["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(asked["messages"][0]["content"][1]["type"], "image");
+    assert_eq!(
+        asked["messages"][0]["content"][1]["source"]["media_type"],
+        "image/png"
+    );
+    assert_eq!(asked["tools"][0]["name"], "canvas.get");
+    assert!(asked["tools"][0]["input_schema"]["properties"]["canvasId"].is_object());
+    assert_eq!(asked["tool_choice"]["type"], "auto");
+
+    assert_eq!(result.text.as_deref(), Some("Let me look."));
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(result.usage.map(|usage| usage.input_tokens), Some(Some(12)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_anthropic_stream_puts_tool_fragments_back_together() {
+    let recorded = AnthropicSeen::default();
+    let answering = recorded.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/messages",
+        post(move |headers: HeaderMap, body: Bytes| {
+            let recorded = answering.clone();
+            async move {
+                recorded.note(&headers, &body);
+                stream(&[
+                    r#"{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}"#,
+                    r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+                    r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Sure"}}"#,
+                    r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"canvas.get"}}"#,
+                    r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"canvasId\":"}}"#,
+                    r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"cv_1\"}"}}"#,
+                    r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}"#,
+                    r#"{"type":"message_stop"}"#,
+                ])
+            }
+        }),
+    ))
+    .await;
+
+    let call = at(
+        "anthropicMessages",
+        &base_url,
+        "claude-test",
+        Capability::Text,
+        "/v1/messages",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Text,
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        messages: vec![moka_canvas::generate::ChatMessage::text("user", "read")],
+        tools: vec![moka_canvas::generate::ToolDef {
+            name: "canvas.get".into(),
+            description: "Read a canvas".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        ..GenerateRequest::default()
+    };
+    let (sink, seen) = watching();
+
+    let result = scripted()
+        .await
+        .generate_stream(&call, &request, &[], &sink, &Cancel::new())
+        .await
+        .expect("the stream is read to its end");
+
+    let (_, _, asked) = recorded.seen();
+    assert_eq!(asked["stream"], true);
+    assert_eq!(asked["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(shown(&seen), "Sure");
+    assert_eq!(result.text.as_deref(), Some("Sure"));
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "canvas.get");
+    assert_eq!(result.tool_calls[0].arguments["canvasId"], "cv_1");
+    assert_eq!(result.finish_reason.as_deref(), Some("tool_calls"));
+    // The counts arrive in two events; the closing one carries both.
+    assert_eq!(result.usage.map(|usage| usage.input_tokens), Some(Some(5)));
+    assert_eq!(result.usage.map(|usage| usage.output_tokens), Some(Some(9)));
 }

@@ -1,0 +1,10 @@
+{
+  "displayName": "Moonshot Kimi · Chat Completions",
+  "labels": { "zh": "月之暗面 Kimi · Chat Completions" },
+  "urlExample": "https://api.moonshot.cn/v1/chat/completions",
+  "script": "moonshot-chat.lua",
+  "order": 35,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "toolCalling": true },
+  "version": 1
+}

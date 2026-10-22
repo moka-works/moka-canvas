@@ -1,0 +1,10 @@
+{
+  "displayName": "Anthropic · Messages",
+  "labels": { "zh": "Anthropic · Messages" },
+  "urlExample": "https://api.anthropic.com/v1/messages",
+  "script": "anthropic-messages.lua",
+  "order": 15,
+  "auth": { "header": "x-api-key", "scheme": "" },
+  "features": { "toolCalling": true },
+  "version": 1
+}

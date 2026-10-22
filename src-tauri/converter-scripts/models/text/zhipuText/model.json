@@ -1,0 +1,10 @@
+{
+  "displayName": "Zhipu GLM · Chat Completions",
+  "labels": { "zh": "智谱 GLM · Chat Completions" },
+  "urlExample": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+  "script": "zhipu-chat.lua",
+  "order": 45,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "toolCalling": true },
+  "version": 1
+}
