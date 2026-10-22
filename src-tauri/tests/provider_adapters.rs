@@ -6098,3 +6098,88 @@ async fn a_zhipu_video_job_is_looked_at_where_its_result_lives() {
     };
     assert_eq!(result.items[0].bytes, b"film");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_luma_uni_generation_is_looked_at_until_the_picture_is_ready() {
+    let posted = Arc::new(Mutex::new(None::<Value>));
+    let answering = posted.clone();
+    let base_url = serve(
+        Router::new()
+            .route(
+                "/v1/generations",
+                post(move |body: Bytes| {
+                    let posted = answering.clone();
+                    async move {
+                        *posted.lock().expect("not poisoned") =
+                            Some(serde_json::from_slice(&body).expect("the body is JSON"));
+                        Json(json!({"id": "gen_1", "state": "queued"}))
+                    }
+                }),
+            )
+            .route(
+                "/v1/generations/gen_1",
+                get(|headers: HeaderMap| async move {
+                    let host = headers
+                        .get("host")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    Json(json!({
+                        "id": "gen_1",
+                        "state": "completed",
+                        "assets": {"images": [{"url": format!("http://{host}/pic.png")}]}
+                    }))
+                }),
+            )
+            .route(
+                "/pic.png",
+                get(|| async { ([(axum::http::header::CONTENT_TYPE, "image/png")], png(3, 3)) }),
+            ),
+    )
+    .await;
+
+    let call = at(
+        "lumaImage",
+        &base_url,
+        "uni-1",
+        Capability::Image,
+        "/v1/generations",
+    );
+    let request = GenerateRequest {
+        capability: Capability::Image,
+        prompt: "a lantern".into(),
+        params: json!({"size": "1024x1024"})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        ..GenerateRequest::default()
+    };
+
+    let result = scripted()
+        .await
+        .generate(
+            &call,
+            &request,
+            &[reference("reference", InputRole::Reference)],
+            &Cancel::new(),
+        )
+        .await
+        .expect("the picture is fetched");
+    let asked = posted
+        .lock()
+        .expect("not poisoned")
+        .take()
+        .expect("the generation was started");
+    assert_eq!(asked["model"], "uni-1");
+    assert_eq!(asked["aspect_ratio"], "1:1");
+    assert!(
+        asked["image_ref"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("data:image/png;base64,"),
+        "{asked}"
+    );
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, png(3, 3));
+    assert_eq!(result.items[0].mime, "image/png");
+}

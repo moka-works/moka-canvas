@@ -1,0 +1,9 @@
+{
+  "displayName": "Luma AI · Uni Image Generation",
+  "labels": { "zh": "Luma AI · Uni 图像生成" },
+  "urlExample": "https://agents.lumalabs.ai/v1/generations",
+  "script": "luma-image.lua",
+  "order": 50,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "version": 1
+}
