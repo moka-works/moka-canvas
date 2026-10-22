@@ -51,6 +51,13 @@ function build_request(call, req, inputs)
   if type(req.params.seed) == "number" then
     body.seed = math.floor(req.params.seed)
   end
+  -- A picture beside the words is what the shot is built on or edited from.
+  for _, input in ipairs(inputs or {}) do
+    if (input.mime or ""):sub(1, 6) == "image/" then
+      body.input_image = input.data_url
+      break
+    end
+  end
 
   return {
     method = "POST",

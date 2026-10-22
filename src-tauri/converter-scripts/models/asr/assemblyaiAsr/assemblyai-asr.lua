@@ -183,6 +183,9 @@ function parse_upload(status, headers, body, state)
     punctuate = true,
     format_text = true,
   }
+  if type(state.model) == "string" and state.model ~= "" then
+    transcript.speech_model = state.model
+  end
   if state.language ~= "" then
     transcript.language_code = state.language
   end
