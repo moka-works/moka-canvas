@@ -4289,7 +4289,10 @@ async fn a_streamed_responses_tool_call_is_aggregated_from_its_deltas() {
     );
     let request = GenerateRequest {
         capability: Capability::Text,
-        params: json!({"stream": true}).as_object().cloned().unwrap_or_default(),
+        params: json!({"stream": true})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
         messages: vec![moka_canvas::generate::ChatMessage::text(
             "user",
             "read the canvas",

@@ -658,15 +658,14 @@ where
                 arguments: arguments_of(&call.arguments),
             })
             .collect();
-        let finish_reason = if !tool_calls.is_empty()
-            && self.finish_reason.as_deref() != Some("length")
-        {
-            // A provider that reports the end of a stream as `stop` has still
-            // asked for tools; the calls are the reason the turn ended.
-            Some("tool_calls".to_string())
-        } else {
-            self.finish_reason
-        };
+        let finish_reason =
+            if !tool_calls.is_empty() && self.finish_reason.as_deref() != Some("length") {
+                // A provider that reports the end of a stream as `stop` has still
+                // asked for tools; the calls are the reason the turn ended.
+                Some("tool_calls".to_string())
+            } else {
+                self.finish_reason
+            };
         Ok(GenerateResult {
             text: (!self.aggregate.is_empty()).then_some(self.aggregate),
             items: Vec::new(),
