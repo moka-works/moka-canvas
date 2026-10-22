@@ -9,9 +9,15 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentRoom } from "../../../api";
 import { AgentDock } from "./AgentDock";
 import { useModelStore } from "../../settings/modelStore";
-import { useAgentStore } from "./agentStore";
+import {
+  AGENT_ROOMS,
+  blankView,
+  useAgentStore,
+  type RoomView,
+} from "./agentStore";
 import { requestApproval, requestQuestion } from "./interaction";
 
 const catalog = {
@@ -46,6 +52,13 @@ function storeBody(url: string): unknown {
   return {};
 }
 
+/** Puts a room's view into the state a test is about. */
+function withView(room: AgentRoom, changes: Partial<RoomView>): void {
+  useAgentStore.setState((state) => ({
+    views: { ...state.views, [room]: { ...state.views[room], ...changes } },
+  }));
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -65,24 +78,20 @@ beforeEach(() => {
   useModelStore.setState({ view: null });
   useAgentStore.setState({
     room: "canvas",
+    views: AGENT_ROOMS.reduce(
+      (views, room) => ({ ...views, [room]: blankView() }),
+      {} as Record<AgentRoom, RoomView>,
+    ),
     sessions: [],
-    session: null,
-    messages: [],
-    busy: false,
-    draft: "",
-    error: null,
-    context: null,
-    warnings: [],
-    plan: null,
-    approval: null,
-    question: null,
-    historyOpen: false,
+    sessionsLoading: false,
+    sessionQuery: "",
+    catalogHash: null,
   });
 });
 
 describe("AgentDock", () => {
   it("shows the room's empty state and sends what is typed", () => {
-    const send = vi.fn();
+    const send = vi.fn(async () => {});
     useAgentStore.setState({ send });
     render(<AgentDock room="canvas" />);
     expect(screen.getByTestId("agent-dock")).toHaveAttribute(
@@ -96,11 +105,11 @@ describe("AgentDock", () => {
       target: { value: "trim the first clip" },
     });
     fireEvent.click(screen.getByText("Send"));
-    expect(send).toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith("canvas");
   });
 
   it("draws a tool record and says how it can be undone", () => {
-    useAgentStore.setState({
+    withView("clip", {
       messages: [
         {
           id: "m1",
@@ -134,7 +143,7 @@ describe("AgentDock", () => {
     render(<AgentDock room="assets" />);
     let approved!: Promise<boolean>;
     act(() => {
-      approved = requestApproval({
+      approved = requestApproval("assets", {
         tool: "asset.delete",
         title: "delete",
         description: "Delete an asset",
@@ -159,7 +168,7 @@ describe("AgentDock", () => {
     render(<AgentDock room="story" />);
     let answered!: Promise<string | null>;
     act(() => {
-      answered = requestQuestion({
+      answered = requestQuestion("story", {
         question: "Delete the three unused takes?",
         options: ["Delete", "Keep"],
       });
@@ -167,6 +176,17 @@ describe("AgentDock", () => {
     await screen.findByTestId("agent-question");
     fireEvent.click(screen.getByText("Keep"));
     await expect(answered).resolves.toBe("Keep");
+  });
+
+  it("keeps one room's trouble in that room", () => {
+    withView("canvas", { error: "the provider refused the request" });
+    render(<AgentDock room="clip" />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+    render(<AgentDock room="canvas" />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "the provider refused the request",
+    );
   });
 
   it("lets the reader pick the model this conversation answers with", () => {
@@ -193,12 +213,12 @@ describe("AgentDock", () => {
     const select = screen.getByLabelText("Model");
     expect(select).toHaveValue("");
     fireEvent.change(select, { target: { value: "writer" } });
-    expect(useAgentStore.getState().model).toBe("writer");
+    expect(useAgentStore.getState().views.canvas.model).toBe("writer");
     expect(select).toHaveValue("writer");
   });
 
   it("draws the plan the model is keeping", () => {
-    useAgentStore.setState({
+    withView("clip", {
       plan: [
         { id: "p1", title: "Read the timeline", status: "done" },
         { id: "p2", title: "Trim the clips", status: "doing" },

@@ -2,6 +2,7 @@ import {
   agentApi,
   agentSessionsApi,
   type AgentMessage,
+  type AgentRoom,
   type AgentTaskKind,
   type AgentTaskStatus,
   type AgentToolCallRecord,
@@ -121,15 +122,14 @@ async function persist(
  * change happened, and an error is put back in front of the model as the
  * observation it has to work with.
  */
-export async function runTurn(text: string): Promise<void> {
-  const store = useAgentStore.getState();
-  const room = store.room;
+export async function runTurn(room: AgentRoom, text: string): Promise<void> {
+  const agent = () => useAgentStore.getState();
   const scope = buildScope(room);
   const turnId = newId();
-  const session = await ensureSession(scope);
+  const session = await ensureSession(room, scope);
 
   const user = messageOf("user", text, turnId, { scope });
-  store.addMessage(user);
+  agent().addMessage(room, user);
   await agentSessionsApi.append(session.id, user);
   void refreshSessionTitle(session.id);
 
@@ -140,8 +140,8 @@ export async function runTurn(text: string): Promise<void> {
   }
 
   const abort = new AbortController();
-  store.setBusy(true, abort);
-  store.setError(null);
+  agent().setBusy(room, true, abort);
+  agent().setError(room, null);
 
   try {
     for (let stepIndex = 0; stepIndex < MAX_STEPS; stepIndex += 1) {
@@ -152,30 +152,30 @@ export async function runTurn(text: string): Promise<void> {
         live: true,
         toolCalls: [],
       });
-      useAgentStore.getState().addMessage(live);
+      agent().addMessage(room, live);
 
       let streamed = "";
       let done;
       try {
         done = await agentApi.chat(
           {
-            model: store.model,
+            model: agent().views[room].model,
             scope,
-            packs: ["core", ...new Set([room, ...store.packs])],
+            packs: ["core", ...new Set([room, ...agent().views[room].packs])],
             clientTools: [...CLIENT_TOOLS],
             catalogHash: catalog.catalogHash,
-            messages: transcriptOf(useAgentStore.getState().messages),
+            messages: transcriptOf(agent().views[room].messages),
             locale: i18n.language,
           },
           {
             onContext: (context) => {
-              const state = useAgentStore.getState();
-              state.setContext(context.counts);
-              state.setWarnings(context.warnings);
+              const state = agent();
+              state.setContext(room, context.counts);
+              state.setWarnings(room, context.warnings);
             },
             onText: (delta) => {
               streamed += delta;
-              useAgentStore.getState().updateMessage(live.id, {
+              agent().updateMessage(room, live.id, {
                 text: streamed,
               });
             },
@@ -183,7 +183,7 @@ export async function runTurn(text: string): Promise<void> {
           abort.signal,
         );
       } catch (error) {
-        useAgentStore.getState().updateMessage(live.id, { live: false });
+        agent().updateMessage(room, live.id, { live: false });
         throw error;
       }
 
@@ -199,7 +199,7 @@ export async function runTurn(text: string): Promise<void> {
         };
       });
       const assistantText = done.text || streamed;
-      useAgentStore.getState().updateMessage(live.id, {
+      agent().updateMessage(room, live.id, {
         live: false,
         text: assistantText,
         toolCalls: calls,
@@ -223,7 +223,7 @@ export async function runTurn(text: string): Promise<void> {
         if (abort.signal.aborted)
           throw new DOMException("stopped", "AbortError");
         const spec = catalog.tools.find((tool) => tool.name === call.name);
-        useAgentStore.getState().updateCall(stepMessage.id, call.id, {
+        agent().updateCall(room, stepMessage.id, call.id, {
           status: "running",
           startedAt: nowIso(),
         });
@@ -238,12 +238,20 @@ export async function runTurn(text: string): Promise<void> {
           result =
             spec.surface === "app"
               ? await runApp(
+                  room,
                   spec,
                   call,
-                  (packs) => useAgentStore.getState().addPacks(packs),
-                  (plan) => useAgentStore.getState().setPlan(plan),
+                  (packs) => agent().addPacks(room, packs),
+                  (plan) => agent().setPlan(room, plan),
                 )
-              : await runServer(spec, call, session.id, turnId, abort.signal);
+              : await runServer(
+                  room,
+                  spec,
+                  call,
+                  session.id,
+                  turnId,
+                  abort.signal,
+                );
           if (result.task) {
             const task = await waitForTask(result.task, abort.signal);
             result.data = { ...(result.data as object), task };
@@ -261,7 +269,7 @@ export async function runTurn(text: string): Promise<void> {
           };
         }
         result.durationMs = Date.now() - started;
-        useAgentStore.getState().updateCall(stepMessage.id, call.id, {
+        agent().updateCall(room, stepMessage.id, call.id, {
           status: result.ok ? "ok" : "error",
           result,
           finishedAt: nowIso(),
@@ -269,9 +277,9 @@ export async function runTurn(text: string): Promise<void> {
         await persist(
           session.id,
           {
-            ...useAgentStore
-              .getState()
-              .messages.find((each) => each.id === stepMessage.id)!,
+            ...agent().views[room].messages.find(
+              (each) => each.id === stepMessage.id,
+            )!,
           },
           true,
         );
@@ -294,26 +302,33 @@ export async function runTurn(text: string): Promise<void> {
       retryable: !stopped,
     };
     const message = messageOf("error", failure.message, turnId, { failure });
-    useAgentStore.getState().addMessage(message);
+    agent().addMessage(room, message);
     try {
       await agentSessionsApi.append(session.id, message);
     } catch {
       // The conversation is already on screen; failing to write the failure
       // down is not a second failure worth hiding the first behind.
     }
-    if (!stopped) useAgentStore.getState().setError(failure.message);
+    if (!stopped) agent().setError(room, failure.message);
   } finally {
-    useAgentStore.getState().setBusy(false, null);
+    agent().setBusy(room, false, null);
   }
 }
 
 async function runApp(
+  room: AgentRoom,
   spec: ToolSpec,
   call: AgentToolCallRecord,
   loadPacks: (packs: string[]) => void,
   setPlan: (plan: import("./types").PlanItem[]) => void,
 ): Promise<AgentToolResult> {
-  const answer = await runAppTool(spec.name, call.input, loadPacks, setPlan);
+  const answer = await runAppTool(
+    room,
+    spec.name,
+    call.input,
+    loadPacks,
+    setPlan,
+  );
   return { ok: true, summary: answer.summary, data: answer.data };
 }
 
@@ -365,6 +380,7 @@ async function destinationFor(
 }
 
 async function runServer(
+  room: AgentRoom,
   spec: ToolSpec,
   call: AgentToolCallRecord,
   sessionId: string,
@@ -377,7 +393,7 @@ async function runServer(
     spec.risk === "destroy" ||
     spec.risk === "export"
   ) {
-    const approved = await requestApproval({
+    const approved = await requestApproval(room, {
       tool: spec.name,
       title: spec.title,
       description: spec.description,

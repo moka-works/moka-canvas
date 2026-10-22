@@ -1,4 +1,4 @@
-import { ApiError, assetsApi } from "../../../api";
+import { ApiError, assetsApi, type AgentRoom } from "../../../api";
 import { exportCanvasImage } from "../../editor/interactions/actions";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useEditorStore } from "../../editor/stores/editorStore";
@@ -30,6 +30,7 @@ const PACKS = new Set(["canvas", "clip", "assets", "story"]);
  * reported as done.
  */
 export async function runAppTool(
+  room: AgentRoom,
   name: string,
   input: Record<string, unknown>,
   loadPacks: (packs: string[]) => void,
@@ -74,7 +75,7 @@ export async function runAppTool(
           (option): option is string => typeof option === "string",
         )
       : [];
-    const answer = await requestQuestion({ question, options });
+    const answer = await requestQuestion(room, { question, options });
     if (answer === null) {
       throw new ApiError({
         code: "USER_CANCELLED",

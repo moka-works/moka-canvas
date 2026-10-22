@@ -122,12 +122,12 @@ function Line({ message }: { message: DockMessage }) {
   );
 }
 
-function SessionsPanel() {
+function SessionsPanel({ room }: { room: AgentRoom }) {
   const { t } = useTranslation();
   const sessions = useAgentStore((state) => state.sessions);
   const query = useAgentStore((state) => state.sessionQuery);
   const loading = useAgentStore((state) => state.sessionsLoading);
-  const session = useAgentStore((state) => state.session);
+  const session = useAgentStore((state) => state.views[room].session);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -138,7 +138,7 @@ function SessionsPanel() {
         aria-label={t("agent:sessions.search")}
         className="agent-search"
         onChange={(event) =>
-          useAgentStore.getState().setSessionQuery(event.target.value)
+          useAgentStore.getState().setSessionQuery(room, event.target.value)
         }
         placeholder={t("agent:sessions.search")}
         value={query}
@@ -162,7 +162,7 @@ function SessionsPanel() {
                     event.preventDefault();
                     void useAgentStore
                       .getState()
-                      .renameSession(each.id, draft)
+                      .renameSession(room, each.id, draft)
                       .then(() => setRenaming(null));
                   }}
                 >
@@ -181,7 +181,7 @@ function SessionsPanel() {
                   <button
                     className="agent-session-open"
                     onClick={() => {
-                      void useAgentStore.getState().loadSession(each.id);
+                      void useAgentStore.getState().loadSession(room, each.id);
                     }}
                     type="button"
                   >
@@ -214,7 +214,7 @@ function SessionsPanel() {
                             setDeleting(null);
                             void useAgentStore
                               .getState()
-                              .deleteSession(each.id);
+                              .deleteSession(room, each.id);
                           }}
                           type="button"
                         >
@@ -246,9 +246,10 @@ function SessionsPanel() {
 /**
  * The assistant, wherever it is mounted.
  *
- * One dock for four rooms: the room prop decides the scope sent with a turn
- * and the tools on offer, while the conversation itself is project-level and
- * follows the reader from one room to another.
+ * One dock for four rooms: the room prop decides the scope sent with a turn,
+ * the tools on offer, and which conversation is shown. Each room keeps its own
+ * transcript, so trouble in one is not carried into another; the list of
+ * conversations is the project's, and any of them can be opened from any room.
  */
 export function AgentDock({
   room,
@@ -258,17 +259,20 @@ export function AgentDock({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const messages = useAgentStore((state) => state.messages);
-  const busy = useAgentStore((state) => state.busy);
-  const draft = useAgentStore((state) => state.draft);
-  const error = useAgentStore((state) => state.error);
-  const standing = useAgentStore((state) => state.context);
-  const warnings = useAgentStore((state) => state.warnings);
-  const plan = useAgentStore((state) => state.plan);
-  const approval = useAgentStore((state) => state.approval);
-  const question = useAgentStore((state) => state.question);
-  const historyOpen = useAgentStore((state) => state.historyOpen);
-  const model = useAgentStore((state) => state.model);
+  const view = useAgentStore((state) => state.views[room]);
+  const {
+    messages,
+    busy,
+    draft,
+    error,
+    context: standing,
+    warnings,
+    plan,
+    approval,
+    question,
+    historyOpen,
+    model,
+  } = view;
   const modelsView = useModelStore((state) => state.view);
   const models = modelOptionsFor(modelsView, "text");
   const defaultModel = models.find(
@@ -282,11 +286,11 @@ export function AgentDock({
   }, [room]);
 
   useEffect(() => {
-    void useAgentStore.getState().refreshSessions();
+    void useAgentStore.getState().refreshSessions(room);
     void loadCatalog().catch(() => {
-      useAgentStore.getState().setError(t("agent:errors.loadCatalog"));
+      useAgentStore.getState().setError(room, t("agent:errors.loadCatalog"));
     });
-  }, [t]);
+  }, [room, t]);
 
   useEffect(() => {
     if (useModelStore.getState().view === null) {
@@ -302,7 +306,7 @@ export function AgentDock({
 
   const send = () => {
     if (draft.trim() === "" || busy) return;
-    void useAgentStore.getState().send();
+    void useAgentStore.getState().send(room);
   };
 
   return (
@@ -318,7 +322,7 @@ export function AgentDock({
           <div className="agent-head-actions">
             <button
               onClick={() => {
-                void useAgentStore.getState().newSession();
+                void useAgentStore.getState().newSession(room);
               }}
               title={t("agent:newSession")}
               type="button"
@@ -328,7 +332,7 @@ export function AgentDock({
             <button
               aria-expanded={historyOpen}
               onClick={() =>
-                useAgentStore.getState().setHistoryOpen(!historyOpen)
+                useAgentStore.getState().setHistoryOpen(room, !historyOpen)
               }
               type="button"
             >
@@ -347,7 +351,7 @@ export function AgentDock({
           disabled={busy}
           id={`agent-model-${room}`}
           onChange={(event) =>
-            useAgentStore.getState().setModel(event.target.value || null)
+            useAgentStore.getState().setModel(room, event.target.value || null)
           }
           value={model ?? ""}
         >
@@ -364,7 +368,7 @@ export function AgentDock({
         </select>
       </div>
 
-      {historyOpen && <SessionsPanel />}
+      {historyOpen && <SessionsPanel room={room} />}
 
       {warnings.length > 0 && (
         <p className="agent-warning" title={warnings.join("\n")}>
@@ -407,7 +411,9 @@ export function AgentDock({
             {question.options.map((option) => (
               <button
                 key={option}
-                onClick={() => useAgentStore.getState().answerQuestion(option)}
+                onClick={() =>
+                  useAgentStore.getState().answerQuestion(room, option)
+                }
                 type="button"
               >
                 {option}
@@ -419,7 +425,7 @@ export function AgentDock({
             onSubmit={(event) => {
               event.preventDefault();
               if (other.trim() === "") return;
-              useAgentStore.getState().answerQuestion(other.trim());
+              useAgentStore.getState().answerQuestion(room, other.trim());
               setOther("");
             }}
           >
@@ -430,7 +436,7 @@ export function AgentDock({
             />
             <button type="submit">{t("agent:question.answer")}</button>
             <button
-              onClick={() => useAgentStore.getState().dismissQuestion()}
+              onClick={() => useAgentStore.getState().dismissQuestion(room)}
               type="button"
             >
               {t("agent:question.dismiss")}
@@ -460,13 +466,13 @@ export function AgentDock({
           <div className="agent-approval-actions">
             <button
               className="is-primary"
-              onClick={() => useAgentStore.getState().approve()}
+              onClick={() => useAgentStore.getState().approve(room)}
               type="button"
             >
               {t("agent:approval.approve")}
             </button>
             <button
-              onClick={() => useAgentStore.getState().deny()}
+              onClick={() => useAgentStore.getState().deny(room)}
               type="button"
             >
               {t("agent:approval.deny")}
@@ -492,7 +498,7 @@ export function AgentDock({
           aria-label={t("agent:composer.placeholder")}
           disabled={busy}
           onChange={(event) =>
-            useAgentStore.getState().setDraft(event.target.value)
+            useAgentStore.getState().setDraft(room, event.target.value)
           }
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -507,7 +513,7 @@ export function AgentDock({
         <div className="agent-composer-actions">
           {busy ? (
             <button
-              onClick={() => useAgentStore.getState().stop()}
+              onClick={() => useAgentStore.getState().stop(room)}
               type="button"
             >
               {t("agent:composer.stop")}

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   agentApi,
   agentSessionsApi,
+  type AgentRoom,
   type AgentScope,
   type AgentSession,
   type AgentSessionSummary,
@@ -22,14 +23,24 @@ import {
   watchInteractions,
 } from "./interaction";
 
-interface AgentState {
-  room: import("../../../api").AgentRoom;
-  sessions: AgentSessionSummary[];
+/** Every room the dock is mounted in, and so every room with a conversation. */
+export const AGENT_ROOMS: readonly AgentRoom[] = [
+  "canvas",
+  "clip",
+  "assets",
+  "story",
+];
+
+/**
+ * What one room's dock is showing.
+ *
+ * A room keeps its own conversation rather than the four sharing one view:
+ * a question asked in the cutting room belongs there, and trouble it ran
+ * into must not follow the reader to the shelf.
+ */
+export interface RoomView {
   session: AgentSession | null;
   messages: DockMessage[];
-  sessionsLoading: boolean;
-  sessionQuery: string;
-  historyOpen: boolean;
   busy: boolean;
   draft: string;
   error: string | null;
@@ -38,342 +49,435 @@ interface AgentState {
   plan: PlanItem[] | null;
   packs: string[];
   model: string | null;
-  catalogHash: string | null;
+  historyOpen: boolean;
   approval: ApprovalView | null;
   question: QuestionView | null;
   abort: AbortController | null;
+}
 
-  refreshSessions: (query?: string) => Promise<void>;
-  newSession: () => Promise<void>;
-  loadSession: (id: string) => Promise<void>;
-  deleteSession: (id: string) => Promise<void>;
-  renameSession: (id: string, title: string) => Promise<void>;
-  setHistoryOpen: (open: boolean) => void;
-  setSessionQuery: (query: string) => void;
-  setRoom: (room: import("../../../api").AgentRoom) => void;
-  setDraft: (draft: string) => void;
-  setModel: (model: string | null) => void;
-  send: () => Promise<void>;
-  stop: () => void;
-  approve: () => void;
-  deny: () => void;
-  answerQuestion: (answer: string) => void;
-  dismissQuestion: () => void;
+export function blankView(): RoomView {
+  return {
+    session: null,
+    messages: [],
+    busy: false,
+    draft: "",
+    error: null,
+    context: null,
+    warnings: [],
+    plan: null,
+    packs: [],
+    model: null,
+    historyOpen: false,
+    approval: null,
+    question: null,
+    abort: null,
+  };
+}
 
-  setMessages: (messages: DockMessage[]) => void;
-  addMessage: (message: DockMessage) => void;
-  updateMessage: (id: string, patch: Partial<DockMessage>) => void;
+function blankViews(): Record<AgentRoom, RoomView> {
+  return AGENT_ROOMS.reduce(
+    (views, room) => ({ ...views, [room]: blankView() }),
+    {} as Record<AgentRoom, RoomView>,
+  );
+}
+
+interface AgentState {
+  /** The room whose dock is mounted; scene for anything not room-addressed. */
+  room: AgentRoom;
+  views: Record<AgentRoom, RoomView>;
+  sessions: AgentSessionSummary[];
+  sessionsLoading: boolean;
+  sessionQuery: string;
+  catalogHash: string | null;
+
+  refreshSessions: (room: AgentRoom, query?: string) => Promise<void>;
+  newSession: (room: AgentRoom) => Promise<void>;
+  loadSession: (room: AgentRoom, id: string) => Promise<void>;
+  deleteSession: (room: AgentRoom, id: string) => Promise<void>;
+  renameSession: (room: AgentRoom, id: string, title: string) => Promise<void>;
+  setHistoryOpen: (room: AgentRoom, open: boolean) => void;
+  setSessionQuery: (room: AgentRoom, query: string) => void;
+  setRoom: (room: AgentRoom) => void;
+  setDraft: (room: AgentRoom, draft: string) => void;
+  setModel: (room: AgentRoom, model: string | null) => void;
+  send: (room: AgentRoom) => Promise<void>;
+  stop: (room: AgentRoom) => void;
+  approve: (room: AgentRoom) => void;
+  deny: (room: AgentRoom) => void;
+  answerQuestion: (room: AgentRoom, answer: string) => void;
+  dismissQuestion: (room: AgentRoom) => void;
+
+  addMessage: (room: AgentRoom, message: DockMessage) => void;
+  updateMessage: (
+    room: AgentRoom,
+    id: string,
+    patch: Partial<DockMessage>,
+  ) => void;
   updateCall: (
+    room: AgentRoom,
     messageId: string,
     callId: string,
     patch: Partial<AgentToolCallRecord>,
   ) => void;
-  setBusy: (busy: boolean, abort?: AbortController | null) => void;
-  setError: (error: string | null) => void;
-  setContext: (context: ContextCounts | null) => void;
-  setWarnings: (warnings: string[]) => void;
-  setPlan: (plan: PlanItem[] | null) => void;
-  addPacks: (packs: string[]) => void;
+  setBusy: (
+    room: AgentRoom,
+    busy: boolean,
+    abort?: AbortController | null,
+  ) => void;
+  setError: (room: AgentRoom, error: string | null) => void;
+  setContext: (room: AgentRoom, context: ContextCounts | null) => void;
+  setWarnings: (room: AgentRoom, warnings: string[]) => void;
+  setPlan: (room: AgentRoom, plan: PlanItem[] | null) => void;
+  addPacks: (room: AgentRoom, packs: string[]) => void;
   setCatalogHash: (hash: string | null) => void;
 }
 
-export const useAgentStore = create<AgentState>()((set, get) => ({
-  room: "canvas",
-  sessions: [],
-  session: null,
-  messages: [],
-  sessionsLoading: false,
-  sessionQuery: "",
-  historyOpen: false,
-  busy: false,
-  draft: "",
-  error: null,
-  context: null,
-  warnings: [],
-  plan: null,
-  packs: [],
-  model: null,
-  catalogHash: null,
-  approval: null,
-  question: null,
-  abort: null,
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-  async refreshSessions(query) {
-    set({ sessionsLoading: true });
-    try {
-      const answered = await agentSessionsApi.list({
-        q: query ?? get().sessionQuery,
-        limit: 40,
-      });
-      set({ sessions: answered.sessions, sessionsLoading: false });
-    } catch (error) {
-      set({
-        sessionsLoading: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  },
+export const useAgentStore = create<AgentState>()((set, get) => {
+  const view = (room: AgentRoom): RoomView => get().views[room];
 
-  async newSession() {
-    if (get().busy) get().stop();
-    if (get().messages.length === 0) return;
-    set({
-      session: null,
-      messages: [],
-      plan: null,
-      error: null,
-      context: null,
-      warnings: [],
-      historyOpen: false,
-      packs: [],
-    });
-  },
+  const patch = (
+    room: AgentRoom,
+    changes: Partial<RoomView> | ((current: RoomView) => Partial<RoomView>),
+  ): void => {
+    set((state) => ({
+      views: {
+        ...state.views,
+        [room]: {
+          ...state.views[room],
+          ...(typeof changes === "function"
+            ? changes(state.views[room])
+            : changes),
+        },
+      },
+    }));
+  };
 
-  async loadSession(id) {
-    if (get().busy) get().stop();
-    set({ sessionsLoading: true, error: null, historyOpen: false });
-    try {
-      const answered = await agentSessionsApi.get(id, { limit: 200 });
-      set({
-        session: answered.session,
-        messages: answered.session.messages,
-        sessionsLoading: false,
+  /** Applies one change to every view, for list-level edits. */
+  const each = (changes: (view: RoomView) => Partial<RoomView>): void => {
+    set((state) => ({
+      views: AGENT_ROOMS.reduce(
+        (views, room) => ({
+          ...views,
+          [room]: { ...state.views[room], ...changes(state.views[room]) },
+        }),
+        {} as Record<AgentRoom, RoomView>,
+      ),
+    }));
+  };
+
+  return {
+    room: "canvas",
+    views: blankViews(),
+    sessions: [],
+    sessionsLoading: false,
+    sessionQuery: "",
+    catalogHash: null,
+
+    async refreshSessions(room, query) {
+      set({ sessionsLoading: true });
+      try {
+        const answered = await agentSessionsApi.list({
+          q: query ?? get().sessionQuery,
+          limit: 40,
+        });
+        set({ sessions: answered.sessions, sessionsLoading: false });
+      } catch (error) {
+        set({ sessionsLoading: false });
+        patch(room, { error: message(error) });
+      }
+    },
+
+    async newSession(room) {
+      if (view(room).busy) get().stop(room);
+      if (view(room).messages.length === 0) return;
+      patch(room, {
+        session: null,
+        messages: [],
         plan: null,
-        model: answered.session.model ?? null,
+        error: null,
+        context: null,
+        warnings: [],
+        historyOpen: false,
+        packs: [],
       });
-    } catch (error) {
-      set({
-        sessionsLoading: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  },
+    },
 
-  async deleteSession(id) {
-    try {
-      await agentSessionsApi.delete(id);
-      const current = get().session;
-      set((state) => ({
-        sessions: state.sessions.filter((session) => session.id !== id),
-        session: current?.id === id ? null : current,
-        messages: current?.id === id ? [] : state.messages,
-      }));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
+    async loadSession(room, id) {
+      if (view(room).busy) get().stop(room);
+      set({ sessionsLoading: true });
+      patch(room, { error: null, historyOpen: false });
+      try {
+        const answered = await agentSessionsApi.get(id, { limit: 200 });
+        set({ sessionsLoading: false });
+        patch(room, {
+          session: answered.session,
+          messages: answered.session.messages,
+          plan: null,
+          model: answered.session.model ?? null,
+        });
+      } catch (error) {
+        set({ sessionsLoading: false });
+        patch(room, { error: message(error) });
+      }
+    },
 
-  async renameSession(id, title) {
-    try {
-      const answered = await agentSessionsApi.patch(id, { title });
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === id ? answered.session : session,
-        ),
-        session:
-          state.session?.id === id
-            ? { ...state.session, title: answered.session.title }
-            : state.session,
-      }));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  setHistoryOpen(open) {
-    set({ historyOpen: open });
-    if (open) void get().refreshSessions();
-  },
-
-  setSessionQuery(query) {
-    set({ sessionQuery: query });
-    void get().refreshSessions(query);
-  },
-
-  setRoom(room) {
-    if (get().room !== room) set({ room });
-  },
-
-  setDraft(draft) {
-    set({ draft });
-  },
-
-  setModel(model) {
-    set({ model });
-    const session = get().session;
-    if (!session) return;
-    void agentSessionsApi
-      .patch(session.id, { model: model ?? "" })
-      .then((answered) => {
+    async deleteSession(room, id) {
+      try {
+        await agentSessionsApi.delete(id);
         set((state) => ({
-          sessions: state.sessions.map((each) =>
-            each.id === session.id ? answered.session : each,
-          ),
-          session:
-            state.session?.id === session.id
-              ? { ...state.session, model: answered.session.model ?? null }
-              : state.session,
+          sessions: state.sessions.filter((session) => session.id !== id),
         }));
-      })
-      .catch((error: unknown) => {
-        set({ error: error instanceof Error ? error.message : String(error) });
-      });
-  },
+        each((current) =>
+          current.session?.id === id
+            ? { session: null, messages: [], plan: null }
+            : {},
+        );
+      } catch (error) {
+        patch(room, { error: message(error) });
+      }
+    },
 
-  async send() {
-    const text = get().draft.trim();
-    if (text === "" || get().busy) return;
-    set({ draft: "", error: null, busy: true });
-    try {
-      const { runTurn } = await import("./loop");
-      await runTurn(text);
-    } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : String(error),
+    async renameSession(room, id, title) {
+      try {
+        const answered = await agentSessionsApi.patch(id, { title });
+        set((state) => ({
+          sessions: state.sessions.map((session) =>
+            session.id === id ? answered.session : session,
+          ),
+        }));
+        each((current) =>
+          current.session?.id === id
+            ? { session: { ...current.session, title: answered.session.title } }
+            : {},
+        );
+      } catch (error) {
+        patch(room, { error: message(error) });
+      }
+    },
+
+    setHistoryOpen(room, open) {
+      patch(room, { historyOpen: open });
+      if (open) void get().refreshSessions(room);
+    },
+
+    setSessionQuery(room, query) {
+      set({ sessionQuery: query });
+      void get().refreshSessions(room, query);
+    },
+
+    setRoom(room) {
+      if (get().room !== room) set({ room });
+    },
+
+    setDraft(room, draft) {
+      patch(room, { draft });
+    },
+
+    setModel(room, model) {
+      patch(room, { model });
+      const session = view(room).session;
+      if (!session) return;
+      void agentSessionsApi
+        .patch(session.id, { model: model ?? "" })
+        .then((answered) => {
+          set((state) => ({
+            sessions: state.sessions.map((each) =>
+              each.id === session.id ? answered.session : each,
+            ),
+          }));
+          each((current) =>
+            current.session?.id === session.id
+              ? {
+                  session: {
+                    ...current.session,
+                    model: answered.session.model ?? null,
+                  },
+                }
+              : {},
+          );
+        })
+        .catch((error: unknown) => patch(room, { error: message(error) }));
+    },
+
+    async send(room) {
+      const text = view(room).draft.trim();
+      if (text === "" || view(room).busy) return;
+      patch(room, { draft: "", error: null, busy: true });
+      try {
+        const { runTurn } = await import("./loop");
+        await runTurn(room, text);
+      } catch (error) {
+        patch(room, {
+          error: message(error),
+          busy: false,
+          abort: null,
+        });
+      }
+    },
+
+    stop(room) {
+      view(room).abort?.abort();
+      // A loop stopped while a person was being asked is a loop whose promise
+      // would otherwise never settle.
+      settleApproval(room, false);
+      settleQuestion(room, null);
+      patch(room, {
         busy: false,
         abort: null,
+        approval: null,
+        question: null,
       });
-    }
-  },
+    },
 
-  stop() {
-    get().abort?.abort();
-    // A loop stopped while a person was being asked is a loop whose promise
-    // would otherwise never settle.
-    settleApproval(false);
-    settleQuestion(null);
-    set({
-      busy: false,
-      abort: null,
-      approval: null,
-      question: null,
-    });
-  },
+    approve(room) {
+      settleApproval(room, true);
+      patch(room, { approval: null });
+    },
 
-  approve() {
-    settleApproval(true);
-    set({ approval: null });
-  },
+    deny(room) {
+      settleApproval(room, false);
+      patch(room, { approval: null });
+    },
 
-  deny() {
-    settleApproval(false);
-    set({ approval: null });
-  },
+    answerQuestion(room, answer) {
+      settleQuestion(room, answer);
+      patch(room, { question: null });
+    },
 
-  answerQuestion(answer) {
-    settleQuestion(answer);
-    set({ question: null });
-  },
+    dismissQuestion(room) {
+      settleQuestion(room, null);
+      patch(room, { question: null });
+    },
 
-  dismissQuestion() {
-    settleQuestion(null);
-    set({ question: null });
-  },
+    addMessage(room, added) {
+      patch(room, (current) => ({ messages: [...current.messages, added] }));
+    },
 
-  setMessages(messages) {
-    set({ messages });
-  },
-
-  addMessage(message) {
-    set((state) => ({ messages: [...state.messages, message] }));
-  },
-
-  updateMessage(id, patch) {
-    set((state) => ({
-      messages: state.messages.map((message) =>
-        message.id === id ? { ...message, ...patch } : message,
-      ),
-      session: state.session
-        ? {
-            ...state.session,
-            messages: state.session.messages.map((message) =>
-              message.id === id ? { ...message, ...patch } : message,
-            ),
-          }
-        : null,
-    }));
-  },
-
-  updateCall(messageId, callId, patch) {
-    set((state) => {
-      const apply = (message: DockMessage): DockMessage => ({
-        ...message,
-        toolCalls: (message.toolCalls ?? []).map((call) =>
-          call.id === callId ? { ...call, ...patch } : call,
+    updateMessage(room, id, changes) {
+      patch(room, (current) => ({
+        messages: current.messages.map((each) =>
+          each.id === id ? { ...each, ...changes } : each,
         ),
-      });
-      return {
-        messages: state.messages.map((message) =>
-          message.id === messageId ? apply(message) : message,
-        ),
-        session: state.session
+        session: current.session
           ? {
-              ...state.session,
-              messages: state.session.messages.map((message) =>
-                message.id === messageId ? apply(message) : message,
+              ...current.session,
+              messages: current.session.messages.map((each) =>
+                each.id === id ? { ...each, ...changes } : each,
               ),
             }
           : null,
-      };
-    });
-  },
+      }));
+    },
 
-  setBusy(busy, abort) {
-    set({ busy, ...(abort === undefined ? {} : { abort }) });
-  },
+    updateCall(room, messageId, callId, changes) {
+      const apply = (each: DockMessage): DockMessage => ({
+        ...each,
+        toolCalls: (each.toolCalls ?? []).map((call) =>
+          call.id === callId ? { ...call, ...changes } : call,
+        ),
+      });
+      patch(room, (current) => ({
+        messages: current.messages.map((each) =>
+          each.id === messageId ? apply(each) : each,
+        ),
+        session: current.session
+          ? {
+              ...current.session,
+              messages: current.session.messages.map((each) =>
+                each.id === messageId ? apply(each) : each,
+              ),
+            }
+          : null,
+      }));
+    },
 
-  setError(error) {
-    set({ error });
-  },
+    setBusy(room, busy, abort) {
+      patch(room, {
+        busy,
+        ...(abort === undefined ? {} : { abort }),
+      });
+    },
 
-  setContext(context) {
-    set({ context });
-  },
+    setError(room, error) {
+      patch(room, { error });
+    },
 
-  setWarnings(warnings) {
-    set({ warnings });
-  },
+    setContext(room, context) {
+      patch(room, { context });
+    },
 
-  setPlan(plan) {
-    set({ plan });
-  },
+    setWarnings(room, warnings) {
+      patch(room, { warnings });
+    },
 
-  addPacks(packs) {
-    set((state) => ({
-      packs: [...new Set([...state.packs, ...packs])],
-    }));
-  },
+    setPlan(room, plan) {
+      patch(room, { plan });
+    },
 
-  setCatalogHash(catalogHash) {
-    set({ catalogHash });
-  },
-}));
+    addPacks(room, packs) {
+      patch(room, (current) => ({
+        packs: [...new Set([...current.packs, ...packs])],
+      }));
+    },
+
+    setCatalogHash(catalogHash) {
+      set({ catalogHash });
+    },
+  };
+});
 
 watchInteractions({
-  approval: (approval) => useAgentStore.setState({ approval }),
-  question: (question) => useAgentStore.setState({ question }),
+  approval: (room, approval) =>
+    useAgentStore.setState((state) => ({
+      views: {
+        ...state.views,
+        [room]: { ...state.views[room], approval },
+      },
+    })),
+  question: (room, question) =>
+    useAgentStore.setState((state) => ({
+      views: {
+        ...state.views,
+        [room]: { ...state.views[room], question },
+      },
+    })),
 });
 
-/** Seeds the store from what is standing when the dock opens. */
-useAgentStore.setState({
-  approval: currentApproval(),
-  question: currentQuestion(),
-});
+/** Seeds each room's view from what is standing when the dock opens. */
+useAgentStore.setState((state) => ({
+  views: AGENT_ROOMS.reduce(
+    (views, room) => ({
+      ...views,
+      [room]: {
+        ...state.views[room],
+        approval: currentApproval(room),
+        question: currentQuestion(room),
+      },
+    }),
+    {} as Record<AgentRoom, RoomView>,
+  ),
+}));
 
 /**
- * The conversation a turn happens in, made on first use.
+ * The conversation a room's turn happens in, made on first use.
  *
  * A session is created with the reader's current room in `lastScope`, so the
  * list can say where the conversation came from without opening it.
  */
-export async function ensureSession(scope: AgentScope): Promise<AgentSession> {
-  const existing = useAgentStore.getState().session;
+export async function ensureSession(
+  room: AgentRoom,
+  scope: AgentScope,
+): Promise<AgentSession> {
+  const existing = useAgentStore.getState().views[room].session;
   if (existing) return existing;
+  const model = useAgentStore.getState().views[room].model;
   const created = await agentSessionsApi.create({
     scope,
-    ...(useAgentStore.getState().model
-      ? { model: useAgentStore.getState().model }
-      : {}),
+    ...(model ? { model } : {}),
   });
   const summary = created.session;
   const session: AgentSession = {
@@ -385,26 +489,43 @@ export async function ensureSession(scope: AgentScope): Promise<AgentSession> {
     lastScope: summary.lastScope ?? scope,
     model: summary.model ?? null,
   };
-  useAgentStore.setState({ session });
-  void useAgentStore.getState().refreshSessions();
+  useAgentStore.setState((state) => ({
+    views: {
+      ...state.views,
+      [room]: { ...state.views[room], session },
+    },
+  }));
+  void useAgentStore.getState().refreshSessions(room);
   return session;
 }
 
-/** Keeps the list's title in step with the server's auto-title. */
+/** Keeps the list's title, and any room showing that session, in step. */
 export async function refreshSessionTitle(sessionId: string): Promise<void> {
   const answered = await agentSessionsApi.list({ limit: 40 });
   const summary = answered.sessions.find((each) => each.id === sessionId);
   if (!summary) return;
   useAgentStore.setState((state) => ({
     sessions: answered.sessions,
-    session:
-      state.session?.id === sessionId
-        ? {
-            ...state.session,
-            title: summary.title,
-            updatedAt: summary.updatedAt,
-          }
-        : state.session,
+    views: AGENT_ROOMS.reduce(
+      (views, room) => {
+        const current = state.views[room];
+        return {
+          ...views,
+          [room]:
+            current.session?.id === sessionId
+              ? {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    title: summary.title,
+                    updatedAt: summary.updatedAt,
+                  },
+                }
+              : current,
+        };
+      },
+      {} as Record<AgentRoom, RoomView>,
+    ),
   }));
 }
 
