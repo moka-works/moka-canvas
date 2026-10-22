@@ -5,5 +5,6 @@
   "script": "black-forest-labs-image.lua",
   "order": 30,
   "auth": { "header": "x-key", "scheme": "" },
+  "features": { "job": true },
   "version": 1
 }

@@ -134,7 +134,7 @@ make set-version 1.2.3
 | `script`      | 本文档旁边的 Lua 文件。必填。                                                                                                                                                                                                      |
 | `order`       | 它在自己的能力内所处的位置，升序，同名按名称排（默认 1000）。                                                                                                                                                                      |
 | `auth`        | 凭据搭载在哪里：除非另有说明，是 `{"header": "Authorization", "scheme": "Bearer"}`；没有 scheme 的密钥用 `{"header": "x-goog-api-key", "scheme": ""}`；不接受凭据的端点用 `{"header": ""}`。只有配置端点同源之内的地址才会拿到它。 |
-| `features`    | 界面读取的自由形式标志，例如 `{"mask": true}` 表示某个图像协议有自己的蒙版字段。                                                                                                                                                   |
+| `features`    | 界面与宿主读取的标志：`mask` 表示图像协议有自己的蒙版字段，`job` 表示这类请求以任务启动、之后再轮询（视频与识别本就如此，图像可借此声明），另有 `toolCalling`、`needsVoice`、`needsReferenceAudio`。                                                       |
 | `version`     | 内置部署据此决定是否接管一个目录（见下）。手写的转换器省略此项。                                                                                                                                                                   |
 
 Lua 侧是一组钩子，全部可选，脚本导出了哪些钩子就是宿主认为自己能做什么：

@@ -81,7 +81,7 @@ local function picture_of(payload)
   return nil
 end
 
-function build_request(call, req, inputs)
+function build_task_request(call, req, inputs)
   local body = {model = call.model, prompt = req.prompt or ""}
   local ratio = aspect_ratio(req.params)
   if ratio ~= nil then
@@ -93,7 +93,6 @@ function build_request(call, req, inputs)
   end
 
   return {
-    state = {collection = collection(call.url)},
     method = "POST",
     url = call.url,
     headers = {["Content-Type"] = "application/json"},
@@ -101,7 +100,9 @@ function build_request(call, req, inputs)
   }
 end
 
-function parse_response(status, headers, body, state)
+-- The handle is the generation's own name; the collection it is looked at in
+-- is derived from the configured address, which every look is handed.
+function parse_task_response(status, headers, body)
   local payload = json.decode(body)
   if type(payload) ~= "table" then
     return {error = "the service answered without a document"}
@@ -114,32 +115,49 @@ function parse_response(status, headers, body, state)
   if job == "failed" then
     return {error = payload.failure_reason or payload.failure or "the generation failed"}
   end
-  if job == "completed" or job == "succeeded" then
-    local url = picture_of(payload)
-    if url == nil then
-      return {error = "the generation finished without a picture"}
-    end
-    return {items = {{url = url}}, usage = {images = 1}}
+  local reference = payload.id
+  if type(reference) ~= "string" or reference == "" then
+    return {error = "the generation started without a handle to look at"}
+  end
+  return {reference = reference, poll_interval_ms = POLL_MS}
+end
+
+function build_poll_request(call, task)
+  return {
+    method = "GET",
+    url = url.append(collection(call.url), task.reference),
+    headers = {},
+  }
+end
+
+function parse_poll_response(status, headers, body)
+  local payload = json.decode(body)
+  if type(payload) ~= "table" then
+    return {status = "failed", error = "the service answered without a document"}
+  end
+  if type(payload.error) == "table" then
+    return {status = "failed", error = payload.error.message or "the request was refused"}
   end
 
-  local polling = (state and state.polling_url) or nil
-  if polling == nil then
-    local reference = payload.id
-    if type(reference) ~= "string" or reference == "" then
-      return {error = "the generation started without a handle to look at"}
-    end
-    local base = (state and state.collection) or ""
-    if base == "" then
-      return {error = "the generation did not say where it may be looked at"}
-    end
-    polling = url.append(base, reference)
+  local job = payload.state or payload.status
+  if job == "failed" then
+    return {
+      status = "failed",
+      error = payload.failure_reason or payload.failure or "the generation failed",
+    }
   end
-  return {
-    state = {polling_url = polling},
-    wait_ms = POLL_MS,
-    next = {
-      request = {method = "GET", url = polling, headers = {}},
-      handler = "parse_response",
-    },
-  }
+  if job == "completed" or job == "succeeded" then
+    local picture = picture_of(payload)
+    if picture == nil then
+      return {status = "failed", error = "the generation finished without a picture"}
+    end
+    return {
+      status = "succeeded",
+      result = {items = {{url = picture}}, usage = {images = 1}},
+    }
+  end
+
+  -- Reasoned about, queued, or a state this script has not met: the generation
+  -- is not finished, and saying anything else would end it early.
+  return {status = "pending", poll_interval_ms = POLL_MS}
 end

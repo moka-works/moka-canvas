@@ -146,6 +146,41 @@ mod tests {
         }
     }
 
+    /// A converter that declares its requests are jobs carries both halves of
+    /// one: a declaration without the hooks would hand a caller a handle
+    /// nothing can start or read.
+    #[test]
+    fn a_converter_that_declares_a_job_exports_the_hooks_for_one() {
+        let runtime = LuaRuntime::new().unwrap();
+        let mut declared = Vec::new();
+        for def in BUILTIN_SCRIPTS {
+            let config = def.model().unwrap_or_else(|e| panic!("{e}"));
+            if !config.features.job {
+                continue;
+            }
+            declared.push(def.id);
+            let script = runtime
+                .load_source(def.id, def.script)
+                .unwrap_or_else(|e| panic!("{} does not load: {e}", def.id));
+            for hook in [
+                "build_task_request",
+                "parse_task_response",
+                "build_poll_request",
+                "parse_poll_response",
+            ] {
+                assert!(
+                    runtime.has_function(&script, hook),
+                    "{} declares a job but exports no {hook}",
+                    def.id
+                );
+            }
+        }
+        assert!(
+            !declared.is_empty(),
+            "the image services that queue their work are the point of the flag"
+        );
+    }
+
     /// What the build embeds is what a deployment ends up holding: a converter
     /// that could not be deployed would be one the program claims to have and
     /// the registry never offers.

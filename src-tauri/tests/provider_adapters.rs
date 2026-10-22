@@ -5541,7 +5541,6 @@ async fn an_elevenlabs_line_is_asked_at_the_chosen_voice_and_stored_as_answered(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_flux_job_is_looked_at_until_its_picture_is_ready() {
     use std::sync::atomic::AtomicUsize;
-    use std::time::{Duration, Instant};
 
     let key = Arc::new(Mutex::new(None::<String>));
     let asked = Arc::new(Mutex::new(None::<Value>));
@@ -5622,16 +5621,34 @@ async fn a_flux_job_is_looked_at_until_its_picture_is_ready() {
         ..GenerateRequest::default()
     };
 
-    let started = Instant::now();
-    let result = scripted()
+    let adapter = scripted().await;
+    let task = adapter
+        .create_task(&call, &request, &[], &Cancel::new())
         .await
-        .generate(&call, &request, &[], &Cancel::new())
+        .expect("the job starts");
+    assert_eq!(
+        task.reference,
+        format!("{base_url}/v1/get_result?id=job_1"),
+        "the handle is the address the job named for looking at it"
+    );
+
+    let look = adapter
+        .poll_task(&call, &task, &Cancel::new())
+        .await
+        .expect("the first look is read");
+    match look {
+        TaskState::Pending { retry_after_ms } => assert_eq!(retry_after_ms, 800),
+        other => panic!("expected a pending look, got {other:?}"),
+    }
+
+    let ready = adapter
+        .poll_task(&call, &task, &Cancel::new())
         .await
         .expect("the picture is fetched");
-    assert!(
-        started.elapsed() >= Duration::from_millis(400),
-        "the poll pause is kept"
-    );
+    let result = match ready {
+        TaskState::Succeeded(result) => result,
+        other => panic!("expected the finished picture, got {other:?}"),
+    };
     assert_eq!(key.lock().expect("not poisoned").as_deref(), Some(API_KEY));
     let asked = asked
         .lock()
@@ -6154,16 +6171,25 @@ async fn a_luma_uni_generation_is_looked_at_until_the_picture_is_ready() {
         ..GenerateRequest::default()
     };
 
-    let result = scripted()
-        .await
-        .generate(
+    let adapter = scripted().await;
+    let task = adapter
+        .create_task(
             &call,
             &request,
             &[reference("reference", InputRole::Reference)],
             &Cancel::new(),
         )
         .await
+        .expect("the generation starts");
+    assert_eq!(task.reference, "gen_1");
+
+    let state = adapter
+        .poll_task(&call, &task, &Cancel::new())
+        .await
         .expect("the picture is fetched");
+    let TaskState::Succeeded(result) = state else {
+        panic!("the job did not finish");
+    };
     let asked = posted
         .lock()
         .expect("not poisoned")

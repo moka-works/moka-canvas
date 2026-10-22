@@ -596,6 +596,122 @@ fn base64(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+/// Whether a capability is served by a job is the converter's declaration: a
+/// service that queues its work says so, and one that answers in the call
+/// that asks says nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn whether_a_picture_works_through_a_job_is_what_its_converter_says() {
+    let rig = rig().await;
+    rig.serving(
+        "http://127.0.0.1:9",
+        vec![
+            model_via(
+                "flux",
+                Capability::Image,
+                Protocol::new("blackForestLabsImage"),
+            ),
+            model("gpt-image-3", Capability::Image),
+        ],
+    )
+    .await;
+
+    let mut queued = request(Capability::Image, "a cat", json!({}));
+    queued.model = "flux".into();
+    assert!(
+        rig.gateway
+            .takes_job(&queued)
+            .await
+            .expect("the model resolves"),
+        "a queued picture service is a job"
+    );
+
+    let mut whole = request(Capability::Image, "a cat", json!({}));
+    whole.model = "gpt-image-3".into();
+    assert!(
+        !rig.gateway
+            .takes_job(&whole)
+            .await
+            .expect("the model resolves"),
+        "a picture answered in the call is not a job"
+    );
+}
+
+/// A queued picture reaches a caller as one answer: the gateway starts the job
+/// and waits it out, so a route that answers with a picture needs no handle.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_picture_is_started_and_waited_out_for_the_caller() {
+    let watched = Watch::default();
+    let answering = watched.clone();
+    let polls = Arc::new(AtomicUsize::new(0));
+    let counting = Arc::clone(&polls);
+    let base_url = serve_aware(|base| {
+        let polling = format!("{base}/v1/result");
+        let picture = format!("{base}/made.png");
+        Router::new()
+            .route(
+                "/v1/lua/flux",
+                post(move |body: Bytes| {
+                    let watched = answering.clone();
+                    let polling = polling.clone();
+                    async move {
+                        watched.note(Some(body));
+                        Json(json!({ "id": "job_1", "polling_url": polling }))
+                    }
+                }),
+            )
+            .route(
+                "/v1/result",
+                get(move || {
+                    let counting = Arc::clone(&counting);
+                    let picture = picture.clone();
+                    async move {
+                        if counting.fetch_add(1, Ordering::SeqCst) == 0 {
+                            return Json(json!({"id": "job_1", "status": "Pending"}));
+                        }
+                        Json(json!({
+                            "id": "job_1",
+                            "status": "Ready",
+                            "result": {"sample": picture}
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/made.png",
+                get(|| async { ([(header::CONTENT_TYPE, "image/png")], encoded(3, 2)) }),
+            )
+    })
+    .await;
+
+    let rig = rig().await;
+    rig.serving(
+        &base_url,
+        vec![model_via(
+            "flux",
+            Capability::Image,
+            Protocol::new("blackForestLabsImage"),
+        )],
+    )
+    .await;
+    rig.default(Capability::Image, "flux").await;
+
+    let result = rig
+        .gateway
+        .image(
+            &rig.assets,
+            request(Capability::Image, "a cat", json!({})),
+            &Cancel::new(),
+        )
+        .await
+        .expect("the picture arrives");
+
+    assert_eq!(watched.times(), 1, "the job was started once");
+    assert_eq!(polls.load(Ordering::SeqCst), 2, "one look, then ready");
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].bytes, encoded(3, 2));
+    assert_eq!(result.items[0].mime, "image/png");
+}
+
 /// An endpoint a test routes only to find out whether it was asked. The answer
 /// type is declared so that reaching it can be a bare panic.
 async fn not_for_an_edit() -> Response {

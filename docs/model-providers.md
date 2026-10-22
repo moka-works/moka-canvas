@@ -72,13 +72,14 @@
 | 厂商              | 转换器                 | 认证 / 要点                                 |
 | ----------------- | ---------------------- | ------------------------------------------- |
 | OpenAI 兼容       | `openaiImages`         | 表单与遮罩编辑                              |
-| Black Forest Labs | `blackForestLabsImage` | `x-key`；任务轮询，参考图作为 `input_image` |
+| Black Forest Labs | `blackForestLabsImage` | `x-key`；任务队列，参考图作为 `input_image` |
+| Luma AI           | `lumaImage`            | `Authorization: Bearer`；任务队列，参考图作为 `image_ref` |
 | 智谱 GLM          | `zhipuImage`           | `Authorization: Bearer`；返回地址或 base64  |
 | 阿里云百炼        | `bailianImage`         | DashScope 多模态端点                        |
 | 火山方舟          | `volcengineImage`      | Ark 图像端点                                |
 | MiniMax           | `minimaxImage`         | —                                           |
 
-图像生成在画布里是同步调用；需要轮询的转换器用回复里的 `wait_ms` 让宿主在两次查询之间等待。
+图像生成多数是一次调用就答完；在 `model.json` 里声明 `"features": {"job": true}` 的转换器（目前是 `blackForestLabsImage`、`lumaImage`）走任务队列：宿主启动任务并轮询，调用方拿到的仍是一份结果。
 
 ## 视频生成
 

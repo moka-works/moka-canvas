@@ -33,6 +33,10 @@ use super::media::{load_inputs, AudioWindow, MediaInput};
 use super::models::{resolve_within, ModelRepo, ResolvedModel};
 use super::{AsyncTask, Cancel, DeltaSink, GenerateRequest, GenerateResult, InputRole, TaskState};
 
+/// How long between two looks at a job whose provider gave no hint. The
+/// providers that state one are obeyed; this is for the ones that do not.
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(2500);
+
 /// One generation, resolved and ready to send.
 ///
 /// Holds the plaintext credential for as long as it is alive, which is why it
@@ -88,19 +92,44 @@ impl Gateway {
     }
 
     /// A picture, with or without something to edit or imitate.
+    ///
+    /// Most services draw in the call that asks; a few work through a queue
+    /// and say so in their converter. The caller sees one answer either way:
+    /// a job is started and waited out here, so a route that answers with the
+    /// picture does not have to know which kind of service it reached.
     pub async fn image(
         &self,
         session: &Arc<FsProjectStore>,
         request: GenerateRequest,
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
-        self.answer(
-            session,
-            stamped(request, Capability::Image),
-            &DeltaSink::default(),
-            cancel,
-        )
-        .await
+        let request = stamped(request, Capability::Image);
+        if !self.takes_job(&request).await? {
+            return self
+                .answer(session, request, &DeltaSink::default(), cancel)
+                .await;
+        }
+        let task = self.image_job(session, request, cancel).await?;
+        let result = self.wait_out(session, &task.id, cancel).await;
+        // The job was placed for this call alone, so its note is dropped with
+        // it rather than left for a collector nobody appointed.
+        self.settle_job(session, &task.id).await;
+        result
+    }
+
+    /// A picture, started rather than waited out.
+    ///
+    /// For a caller that keeps the handle itself — a run that writes it down
+    /// before waiting, so a process that stops in between can collect what it
+    /// paid for.
+    pub async fn image_job(
+        &self,
+        session: &Arc<FsProjectStore>,
+        request: GenerateRequest,
+        cancel: &Cancel,
+    ) -> Result<AsyncTask, ProviderError> {
+        self.start_job(session, stamped(request, Capability::Image), cancel)
+            .await
     }
 
     /// Speech.
@@ -163,6 +192,20 @@ impl Gateway {
     ) -> Result<AsyncTask, ProviderError> {
         self.start_job(session, stamped(request, Capability::Asr), cancel)
             .await
+    }
+
+    /// Whether the model this request would reach works through a job rather
+    /// than answering in the call that asks.
+    ///
+    /// A capability does not imply the shape: most image services draw at
+    /// once, and the few that queue say so in their own converter. Asked
+    /// before anything is started, so a caller that keeps the handle knows
+    /// whether there will be one.
+    pub async fn takes_job(&self, request: &GenerateRequest) -> Result<bool, ProviderError> {
+        let snapshot = self.models.snapshot().await?;
+        let scene = scene_of(request);
+        let resolved = resolve_within(&snapshot, &request.model, request.capability, scene)?;
+        Ok(converter_features(&resolved.protocol).job)
     }
 
     /// One job started, whichever capability asked for it.
@@ -332,6 +375,44 @@ impl Gateway {
     /// The jobs being tracked.
     pub fn tasks(&self) -> &TaskRegistry {
         &self.tasks
+    }
+
+    /// Waits out a job this call placed, one look at a time.
+    ///
+    /// The ceiling is the deployment's, so a job a provider forgot ends as a
+    /// timeout rather than as a call that never returns. A hint the provider
+    /// gave about when to come back is obeyed; the default only covers the
+    /// providers that give none.
+    async fn wait_out(
+        &self,
+        session: &Arc<FsProjectStore>,
+        task: &str,
+        cancel: &Cancel,
+    ) -> Result<GenerateResult, ProviderError> {
+        let ceiling = self.poll_ceiling();
+        for _ in 0..ceiling {
+            let delay = match self.poll(session, task, cancel).await? {
+                TaskState::Succeeded(result) => return Ok(result),
+                TaskState::Failed { message, retryable } => {
+                    return Err(if retryable {
+                        ProviderError::Unreachable(message)
+                    } else {
+                        ProviderError::Rejected(message)
+                    })
+                }
+                TaskState::Pending { retry_after_ms } => {
+                    if retry_after_ms > 0 {
+                        Duration::from_millis(retry_after_ms)
+                    } else {
+                        DEFAULT_POLL_INTERVAL
+                    }
+                }
+            };
+            cancel.wait(delay).await?;
+        }
+        Err(ProviderError::Timeout(format!(
+            "the job was still running after {ceiling} looks at it"
+        )))
     }
 
     /// One answer, waited out or read as it arrives.
@@ -629,6 +710,7 @@ fn speakable(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), 
 struct Features {
     needs_voice: bool,
     needs_reference_audio: bool,
+    job: bool,
 }
 
 fn converter_features(protocol: &Protocol) -> Features {
@@ -642,6 +724,7 @@ fn converter_features(protocol: &Protocol) -> Features {
     Features {
         needs_voice: entry.features.needs_voice,
         needs_reference_audio: entry.features.needs_reference_audio,
+        job: entry.features.job,
     }
 }
 

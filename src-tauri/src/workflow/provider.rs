@@ -398,13 +398,28 @@ impl WorkflowExecutor for ProviderExecutor {
         request: ExecutionRequest,
     ) -> Result<Option<PlacedJob>, ExecutionError> {
         let generation = asked_for(&request)?;
-        // Only a shot is a job. Everything else answers inside the call that
-        // asks, and there is nothing to write down in between.
-        if generation.capability != Capability::Video {
+        // Whether a capability is served by a job is the converter's
+        // declaration rather than the capability's: a shot always is, and a
+        // picture is only where the configured service queues one.
+        let job = match generation.capability {
+            Capability::Video => true,
+            Capability::Image => self
+                .gateway
+                .takes_job(&generation)
+                .await
+                .map_err(step_error)?,
+            _ => false,
+        };
+        if !job {
             return Ok(None);
         }
         let cancel = self.in_flight.flag(&request.run_id);
-        let task = match self.gateway.video(session, generation, &cancel).await {
+        let started = if generation.capability == Capability::Video {
+            self.gateway.video(session, generation, &cancel).await
+        } else {
+            self.gateway.image_job(session, generation, &cancel).await
+        };
+        let task = match started {
             Ok(task) => task,
             Err(error) => {
                 self.in_flight.release(&request.run_id);

@@ -5,5 +5,6 @@
   "script": "luma-image.lua",
   "order": 50,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "features": { "job": true },
   "version": 1
 }

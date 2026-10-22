@@ -4,9 +4,9 @@
 --   https://docs.bfl.ai/api-reference/tasks/generate-an-image
 --
 -- The address a configuration carries starts a job; the answer names where
--- the job may be looked at, and each look is the same reader until the job is
--- ready. A look that is not ready asks to be asked again shortly, which the
--- host turns into a pause rather than a request with nothing to read.
+-- the job may be looked at, which is the handle this script hands over. Each
+-- look is a call of its own until the job is ready, and a look that is not
+-- ready says how soon to come back.
 --
 -- The picture is left at an address the provider names, and the host fetches
 -- it from there.
@@ -41,7 +41,7 @@ local function extent(params)
   return aligned(width), aligned(height)
 end
 
-function build_request(call, req, inputs)
+function build_task_request(call, req, inputs)
   local body = {prompt = req.prompt or ""}
   local width, height = extent(req.params)
   if width ~= nil then
@@ -78,7 +78,10 @@ local function refusal(payload)
   return nil
 end
 
-function parse_response(status, headers, body, state)
+-- The handle a look is asked at is the address the job named for it, carried
+-- whole: this service's jobs are looked at where they say, not at a path the
+-- configured address implies.
+function parse_task_response(status, headers, body)
   local payload = json.decode(body)
   if type(payload) ~= "table" then
     return {error = "the service answered without a document"}
@@ -87,26 +90,44 @@ function parse_response(status, headers, body, state)
   if refused ~= nil then
     return {error = refused}
   end
+  local polling = payload.polling_url or payload.pollingUrl
+  if type(polling) ~= "string" or polling == "" then
+    return {error = "the job started without an address to look at"}
+  end
+  return {reference = polling, poll_interval_ms = POLL_MS}
+end
+
+function build_poll_request(call, task)
+  return {
+    method = "GET",
+    url = task.reference,
+    headers = {},
+  }
+end
+
+function parse_poll_response(status, headers, body)
+  local payload = json.decode(body)
+  if type(payload) ~= "table" then
+    return {status = "failed", error = "the service answered without a document"}
+  end
+  local refused = refusal(payload)
+  if refused ~= nil then
+    return {status = "failed", error = refused}
+  end
 
   if payload.status == "Ready" then
     local result = payload.result or {}
     local url = result.sample or result.url
     if type(url) ~= "string" or url == "" then
-      return {error = "the job finished without a picture"}
+      return {status = "failed", error = "the job finished without a picture"}
     end
-    return {items = {{url = url}}, usage = {images = 1}}
+    return {
+      status = "succeeded",
+      result = {items = {{url = url}}, usage = {images = 1}},
+    }
   end
 
-  local polling = (state and state.polling_url) or payload.polling_url or payload.pollingUrl
-  if type(polling) ~= "string" or polling == "" then
-    return {error = "the job started without an address to look at"}
-  end
-  return {
-    state = {polling_url = polling},
-    wait_ms = POLL_MS,
-    next = {
-      request = {method = "GET", url = polling, headers = {}},
-      handler = "parse_response",
-    },
-  }
+  -- Pending, or a status this script has not met: the job is not finished, and
+  -- saying anything else would end it early.
+  return {status = "pending", poll_interval_ms = POLL_MS}
 end
