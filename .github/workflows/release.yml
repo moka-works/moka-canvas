@@ -123,7 +123,10 @@ jobs:
       - name: Build macOS bundles
         if: runner.os == 'macOS'
         shell: bash
-        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json --target "${{ matrix.target }}" --bundles dmg
 
       - name: Build combined macOS PKG
         if: runner.os == 'macOS'
@@ -138,15 +141,26 @@ jobs:
       - name: Build Windows NSIS installer
         if: runner.os == 'Windows'
         shell: bash
-        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json --target "${{ matrix.target }}" --bundles nsis
 
-      - name: Build Linux bundles
+      - name: Build Linux packages
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          for bundle in deb rpm appimage; do
+          for bundle in deb rpm; do
             npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles "$bundle"
           done
+
+      - name: Build Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json --target "${{ matrix.target }}" --bundles appimage
 
       - name: Collect release assets
         run: node scripts/collect-release.mjs
@@ -250,6 +264,9 @@ jobs:
             --source artifacts \
             --dest dist \
             --version "${GITHUB_REF_NAME#v}" \
+            --tag "${GITHUB_REF_NAME}" \
+            --repo moka-works/moka-canvas \
+            --notes-file release-notes.md \
             --require-all
 
       - name: Create or update draft release
@@ -270,4 +287,4 @@ jobs:
               --title "Moka Canvas ${GITHUB_REF_NAME}" \
               --notes-file release-notes.md
           fi
-          gh release upload "${GITHUB_REF_NAME}" dist/moka-canvas-* dist/moka-cli-* dist/SHA256SUMS.txt --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/moka-canvas-* dist/moka-cli-* dist/latest.json dist/SHA256SUMS.txt --clobber
