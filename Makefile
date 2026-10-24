@@ -185,6 +185,8 @@ prepare-release: ## Collect release artifacts (SOURCE -> DEST)
 		--source "$(SOURCE)" \
 		--dest "$(DEST)" \
 		$(if $(VERSION),--version "$(VERSION)",) \
+		$(if $(TAG),--tag "$(TAG)",) \
+		$(if $(NOTES),--notes-file "$(NOTES)",) \
 		$(if $(REQUIRE_ALL),--require-all,)
 
 clean: ## Remove build outputs

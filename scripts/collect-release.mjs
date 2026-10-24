@@ -10,14 +10,22 @@ const targetDir = process.env.CARGO_TARGET_DIR ?? cargoTargetDir(root);
 const releaseDir = join(root, "release");
 const extensions = new Set([
   ".dmg",
+  ".pkg",
   ".msi",
   ".exe",
   ".deb",
   ".rpm",
   ".AppImage",
+  // The updater archive and the signatures over every updater artifact.
+  ".gz",
+  ".sig",
 ]);
-// deb and AppImage separate the version with underscores, rpm with dashes.
-const versionTags = [`_${pkg.version}_`, `-${pkg.version}-`];
+// Installers separate the version with underscores, dashes, or a dot before
+// the extension, so the number stands on its own rather than in a fixed pair
+// of separators.
+const versionPattern = new RegExp(
+  `(?:^|[^0-9])${pkg.version.replace(/\./g, "\\.")}(?![0-9])`,
+);
 
 const bundleRoots = [join(targetDir, "release", "bundle")];
 for (const entry of await readdir(targetDir, { withFileTypes: true })) {
@@ -28,7 +36,15 @@ for (const entry of await readdir(targetDir, { withFileTypes: true })) {
 
 const artifacts = [];
 for (const bundleRoot of bundleRoots) {
-  for (const bundleType of ["dmg", "msi", "nsis", "deb", "rpm", "appimage"]) {
+  for (const bundleType of [
+    "dmg",
+    "macos",
+    "msi",
+    "nsis",
+    "deb",
+    "rpm",
+    "appimage",
+  ]) {
     const dir = join(bundleRoot, bundleType);
     let entries;
     try {
@@ -37,9 +53,13 @@ for (const bundleRoot of bundleRoots) {
       continue;
     }
     for (const entry of entries) {
+      // The macOS updater archive is named after the app bundle and carries no
+      // version of its own; the directory it sits in says which build it is.
+      const updaterArchive =
+        bundleType === "macos" && /\.app\.tar\.gz(\.sig)?$/.test(entry.name);
       if (
         !entry.isFile() ||
-        !versionTags.some((tag) => entry.name.includes(tag))
+        (!updaterArchive && !versionPattern.test(entry.name))
       ) {
         continue;
       }
