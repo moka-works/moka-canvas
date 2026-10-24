@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cargoTargetDir } from "./checkout.mjs";
+import { ensureFonts } from "./fetch-fonts.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -40,6 +41,7 @@ const extension = triple.includes("windows") ? ".exe" : "";
 const targetDir = process.env.CARGO_TARGET_DIR ?? cargoTargetDir(root);
 
 console.log(`Building moka for ${triple}`);
+await ensureFonts();
 execFileSync(
   "cargo",
   [

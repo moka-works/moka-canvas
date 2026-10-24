@@ -35,7 +35,7 @@ export CARGO_INCREMENTAL ?= 0
 endif
 endif
 
-.PHONY: help install check check-deps check-boundaries check-version release-check test web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
+.PHONY: help install fonts check check-deps check-boundaries check-version release-check test web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
 
 .DEFAULT_GOAL := help
 
@@ -58,7 +58,12 @@ set-version: ## Sync the version across the four files (make set-version <semver
 install: ## Install npm dependencies
 	npm ci
 
-check: web-build check-boundaries ## Run the full pre-commit gate
+# The burn-in faces are not in this history: they are fetched, pinned by hash,
+# before anything that compiles the crate (see scripts/fetch-fonts.mjs).
+fonts: ## Fetch the clip burn-in faces this checkout lacks
+	node scripts/fetch-fonts.mjs
+
+check: web-build check-boundaries fonts ## Run the full pre-commit gate
 	npm run format:check
 	npm run lint
 	npm run typecheck
@@ -86,7 +91,7 @@ check-version: ## Verify the version agrees across the four files
 
 release-check: check-version check ## Verify the version, then run the full check
 
-test: ## Run the frontend and Rust test suites
+test: fonts ## Run the frontend and Rust test suites
 	npm test
 	cargo test --manifest-path $(CARGO_MANIFEST)
 
@@ -105,18 +110,18 @@ check-deps: ## Verify the installed npm dependencies are complete
 web-build: check-deps ## Build the frontend into dist/
 	npm run build
 
-web-serve: web-build ## Build and serve the web app (HOST and PORT override the address)
+web-serve: web-build fonts ## Build and serve the web app (HOST and PORT override the address)
 	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT) $(WORKTREE_METADATA_FLAG)
 
-tauri-dev: web-build ## Run the desktop shell
+tauri-dev: web-build fonts ## Run the desktop shell
 	npm run tauri dev
 
 # The CLI is built ahead of every installer: the bundle asks for a sidecar and
 # a missing one fails the build long after the expensive compile.
-cli: ## Build the moka CLI sidecar
+cli: fonts ## Build the moka CLI sidecar
 	node scripts/build-cli.mjs
 
-package-web: web-build ## Package the web server build for deployment
+package-web: web-build fonts ## Package the web server build for deployment
 	cargo build --release --manifest-path $(CARGO_MANIFEST) --bin moka-server --bin moka
 	node scripts/package-web.mjs
 
@@ -128,7 +133,7 @@ package-macos: web-build cli ## Package the macOS DMG and CLI
 
 # The target is named explicitly so one command covers both hosts: Apple
 # Silicon cross-compiles the Intel bundle, Intel builds it natively.
-package-macos-x86: web-build ## Package the Intel macOS DMG and CLI
+package-macos-x86: web-build fonts ## Package the Intel macOS DMG and CLI
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos-x86 must run on macOS.' >&2; exit 1)
 	@rustup target list --installed | grep -q "$(MACOS_X86_TARGET)" || rustup target add $(MACOS_X86_TARGET)
 	node scripts/build-cli.mjs --target $(MACOS_X86_TARGET)
@@ -159,7 +164,7 @@ package-linux: web-build cli ## Package the Linux deb, rpm and AppImage bundles
 	node scripts/collect-release.mjs
 	node scripts/package-cli.mjs
 
-cross-package-windows: web-build ## Cross-package the Windows NSIS installer from macOS
+cross-package-windows: web-build fonts ## Cross-package the Windows NSIS installer from macOS
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'cross-package-windows must run on macOS.' >&2; exit 1)
 	@command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || (printf '%s\n' 'mingw-w64 is required: brew install mingw-w64' >&2; exit 1)
 	@command -v makensis >/dev/null 2>&1 || (printf '%s\n' 'makensis is required: brew install makensis' >&2; exit 1)

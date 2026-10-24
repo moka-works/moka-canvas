@@ -11,6 +11,8 @@
 | Rust 工具链 | stable | 包含 `cargo` 与 `rustup`              |
 | Tauri CLI   | 2.x    | 作为开发依赖安装（`@tauri-apps/cli`） |
 
+剪辑烧录字幕所用的 Inter 与 Noto Sans SC 不随仓库分发：任何编译 Rust 的 `make` 目标都会先运行 `scripts/fetch-fonts.mjs`，从 [moka-works/assets](https://github.com/moka-works/assets) 下载这两份字体（约 11 MB），并按脚本里固定的 SHA-256 校验；字体已就位且哈希匹配时不会联网。直接调用 `cargo` 前先运行 `make fonts`。
+
 [Tauri 前置条件](https://tauri.app/start/prerequisites/) 是打包工具链的上游参考；本项目中各主机具体需要什么见下文。
 
 ## 平台前置条件

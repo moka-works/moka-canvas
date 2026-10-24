@@ -8,9 +8,11 @@
 //! face to a plain Regular, so its name reads the way the renderer matches —
 //! answers for Chinese and everything else that reaches past Latin.
 //!
-//! Both are SIL Open Font License works, vendored with their licenses beside
-//! them in `assets/fonts`. The reserved name in Noto Sans SC's license is
-//! 'Source', which the family kept here does not carry.
+//! Both are SIL Open Font License works, kept with their licenses in
+//! moka-works/assets rather than in this history: `scripts/fetch-fonts.mjs`
+//! downloads them (pinned by SHA-256) before anything compiles this crate, and
+//! `include_bytes!` below needs them in place. The reserved name in Noto Sans
+//! SC's license is 'Source', which the family kept here does not carry.
 
 use std::path::Path;
 

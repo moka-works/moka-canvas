@@ -11,6 +11,8 @@ Prerequisites and commands for building and packaging Moka Canvas on each host.
 | Rust toolchain | stable  | Includes `cargo` and `rustup`                     |
 | Tauri CLI      | 2.x     | Installed as a dev dependency (`@tauri-apps/cli`) |
 
+The Inter and Noto Sans SC faces the clip burn-in writes in do not ship with this repository: every Make target that compiles Rust runs `scripts/fetch-fonts.mjs` first, which downloads them (about 11 MB) from [moka-works/assets](https://github.com/moka-works/assets) and verifies the SHA-256 pinned in the script, without touching the network when they are already in place. Run `make fonts` before invoking `cargo` directly.
+
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) is the upstream reference for the bundling toolchains; what each host needs for this project is below.
 
 ## Platform prerequisites

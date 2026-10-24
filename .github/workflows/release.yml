@@ -113,6 +113,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Fetch the clip burn-in fonts
+        run: node scripts/fetch-fonts.mjs
+
       - name: Build the moka CLI
         shell: bash
         run: node scripts/build-cli.mjs --target "${{ matrix.target }}"
@@ -190,6 +193,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Fetch the clip burn-in fonts
+        run: node scripts/fetch-fonts.mjs
 
       - name: Build web package
         run: make package-web
