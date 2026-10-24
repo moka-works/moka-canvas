@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { SecretStorageChoice } from "../../api";
 import { CAPABILITY_LABELS } from "../../shared/domain";
 import { useLocale, type LocaleMode } from "../../shared/i18n";
+import { UpdateSection } from "../update/UpdateSection";
 import { useModelStore } from "./modelStore";
 import { SecretStorageNote } from "./SecretStorageNote";
 
@@ -62,7 +63,12 @@ export function SystemTab() {
   const [managing, setManaging] = useState(false);
 
   if (!view) {
-    return <p className="settings-hint">{t("settings:loading")}</p>;
+    return (
+      <div className="settings-section">
+        <UpdateSection />
+        <p className="settings-hint">{t("settings:loading")}</p>
+      </div>
+    );
   }
 
   const options = view.secretStorageOptions ?? ["file"];
@@ -100,6 +106,7 @@ export function SystemTab() {
 
   return (
     <div className="settings-section">
+      <UpdateSection />
       <LanguageChoice />
 
       <h3 className="settings-heading">{t("settings:system.storage")}</h3>

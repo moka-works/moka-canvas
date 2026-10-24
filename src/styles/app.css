@@ -812,6 +812,85 @@ button.room-choice:hover .room-choice-arrow,
   gap: 8px;
 }
 
+.update-available {
+  display: grid;
+  gap: 8px;
+}
+
+.update-version {
+  font-weight: 600;
+  margin: 0;
+}
+
+.update-notes-heading {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+/* Release notes are text, not a document: the manifest is remote input and is
+   drawn as the words it carries, never as markup. */
+.update-notes {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.update-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.update-progress-bar {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.update-progress-bar > span {
+  background: var(--primary);
+  display: block;
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.update-progress-bar > span.is-indeterminate {
+  animation: update-progress-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes update-progress-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.update-status {
+  color: var(--success);
+  font-size: 13px;
+  margin: 0;
+}
+
+.update-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .settings-columns {
   display: grid;
   gap: 12px;

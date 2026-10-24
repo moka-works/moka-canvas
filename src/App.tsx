@@ -11,6 +11,7 @@ import { SavePathHost } from "./features/editor/launcher/SavePathHost";
 import { useAppStore } from "./features/editor/stores/appStore";
 import { SettingsDialog } from "./features/settings/SettingsDialog";
 import { useModelStore } from "./features/settings/modelStore";
+import { UpdateStartupCheck } from "./features/update/UpdateStartupCheck";
 
 // The board, the cutting room, the story room, and the room the project's
 // files are read in are the heaviest rooms of the app, and none of them is
@@ -97,6 +98,7 @@ export default function App() {
         {phase === "director" && <DirectorPage />}
       </Suspense>
       <SettingsDialog />
+      <UpdateStartupCheck />
       <SavePathHost />
       <Toasts />
     </ErrorBoundary>

@@ -166,6 +166,26 @@
   "guidance": {
     "configMetadataKeyMissing": "The master key protecting stored credentials is missing. Start the server with MOKA_METADATA_KEY set — `moka-server --generate-key` prints a value — or put back the <metadata.dir>/master.key that belongs to this directory. A key created from now on cannot open credentials sealed with the missing one."
   },
+  "update": {
+    "title": "Application updates",
+    "currentVersion": "Version {{version}}",
+    "loadingVersion": "Reading the installed version…",
+    "versionFailed": "The installed version could not be read: {{reason}}",
+    "check": "Check for updates",
+    "checking": "Checking for updates…",
+    "upToDate": "You're on the latest version.",
+    "available": "Version {{version}} is available.",
+    "released": "Released {{date}}",
+    "notes": "What's new",
+    "download": "Download and install",
+    "downloading": "Downloading {{percent}}%",
+    "downloadingUnknown": "Downloading…",
+    "confirmInstall": "Moka Canvas will download the update and restart. Finish any running generation or export first. Continue?",
+    "noUpdate": "No update has been checked for yet. Check for updates first.",
+    "error": "The update could not be completed: {{reason}}",
+    "availableToast": "Moka Canvas {{version}} is available.",
+    "open": "View update"
+  },
   "errors": {
     "load": "Failed to load settings",
     "saveModel": "Failed to save the model",

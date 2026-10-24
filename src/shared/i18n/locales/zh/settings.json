@@ -166,6 +166,26 @@
   "guidance": {
     "configMetadataKeyMissing": "保护已存储凭据的主密钥缺失。请设置 MOKA_METADATA_KEY 后启动服务器——`moka-server --generate-key` 会打印一个值——或恢复属于该目录的 <metadata.dir>/master.key。此后新建的密钥无法打开用缺失密钥加密的凭据。"
   },
+  "update": {
+    "title": "应用更新",
+    "currentVersion": "版本 {{version}}",
+    "loadingVersion": "正在读取已安装的版本…",
+    "versionFailed": "无法读取已安装的版本：{{reason}}",
+    "check": "检查更新",
+    "checking": "正在检查更新…",
+    "upToDate": "已是最新版本。",
+    "available": "发现新版本 {{version}}。",
+    "released": "发布于 {{date}}",
+    "notes": "更新内容",
+    "download": "下载并安装",
+    "downloading": "正在下载 {{percent}}%",
+    "downloadingUnknown": "正在下载…",
+    "confirmInstall": "将下载更新并重启 Moka Canvas。请先结束正在进行的生成或导出。继续？",
+    "noUpdate": "还没有可安装的更新，请先检查更新。",
+    "error": "更新未能完成：{{reason}}",
+    "availableToast": "Moka Canvas {{version}} 已发布。",
+    "open": "查看更新"
+  },
   "errors": {
     "load": "加载设置失败",
     "saveModel": "保存模型失败",
