@@ -33,6 +33,9 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![updater_supported])
         .setup(|app: &mut tauri::App| -> Result<(), Box<dyn Error>> {
             // A failure here is answered on the spot rather than returned:
             // Tauri raises a setup error as a panic inside
@@ -102,6 +105,31 @@ fn start(app: &mut tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Whether this installation can replace itself with a downloaded update.
+///
+/// A development build is not an installed package, so its updater would only
+/// report a bundle that does not exist. Linux replaces an AppImage in place;
+/// deb and rpm installations belong to their package manager and are left out.
+#[tauri::command]
+fn updater_supported() -> bool {
+    updater_supported_in(
+        cfg!(debug_assertions),
+        std::env::consts::OS,
+        std::env::var_os("APPIMAGE").is_some(),
+    )
+}
+
+fn updater_supported_in(debug: bool, os: &str, appimage: bool) -> bool {
+    if debug {
+        return false;
+    }
+    match os {
+        "macos" | "windows" => true,
+        "linux" => appimage,
+        _ => false,
+    }
+}
+
 /// Says why the app could not start — in the log file and in a dialog, since a
 /// double-clicked program has nobody watching its stderr — and ends the
 /// process once the dialog is dismissed.
@@ -116,4 +144,29 @@ fn report_startup_failure(app: &tauri::App, error: &anyhow::Error) {
         .title("Moka Canvas")
         .kind(MessageDialogKind::Error)
         .show(|_| std::process::exit(1));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::updater_supported_in;
+
+    #[test]
+    fn development_builds_do_not_update_in_place() {
+        for os in ["macos", "windows", "linux"] {
+            assert!(!updater_supported_in(true, os, true));
+        }
+    }
+
+    #[test]
+    fn linux_updates_only_an_appimage() {
+        assert!(updater_supported_in(false, "linux", true));
+        assert!(!updater_supported_in(false, "linux", false));
+    }
+
+    #[test]
+    fn installed_macos_and_windows_bundles_update() {
+        assert!(updater_supported_in(false, "macos", false));
+        assert!(updater_supported_in(false, "windows", false));
+        assert!(!updater_supported_in(false, "android", true));
+    }
 }

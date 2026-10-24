@@ -6,7 +6,7 @@ description = "Local-first visual video workflow editor"
 authors = ["Moka Canvas"]
 license = "Apache-2.0"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [lib]
 name = "moka_canvas"
@@ -40,7 +40,9 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }

@@ -14,6 +14,17 @@
       "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3Njk4RTUxMTE2NzdCMzQKUldRMGUyY1JVWTVweDdmZGdiRVpDZGNEb0N4b0p3ZWdsTlc1OGJzbStVZG0raHZ4WitHU0RWZkUK",
+      "endpoints": [
+        "https://github.com/moka-works/moka-canvas/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

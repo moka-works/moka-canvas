@@ -24,6 +24,8 @@
     "@react-three/fiber": "^9.8.2",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.0",
     "bson": "^7.3.2",
     "i18next": "^26.4.2",
     "leafer-ui": "^1.9.0",
