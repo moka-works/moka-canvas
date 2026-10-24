@@ -486,6 +486,41 @@ assume. Run it on the reference machine before a release, together with:
 3. The acceptance record from that run (`note/acceptance-<date>.md`,
    local) with its conclusion line quoted in the release commit.
 
+## In-app updates (desktop)
+
+Run this against a signed updater build — the CI release, or a local build
+that merged both `tauri.release.conf.json` and `tauri.updater.conf.json`.
+
+1. Install the previous release by hand first: 0.3.1 and earlier have no
+   updater and cannot be updated from inside the app.
+2. The update entry appears only where the installation can replace itself:
+   macOS `.app` (DMG), Windows NSIS, and Linux AppImage. It is absent in the
+   web build, `tauri dev`, and Linux deb/rpm.
+3. Settings → System shows the installed version; **Check for updates** finds
+   the newer release with its version, date, and plain-text notes.
+4. **Download and install** asks before restarting; progress reaches 100%,
+   the app restarts (Windows hands over to the NSIS installer), and the
+   version shown afterwards is the new one.
+5. Reopen an old project: document, assets, model configurations, keys,
+   recent projects, and preferences are all intact.
+6. Inject failures — no network, a missing `latest.json`, and a corrupted
+   update package: a manual check shows the real reason and leaves the app
+   running; the startup check shows no toast and only records the failure
+   where Settings will show it.
+7. Relaunch within 24 hours of a check: no second startup check is made.
+8. After publishing, fetch `releases/latest/download/latest.json` and confirm
+   its version and platform keys (`darwin-*` and `darwin-*-app`,
+   `windows-x86_64` and `windows-x86_64-nsis`, and `linux-x86_64-appimage`
+   only), then confirm each URL returns 200. A draft release is not visible
+   to clients.
+9. Platform checks: macOS `codesign --verify --strict` still passes on the
+   replaced bundle; Windows keeps its install location, language,
+   shortcuts, and `.moka` association with one uninstall entry; the AppImage
+   keeps its executable bit and reports a permission error when run from a
+   read-only directory.
+10. Never delete published assets to roll back: mark a bad release as a
+    prerelease and publish a higher patch; clients only move forward.
+
 ## Known limitations
 
 Intended behaviour, recorded here so a tester does not file it as a defect.
@@ -510,12 +545,17 @@ Intended behaviour, recorded here so a tester does not file it as a defect.
    metadata directories wait for a database-backed store. Serve a web
    build only where the operator means everyone to share what they
    configured.
+4. **In-app updates cover three install forms only.** macOS `.app`, Windows
+   NSIS, and Linux AppImage update themselves; MSI, deb/rpm, and the web
+   build keep their own upgrade path, and the update entry is hidden there.
+   Updates are full packages with no staged rollout, and 0.3.1 or earlier
+   must be replaced by hand once.
 
 ## Sign-off
 
-| Platform | Build | Date | Result | Notes |
-| -------- | ----- | ---- | ------ | ----- |
-| Web      |       |      |        |       |
-| macOS    |       |      |        |       |
-| Windows  |       |      |        |       |
-| Linux    |       |      |        |       |
+| Platform | Build | Date | Updates | Result | Notes |
+| -------- | ----- | ---- | ------- | ------ | ----- |
+| Web      |       |      | n/a     |        |       |
+| macOS    |       |      |         |        |       |
+| Windows  |       |      |         |        |       |
+| Linux    |       |      |         |        |       |

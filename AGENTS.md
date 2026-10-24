@@ -17,6 +17,7 @@
 | `make install`                                                                                                             | `npm ci`                                                                                                                                                                               |
 | `make fonts`                                                                                                               | 下载剪辑烧录字幕用的两份字体（约 11 MB，按固定哈希校验；编译类目标会自动先跑）                                                                                                         |
 | `make check`                                                                                                               | **提交前硬门槛**：前端构建 + 边界检查 + prettier 检查 + eslint + tsc + vitest + cargo fmt/clippy（`-D warnings`）/ test                                                                |
+| `make release-check`                                                                                                       | `make check-version` + `make check`；发布前运行，tag 与四处版本必须一致                                                                                                                |
 | `make web-serve`                                                                                                           | 构建前端并由 `moka-server` 提供，http://127.0.0.1:8080（地址与端口由 `HOST`/`PORT` 覆盖，默认 127.0.0.1 与 8080；`HOST=0.0.0.0` 等于对同网段开放，而这条路径上没有鉴权）               |
 | `npm run dev`                                                                                                              | Vite 开发服务器（1420，`/api` 代理到 127.0.0.1 上的 `PORT`（默认 8080），需另行起服务器）                                                                                              |
 | `make tauri-dev`                                                                                                           | 运行桌面壳                                                                                                                                                                             |
@@ -24,13 +25,15 @@
 | `make package-web` / `package-macos` / `package-macos-x86` / `package-windows` / `package-linux` / `cross-package-windows` | 打包（平台限定见 Makefile）                                                                                                                                                            |
 | `make set-version X.Y.Z`                                                                                                   | 同步四处版本号，勿手改                                                                                                                                                                 |
 
-前置：Node.js 22+、npm 10+、Rust stable（桌面打包另需各平台原生依赖，见 `BUILD.md`）。ffmpeg（≥5.0、带 libass）只有剪辑导出与自动字幕需要，可用 `MOKA_FFMPEG` 或配置 `clip.ffmpegPath` 指定；其余功能不依赖。
+桌面自动更新的签名私钥只在本机与 GitHub Actions Secrets；`src-tauri/tauri.updater.conf.json` 仅由发布构建合并，日常 `make package-*` 不生成 `.sig`，也不应把私钥写进仓库或构建产物。
+
+前置：Node.js 22+、npm 10+、Rust stable（≥ 1.90；桌面打包另需各平台原生依赖，见 `BUILD.md`）。ffmpeg（≥5.0、带 libass）只有剪辑导出与自动字幕需要，可用 `MOKA_FFMPEG` 或配置 `clip.ffmpegPath` 指定；其余功能不依赖。
 
 并行 worktree：qoder 建的 worktree 会把 `src-tauri/target` 软链到主检出。首次 `make`（或 e2e 启动器）会把该软链替换成该 worktree 自己的目录，`make web-serve` 还会用 `--metadata-dir` 给它一个位于检出目录之外的元数据目录（默认目录被谁占用谁锁住，两个服务器无法共用一个）——此后各 worktree 的 cargo 锁、`target/debug/<binary>`、sccache 键与服务器状态互不相干；主检出保持 `src-tauri/target` 与平台默认元数据目录不变。**直接**调用 `cargo` 前先跑一次 `node scripts/checkout.mjs` 完成替换；字体未下载时先跑 `make fonts`（两份约 11 MB 的烧录字体不随仓库分发，由脚本按固定哈希取回）。装有 `sccache` 时 `make` 与 e2e 会自动以它为 `RUSTC_WRAPPER`、设置 `SCCACHE_BASEDIR` 并关掉增量编译（sccache 不缓存增量；元数据目录只走命令行参数，因为环境变量的差异会击穿缓存键），主检出与各 worktree 在同一相对布局下共享编译缓存；显式设 `CARGO_INCREMENTAL=1` 可换回增量（见 `scripts/checkout.mjs`）。
 
 ## 仓库地图
 
-- `src/`——React 前端。`features/{editor,clip,story,assets,settings,assistant,director}` 按功能划分、`App.tsx` 懒加载；zustand store 在各 feature 的 `stores/`；HTTP 调用只经 `src/api/*`；`shared/i18n/`（i18next，en/zh）、`components/`、`styles/`。导演台（3D 舞台）在 `features/director/`，其领域模型在 `shared/domain/director.ts`、编解码在 `directorCodec.ts`。
+- `src/`——React 前端。`features/{editor,clip,story,assets,settings,assistant,director,update}` 按功能划分、`App.tsx` 懒加载；zustand store 在各 feature 的 `stores/`；HTTP 调用只经 `src/api/*`；`shared/i18n/`（i18next，en/zh）、`components/`、`styles/`。导演台（3D 舞台）在 `features/director/`，其领域模型在 `shared/domain/director.ts`、编解码在 `directorCodec.ts`。
 - `src-tauri/`——Rust crate `moka-canvas`：`api/`（路由与结构化 problem 响应）、`project/` `metadata/` `assets/` `domain/`（含导演台场景 `domain/director.rs`）`imaging/`（存储与本地图片运算）、`generate/` `converter/` `workflow/` `story/` `clip/`（模型网关、Lua 转换器、生成与导出）、`prompts.rs`（minijinja 模板）。两个二进制：`moka-canvas`（桌面）与 `moka-server`（Web 服务器）。`tests/` 为集成测试，`resources/native-config.yaml` 是桌面默认配置。
 - `e2e/`——Playwright 规格（按功能命名，如 `canvas-*`、`clip-*`、`story-*`、`assets-*`、`critical-path`）+ `helpers.ts`、`mock-provider.ts`。
 - `fixtures/`——示例 `.moka` 文档与媒体文件；`scripts/`——`set-version`、`package-web`、`collect-release`、`build-favicon`、`e2e-server` 等；`config/moka.example.yaml`——配置样例；`docs/`——部署、安全、发布检查清单；`BUILD.md` / `BUILD_EN.md`——构建指南（中文 / 英文）。

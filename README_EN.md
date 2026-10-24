@@ -36,7 +36,7 @@ View detail document: [https://moka-canvas.art](https://moka-canvas.art)
 
 ### 1. Choose how it runs
 
-- **Desktop app** (macOS, Windows, Linux): install it and go — made for personal work, with keys held by the system keychain;
+- **Desktop app** (macOS, Windows, Linux): install it and go — made for personal work, with keys held by the system keychain, and it updates itself in place (use the AppImage on Linux);
 - **Self-hosted**: run the program on a machine of your own and reach it through a browser — for machines with no desktop, or for putting it on an intranet;
 - **From source**: the developer route, needing Node.js 22+ and a Rust toolchain; the details are in the [build guide](BUILD_EN.md).
 
@@ -70,7 +70,7 @@ The projects menu in the top-left corner switches between the four modules at an
 
 - **Project content** (canvas documents, assets, stories, and run records) lives in the project folder you chose: copy the whole folder and the project travels complete;
 - **Application state** (model configurations, API keys, preferences, the recent-projects list) lives in the system's application-data directory — `~/Library/Application Support/MokaCanvas/` on macOS, `%APPDATA%\MokaCanvas\` on Windows — and does not travel with a project; keys are stored encrypted, written but never read back;
-- No account, no cloud sync, and no telemetry: the only network requests are the ones to the model endpoints you configured.
+- No account, no cloud sync, and no telemetry: the only network requests are the ones to the model endpoints you configured, plus one daily update check in the desktop app (the web build has no update entry).
 
 Video export and auto subtitles need ffmpeg 5.0 or newer on the machine (an open-source video tool; you need a full build with libass support, and how to install one is in the [build guide](BUILD_EN.md)). The director desk also uses the same ffmpeg to turn a blocking reference into MP4; without it the WebM recording is kept and said so. Everything else carries on as usual.
 

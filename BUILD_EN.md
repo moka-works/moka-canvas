@@ -4,12 +4,12 @@ Prerequisites and commands for building and packaging Moka Canvas on each host.
 
 ## Common prerequisites
 
-| Tool           | Version | Notes                                             |
-| -------------- | ------- | ------------------------------------------------- |
-| Node.js        | 22+     | LTS recommended                                   |
-| npm            | 10+     | Ships with Node.js                                |
-| Rust toolchain | stable  | Includes `cargo` and `rustup`                     |
-| Tauri CLI      | 2.x     | Installed as a dev dependency (`@tauri-apps/cli`) |
+| Tool           | Version       | Notes                                                  |
+| -------------- | ------------- | ------------------------------------------------------ |
+| Node.js        | 22+           | LTS recommended                                        |
+| npm            | 10+           | Ships with Node.js                                     |
+| Rust toolchain | stable ≥ 1.90 | Includes `cargo` and `rustup`; the updater requires it |
+| Tauri CLI      | 2.x           | Installed as a dev dependency (`@tauri-apps/cli`)      |
 
 The Inter and Noto Sans SC faces the clip burn-in writes in do not ship with this repository: every Make target that compiles Rust runs `scripts/fetch-fonts.mjs` first, which downloads them (about 11 MB) from [moka-works/assets](https://github.com/moka-works/assets) and verifies the SHA-256 pinned in the script, without touching the network when they are already in place. Run `make fonts` before invoking `cargo` directly.
 
@@ -273,6 +273,58 @@ make clean
 ```
 
 Removes `dist/`, `release/`, `src-tauri/target/`, and TypeScript build caches (`node_modules/.tmp`).
+
+## In-app updates and release builds
+
+A desktop installation can update itself: Settings → System → Application updates checks on request, and the launcher checks silently once a day (never more often than every 24 hours). Nothing is downloaded and nothing restarts until the reader confirms. The web build has no such entry.
+
+| Form                            | Update package | In-app updates |
+| ------------------------------- | -------------- | -------------- |
+| macOS `.app` (DMG install)      | `.app.tar.gz`  | Yes            |
+| Windows NSIS                    | `-setup.exe`   | Yes            |
+| Linux AppImage                  | `.AppImage`    | Yes            |
+| Windows MSI, Linux deb/rpm, Web | —              | No             |
+| `tauri dev` and debug builds    | —              | No             |
+
+MSI, deb, and rpm upgrade through their installer or package manager; the web build follows the deployment flow in `docs/deployment.md`.
+
+The update source is the public repository's `https://github.com/moka-works/moka-canvas/releases/latest/download/latest.json`, so the repository must stay public and the client carries no GitHub credentials. The manifest only lists URLs and signatures; every update package is signed with minisign, and the public key built into the client is the root of trust.
+
+### Update signing key
+
+`plugins.updater.pubkey` in `src-tauri/tauri.conf.json` holds the public key itself. The private key belongs only on the development machine and in GitHub Actions Secrets:
+
+```sh
+npx tauri signer generate -w ~/.tauri/moka-canvas-updater.key
+```
+
+- `TAURI_SIGNING_PRIVATE_KEY`: the private key file's contents, not a path;
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: set only when the key has a password.
+
+Losing or rotating the private key means installed clients cannot verify new packages and every user has to install once by hand; never overwrite a key that has shipped.
+
+### Local signed build
+
+The everyday `make package-*` targets do not create update signatures and need no key. To exercise updates locally, merge `src-tauri/tauri.updater.conf.json`, which turns on `createUpdaterArtifacts` for release builds:
+
+```sh
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/moka-canvas-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""   # the real password when the key has one
+npm run tauri build -- \
+  --config src-tauri/tauri.release.conf.json \
+  --config src-tauri/tauri.updater.conf.json \
+  --bundles appimage
+```
+
+The output gains an `.AppImage.sig`; macOS produces `.app.tar.gz` plus `.sig`, and Windows produces `-setup.exe.sig`. `scripts/collect-release.mjs` copies them into `release/` with the rest.
+
+### Release flow
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`. All four platform builds run with the update key; the `publish` job then uses `scripts/prepare-release.mjs` to normalize asset names, require a `.sig` for every update package, extract notes from `CHANGELOG.md`, and write `latest.json`, which is uploaded to a **draft** release. Publish the draft by hand once it checks out; `/releases/latest` only points at published releases, so clients never see a draft.
+
+The manifest uses fixed platform keys: macOS writes both `darwin-<arch>` and `darwin-<arch>-app`, Windows writes both `windows-x86_64` and `windows-x86_64-nsis`, and Linux writes **only** `linux-x86_64-appimage` so a deb/rpm install never falls back to an AppImage it cannot install.
+
+v0.3.1 and earlier have no updater and cannot bootstrap: the first release that carries one (0.3.2) must be installed by hand once, after which updates happen in the app.
 
 ## Signing and notarization
 

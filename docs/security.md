@@ -300,6 +300,25 @@ the layer starts from an empty one. Nothing is silently zeroed:
 The quarantine copy is preserved so the user can inspect what was lost. It is
 excluded from exports under the credential rule above.
 
+## Application updates
+
+Desktop builds from 0.3.2 on can replace themselves from GitHub Releases. The
+trust root is the minisign public key compiled into the app: `latest.json` is
+not signed, but every update package is, and a package whose signature does not
+match that key is never installed. A tampered manifest can therefore cause a
+refusal or point at an older signed package, not code execution.
+
+- The manifest is fetched over HTTPS from the public repository; the client
+  carries no GitHub token. Keeping the repository private would require a
+  different update source.
+- The private signing key exists only on the maintainer's machine and in
+  GitHub Actions Secrets. Build jobs have `contents: read`; only the publish
+  job may write a release.
+- Checks never download or install silently: the reader confirms the restart.
+  Startup checks are throttled to one per 24 hours and do not show errors.
+- deb/rpm and web deployments do not use this path; they keep their package
+  manager or deployment flow.
+
 ## Known limitations
 
 - On Windows the atomic write protocol fsyncs the file but not the parent

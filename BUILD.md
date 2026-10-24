@@ -4,12 +4,12 @@
 
 ## 通用前置条件
 
-| 工具        | 版本   | 说明                                  |
-| ----------- | ------ | ------------------------------------- |
-| Node.js     | 22+    | 推荐 LTS                              |
-| npm         | 10+    | 随 Node.js 附带                       |
-| Rust 工具链 | stable | 包含 `cargo` 与 `rustup`              |
-| Tauri CLI   | 2.x    | 作为开发依赖安装（`@tauri-apps/cli`） |
+| 工具        | 版本          | 说明                                   |
+| ----------- | ------------- | -------------------------------------- |
+| Node.js     | 22+           | 推荐 LTS                               |
+| npm         | 10+           | 随 Node.js 附带                        |
+| Rust 工具链 | stable ≥ 1.90 | 包含 `cargo` 与 `rustup`；更新插件要求 |
+| Tauri CLI   | 2.x           | 作为开发依赖安装（`@tauri-apps/cli`）  |
 
 剪辑烧录字幕所用的 Inter 与 Noto Sans SC 不随仓库分发：任何编译 Rust 的 `make` 目标都会先运行 `scripts/fetch-fonts.mjs`，从 [moka-works/assets](https://github.com/moka-works/assets) 下载这两份字体（约 11 MB），并按脚本里固定的 SHA-256 校验；字体已就位且哈希匹配时不会联网。直接调用 `cargo` 前先运行 `make fonts`。
 
@@ -292,6 +292,58 @@ make clean
 ```
 
 移除 `dist/`、`release/`、`src-tauri/target/` 与 TypeScript 构建缓存（`node_modules/.tmp`）。
+
+## 应用内更新与发布构建
+
+桌面安装可以自己更新：设置 → 系统 → 应用更新可以手动检查，启动器停稳后也会每天静默检查一次（24 小时内不重复），只在读者确认后才下载并重启。网页版没有这一入口。
+
+| 形态                            | 更新包        | 应用内更新 |
+| ------------------------------- | ------------- | ---------- |
+| macOS `.app`（DMG 安装）        | `.app.tar.gz` | 是         |
+| Windows NSIS                    | `-setup.exe`  | 是         |
+| Linux AppImage                  | `.AppImage`   | 是         |
+| Windows MSI、Linux deb/rpm、Web | —             | 否         |
+| `tauri dev` 与调试构建          | —             | 否         |
+
+MSI、deb 与 rpm 分别交给安装器或系统包管理器升级；Web 版仍按 `docs/deployment.md` 的部署流程升级。
+
+更新源是公开仓库的 `https://github.com/moka-works/moka-canvas/releases/latest/download/latest.json`，因此仓库必须保持公开，客户端不携带任何 GitHub 凭据。清单本身只给出地址与签名，每个更新包都带 minisign 签名；客户端内置的公钥才是信任根。
+
+### 更新签名密钥
+
+`src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` 存放公钥全文。私钥只应存在于开发机与 GitHub Actions Secrets：
+
+```sh
+npx tauri signer generate -w ~/.tauri/moka-canvas-updater.key
+```
+
+- `TAURI_SIGNING_PRIVATE_KEY`：私钥文件全文，不是路径；
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：私钥有密码时填写，无密码则不要创建这个 Secret。
+
+私钥丢失或轮换意味着旧客户端无法验证新包，只能再让所有用户手动安装一次；不要覆盖已经用于发布的私钥。
+
+### 本地签名构建
+
+日常 `make package-*` 不生成更新签名，也不需要私钥。要本地验证更新，额外合并 `src-tauri/tauri.updater.conf.json`，它只为发布构建打开 `createUpdaterArtifacts`：
+
+```sh
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/moka-canvas-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""   # 私钥有密码时换成真实密码
+npm run tauri build -- \
+  --config src-tauri/tauri.release.conf.json \
+  --config src-tauri/tauri.updater.conf.json \
+  --bundles appimage
+```
+
+产物旁会出现 `.AppImage.sig`；macOS 产出 `.app.tar.gz` 与 `.sig`，Windows 产出 `-setup.exe.sig`。`scripts/collect-release.mjs` 会把这些文件一并复制进 `release/`。
+
+### 发布流程
+
+推 `vX.Y.Z` tag 触发 `.github/workflows/release.yml`。四个平台的构建步骤带着更新签名运行；`publish` job 用 `scripts/prepare-release.mjs` 归一化文件名、要求每个更新包都有 `.sig`、从 `CHANGELOG.md` 提取说明并生成 `latest.json`，然后上传到一个 **draft** Release。检查无误后手动发布 draft；`/releases/latest` 只指向正式 Release，客户端看不到 draft。
+
+`latest.json` 的平台键是固定的：macOS 同时写 `darwin-<arch>` 与 `darwin-<arch>-app`，Windows 同时写 `windows-x86_64` 与 `windows-x86_64-nsis`；Linux **只写** `linux-x86_64-appimage`，避免 deb/rpm 安装回退去下载一个无法安装的 AppImage。
+
+v0.3.1 及更早版本没有更新器，无法自举：首个带更新器的版本（0.3.2）必须手动安装一次，之后的版本才能在应用内更新。
 
 ## 签名与公证
 

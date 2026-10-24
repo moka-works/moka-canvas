@@ -220,6 +220,11 @@ and are exported as `.moka` packages; see the release checklist.
 
 ## Upgrades and rollbacks
 
+The desktop app updates itself in place (macOS, Windows NSIS, and the Linux
+AppImage); that path is described in `BUILD.md` and does not apply here. A
+web or self-hosted deployment upgrades by replacing the running files, as
+below.
+
 `meta.json` records a schema version. Only the version this build reads opens:
 a directory stamped otherwise exits the process with
 `METADATA_SCHEMA_UNSUPPORTED` and a message naming the directory and the version
