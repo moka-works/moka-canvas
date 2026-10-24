@@ -2,7 +2,7 @@
   "title": "Assistant",
   "rooms": {
     "canvas": "Canvas",
-    "clip": "Cutting room",
+    "clip": "Clip",
     "assets": "Assets",
     "story": "Story"
   },
@@ -12,7 +12,7 @@
     "error": "Trouble"
   },
   "empty": "Ask for a change, or ask what is here.",
-  "emptyHint": "Reads and edits follow the room you are in. Destructive work asks first.",
+  "emptyHint": "Reads and edits follow the space you are in. Destructive work asks first.",
   "newSession": "New conversation",
   "history": "Conversations",
   "composer": {
@@ -103,7 +103,7 @@
       "assets_other": "{{count}} assets"
     },
     "canvas": "canvas · {{nodes}} · {{assets}} in the project",
-    "clip": "cutting room · {{clips}} · {{timelines}} · {{assets}} in the project",
+    "clip": "clip · {{clips}} · {{timelines}} · {{assets}} in the project",
     "assets": "shelf · {{files}} here · {{assets}} in the project",
     "story": "story · {{chapters}} · {{stories}} · {{assets}} in the project",
     "warnings": "Some ids in the request no longer exist"

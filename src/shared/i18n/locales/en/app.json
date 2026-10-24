@@ -80,8 +80,8 @@
   "roomPicker": {
     "status": "Project created",
     "title": "Where would you like to start?",
-    "subtitle": "“{{name}}” is ready. Pick a room to begin; you can switch anytime from the project menu in the top-left.",
-    "hoverHint": "Hover or focus a card to see when that room fits.",
+    "subtitle": "“{{name}}” is ready. Pick a card to begin; you can switch anytime from the project menu in the top-left.",
+    "hoverHint": "Hover or focus a card to see when it fits.",
     "back": "Back to launcher",
     "kept": "Project created. It is waiting in recent projects.",
     "rooms": {
@@ -104,7 +104,7 @@
         "kicker": "Post-production",
         "line": "Cut what you have into a film you can export",
         "enter": "Enter Clip",
-        "detail": "Best when you already have picture and sound. Put files from the canvas, the story room or the asset shelf on a timeline, then cut, add transitions, subtitles, color and music, and export."
+        "detail": "Best when you already have picture and sound. Put files from the canvas, from Story or from the asset shelf on a timeline, then cut, add transitions, subtitles, color and music, and export."
       }
     }
   },

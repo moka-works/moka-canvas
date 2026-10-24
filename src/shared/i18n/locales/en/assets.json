@@ -2,7 +2,7 @@
   "page": {
     "title": "Assets",
     "empty": "Pick a file to read it",
-    "historyBoundary": "Files room",
+    "historyBoundary": "Assets",
     "saveConflict": "The project changed elsewhere; reopen it to carry on",
     "saveFailed": "The project could not be saved"
   },

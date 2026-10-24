@@ -29,7 +29,7 @@
 
 ## 仓库地图
 
-- `src/`——React 前端。`features/{editor,clip,story,assets,settings,assistant,director}` 按房间划分、`App.tsx` 懒加载；zustand store 在各 feature 的 `stores/`；HTTP 调用只经 `src/api/*`；`shared/i18n/`（i18next，en/zh）、`components/`、`styles/`。导演台（3D 舞台）在 `features/director/`，其领域模型在 `shared/domain/director.ts`、编解码在 `directorCodec.ts`。
+- `src/`——React 前端。`features/{editor,clip,story,assets,settings,assistant,director}` 按功能划分、`App.tsx` 懒加载；zustand store 在各 feature 的 `stores/`；HTTP 调用只经 `src/api/*`；`shared/i18n/`（i18next，en/zh）、`components/`、`styles/`。导演台（3D 舞台）在 `features/director/`，其领域模型在 `shared/domain/director.ts`、编解码在 `directorCodec.ts`。
 - `src-tauri/`——Rust crate `moka-canvas`：`api/`（路由与结构化 problem 响应）、`project/` `metadata/` `assets/` `domain/`（含导演台场景 `domain/director.rs`）`imaging/`（存储与本地图片运算）、`generate/` `converter/` `workflow/` `story/` `clip/`（模型网关、Lua 转换器、生成与导出）、`prompts.rs`（minijinja 模板）。两个二进制：`moka-canvas`（桌面）与 `moka-server`（Web 服务器）。`tests/` 为集成测试，`resources/native-config.yaml` 是桌面默认配置。
 - `e2e/`——Playwright 规格（按功能命名，如 `canvas-*`、`clip-*`、`story-*`、`assets-*`、`critical-path`）+ `helpers.ts`、`mock-provider.ts`。
 - `fixtures/`——示例 `.moka` 文档与媒体文件；`scripts/`——`set-version`、`package-web`、`collect-release`、`build-favicon`、`e2e-server` 等；`config/moka.example.yaml`——配置样例；`docs/`——部署、安全、发布检查清单；`BUILD.md` / `BUILD_EN.md`——构建指南（中文 / 英文）。

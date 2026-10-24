@@ -28,7 +28,7 @@
   "page": {
     "emptyHint": "创建一条时间线开始剪辑",
     "emptyTitle": "还没有时间线",
-    "historyBoundary": "剪辑室",
+    "historyBoundary": "剪辑",
     "newTimeline": "新建时间线",
     "saveConflict": "版本冲突使保存被阻止——回到画布处理后再试",
     "saveFailed": "保存失败——回到画布重试"

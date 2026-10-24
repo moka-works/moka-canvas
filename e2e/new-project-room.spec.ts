@@ -27,7 +27,7 @@ test("a new project asks where to start and lands in the chosen room", async ({
     );
     const detail = picker.getByTestId("room-picker-detail");
     await expect(detail).toHaveText(
-      "Hover or focus a card to see when that room fits.",
+      "Hover or focus a card to see when it fits.",
     );
     await picker.getByTestId("room-choice-story").hover();
     await expect(detail).toContainText("Best when you start with a sentence");

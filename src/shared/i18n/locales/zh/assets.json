@@ -2,7 +2,7 @@
   "page": {
     "title": "素材",
     "empty": "从列表里选一个文件",
-    "historyBoundary": "素材房",
+    "historyBoundary": "素材",
     "saveConflict": "项目在别处被改动，请重新打开后再继续",
     "saveFailed": "项目未能保存"
   },

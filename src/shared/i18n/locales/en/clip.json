@@ -28,7 +28,7 @@
   "page": {
     "emptyHint": "Create a timeline to start cutting",
     "emptyTitle": "No timelines yet",
-    "historyBoundary": "Clip room",
+    "historyBoundary": "Clip",
     "newTimeline": "New timeline",
     "saveConflict": "Saving is blocked by a revision conflict — go back to the canvas to resolve it",
     "saveFailed": "Saving failed — go back to the canvas to try again"

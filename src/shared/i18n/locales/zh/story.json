@@ -7,7 +7,7 @@
     "emptyHint": "故事在这里被讲出来：一段创意、它分成的一集集，以及最后成片",
     "newStory": "新建故事",
     "stepComing": "这一步还在建设中",
-    "historyBoundary": "故事房",
+    "historyBoundary": "故事",
     "saveConflict": "项目已在别处被修改；刷新后再离开",
     "saveFailed": "项目未能保存；先留在这里"
   },
@@ -247,7 +247,7 @@
     "again": "再问一次",
     "resplitTitle": "要重新拆解这个故事吗？",
     "resplitBody": "{{chapters}} 章的梗概会被覆盖，其中 {{acts}} 幕的分镜会一并丢弃",
-    "resplitKeeps": "素材都留在素材架上，已经装配好的时间线也留在剪辑房里",
+    "resplitKeeps": "素材都留在素材架上，已经装配好的时间线也留在剪辑室里",
     "resplitConfirm": "重新拆解",
     "resplitCancel": "取消",
     "copyFailed": "没能复制：{{reason}}"

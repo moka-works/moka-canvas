@@ -7,7 +7,7 @@
     "emptyHint": "A story is told here: a premise, the episodes it is told in, and the film it becomes",
     "newStory": "New story",
     "stepComing": "This step is not built yet",
-    "historyBoundary": "Story room",
+    "historyBoundary": "Story",
     "saveConflict": "The project was changed somewhere else; reload before leaving",
     "saveFailed": "The project could not be saved; staying here"
   },
@@ -428,7 +428,7 @@
     "clip": "Clip",
     "rowActions": "",
     "cell": "shot {{at}} · {{name}}",
-    "guessed": "The model said “{{from}}”, which is not one this room knows — the default is standing in",
+    "guessed": "The model said “{{from}}”, which is not one it knows — the default is standing in",
     "noLines": "—",
     "lines": "{{count}} lines",
     "noDialogue": "Nothing is said in this shot",

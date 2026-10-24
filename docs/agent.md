@@ -1,11 +1,11 @@
 # 助理与 Agent 工具
 
-摩卡画布的助理不再只是画布上的一条对话栏。它在画布、剪辑、素材三个房间的右栏（与检查器并排的标签），以及故事每一步的末尾都能使用；同一套工具也通过 HTTP、`moka` CLI 和 MCP 提供给第三方 Agent。
+摩卡画布的助理不再只是画布上的一条对话栏。它在画布、剪辑、素材三个空间的右栏（与检查器并排的标签），以及故事每一步的末尾都能使用；同一套工具也通过 HTTP、`moka` CLI 和 MCP 提供给第三方 Agent。
 
 ## 结构
 
 ```
-AgentDock（前端四房间）
+AgentDock（前端四个空间）
   └─ ReAct 循环（src/features/assistant/agent/loop.ts）
        ├─ POST /api/v1/agent/chat      一轮模型步：提示词、现场摘要、工具调用
        └─ POST /api/v1/agent/tools/... 执行一个工具
@@ -17,7 +17,7 @@ AgentDock（前端四房间）
 - **循环在界面前端**，因为它需要当前选择、播放头、故事步骤与本地撤销栈；关闭窗口即停止。
 - **模型选择**：助理右栏可选用任一已启用的文本模型；选择保存在会话的 `model` 上，继续该会话时沿用，未选时用部署默认。
 - **提示词分层**：设置里的全局系统提示词只框定内容生成（没有自带指令的文本请求）；助理有自己的系统提示词（角色、现场、工具与协议），放在请求的 `system` 字段下发。网关见请求已自带指令就不再注入全局提示词，转换器也只把这一份作为系统消息发出。
-- **按房间独立**：每个房间各有一条当前会话，画布里的一次报错不会出现在剪辑、素材或故事里；会话列表是项目级的，任何一条都能从任一房间打开。
+- **按空间独立**：每个空间各有一条当前会话，画布里的一次报错不会出现在剪辑、素材或故事里；会话列表是项目级的，任何一条都能从任一空间打开。
 - **会话独立存放**：`<项目>/agent/sessions/<id>.json`，不进入 `canvas.moka`，不改变文档 revision，不升 schema，也不迁移旧的 `canvas[].sessions`。
 - **模型协议**：转换器在 `model.json` 的 `features.toolCalling` 里声明是否支持原生工具；内置十种文本协议（`openaiChat`、`openaiResponses`、`gemini`、`bailianText`、`volcengineText`、`minimaxText`、`anthropicMessages`、`deepseekText`、`moonshotText`、`zhipuText`）均已实现原生工具调用。未声明该特性的自定义或旧版转换器回退到 JSON ReAct（`agent/protocol.rs`）；回退步骤的协议 JSON 不会流式显示，支持一步内多个工具调用。
 
