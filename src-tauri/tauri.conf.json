@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Moka Canvas",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "app.mokacanvas",
   "build": {
     "beforeDevCommand": "npm run build",
@@ -16,7 +16,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3Njk4RTUxMTE2NzdCMzQKUldRMGUyY1JVWTVweDdmZGdiRVpDZGNEb0N4b0p3ZWdsTlc1OGJzbStVZG0raHZ4WitHU0RWZkUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEyMzFBMTM4QjY5MTM1NDcKUldSSE5aRzJPS0V4b28rdWJEeU9xOGNQUVU5V1JIbFZTdS9VNkUvUzNMeWpwNFhhbkNUNWg3NlAK",
       "endpoints": [
         "https://github.com/moka-works/moka-canvas/releases/latest/download/latest.json"
       ],
