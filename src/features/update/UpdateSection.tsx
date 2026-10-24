@@ -94,7 +94,7 @@ export function UpdateSection() {
         <p className="update-status">{t("settings:update.upToDate")}</p>
       )}
 
-      {status === "available" && available !== null && (
+      {available !== null && (status === "available" || status === "error") && (
         <div className="update-available">
           <p className="update-version">
             {t("settings:update.available", { version: available.version })}

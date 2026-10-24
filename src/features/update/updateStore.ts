@@ -23,7 +23,6 @@ interface UpdateState {
   support: () => Promise<boolean>;
   check: () => Promise<AvailableUpdate | null>;
   install: () => Promise<void>;
-  resetError: () => void;
   reset: () => void;
 }
 
@@ -153,13 +152,6 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
     } catch (error) {
       set({ status: "error", error: failureText(error) });
     }
-  },
-
-  resetError() {
-    set((state) => ({
-      error: null,
-      status: state.status === "error" ? "idle" : state.status,
-    }));
   },
 
   reset() {

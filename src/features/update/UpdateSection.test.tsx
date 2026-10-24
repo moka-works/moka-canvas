@@ -117,6 +117,21 @@ describe("the update row", () => {
     expect(screen.getByText("Downloading 40%")).toBeTruthy();
   });
 
+  it("offers the package again after a failed installation", async () => {
+    useUpdateStore.setState({
+      supported: true,
+      status: "error",
+      error: "read-only volume",
+      available: { version: "0.3.2" },
+    });
+
+    render(<UpdateSection />);
+
+    expect(
+      await screen.findByRole("button", { name: "Download and install" }),
+    ).toBeTruthy();
+  });
+
   it("keeps a failure's own words", async () => {
     useUpdateStore.setState({
       supported: true,
