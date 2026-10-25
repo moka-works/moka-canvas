@@ -64,6 +64,12 @@
     "notDelivered": "尚未回写",
     "enter": "进入导演台"
   },
+  "entry": {
+    "title": "打开导演台",
+    "tab": "导演台",
+    "choose": "选择导演台",
+    "new": "新建导演台"
+  },
   "templates": {
     "dialogTitle": "新建导演台",
     "dialogNote": "选择开局的场景模板；进入导演台后都可以修改。",
@@ -248,6 +254,26 @@
     "view": "查看",
     "noAsset": "该节点没有可用素材",
     "empty": "没有已连接的上游图片"
+  },
+  "cameraMove": {
+    "static": "固定",
+    "push_in": "推近",
+    "pull_out": "拉远",
+    "pan_left": "左摇",
+    "pan_right": "右摇",
+    "tilt_up": "上摇",
+    "tilt_down": "下摇",
+    "orbit_left": "环绕左",
+    "orbit_right": "环绕右",
+    "handheld": "手持"
+  },
+  "shotSize": {
+    "extreme_wide": "大远景",
+    "wide": "远景",
+    "full": "全景",
+    "medium": "中景",
+    "close_up": "特写",
+    "extreme_close_up": "大特写"
   },
   "field": {
     "name": "名称",
@@ -581,6 +607,8 @@
     "rightPinky3": "右小指3"
   },
   "models": {
+    "upload": "上传模型",
+    "none": "还没有模型",
     "unsupported": ".{{ext}} 不是导演台支持的格式；请从建模软件导出 GLB。",
     "exportGlb": "只支持 GLB 或自包含 GLTF，请从建模软件导出 GLB。",
     "uploaded": "已把“{{name}}”加入素材架与舞台。",

@@ -25,7 +25,7 @@ import {
   type DirectorSolidShape,
   type ResourceEntry,
 } from "../../../shared/domain";
-import { ACTOR_ARCHETYPE_KEYS } from "../staging";
+import { ACTOR_ARCHETYPE_KEYS, CAMERA_MOVE_KEYS } from "../staging";
 import { MAPPABLE_BONES, rigReady } from "../stage/rig";
 import { boneRotation } from "../stage/poses";
 import { useRigNames } from "../stores/rigNames";
@@ -1015,7 +1015,7 @@ function ShotPage({
           onChange={(cameraMove) => onChange({ cameraMove })}
           options={DIRECTOR_CAMERA_MOVES.map((move) => ({
             value: move,
-            label: t(`cameraMove.${move}`),
+            label: t(CAMERA_MOVE_KEYS[move]),
           }))}
           value={shot.cameraMove}
         />
