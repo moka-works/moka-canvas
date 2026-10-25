@@ -125,13 +125,22 @@ jobs:
         shell: bash
         run: node scripts/build-cli.mjs --target "${{ matrix.target }}"
 
-      - name: Build macOS bundles
+      # A dmg-only bundle command deletes the .app it used, and only the app
+      # target produces updater artifacts, so the app is bundled once more with
+      # the updater config after the DMG. That second invocation is also what
+      # leaves the .app the PKG step packages.
+      - name: Build macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles dmg
+
+      - name: Build macOS app and updater artifacts
         if: runner.os == 'macOS'
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json --target "${{ matrix.target }}" --bundles dmg
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json --target "${{ matrix.target }}" --bundles app
 
       - name: Build combined macOS PKG
         if: runner.os == 'macOS'

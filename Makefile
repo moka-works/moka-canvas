@@ -142,8 +142,10 @@ package-macos-x86: web-build fonts ## Package the Intel macOS DMG and CLI
 	node scripts/package-cli.mjs --target $(MACOS_X86_TARGET)
 
 # A DMG cannot run a postinstall; the combined PKG carries the same app and
-# links the bundled CLI into /usr/local/bin.
+# links the bundled CLI into /usr/local/bin. The dmg-only build above deletes
+# the .app it used, so it is bundled again here, without the updater config.
 package-macos-pkg: package-macos ## Package the macOS PKG that also links the CLI
+	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles app
 	sh scripts/package-macos-pkg.sh
 
 package-windows: web-build cli ## Package the Windows MSI and NSIS installers
