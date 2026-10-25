@@ -4,7 +4,15 @@
 // way AppImage users get `moka` onto their PATH at all.
 
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,9 +43,12 @@ const platformName = triple.includes("windows")
 const arch = triple.startsWith("aarch64") ? "aarch64" : "x64";
 const stageName = `moka-cli-${pkg.version}-${platformName}-${arch}`;
 const release = join(root, "release");
-const stage = join(release, stageName);
+// Staged outside release/: every file under release/ becomes a release asset,
+// so the unpacked tree would otherwise be uploaded next to the archive.
+const staging = await mkdtemp(join(tmpdir(), "moka-cli-"));
+const stage = join(staging, stageName);
 
-await rm(stage, { recursive: true, force: true });
+await mkdir(release, { recursive: true });
 await mkdir(stage, { recursive: true });
 await copyFile(
   join(root, "src-tauri", "binaries", `moka-${triple}${extension}`),
@@ -80,8 +91,9 @@ if (platformName === "windows") {
 } else {
   const archive = join(release, `${stageName}.tar.gz`);
   await rm(archive, { force: true });
-  execFileSync("tar", ["-czf", archive, "-C", release, stageName], {
+  execFileSync("tar", ["-czf", archive, "-C", staging, stageName], {
     stdio: "inherit",
   });
   console.log(`Created ${archive}`);
 }
+await rm(staging, { recursive: true, force: true });
