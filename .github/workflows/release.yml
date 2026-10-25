@@ -132,6 +132,12 @@ jobs:
       - name: Build macOS DMG
         if: runner.os == 'macOS'
         shell: bash
+        # Tauri passes --skip-jenkins whenever CI=true, which drops the Finder
+        # AppleScript and with it .DS_Store -- the DMG then has no background
+        # and no icon positions. Force the layout step back on so a failure is
+        # loud (exit 64) instead of silently shipping a bare window.
+        env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --target "${{ matrix.target }}" --bundles dmg
 
       - name: Build macOS app and updater artifacts
