@@ -116,6 +116,11 @@ jobs:
       - name: Fetch the clip burn-in fonts
         run: node scripts/fetch-fonts.mjs
 
+      # tauri-build refuses to run while frontendDist is missing, and the CLI
+      # is built before any bundler invocation would create dist/.
+      - name: Build the frontend
+        run: npm run build
+
       - name: Build the moka CLI
         shell: bash
         run: node scripts/build-cli.mjs --target "${{ matrix.target }}"
