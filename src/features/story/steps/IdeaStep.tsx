@@ -36,6 +36,9 @@ const OPENING_CHARS = 800;
 /** The chapter lengths a reader can pick from, in minutes. */
 const DURATION_PRESETS = [1, 3, 5, 10, 30];
 
+/** The shortest running time the minute stepper can stand on. */
+const MIN_TOTAL_MINUTES = Math.ceil(MIN_TOTAL_DURATION_MS / 60_000);
+
 /**
  * The genres and looks offered as chips. The words a story is told and drawn
  * in are content rather than interface: they travel into prompts and come back
@@ -515,11 +518,16 @@ function DurationRow({
   onChapterChange: (ms: number) => void;
 }) {
   const { t } = useTranslation();
+  // The running time is entered in whole minutes, so a value that lands
+  // between two of them is pulled onto the nearer one rather than kept.
   const clamp = (ms: number) =>
-    Math.min(MAX_TOTAL_DURATION_MS, Math.max(MIN_TOTAL_DURATION_MS, ms));
+    Math.min(
+      MAX_TOTAL_DURATION_MS,
+      Math.max(MIN_TOTAL_MINUTES * 60_000, Math.round(ms / 60_000) * 60_000),
+    );
   const clampChapter = (ms: number) =>
     Math.min(MAX_CHAPTER_MS, Math.max(MIN_CHAPTER_MS, ms));
-  const minutes = Math.round((totalMs / 60_000) * 10) / 10;
+  const minutes = Math.round(totalMs / 60_000);
   const chapterMinutes = Math.round((chapterMs / 60_000) * 10) / 10;
   const step = (by: number) => onChange(clamp(totalMs + by * 60_000));
   const stepChapter = (by: number) =>
@@ -542,12 +550,12 @@ function DurationRow({
               aria-label={t("story:idea.duration")}
               data-testid="story-idea-duration"
               max={MAX_TOTAL_DURATION_MS / 60_000}
-              min={MIN_TOTAL_DURATION_MS / 60_000}
+              min={MIN_TOTAL_MINUTES}
               onChange={(event) => {
                 const wanted = Number(event.target.value);
                 if (Number.isFinite(wanted)) onChange(clamp(wanted * 60_000));
               }}
-              step={0.5}
+              step={1}
               type="number"
               value={minutes}
             />

@@ -383,9 +383,12 @@ describe("the four settings", () => {
     ).toContain("03:00");
 
     fireEvent.change(screen.getByTestId("story-idea-duration"), {
-      target: { value: "0.5" },
+      target: { value: "1.5" },
     });
-    expect(story().brief.totalDurationMs).toBe(30_000);
+    expect(story().brief.totalDurationMs).toBe(120_000);
+    expect(
+      (screen.getByTestId("story-idea-duration") as HTMLInputElement).value,
+    ).toBe("2");
   });
 
   it("cuts the running time by the episode length the reader sets", () => {
@@ -424,7 +427,7 @@ describe("the four settings", () => {
     fireEvent.change(screen.getByTestId("story-idea-duration"), {
       target: { value: "0" },
     });
-    expect(story().brief.totalDurationMs).toBe(30_000);
+    expect(story().brief.totalDurationMs).toBe(60_000);
   });
 
   it("writes the frame and says what it exports as", () => {
