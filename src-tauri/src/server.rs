@@ -32,6 +32,57 @@ pub struct LocalServer {
     runtime_note: PathBuf,
 }
 
+/// The file the desktop window's port is kept in.
+///
+/// A page's `localStorage` belongs to its origin, and an origin includes the
+/// port. The desktop window is served from `127.0.0.1:<port>`, so binding a
+/// fresh ephemeral port each launch would hand it a blank store every time:
+/// the interface language, the canvas theme, and every panel size kept there
+/// would come back as defaults. Remembering the port keeps the origin, and
+/// those choices with it.
+const REMEMBERED_PORT_FILE: &str = "desktop-port";
+
+fn remembered_port(root: &Path) -> Option<u16> {
+    let raw = std::fs::read_to_string(root.join(REMEMBERED_PORT_FILE)).ok()?;
+    raw.trim().parse().ok().filter(|port| *port != 0)
+}
+
+fn remember_port(root: &Path, port: u16) {
+    if let Err(error) = std::fs::write(root.join(REMEMBERED_PORT_FILE), port.to_string()) {
+        tracing::warn!("the desktop window's port could not be remembered: {error}");
+    }
+}
+
+/// Binds the listener, keeping the desktop window on the port it had last
+/// time where it can. A web deployment has no window and no origin to keep,
+/// so it binds what it was told and nothing else.
+async fn bind_listener(
+    address: SocketAddr,
+    mode: RuntimeMode,
+    metadata_root: &Path,
+) -> Result<TcpListener> {
+    if mode == RuntimeMode::Native && address.port() == 0 {
+        if let Some(port) = remembered_port(metadata_root) {
+            if let Ok(listener) = TcpListener::bind(SocketAddr::new(address.ip(), port)).await {
+                return Ok(listener);
+            }
+            tracing::info!(
+                target: "moka::server",
+                "the desktop window's port {port} is taken; the window gets a fresh origin this time"
+            );
+        }
+    }
+    let listener = TcpListener::bind(address)
+        .await
+        .context("failed to bind the local HTTP server")?;
+    if mode == RuntimeMode::Native {
+        if let Ok(bound) = listener.local_addr() {
+            remember_port(metadata_root, bound.port());
+        }
+    }
+    Ok(listener)
+}
+
 /// Where the server listens: `server.bind` with the `--host` and `--port` named
 /// on the command line folded in. Each names one part of an address, so each
 /// beats the file for that part alone. Folded through `SocketAddr` rather than
@@ -92,9 +143,7 @@ impl LocalServer {
             .unwrap_or_else(|error| {
                 tracing::warn!(target: "moka::extension", "deploy error: {error}");
             });
-        let listener = TcpListener::bind(address)
-            .await
-            .context("failed to bind the local HTTP server")?;
+        let listener = bind_listener(address, mode, metadata_root).await?;
         let address = listener.local_addr()?;
         // Read from the listener rather than from what was asked for: a `:0`
         // port is only known once it is bound, and a warning that named the
@@ -602,5 +651,73 @@ mod tests {
     fn a_named_bind_is_one_address_in_the_delivery_line() {
         assert_eq!(display_url("127.0.0.1:8080"), "http://127.0.0.1:8080");
         assert_eq!(display_url("192.168.1.5:9000"), "http://192.168.1.5:9000");
+    }
+
+    #[test]
+    fn a_remembered_port_is_read_back_and_nonsense_is_ignored() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(remembered_port(root.path()), None);
+        remember_port(root.path(), 43117);
+        assert_eq!(remembered_port(root.path()), Some(43117));
+        for written in ["not a port", "", "70000", "0"] {
+            std::fs::write(root.path().join(REMEMBERED_PORT_FILE), written).unwrap();
+            assert_eq!(remembered_port(root.path()), None, "{written:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_desktop_window_keeps_the_port_it_had_last_time() {
+        let root = tempfile::tempdir().unwrap();
+        // A port that was free a moment ago is what a previous launch wrote.
+        let free = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = free.local_addr().unwrap().port();
+        drop(free);
+        remember_port(root.path(), port);
+
+        let listener = bind_listener(
+            "127.0.0.1:0".parse().unwrap(),
+            RuntimeMode::Native,
+            root.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+    }
+
+    #[tokio::test]
+    async fn a_taken_port_is_replaced_and_the_replacement_is_remembered() {
+        let root = tempfile::tempdir().unwrap();
+        // Somebody else holds what this window used to have.
+        let held = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = held.local_addr().unwrap().port();
+        remember_port(root.path(), port);
+
+        let listener = bind_listener(
+            "127.0.0.1:0".parse().unwrap(),
+            RuntimeMode::Native,
+            root.path(),
+        )
+        .await
+        .unwrap();
+        let bound = listener.local_addr().unwrap().port();
+        assert_ne!(bound, port);
+        assert_eq!(remembered_port(root.path()), Some(bound));
+    }
+
+    #[tokio::test]
+    async fn a_web_server_binds_what_it_was_told_and_keeps_no_port() {
+        let root = tempfile::tempdir().unwrap();
+        let listener = bind_listener(
+            "127.0.0.1:0".parse().unwrap(),
+            RuntimeMode::Web,
+            root.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            listener.local_addr().unwrap().ip(),
+            "127.0.0.1".parse::<std::net::IpAddr>().unwrap()
+        );
+        assert_eq!(remembered_port(root.path()), None);
     }
 }
