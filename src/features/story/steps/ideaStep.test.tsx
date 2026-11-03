@@ -15,7 +15,9 @@ import {
   buildStoryMokaFile,
 } from "../../../shared/domain/fixtures";
 import {
+  MAX_CHAPTER_MS,
   MAX_TOTAL_DURATION_MS,
+  MIN_CHAPTER_MS,
   STORY_IDEA_MAX,
   timelineSizeForAspect,
   type MokaFile,
@@ -375,7 +377,7 @@ describe("the four settings", () => {
     expect(story().brief.totalDurationMs).toBe(180_000);
     expect(
       screen.getByTestId("story-idea-duration-hint").textContent,
-    ).toContain("3 chapters");
+    ).toContain("3 episodes");
     expect(
       screen.getByTestId("story-idea-duration-hint").textContent,
     ).toContain("03:00");
@@ -384,6 +386,31 @@ describe("the four settings", () => {
       target: { value: "0.5" },
     });
     expect(story().brief.totalDurationMs).toBe(30_000);
+  });
+
+  it("cuts the running time by the episode length the reader sets", () => {
+    openAtIdea(buildStoryMokaFile());
+
+    fireEvent.click(screen.getByTestId("story-idea-duration-3"));
+    fireEvent.change(screen.getByTestId("story-idea-chapter-length"), {
+      target: { value: "1.5" },
+    });
+    expect(story().brief.chapterMs).toBe(90_000);
+    expect(
+      screen.getByTestId("story-idea-duration-hint").textContent,
+    ).toContain("2 episodes");
+    expect(
+      screen.getByTestId("story-idea-duration-hint").textContent,
+    ).toContain("1.5 min");
+
+    fireEvent.change(screen.getByTestId("story-idea-chapter-length"), {
+      target: { value: "0" },
+    });
+    expect(story().brief.chapterMs).toBe(MIN_CHAPTER_MS);
+    fireEvent.change(screen.getByTestId("story-idea-chapter-length"), {
+      target: { value: "9999" },
+    });
+    expect(story().brief.chapterMs).toBe(MAX_CHAPTER_MS);
   });
 
   it("keeps the running time inside what a story may be", () => {
@@ -432,7 +459,7 @@ describe("the four settings", () => {
     const hints = [...document.querySelectorAll(".story-hint")].map(
       (hint) => hint.textContent ?? "",
     );
-    expect(hints.join()).toContain("chapters");
+    expect(hints.join()).toContain("episodes");
     expect(hints.join()).toContain("The finished film is");
     expect(hints.join()).toContain("the elements and the board");
     expect(hints.join()).toContain("every picture prompt");

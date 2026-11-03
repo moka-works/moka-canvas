@@ -41,6 +41,13 @@ pub const MIN_KEYFRAME_MS: i64 = 400;
 pub const MAX_KEYFRAME_MS: i64 = 60_000;
 pub const MIN_TOTAL_DURATION_MS: i64 = 30_000;
 pub const MAX_TOTAL_DURATION_MS: i64 = 8 * 60 * 60 * 1000;
+pub const DEFAULT_CHAPTER_MS: i64 = 60_000;
+pub const MIN_CHAPTER_MS: i64 = 30_000;
+pub const MAX_CHAPTER_MS: i64 = 60 * 60 * 1000;
+
+fn default_chapter_ms() -> i64 {
+    DEFAULT_CHAPTER_MS
+}
 
 // -----------------------------------------------------------------------------
 // The words a story's enums are written in
@@ -187,6 +194,11 @@ pub struct StoryBrief {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_split: Option<bool>,
     pub total_duration_ms: i64,
+    /// How long one episode is meant to run, which is how a total is cut into
+    /// episodes before anyone counts them. Absent in documents written before
+    /// the reader could say, which read as the minute it used to be.
+    #[serde(default = "default_chapter_ms")]
+    pub chapter_ms: i64,
     #[serde(deserialize_with = "word")]
     pub aspect: StoryAspect,
     pub genre: String,
@@ -223,6 +235,8 @@ pub struct StoryBriefPatch {
     pub source_split: Option<Option<bool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_duration_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aspect: Option<StoryAspect>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1101,6 +1115,15 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
             ),
         ));
     }
+    if !(MIN_CHAPTER_MS..=MAX_CHAPTER_MS).contains(&story.brief.chapter_ms) {
+        issues.push(issue(
+            "VALIDATION_FAILED",
+            format!(
+                "Story chapter length {} is out of range",
+                story.brief.chapter_ms
+            ),
+        ));
+    }
     if story.chapters.len() > MAX_CHAPTERS_PER_STORY {
         issues.push(issue("STORY_CHAPTER_LIMIT", "Chapter limit reached".into()));
     }
@@ -1226,6 +1249,12 @@ fn check_story_brief(brief: &StoryBrief) -> Result<(), CommandError> {
         return Err(CommandError::new(
             "VALIDATION_FAILED",
             "Story running time is out of range",
+        ));
+    }
+    if !(MIN_CHAPTER_MS..=MAX_CHAPTER_MS).contains(&brief.chapter_ms) {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "Story chapter length is out of range",
         ));
     }
     Ok(())
@@ -1467,6 +1496,7 @@ pub fn apply_story_command(
                 total_duration_ms: patch
                     .total_duration_ms
                     .map(|_| story.brief.total_duration_ms),
+                chapter_ms: patch.chapter_ms.map(|_| story.brief.chapter_ms),
                 aspect: patch.aspect.map(|_| story.brief.aspect),
                 genre: patch.genre.as_ref().map(|_| story.brief.genre.clone()),
                 style: patch.style.as_ref().map(|_| story.brief.style.clone()),
@@ -1488,6 +1518,9 @@ pub fn apply_story_command(
             }
             if let Some(total) = patch.total_duration_ms {
                 brief.total_duration_ms = total;
+            }
+            if let Some(chapter_ms) = patch.chapter_ms {
+                brief.chapter_ms = chapter_ms;
             }
             if let Some(aspect) = patch.aspect {
                 brief.aspect = aspect;

@@ -26,8 +26,10 @@ import {
   MAX_TIMELINES_PER_PROJECT,
   MAX_TITLE_LENGTH,
   MAX_TOTAL_DURATION_MS,
+  MAX_CHAPTER_MS,
   MAX_TRACKS_PER_TIMELINE,
   MAX_TRANSITIONS_PER_TIMELINE,
+  MIN_CHAPTER_MS,
   MIN_KEYFRAME_MS,
   MIN_TOTAL_DURATION_MS,
   REFERENCE_IMAGES_MAX,
@@ -3229,6 +3231,11 @@ function checkStoryBrief(brief: StoryDocument["brief"]) {
     throw new CommandError(
       "VALIDATION_FAILED",
       i18n.t("errors:command.storyDurationOutOfRange"),
+    );
+  if (brief.chapterMs < MIN_CHAPTER_MS || brief.chapterMs > MAX_CHAPTER_MS)
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.storyChapterDurationOutOfRange"),
     );
   if (!STORY_ASPECTS.includes(brief.aspect))
     throw new CommandError(

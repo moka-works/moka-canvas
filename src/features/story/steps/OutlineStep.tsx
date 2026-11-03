@@ -94,7 +94,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     brief.sourceSplit === true && sourceId !== undefined ? "split" : "expand",
   );
   const [chapters, setChapters] = useState(() =>
-    defaultChapterCount(brief.totalDurationMs),
+    defaultChapterCount(brief.totalDurationMs, brief.chapterMs),
   );
   const [headings, setHeadings] = useState(0);
   const [manuscript, setManuscript] = useState<string | null>(null);

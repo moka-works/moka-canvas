@@ -6962,8 +6962,9 @@ body.is-dragging-split {
   color: var(--ink);
   font: inherit;
   font-variant-numeric: tabular-nums;
+  padding: 0 4px;
   text-align: right;
-  width: 64px;
+  width: 96px;
 }
 
 .story-stepper input:focus {

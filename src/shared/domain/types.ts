@@ -723,6 +723,11 @@ export interface StoryBrief {
   sourceSplit?: boolean;
   /** How long the whole telling is meant to run, in milliseconds. */
   totalDurationMs: number;
+  /**
+   * How long one episode is meant to run, in milliseconds. A total is cut
+   * into this many minutes' worth of episodes before anyone counts them.
+   */
+  chapterMs: number;
   /** The frame the finished film is cut to. */
   aspect: StoryAspect;
   /** The genre, in the reader's own words. */
@@ -1188,6 +1193,7 @@ export interface StoryBriefPatch {
   sourceName?: string | null;
   sourceSplit?: boolean | null;
   totalDurationMs?: number;
+  chapterMs?: number;
   aspect?: StoryAspect;
   genre?: string;
   style?: string;

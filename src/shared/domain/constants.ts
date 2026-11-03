@@ -472,6 +472,8 @@ export const DEFAULT_STORY_ASPECT: StoryAspect = "16:9";
 export const DEFAULT_KEYFRAME_MS = 3_000;
 /** About how long one episode runs, which is how a total is cut into them. */
 export const DEFAULT_CHAPTER_MS = 60_000;
+export const MIN_CHAPTER_MS = 30_000;
+export const MAX_CHAPTER_MS = 60 * 60 * 1000;
 
 export function port(
   id: string,

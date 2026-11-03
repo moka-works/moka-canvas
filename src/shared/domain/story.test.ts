@@ -1045,10 +1045,15 @@ describe("story lifecycle commands", () => {
     const next = expectRoundTrip(moka, {
       type: "updateStoryBrief",
       storyId: storyIds().story,
-      patch: { totalDurationMs: 300_000, genre: "悬疑" },
+      patch: {
+        totalDurationMs: 300_000,
+        chapterMs: 90_000,
+        genre: "悬疑",
+      },
     });
     const brief = storyOfFile(next).brief;
     expect(brief.totalDurationMs).toBe(300_000);
+    expect(brief.chapterMs).toBe(90_000);
     expect(brief.genre).toBe("悬疑");
     expect(brief.style).toBe("现代都市风");
     expect(brief.idea).toBe(storyOfFile(moka).brief.idea);
@@ -1071,6 +1076,15 @@ describe("story lifecycle commands", () => {
           type: "updateStoryBrief",
           storyId: storyIds().story,
           patch: { aspect: "5:4" as never },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateStoryBrief",
+          storyId: storyIds().story,
+          patch: { chapterMs: 1 },
         }),
       ),
     ).toBe("VALIDATION_FAILED");
@@ -2148,6 +2162,12 @@ describe("defaultChapterCount", () => {
     expect(defaultChapterCount(180_000)).toBe(3);
     expect(defaultChapterCount(20_000)).toBe(1);
     expect(defaultChapterCount(0)).toBe(1);
+  });
+
+  it("cuts the same telling into episodes of the length the reader chose", () => {
+    expect(defaultChapterCount(600_000, 90_000)).toBe(7);
+    expect(defaultChapterCount(600_000, 300_000)).toBe(2);
+    expect(defaultChapterCount(180_000, 180_000)).toBe(1);
   });
 });
 

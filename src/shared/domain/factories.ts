@@ -718,6 +718,7 @@ export function createStoryBrief(patch: Partial<StoryBrief> = {}): StoryBrief {
       ? { sourceSplit: patch.sourceSplit }
       : {}),
     totalDurationMs: patch.totalDurationMs ?? DEFAULT_STORY_DURATION_MS,
+    chapterMs: patch.chapterMs ?? DEFAULT_CHAPTER_MS,
     aspect: patch.aspect ?? DEFAULT_STORY_ASPECT,
     genre: patch.genre ?? "",
     style: patch.style ?? "",
@@ -819,12 +820,15 @@ export function createKeyframe(
 }
 
 /**
- * How many episodes a running time is cut into when nobody says otherwise:
- * about a minute each, which is as long as one telling can hold a viewer
- * before it wants a new one.
+ * How many episodes a running time is cut into, one episode's own length at
+ * a time. A minute is the starting point rather than the rule: a reader who
+ * wants longer or shorter episodes says so on the brief.
  */
-export function defaultChapterCount(totalDurationMs: number): number {
-  return Math.max(1, Math.round(totalDurationMs / DEFAULT_CHAPTER_MS));
+export function defaultChapterCount(
+  totalDurationMs: number,
+  chapterMs: number = DEFAULT_CHAPTER_MS,
+): number {
+  return Math.max(1, Math.round(totalDurationMs / chapterMs));
 }
 
 /** What each episode is asked to run for, the total shared out evenly. */

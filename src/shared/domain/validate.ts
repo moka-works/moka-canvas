@@ -23,6 +23,8 @@ import {
   MAX_STORIES_PER_PROJECT,
   MAX_TAKES_PER_SLOT,
   MAX_TOTAL_DURATION_MS,
+  MAX_CHAPTER_MS,
+  MIN_CHAPTER_MS,
   MIN_KEYFRAME_MS,
   MIN_TOTAL_DURATION_MS,
   PROJECT_ASSET_CATEGORIES,
@@ -1181,6 +1183,14 @@ export function validateStory(story: StoryDocument): ValidationIssue[] {
     story.brief.totalDurationMs > MAX_TOTAL_DURATION_MS
   )
     at("VALIDATION_FAILED", i18n.t("errors:validate.storyDurationOutOfRange"));
+  if (
+    story.brief.chapterMs < MIN_CHAPTER_MS ||
+    story.brief.chapterMs > MAX_CHAPTER_MS
+  )
+    at(
+      "VALIDATION_FAILED",
+      i18n.t("errors:validate.storyChapterDurationOutOfRange"),
+    );
   if (!STORY_ASPECTS.includes(story.brief.aspect))
     at("VALIDATION_FAILED", i18n.t("errors:validate.storyAspectUnknown"));
   if (story.chapters.length > MAX_CHAPTERS_PER_STORY)

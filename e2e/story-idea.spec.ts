@@ -103,7 +103,7 @@ test("a premise, a running time and a frame are written down, and the outline fo
     await page.getByTestId("story-idea-duration-3").click();
     await expect(page.getByTestId("story-idea-duration")).toHaveValue("3");
     await expect(page.getByTestId("story-idea-duration-hint")).toHaveText(
-      "About 3 chapters of a minute each; the film runs 03:00",
+      "About 3 episodes of 1 min each; the film runs 03:00",
     );
     await page.getByTestId("story-idea-aspect-9:16").click();
     await expect(page.getByTestId("story-idea-aspect-hint")).toHaveText(

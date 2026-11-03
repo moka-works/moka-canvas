@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { assetsApi } from "../../../api";
 import {
   ASPECT_LABELS,
+  MAX_CHAPTER_MS,
   MAX_TOTAL_DURATION_MS,
+  MIN_CHAPTER_MS,
   MIN_TOTAL_DURATION_MS,
   STORY_ASPECTS,
   STORY_IDEA_MAX,
@@ -290,6 +292,8 @@ export function IdeaStep({ story }: { story: StoryDocument }) {
         )}
 
         <DurationRow
+          chapterMs={brief.chapterMs}
+          onChapterChange={(ms) => writeBrief({ chapterMs: ms })}
           onChange={(ms) => writeBrief({ totalDurationMs: ms })}
           totalMs={brief.totalDurationMs}
         />
@@ -501,73 +505,131 @@ function AspectGlyph({ aspect }: { aspect: StoryAspect }) {
 
 function DurationRow({
   totalMs,
+  chapterMs,
   onChange,
+  onChapterChange,
 }: {
   totalMs: number;
+  chapterMs: number;
   onChange: (ms: number) => void;
+  onChapterChange: (ms: number) => void;
 }) {
   const { t } = useTranslation();
   const clamp = (ms: number) =>
     Math.min(MAX_TOTAL_DURATION_MS, Math.max(MIN_TOTAL_DURATION_MS, ms));
+  const clampChapter = (ms: number) =>
+    Math.min(MAX_CHAPTER_MS, Math.max(MIN_CHAPTER_MS, ms));
   const minutes = Math.round((totalMs / 60_000) * 10) / 10;
+  const chapterMinutes = Math.round((chapterMs / 60_000) * 10) / 10;
   const step = (by: number) => onChange(clamp(totalMs + by * 60_000));
+  const stepChapter = (by: number) =>
+    onChapterChange(clampChapter(chapterMs + by * 30_000));
 
   return (
-    <div className="story-field">
-      <span className="story-field-label">{t("story:idea.duration")}</span>
-      <div className="story-duration">
-        <div className="story-stepper">
-          <button
-            aria-label={t("story:idea.shorter")}
-            onClick={() => step(-1)}
-            type="button"
-          >
-            −
-          </button>
-          <input
-            aria-label={t("story:idea.duration")}
-            data-testid="story-idea-duration"
-            max={MAX_TOTAL_DURATION_MS / 60_000}
-            min={MIN_TOTAL_DURATION_MS / 60_000}
-            onChange={(event) => {
-              const wanted = Number(event.target.value);
-              if (Number.isFinite(wanted)) onChange(clamp(wanted * 60_000));
-            }}
-            step={0.5}
-            type="number"
-            value={minutes}
-          />
-          <span className="story-stepper-unit">{t("story:idea.minutes")}</span>
-          <button
-            aria-label={t("story:idea.longer")}
-            onClick={() => step(1)}
-            type="button"
-          >
-            +
-          </button>
-        </div>
-        <div className="story-chips">
-          {DURATION_PRESETS.map((preset) => (
+    <>
+      <div className="story-field">
+        <span className="story-field-label">{t("story:idea.duration")}</span>
+        <div className="story-duration">
+          <div className="story-stepper">
             <button
-              aria-pressed={minutes === preset}
-              className={`story-choice${minutes === preset ? " is-on" : ""}`}
-              data-testid={`story-idea-duration-${preset}`}
-              key={preset}
-              onClick={() => onChange(clamp(preset * 60_000))}
+              aria-label={t("story:idea.shorter")}
+              onClick={() => step(-1)}
               type="button"
             >
-              {t("story:idea.minutesCount", { count: preset })}
+              −
             </button>
-          ))}
+            <input
+              aria-label={t("story:idea.duration")}
+              data-testid="story-idea-duration"
+              max={MAX_TOTAL_DURATION_MS / 60_000}
+              min={MIN_TOTAL_DURATION_MS / 60_000}
+              onChange={(event) => {
+                const wanted = Number(event.target.value);
+                if (Number.isFinite(wanted)) onChange(clamp(wanted * 60_000));
+              }}
+              step={0.5}
+              type="number"
+              value={minutes}
+            />
+            <span className="story-stepper-unit">
+              {t("story:idea.minutes")}
+            </span>
+            <button
+              aria-label={t("story:idea.longer")}
+              onClick={() => step(1)}
+              type="button"
+            >
+              +
+            </button>
+          </div>
+          <div className="story-chips">
+            {DURATION_PRESETS.map((preset) => (
+              <button
+                aria-pressed={minutes === preset}
+                className={`story-choice${minutes === preset ? " is-on" : ""}`}
+                data-testid={`story-idea-duration-${preset}`}
+                key={preset}
+                onClick={() => onChange(clamp(preset * 60_000))}
+                type="button"
+              >
+                {t("story:idea.minutesCount", { count: preset })}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="story-hint" data-testid="story-idea-duration-hint">
+          {t("story:idea.durationHint", {
+            chapters: defaultChapterCount(totalMs, chapterMs),
+            minutes: chapterMinutes,
+            duration: formatDuration(totalMs),
+          })}
+        </p>
+      </div>
+
+      <div className="story-field">
+        <span className="story-field-label">
+          {t("story:idea.chapterLength")}
+        </span>
+        <div className="story-duration">
+          <div className="story-stepper">
+            <button
+              aria-label={t("story:idea.chapterShorter")}
+              onClick={() => stepChapter(-1)}
+              type="button"
+            >
+              −
+            </button>
+            <input
+              aria-label={t("story:idea.chapterLength")}
+              data-testid="story-idea-chapter-length"
+              max={MAX_CHAPTER_MS / 60_000}
+              min={MIN_CHAPTER_MS / 60_000}
+              onChange={(event) => {
+                const wanted = Number(event.target.value);
+                if (Number.isFinite(wanted))
+                  onChapterChange(clampChapter(wanted * 60_000));
+              }}
+              step={0.5}
+              type="number"
+              value={chapterMinutes}
+            />
+            <span className="story-stepper-unit">
+              {t("story:idea.minutes")}
+            </span>
+            <button
+              aria-label={t("story:idea.chapterLonger")}
+              onClick={() => stepChapter(1)}
+              type="button"
+            >
+              +
+            </button>
+          </div>
+          <span className="story-hint">
+            {t("story:idea.chapterLengthHint")}
+          </span>
         </div>
       </div>
-      <p className="story-hint" data-testid="story-idea-duration-hint">
-        {t("story:idea.durationHint", {
-          chapters: defaultChapterCount(totalMs),
-          duration: formatDuration(totalMs),
-        })}
-      </p>
-    </div>
+    </>
   );
 }
 

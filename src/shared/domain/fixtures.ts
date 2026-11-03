@@ -1054,6 +1054,7 @@ export function buildStoryMokaFile(): MokaFile {
         sourceName: "novel.txt",
         sourceSplit: true,
         totalDurationMs: 120_000,
+        chapterMs: 60_000,
         aspect: "16:9",
         genre: "对白剧情",
         style: "现代都市风",

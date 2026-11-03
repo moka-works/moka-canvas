@@ -2,6 +2,7 @@ import { Double, Long, deserialize, serialize } from "bson";
 import {
   CANVAS_SCHEMA_VERSION,
   CANVAS_SCHEMA_VERSION_MIN,
+  DEFAULT_CHAPTER_MS,
   MOKA_FILE_VERSION,
   MOKA_MAGIC,
   PROJECT_ASSET_CATEGORIES,
@@ -543,6 +544,7 @@ function encodeStoryBrief(brief: StoryBrief): Record<string, unknown> {
   const doc: Record<string, unknown> = {
     idea: brief.idea,
     totalDurationMs: asLong(brief.totalDurationMs),
+    chapterMs: asLong(brief.chapterMs),
     aspect: brief.aspect,
     genre: brief.genre,
     style: brief.style,
@@ -1600,6 +1602,9 @@ function decodeStoryBrief(value: unknown): StoryBrief {
       decodeLongField(doc.totalDurationMs),
       "brief.totalDurationMs",
     ),
+    // Documents written before an episode could be told its own length read
+    // as the minute it used to be.
+    chapterMs: decodeLongField(doc.chapterMs) ?? DEFAULT_CHAPTER_MS,
     aspect: fallbackOneOf(STORY_ASPECTS, doc.aspect, "16:9"),
     genre: asString(doc.genre, "brief.genre"),
     style: asString(doc.style, "brief.style"),

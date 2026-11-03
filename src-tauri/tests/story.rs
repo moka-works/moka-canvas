@@ -271,6 +271,7 @@ fn story_document() -> MokaFile {
             source_name: Some("novel.txt".into()),
             source_split: Some(true),
             total_duration_ms: 120_000,
+            chapter_ms: 60_000,
             aspect: story::StoryAspect::Widescreen,
             genre: "对白剧情".into(),
             style: "现代都市风".into(),
@@ -467,6 +468,7 @@ fn moves_only_the_fields_a_brief_patch_names() {
             story_id: STORY.into(),
             patch: story::StoryBriefPatch {
                 total_duration_ms: Some(300_000),
+                chapter_ms: Some(90_000),
                 genre: Some("悬疑".into()),
                 ..Default::default()
             },
@@ -474,6 +476,7 @@ fn moves_only_the_fields_a_brief_patch_names() {
     );
     let brief = &story_of(&next).brief;
     assert_eq!(brief.total_duration_ms, 300_000);
+    assert_eq!(brief.chapter_ms, 90_000);
     assert_eq!(brief.genre, "悬疑");
     assert_eq!(brief.style, "现代都市风");
     assert_eq!(brief.idea, story_of(&moka).brief.idea);
@@ -489,6 +492,24 @@ fn refuses_a_running_time_nobody_offered() {
                 story_id: STORY.into(),
                 patch: story::StoryBriefPatch {
                     total_duration_ms: Some(1),
+                    ..Default::default()
+                },
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
+fn refuses_an_episode_length_nobody_offered() {
+    let moka = story_document();
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateStoryBrief {
+                story_id: STORY.into(),
+                patch: story::StoryBriefPatch {
+                    chapter_ms: Some(1),
                     ..Default::default()
                 },
             }
@@ -1797,6 +1818,7 @@ fn create_story(name: &str) -> StoryDocument {
             source_name: None,
             source_split: None,
             total_duration_ms: 120_000,
+            chapter_ms: 60_000,
             aspect: story::StoryAspect::Widescreen,
             genre: String::new(),
             style: String::new(),
