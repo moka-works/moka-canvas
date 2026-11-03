@@ -3,6 +3,7 @@
 //! These are the shapes callers see. On-disk documents wrap them in envelopes
 //! that carry a revision counter; the envelopes never leave the backend.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -397,6 +398,231 @@ impl Default for Preferences {
             story: StoryPreferences::default(),
         }
     }
+}
+
+/// A panel beside the canvas, folded away or standing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PanelFolds {
+    pub left: bool,
+    pub right: bool,
+}
+
+/// How wide each panel beside the canvas was left; `None` means never dragged.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PanelWidths {
+    pub left: Option<u32>,
+    pub right: Option<u32>,
+}
+
+/// A grid the picture-splitting tool was last asked for.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PictureGrid {
+    pub rows: u32,
+    pub cols: u32,
+}
+
+/// Which picture tools the row offers, and the choices those tools remember.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PictureToolsPrefs {
+    /// `None` leaves the row showing every tool.
+    pub shown: Option<Vec<String>>,
+    pub crop_ratio: Option<String>,
+    pub grid: Option<PictureGrid>,
+}
+
+/// Where one timeline was left: its scale, its scroll, and its playhead.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TimelineView {
+    pub px_per_sec: f64,
+    pub scroll_left_px: f64,
+    pub playhead_ms: f64,
+}
+
+impl Default for TimelineView {
+    fn default() -> Self {
+        Self {
+            px_per_sec: 60.0,
+            scroll_left_px: 0.0,
+            playhead_ms: 0.0,
+        }
+    }
+}
+
+/// Where the story room was left in one project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StoryPlace {
+    pub story_id: Option<String>,
+    pub step: Option<String>,
+}
+
+/// Choices about the interface rather than about the work.
+///
+/// Kept in the metadata directory beside the model configuration rather than
+/// in the browser's own storage: the desktop window is served from a port that
+/// is not part of this document, and an origin that moves is an interface that
+/// forgets. Nothing here travels inside a project package.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UiPreferences {
+    pub locale: String,
+    pub canvas_theme: String,
+    pub panel_folds: PanelFolds,
+    pub panel_widths: PanelWidths,
+    pub picture_tools: PictureToolsPrefs,
+    pub open_canvases: BTreeMap<String, Vec<String>>,
+    pub clip_timelines: BTreeMap<String, String>,
+    pub clip_views: BTreeMap<String, TimelineView>,
+    pub clip_quality: String,
+    pub clip_volume: f64,
+    pub clip_snap: bool,
+    pub stage_split: f64,
+    pub story_models: BTreeMap<String, String>,
+    pub story_places: BTreeMap<String, StoryPlace>,
+    pub director_onboarding: Option<String>,
+    pub last_update_check: Option<i64>,
+}
+
+impl Default for UiPreferences {
+    fn default() -> Self {
+        Self {
+            locale: "system".to_string(),
+            canvas_theme: "graphite".to_string(),
+            panel_folds: PanelFolds::default(),
+            panel_widths: PanelWidths::default(),
+            picture_tools: PictureToolsPrefs::default(),
+            open_canvases: BTreeMap::new(),
+            clip_timelines: BTreeMap::new(),
+            clip_views: BTreeMap::new(),
+            clip_quality: "full".to_string(),
+            clip_volume: 1.0,
+            clip_snap: true,
+            stage_split: 0.6,
+            story_models: BTreeMap::new(),
+            story_places: BTreeMap::new(),
+            director_onboarding: None,
+            last_update_check: None,
+        }
+    }
+}
+
+impl UiPreferences {
+    /// Applies what a window changed. Scalars replace, and a map entry sent
+    /// as `null` is removed; a field left out keeps its stored value, so one
+    /// window cannot undo what another changed beside it.
+    pub fn apply(&mut self, patch: UiPrefsPatch) {
+        if let Some(locale) = patch.locale {
+            self.locale = locale;
+        }
+        if let Some(theme) = patch.canvas_theme {
+            self.canvas_theme = theme;
+        }
+        if let Some(folds) = patch.panel_folds {
+            self.panel_folds = folds;
+        }
+        if let Some(widths) = patch.panel_widths {
+            self.panel_widths = widths;
+        }
+        if let Some(tools) = patch.picture_tools {
+            self.picture_tools = tools;
+        }
+        if let Some(quality) = patch.clip_quality {
+            self.clip_quality = quality;
+        }
+        if let Some(volume) = patch.clip_volume {
+            self.clip_volume = volume;
+        }
+        if let Some(snap) = patch.clip_snap {
+            self.clip_snap = snap;
+        }
+        if let Some(split) = patch.stage_split {
+            self.stage_split = split;
+        }
+        if let Some(onboarding) = patch.director_onboarding {
+            self.director_onboarding = Some(onboarding);
+        }
+        if let Some(at) = patch.last_update_check {
+            self.last_update_check = Some(at);
+        }
+        for (project, canvases) in patch.open_canvases {
+            match canvases {
+                Some(canvases) => {
+                    self.open_canvases.insert(project, canvases);
+                }
+                None => {
+                    self.open_canvases.remove(&project);
+                }
+            }
+        }
+        for (project, timeline) in patch.clip_timelines {
+            match timeline {
+                Some(timeline) => {
+                    self.clip_timelines.insert(project, timeline);
+                }
+                None => {
+                    self.clip_timelines.remove(&project);
+                }
+            }
+        }
+        for (timeline, view) in patch.clip_views {
+            match view {
+                Some(view) => {
+                    self.clip_views.insert(timeline, view);
+                }
+                None => {
+                    self.clip_views.remove(&timeline);
+                }
+            }
+        }
+        for (place, model) in patch.story_models {
+            match model {
+                Some(model) => {
+                    self.story_models.insert(place, model);
+                }
+                None => {
+                    self.story_models.remove(&place);
+                }
+            }
+        }
+        for (project, place) in patch.story_places {
+            match place {
+                Some(place) => {
+                    self.story_places.insert(project, place);
+                }
+                None => {
+                    self.story_places.remove(&project);
+                }
+            }
+        }
+    }
+}
+
+/// What one window changed in [`UiPreferences`]. Every field is optional, and
+/// map entries are `Some` to write and `None` to remove.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UiPrefsPatch {
+    pub locale: Option<String>,
+    pub canvas_theme: Option<String>,
+    pub panel_folds: Option<PanelFolds>,
+    pub panel_widths: Option<PanelWidths>,
+    pub picture_tools: Option<PictureToolsPrefs>,
+    pub clip_quality: Option<String>,
+    pub clip_volume: Option<f64>,
+    pub clip_snap: Option<bool>,
+    pub stage_split: Option<f64>,
+    pub director_onboarding: Option<String>,
+    pub last_update_check: Option<i64>,
+    pub open_canvases: BTreeMap<String, Option<Vec<String>>>,
+    pub clip_timelines: BTreeMap<String, Option<String>>,
+    pub clip_views: BTreeMap<String, Option<TimelineView>>,
+    pub story_models: BTreeMap<String, Option<String>>,
+    pub story_places: BTreeMap<String, Option<StoryPlace>>,
 }
 
 /// Everything the generation path needs about model configurations, minus

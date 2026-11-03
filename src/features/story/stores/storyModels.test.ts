@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  currentUiPrefs,
+  defaultUiPrefs,
+  replaceUiPrefs,
+  resetUiPrefs,
+} from "../../../shared/prefs/prefsData";
+import type { UiPreferences } from "../../../shared/prefs/types";
 import { askPlaceOfKind, storyAskModel, useStoryModels } from "./storyModels";
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   useStoryModels.setState({ choices: {} });
 });
 
@@ -26,14 +33,14 @@ describe("the models a story room is set to", () => {
     useStoryModels.getState().choose("image", null);
     expect(storyAskModel("keyframeArt")).toBeNull();
     // Nothing left behind for the next reader of this machine.
-    expect(localStorage.getItem("moka-canvas:story-models")).toBe("{}");
+    expect(currentUiPrefs().storyModels).toEqual({});
   });
 
   it("reads back what the machine kept, and only what is a model", async () => {
-    localStorage.setItem(
-      "moka-canvas:story-models",
-      JSON.stringify({ text: "scribe-2", nonsense: "x", image: 7, music: "" }),
-    );
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      storyModels: { text: "scribe-2", nonsense: "x", image: 7, music: "" },
+    } as unknown as UiPreferences);
     vi.resetModules();
 
     // What the store is made of on a machine that has been used before: the

@@ -1,9 +1,13 @@
 import { create } from "zustand";
 import type { CanvasId, MokaFile } from "../../../shared/domain";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /**
- * Which boards are open, kept on this machine beside the project rather than
- * inside it.
+ * Which boards are open, kept in the interface preferences beside the project
+ * rather than inside it.
  *
  * A project holds every canvas it has, and the strip across the top holds the
  * ones being looked at: opening a board from the tree puts a tab up, and closing
@@ -13,34 +17,14 @@ import type { CanvasId, MokaFile } from "../../../shared/domain";
  * and this machine, so a package handed to somebody else carries none of it and
  * opens onto the first board like any other.
  */
-const STORED_UNDER = "moka-canvas:open-canvases";
-
-function keyFor(projectId: string): string {
-  return `${STORED_UNDER}:${projectId}`;
-}
-
 function read(projectId: string): CanvasId[] {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return [];
-  try {
-    const kept = localStorage.getItem(keyFor(projectId));
-    if (!kept) return [];
-    const parsed: unknown = JSON.parse(kept);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((id): id is CanvasId => typeof id === "string");
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return [];
-  }
+  const kept: unknown = currentUiPrefs().openCanvases[projectId];
+  if (!Array.isArray(kept)) return [];
+  return kept.filter((id): id is CanvasId => typeof id === "string");
 }
 
 function keep(projectId: string, ids: CanvasId[]) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(keyFor(projectId), JSON.stringify(ids));
-  } catch {
-    // A store that will not take it costs the remembering, not the choice.
-  }
+  rememberUiPrefs({ openCanvases: { [projectId]: ids } });
 }
 
 interface OpenCanvasesState {

@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /** Which column beside the canvas is being spoken of. */
 export type PanelSide = "left" | "right";
@@ -47,10 +51,8 @@ interface StoredWidths {
   right: number | null;
 }
 
-const START: StoredWidths = { left: null, right: null };
-
 /**
- * Where the widths are kept: the browser's own store on this machine.
+ * Where the widths are kept: the interface preferences file.
  *
  * How wide somebody likes a column is about them rather than about the work, so
  * it is kept beside the project and never inside it — a package handed to
@@ -59,23 +61,12 @@ const START: StoredWidths = { left: null, right: null };
  * conversation column reads wider than an inspector, and each keeps that until
  * somebody asks it otherwise.
  */
-const STORED_UNDER = "moka-canvas:panel-widths";
-
 function read(): StoredWidths {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return START;
-  try {
-    const kept = localStorage.getItem(STORED_UNDER);
-    if (!kept) return START;
-    const parsed = JSON.parse(kept) as Partial<StoredWidths>;
-    return {
-      left: keptWidth(parsed.left),
-      right: keptWidth(parsed.right),
-    };
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return START;
-  }
+  const kept = currentUiPrefs().panelWidths;
+  return {
+    left: keptWidth(kept.left),
+    right: keptWidth(kept.right),
+  };
 }
 
 /** A number that was written here, and nothing else passes as one. */
@@ -86,12 +77,7 @@ function keptWidth(value: unknown): number | null {
 }
 
 function keep(widths: StoredWidths) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(STORED_UNDER, JSON.stringify(widths));
-  } catch {
-    // A store that will not take it costs the remembering, not the width.
-  }
+  rememberUiPrefs({ panelWidths: widths });
 }
 
 export interface PanelWidthsState extends StoredWidths {

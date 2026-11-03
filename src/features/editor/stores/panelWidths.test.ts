@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  currentUiPrefs,
+  defaultUiPrefs,
+  replaceUiPrefs,
+  resetUiPrefs,
+} from "../../../shared/prefs/prefsData";
+import type { UiPreferences } from "../../../shared/prefs/types";
+import {
   PANEL_MAX,
   PANEL_MIN,
   clampPanelWidth,
@@ -18,7 +25,7 @@ function wideWindow() {
 
 describe("panelWidths", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetUiPrefs();
     wideWindow();
     usePanelWidths.setState({ left: null, right: null });
   });
@@ -51,11 +58,9 @@ describe("panelWidths", () => {
     expect(usePanelWidths.getState().right).toBeNull();
   });
 
-  it("keeps the widths in the browser's own store, and reads them back", async () => {
+  it("keeps the widths in the preferences file, and reads them back", async () => {
     usePanelWidths.getState().setWidth("left", 275);
-    expect(
-      JSON.parse(localStorage.getItem("moka-canvas:panel-widths")!),
-    ).toEqual({ left: 275, right: null });
+    expect(currentUiPrefs().panelWidths).toEqual({ left: 275, right: null });
 
     // Read again the way a second visit to the editor reads: from what was kept.
     vi.resetModules();
@@ -63,11 +68,11 @@ describe("panelWidths", () => {
     expect(kept.usePanelWidths.getState().left).toBe(275);
   });
 
-  it("takes nothing from a store holding something else", async () => {
-    localStorage.setItem(
-      "moka-canvas:panel-widths",
-      JSON.stringify({ left: "wide", right: Number.NaN }),
-    );
+  it("takes nothing from a file holding something else", async () => {
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      panelWidths: { left: "wide", right: Number.NaN },
+    } as unknown as UiPreferences);
 
     vi.resetModules();
     const kept = await import("./panelWidths");

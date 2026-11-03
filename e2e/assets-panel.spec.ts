@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator } from "./fixtures";
 import {
   createProject,
   forgetHome,

@@ -8,6 +8,13 @@ import {
 } from "../../../shared/domain/fixtures";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import {
+  currentUiPrefs,
+  defaultUiPrefs,
+  replaceUiPrefs,
+  resetUiPrefs,
+} from "../../../shared/prefs/prefsData";
+import type { UiPreferences } from "../../../shared/prefs/types";
+import {
   initialTimelineId,
   rememberedMasterVolume,
   rememberedQuality,
@@ -45,7 +52,7 @@ function store() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   useClipStore.setState({
     activeTimelineId: null,
@@ -98,15 +105,14 @@ describe("which timeline a project opens onto", () => {
     expect(rememberedTimelineId("p2")).toBeNull();
   });
 
-  it("takes nothing from a store holding something else", () => {
-    localStorage.setItem(
-      "moka-canvas:clip-timeline:p1",
-      JSON.stringify({ id: "x" }),
-    );
+  it("takes nothing from a file holding something else", () => {
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipTimelines: { p1: { id: "x" } },
+    } as unknown as UiPreferences);
     expect(rememberedTimelineId("p1")).toBeNull();
-    localStorage.setItem("moka-canvas:clip-timeline:p1", "{not json");
-    expect(rememberedTimelineId("p1")).toBeNull();
-    localStorage.setItem("moka-canvas:clip-timeline:p1", JSON.stringify(""));
+
+    replaceUiPrefs({ ...defaultUiPrefs(), clipTimelines: { p1: "" } });
     expect(rememberedTimelineId("p1")).toBeNull();
   });
 });
@@ -116,9 +122,7 @@ describe("what the cutting room is looking at", () => {
     const moka = project("p1", 2);
     open(moka);
     store().setActiveTimeline(moka.timelines![1].id);
-    expect(
-      JSON.parse(localStorage.getItem("moka-canvas:clip-timeline:p1")!),
-    ).toBe(moka.timelines![1].id);
+    expect(currentUiPrefs().clipTimelines.p1).toBe(moka.timelines![1].id);
   });
 
   it("forgets the place when there is no timeline to be at", () => {
@@ -126,7 +130,7 @@ describe("what the cutting room is looking at", () => {
     open(moka);
     store().setActiveTimeline(moka.timelines![0].id);
     store().setActiveTimeline(null);
-    expect(localStorage.getItem("moka-canvas:clip-timeline:p1")).toBeNull();
+    expect(currentUiPrefs().clipTimelines).not.toHaveProperty("p1");
     expect(store().activeTimelineId).toBeNull();
   });
 
@@ -294,10 +298,12 @@ describe("how the timeline is looked at", () => {
     expect(store().playheadMs).toBe(4_321);
 
     // Written down by id, and nothing about a view goes into the document.
-    expect(
-      JSON.parse(localStorage.getItem(`moka-canvas:clip-view:${first.id}`)!),
-    ).toEqual({ pxPerSec: 120, scrollLeftPx: 90, playheadMs: 4_321 });
-    expect(localStorage.getItem("moka-canvas:clip-view:p1")).toBeNull();
+    expect(currentUiPrefs().clipViews[first.id]).toEqual({
+      pxPerSec: 120,
+      scrollLeftPx: 90,
+      playheadMs: 4_321,
+    });
+    expect(currentUiPrefs().clipViews).not.toHaveProperty("p1");
   });
 
   it("starts a timeline it has never seen at the default", () => {
@@ -306,21 +312,22 @@ describe("how the timeline is looked at", () => {
     expect(store().view).toEqual({ pxPerSec: 60, scrollLeftPx: 0 });
   });
 
-  it("takes nothing from a view store holding something else", () => {
-    localStorage.setItem("moka-canvas:clip-view:t1", "{not json");
-    expect(rememberedView("t1")).toBeNull();
-    localStorage.setItem(
-      "moka-canvas:clip-view:t1",
-      JSON.stringify({ pxPerSec: "90", scrollLeftPx: -5, playheadMs: -2 }),
-    );
+  it("takes nothing from a view file holding something else", () => {
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipViews: {
+        t1: { pxPerSec: "90", scrollLeftPx: -5, playheadMs: -2 },
+      },
+    } as unknown as UiPreferences);
     expect(rememberedView("t1")).toEqual({
       view: { pxPerSec: 60, scrollLeftPx: 0 },
       playheadMs: 0,
     });
-    localStorage.setItem(
-      "moka-canvas:clip-view:t1",
-      JSON.stringify({ pxPerSec: 20_000, scrollLeftPx: 12 }),
-    );
+
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipViews: { t1: { pxPerSec: 20_000, scrollLeftPx: 12 } },
+    } as unknown as UiPreferences);
     expect(rememberedView("t1")).toEqual({
       view: { pxPerSec: 960, scrollLeftPx: 12 },
       playheadMs: 0,
@@ -421,8 +428,8 @@ describe("the clock the cut is played by", () => {
   it("remembers the preview tier and the master level on this machine", () => {
     store().setQuality("quarter");
     store().setMasterVolume(0.4);
-    expect(localStorage.getItem("moka-canvas:clip-quality")).toBe("quarter");
-    expect(localStorage.getItem("moka-canvas:clip-volume")).toBe("0.4");
+    expect(currentUiPrefs().clipQuality).toBe("quarter");
+    expect(currentUiPrefs().clipVolume).toBe(0.4);
     expect(rememberedQuality()).toBe("quarter");
     expect(rememberedMasterVolume()).toBe(0.4);
   });
@@ -436,24 +443,34 @@ describe("the clock the cut is played by", () => {
     expect(store().masterVolume).toBe(0);
   });
 
-  it("reads a preference store holding something else as the start", () => {
-    localStorage.setItem("moka-canvas:clip-quality", "gigantic");
+  it("reads a preference file holding something else as the start", () => {
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipQuality: "gigantic",
+      clipVolume: "loud",
+    } as unknown as UiPreferences);
     expect(rememberedQuality()).toBe("full");
-    localStorage.setItem("moka-canvas:clip-volume", "loud");
     expect(rememberedMasterVolume()).toBe(1);
-    localStorage.setItem("moka-canvas:clip-volume", "4");
+
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipVolume: 4,
+    } as unknown as UiPreferences);
     expect(rememberedMasterVolume()).toBe(1);
   });
 
   it("remembers the magnet on this machine, on by default", () => {
     expect(rememberedSnapEnabled()).toBe(true);
     store().setSnapEnabled(false);
-    expect(localStorage.getItem("moka-canvas:clip-snap")).toBe("off");
+    expect(currentUiPrefs().clipSnap).toBe(false);
     expect(rememberedSnapEnabled()).toBe(false);
     store().setSnapEnabled(true);
     expect(rememberedSnapEnabled()).toBe(true);
-    // A store holding something else is read as the default, not as off.
-    localStorage.setItem("moka-canvas:clip-snap", "nonsense");
+    // A file holding something else is read as the default, not as off.
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      clipSnap: "nonsense",
+    } as unknown as UiPreferences);
     expect(rememberedSnapEnabled()).toBe(true);
   });
 
@@ -461,7 +478,7 @@ describe("the clock the cut is played by", () => {
     expect(store().loop).toBe(false);
     store().toggleLoop();
     expect(store().loop).toBe(true);
-    expect(localStorage.getItem("moka-canvas:clip-loop")).toBeNull();
+    expect(currentUiPrefs()).not.toHaveProperty("loop");
   });
 });
 

@@ -13,6 +13,7 @@ import {
   buildShelfMokaFile,
   goldenNodeIds,
 } from "../../shared/domain/fixtures";
+import { resetUiPrefs } from "../../shared/prefs/prefsData";
 import { useAppStore } from "./stores/appStore";
 import { useEditorStore, EMPTY_SELECTION } from "./stores/editorStore";
 import { useHistoryStore } from "./stores/historyStore";
@@ -121,7 +122,7 @@ beforeEach(() => {
   // Which boards were left open is kept on the machine rather than in the
   // project, so a test that turned to another board must not open the next
   // test onto it.
-  localStorage.clear();
+  resetUiPrefs();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   useProjectStore.getState().close();

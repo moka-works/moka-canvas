@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator } from "./fixtures";
 import { createProject, forgetProjects, projectHome } from "./helpers";
 
 /** Where the words of a row start, which is what a column of names is read by. */

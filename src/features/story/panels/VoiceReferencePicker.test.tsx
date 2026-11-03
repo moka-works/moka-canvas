@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -62,7 +63,7 @@ function draw(
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   listening();
 });

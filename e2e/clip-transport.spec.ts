@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { RULER_H, TRACK_HEIGHT } from "../src/features/clip/timeline/geometry";
 import {
   chooseSavePath,

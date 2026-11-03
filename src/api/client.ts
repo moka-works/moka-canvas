@@ -124,6 +124,8 @@ interface RequestOptions {
   body?: unknown;
   formData?: FormData;
   signal?: AbortSignal;
+  /** Lets a write outlive the page, for the preferences flushed on unload. */
+  keepalive?: boolean;
   onUploadProgress?: (fraction: number) => void;
 }
 
@@ -214,6 +216,7 @@ async function request<T>(
     response = await fetch(path, {
       method,
       signal: options.signal,
+      keepalive: options.keepalive,
       // FormData sets its own multipart boundary header.
       headers:
         options.body !== undefined && !options.formData

@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import App from "../../App";
 import { buildGoldenMokaFile } from "../../shared/domain/fixtures";
+import { currentUiPrefs, resetUiPrefs } from "../../shared/prefs/prefsData";
 import { useAppearance } from "./stores/appearance";
 import { useAppStore } from "./stores/appStore";
 import { useEditorStore } from "./stores/editorStore";
@@ -85,7 +86,7 @@ function canvas() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   useProjectStore.getState().close();
@@ -160,7 +161,7 @@ describe("choosing the palette a canvas is drawn in", () => {
     fireEvent.click(group.getByRole("button", { name: "Paper" }));
 
     expect(useAppearance.getState().theme).toBe("paper");
-    expect(localStorage.getItem("moka-canvas:canvas-theme")).toBe("paper");
+    expect(currentUiPrefs().canvasTheme).toBe("paper");
     await vi.waitFor(() => {
       expect(
         group

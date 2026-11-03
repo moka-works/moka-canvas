@@ -258,8 +258,8 @@ A project package (`.moka`, a ZIP) can never contain application metadata:
 - credential names — `secrets.json`, `master.key`, and any `*.corrupt.*`
   quarantine copy — are excluded at **any** depth in the tree;
 - the other metadata documents (`meta.json`, `recent-projects.json`,
-  `models.json`, the legacy `providers.json`, `prompts/sources.json`) are excluded at
-  the **project root**
+  `models.json`, `ui.json`, the legacy `providers.json`, `prompts/sources.json`)
+  are excluded at the **project root**
   only, so a project that legitimately contains its own `assets/meta.json` still
   ships it;
 - the project's own `output` folder — where the save dialogs open, and where an

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
 
@@ -143,7 +144,7 @@ function open(): void {
 beforeEach(() => {
   calls = [];
   vi.useFakeTimers();
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useAppStore.setState({ toasts: [] });

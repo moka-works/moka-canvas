@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::types::{Defaults, ModelConfig, Preferences, PromptItem, PromptSource, RecentProject};
+use super::types::{
+    Defaults, ModelConfig, Preferences, PromptItem, PromptSource, RecentProject, UiPreferences,
+};
 use crate::domain::{now_iso, IsoTimestamp};
 
 pub const META_DOC: &str = "meta.json";
@@ -20,16 +22,18 @@ pub const MODELS_DOC: &str = "models.json";
 /// kept so a directory still carrying one does not pack it into a package.
 pub const LEGACY_PROVIDERS_DOC: &str = "providers.json";
 pub const SECRETS_DOC: &str = "secrets.json";
+pub const UI_DOC: &str = "ui.json";
 pub const PROMPT_SOURCES_DOC: &str = "prompts/sources.json";
 pub const PROMPT_ITEMS_DIR: &str = "prompts/items";
 
 /// Document names known to this layer. Anything else in the directory is
 /// never read and never deleted.
-pub const MANAGED_DOCUMENTS: [&str; 5] = [
+pub const MANAGED_DOCUMENTS: [&str; 6] = [
     META_DOC,
     RECENT_DOC,
     MODELS_DOC,
     SECRETS_DOC,
+    UI_DOC,
     PROMPT_SOURCES_DOC,
 ];
 
@@ -98,6 +102,16 @@ pub struct SecretEntry {
     pub fingerprint: String,
     pub masked: String,
     pub rotated_at: IsoTimestamp,
+}
+
+/// Interface choices: language, palette, panel geometry, and where each
+/// project was last left. Not part of any project package.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiDoc {
+    pub revision: u64,
+    #[serde(default)]
+    pub preferences: UiPreferences,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,6 +203,7 @@ mod tests {
                 SECRETS_DOC,
                 serde_json::to_vec(&SecretsDoc::default()).unwrap(),
             ),
+            (UI_DOC, serde_json::to_vec(&UiDoc::default()).unwrap()),
             (
                 PROMPT_SOURCES_DOC,
                 serde_json::to_vec(&PromptSourcesDoc::default()).unwrap(),

@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 import type { PanelSide } from "./panelWidths";
 
 /**
@@ -8,41 +12,24 @@ import type { PanelSide } from "./panelWidths";
  * it showed is still there and one click brings it back, so the canvas can be
  * given the whole window for as long as it is worth doing. Which columns are
  * folded is about the reader and their window rather than about the work, so
- * it is kept beside the widths they dragged and never inside a project.
+ * it is kept in the interface preferences beside the widths they dragged and
+ * never inside a project.
  */
 interface StoredFolds {
   left: boolean;
   right: boolean;
 }
 
-const START: StoredFolds = { left: false, right: false };
-
-const STORED_UNDER = "moka-canvas:panel-folds";
-
 function read(): StoredFolds {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return START;
-  try {
-    const kept = localStorage.getItem(STORED_UNDER);
-    if (!kept) return START;
-    const parsed = JSON.parse(kept) as Partial<StoredFolds>;
-    return {
-      left: parsed.left === true,
-      right: parsed.right === true,
-    };
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return START;
-  }
+  const kept = currentUiPrefs().panelFolds;
+  return {
+    left: kept.left === true,
+    right: kept.right === true,
+  };
 }
 
 function keep(folds: StoredFolds) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(STORED_UNDER, JSON.stringify(folds));
-  } catch {
-    // A store that will not take it costs the remembering, not the folding.
-  }
+  rememberUiPrefs({ panelFolds: folds });
 }
 
 export interface PanelFoldsState extends StoredFolds {

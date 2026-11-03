@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { createProject, projectHome } from "./helpers";

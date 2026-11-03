@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /**
  * How much of the stage the preview takes, the timeline taking the rest.
@@ -25,29 +29,13 @@ export function clampSplit(share: number): number {
   return Math.round(clamped * 10_000) / 10_000;
 }
 
-const STORED_UNDER = "moka-canvas:clip-stage-split";
-
 function read(): number {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return SPLIT_START;
-  try {
-    const kept = localStorage.getItem(STORED_UNDER);
-    if (!kept) return SPLIT_START;
-    const parsed: unknown = JSON.parse(kept);
-    return typeof parsed === "number" ? clampSplit(parsed) : SPLIT_START;
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return SPLIT_START;
-  }
+  const kept: unknown = currentUiPrefs().stageSplit;
+  return typeof kept === "number" ? clampSplit(kept) : SPLIT_START;
 }
 
 function keep(share: number) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(STORED_UNDER, JSON.stringify(share));
-  } catch {
-    // A store that will not take it costs the remembering, not the room.
-  }
+  rememberUiPrefs({ stageSplit: share });
 }
 
 interface StageSplitState {

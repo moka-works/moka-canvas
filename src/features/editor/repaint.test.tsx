@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -285,7 +286,7 @@ beforeEach(() => {
     );
   };
   HTMLCanvasElement.prototype.setPointerCapture = () => {};
-  localStorage.clear();
+  resetUiPrefs();
   useToolPrefs.setState({
     shown: [...BAR_ENTRIES],
     cropRatio: null,

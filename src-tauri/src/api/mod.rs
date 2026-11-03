@@ -363,6 +363,7 @@ pub fn router() -> axum::Router<ApiState> {
             post(routes::preview_generation),
         )
         .merge(model_router())
+        .merge(ui_router())
         .merge(generate_router())
         .merge(clip_router())
         .merge(filesystem_router())
@@ -485,6 +486,24 @@ fn model_router() -> axum::Router<ApiState> {
             put(routes::set_secret_storage),
         )
         .route_layer(DefaultBodyLimit::max(MAX_PROVIDER_BODY_BYTES))
+}
+
+/// Interface choices: language, palette, panel geometry, and the places the
+/// last visit left. A document of names and numbers, so the ceiling is small.
+fn ui_router() -> axum::Router<ApiState> {
+    use axum::extract::DefaultBodyLimit;
+    use axum::routing::get;
+
+    const MAX_UI_BODY_BYTES: usize = 256 * 1024;
+
+    axum::Router::new()
+        .route(
+            "/api/v1/ui-prefs",
+            get(routes::get_ui_preferences)
+                .patch(routes::patch_ui_preferences)
+                .delete(routes::reset_ui_preferences),
+        )
+        .route_layer(DefaultBodyLimit::max(MAX_UI_BODY_BYTES))
 }
 
 /// Where a file dialog's questions are answered.

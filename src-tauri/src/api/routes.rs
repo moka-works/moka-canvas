@@ -23,7 +23,7 @@ use crate::generate::{
     ProviderError, TaskState,
 };
 use crate::imaging::{operate, OperatorReport, OperatorRequest};
-use crate::metadata::RecentProject;
+use crate::metadata::{RecentProject, UiPreferences, UiPrefsPatch};
 use crate::project::store::FsProjectStore;
 use crate::project::{
     AssetShelfEdit, ByteRange, CreateProject, OpenProject, PackageScope, ProjectStore, StagedAsset,
@@ -1652,6 +1652,29 @@ pub async fn patch_preferences(
         .set_preferences(&preferences, patch.expected_revision)
         .await?;
     models_view(&state).await
+}
+
+/// Interface choices, read whole when a window starts.
+pub async fn get_ui_preferences(
+    State(state): State<ApiState>,
+) -> Result<Json<UiPreferences>, Problem> {
+    Ok(Json(state.metadata.ui_preferences().await?))
+}
+
+/// Applies what one window changed and answers with the merged whole.
+pub async fn patch_ui_preferences(
+    State(state): State<ApiState>,
+    json: Result<Json<UiPrefsPatch>, JsonRejection>,
+) -> Result<Json<UiPreferences>, Problem> {
+    let Json(patch) = json_or_problem(json)?;
+    Ok(Json(state.metadata.set_ui_preferences(&patch).await?))
+}
+
+/// Puts the interface back to its defaults.
+pub async fn reset_ui_preferences(
+    State(state): State<ApiState>,
+) -> Result<Json<UiPreferences>, Problem> {
+    Ok(Json(state.metadata.reset_ui_preferences().await?))
 }
 
 // ---------------------------------------------------------------- generation

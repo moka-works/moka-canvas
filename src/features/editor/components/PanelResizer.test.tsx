@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -39,7 +40,7 @@ const DOWN = {
 
 describe("panelResizer", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetUiPrefs();
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       value: 2000,

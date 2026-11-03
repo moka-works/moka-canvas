@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -329,7 +330,7 @@ beforeEach(() => {
   manuscript = "";
   useModelStore.setState({ view: null });
   serving();
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useStoryStore.getState().forget();

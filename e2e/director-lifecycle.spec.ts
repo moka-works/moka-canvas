@@ -1,6 +1,12 @@
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
-import { addNode, createProject, forgetProjects, projectHome } from "./helpers";
+import { expect, test } from "./fixtures";
+import {
+  APP,
+  addNode,
+  createProject,
+  forgetProjects,
+  projectHome,
+} from "./helpers";
 
 /**
  * Entering and leaving the desk fifty times leaves nothing behind.
@@ -15,12 +21,14 @@ test("entering and leaving the desk fifty times stays clean", async ({
   page,
 }) => {
   test.setTimeout(600_000);
-  await page.addInitScript(() => {
-    const held = globalThis as unknown as {
-      localStorage: { setItem(key: string, value: string): void };
-    };
-    held.localStorage.setItem("moka-canvas:director-onboarding:v1", "done");
+  // The guide has been read already; this case enters and leaves the desk
+  // fifty times and has nothing to learn from it.
+  const seen = await fetch(`${APP}/api/v1/ui-prefs`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directorOnboarding: "done" }),
   });
+  expect(seen.ok).toBe(true);
   await forgetProjects();
   await page.goto("/");
   await createProject(

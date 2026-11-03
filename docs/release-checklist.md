@@ -398,7 +398,7 @@ live in the platform application-data directory, never in the program tree. See
    expand it and confirm it is the OS application-data location for
    that platform, not the install directory.
 2. Confirm no metadata file landed in the program tree: nothing named
-   `meta.json`, `recent-projects.json`, `models.json`,
+   `meta.json`, `recent-projects.json`, `models.json`, `ui.json`,
    `secrets.json`, or `master.key` under the repository `data/`,
    the served `dist/`, or the executable's own directory.
 3. Store a real API key through the settings dialog (Channels → Edit →

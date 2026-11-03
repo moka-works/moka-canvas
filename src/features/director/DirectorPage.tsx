@@ -27,6 +27,7 @@ import {
 import { assetUrl, assetsApi, isApiError } from "../../api";
 import type { AssetChange } from "../../api";
 import { i18n } from "../../shared/i18n";
+import { currentUiPrefs, rememberUiPrefs } from "../../shared/prefs/prefsData";
 import { execute } from "../editor/commands/execute";
 import { useAppStore } from "../editor/stores/appStore";
 import { useProjectStore } from "../editor/stores/projectStore";
@@ -101,7 +102,6 @@ import type {
   DirectorViewportApi,
 } from "./types";
 
-const ONBOARDING_KEY = "moka-canvas:director-onboarding:v1";
 const PANEL_MIN = 248;
 const PANEL_MAX = 420;
 
@@ -217,13 +217,8 @@ export function DirectorPage() {
   }, [selectionAvailable, selection]);
 
   useEffect(() => {
-    try {
-      if (window.localStorage.getItem(ONBOARDING_KEY) === null) {
-        setOnboardingOpen(true);
-      }
-    } catch {
-      // A machine that will not remember the guide shows it once on each
-      // visit; the guide itself still works.
+    if (currentUiPrefs().directorOnboarding === null) {
+      setOnboardingOpen(true);
     }
   }, []);
 
@@ -1888,20 +1883,12 @@ export function DirectorPage() {
       <DirectorOnboarding
         onBack={() => setOnboarding((held) => Math.max(0, held - 1))}
         onFinish={() => {
-          try {
-            window.localStorage.setItem(ONBOARDING_KEY, "done");
-          } catch {
-            // The guide is still finished for this visit.
-          }
+          rememberUiPrefs({ directorOnboarding: "done" });
           setOnboardingOpen(false);
         }}
         onNext={() => setOnboarding((held) => held + 1)}
         onSkip={() => {
-          try {
-            window.localStorage.setItem(ONBOARDING_KEY, "skipped");
-          } catch {
-            // The guide is still skipped for this visit.
-          }
+          rememberUiPrefs({ directorOnboarding: "skipped" });
           setOnboardingOpen(false);
         }}
         open={onboardingOpen}

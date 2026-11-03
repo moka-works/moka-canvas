@@ -7,10 +7,13 @@ import {
   storyIds,
 } from "../../../shared/domain/fixtures";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import {
+  defaultUiPrefs,
+  replaceUiPrefs,
+  resetUiPrefs,
+} from "../../../shared/prefs/prefsData";
+import type { UiPreferences } from "../../../shared/prefs/types";
 import { useStoryStore } from "./storyStore";
-
-/** Where a project's place is kept on this machine. */
-const PLACE = "moka-canvas:story-place:";
 
 function store() {
   return useStoryStore.getState();
@@ -43,7 +46,7 @@ function open(moka: MokaFile) {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   store().forget();
 });
@@ -105,16 +108,10 @@ describe("where the room is standing", () => {
 
   it("takes a place it cannot read as one that was never written", () => {
     const moka = project("p1");
-    localStorage.setItem(PLACE + "p1", "{ this is not json");
-    store().adopt(moka);
-    expect(store().storyId).toBe(storyIds().story);
-    expect(store().step).toBe("storyboard");
-
-    store().forget();
-    localStorage.setItem(
-      PLACE + "p1",
-      JSON.stringify({ storyId: 7, step: "nowhere" }),
-    );
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      storyPlaces: { p1: { storyId: 7, step: "nowhere" } },
+    } as unknown as UiPreferences);
     store().adopt(moka);
     expect(store().storyId).toBe(storyIds().story);
     expect(store().step).toBe("storyboard");

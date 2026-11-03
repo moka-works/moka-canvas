@@ -14,6 +14,7 @@ import {
   buildShelfMokaFile,
   goldenNodeIds,
 } from "../../../shared/domain/fixtures";
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { SidePanel } from "./SidePanel";
 import { useAppStore } from "../stores/appStore";
 import { useEditorStore } from "../stores/editorStore";
@@ -81,7 +82,7 @@ beforeEach(() => {
       ),
     ),
   );
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useAppStore.setState({ toasts: [], config: null });

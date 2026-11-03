@@ -27,10 +27,11 @@ use thiserror::Error;
 
 pub use types::{
     Defaults, DocumentInfo, ImagePreferences, MetadataInfo, MetadataStoreKind, ModelConfig,
-    ModelDraft, ModelRecord, ModelsSnapshot, MusicPreferences, Preferences, PromptItem, PromptPage,
-    PromptQuery, PromptSource, Protocol, RecentProject, Scene, SecretInfo, SecretStorage,
-    SpeechPreferences, StoryPreferences, SubModel, VideoPreferences, MAX_PROMPT_ITEMS_PER_SOURCE,
-    MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    ModelDraft, ModelRecord, ModelsSnapshot, MusicPreferences, PanelFolds, PanelWidths,
+    PictureGrid, PictureToolsPrefs, Preferences, PromptItem, PromptPage, PromptQuery, PromptSource,
+    Protocol, RecentProject, Scene, SecretInfo, SecretStorage, SpeechPreferences, StoryPlace,
+    StoryPreferences, SubModel, TimelineView, UiPreferences, UiPrefsPatch, VideoPreferences,
+    MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
 };
 
 use crate::config::{MetadataConfig, RuntimeMode};
@@ -196,6 +197,19 @@ pub trait MetadataStore: Send + Sync {
         preferences: &Preferences,
         expected_revision: Option<u64>,
     ) -> Result<(), MetadataError>;
+
+    /// The interface choices this machine was last left with.
+    async fn ui_preferences(&self) -> Result<UiPreferences, MetadataError>;
+
+    /// Applies one window's changes to the interface choices, leaving every
+    /// field it did not name alone.
+    async fn set_ui_preferences(
+        &self,
+        patch: &UiPrefsPatch,
+    ) -> Result<UiPreferences, MetadataError>;
+
+    /// Back to the defaults, for a reader who wants the interface as it was.
+    async fn reset_ui_preferences(&self) -> Result<UiPreferences, MetadataError>;
 
     /// Stores a credential, replacing any previous one for the model.
     async fn put_secret(&self, model_id: &str, key: &str) -> Result<SecretInfo, MetadataError>;

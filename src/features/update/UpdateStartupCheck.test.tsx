@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import type { PublicConfig } from "../../api";
 import { useAppStore } from "../editor/stores/appStore";
+import { resetUiPrefs } from "../../shared/prefs/prefsData";
 import {
   lastUpdateCheck,
   markUpdateChecked,
@@ -46,7 +47,7 @@ function announce() {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  localStorage.clear();
+  resetUiPrefs();
   useUpdateStore.getState().reset();
   useAppStore.setState({
     config: CONFIG,

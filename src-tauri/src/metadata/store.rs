@@ -21,15 +21,16 @@ use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use super::crypto::{open as open_sealed, seal, KeyProvider};
 use super::docs::{
     self, DocumentCorruption, MetaDoc, ModelsDoc, PromptItemsDoc, PromptSourcesDoc, RecentDoc,
-    SecretEntry, SecretsDoc, MANAGED_DOCUMENTS, META_DOC, MODELS_DOC, PROMPT_ITEMS_DIR,
-    PROMPT_SOURCES_DOC, RECENT_DOC, SECRETS_DOC,
+    SecretEntry, SecretsDoc, UiDoc, MANAGED_DOCUMENTS, META_DOC, MODELS_DOC, PROMPT_ITEMS_DIR,
+    PROMPT_SOURCES_DOC, RECENT_DOC, SECRETS_DOC, UI_DOC,
 };
 use super::fs::{self, DirLock, DOCUMENT_MODE, SECRET_MODE};
 use super::redact;
 use super::types::{
     Defaults, DocumentInfo, MetadataInfo, MetadataStoreKind, ModelConfig, ModelDraft, ModelRecord,
     ModelsSnapshot, Preferences, PromptItem, PromptPage, PromptQuery, PromptSource, RecentProject,
-    SecretInfo, SecretStorage, MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    SecretInfo, SecretStorage, UiPreferences, UiPrefsPatch, MAX_PROMPT_ITEMS_PER_SOURCE,
+    MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
 };
 use super::{MetadataError, MetadataStore, FILE_STORE, SCHEMA_VERSION};
 use crate::config::{MetadataConfig, RuntimeMode};
@@ -49,6 +50,7 @@ struct Snapshot {
     meta: MetaDoc,
     recent: RecentDoc,
     models: ModelsDoc,
+    ui: UiDoc,
     secrets: SecretsDoc,
     prompt_sources: PromptSourcesDoc,
     prompt_items: Mutex<PromptCache>,
@@ -146,6 +148,7 @@ impl FileMetadataStore {
 
         let recent = load_or_reset(root, RECENT_DOC, &mut recovered);
         let (models, secrets) = load_models_and_secrets(root, &mut recovered)?;
+        let ui: UiDoc = load_or_reset(root, UI_DOC, &mut recovered);
         let prompt_sources = load_or_reset(root, PROMPT_SOURCES_DOC, &mut recovered);
 
         let keys = Arc::new(KeyProvider::new(root, mode));
@@ -168,6 +171,7 @@ impl FileMetadataStore {
                 meta,
                 recent,
                 models,
+                ui,
                 secrets,
                 prompt_sources,
                 prompt_items: Mutex::new(PromptCache::new()),
@@ -253,6 +257,19 @@ impl FileMetadataStore {
         next.revision += 1;
         self.persist(MODELS_DOC, &next, DOCUMENT_MODE)?;
         self.inner.write().await.models = next.clone();
+        Ok(next)
+    }
+
+    async fn mutate_ui<F>(&self, change: F) -> Result<UiDoc, MetadataError>
+    where
+        F: FnOnce(&mut UiDoc),
+    {
+        let _sequence = self.write_seq.lock().await;
+        let mut next = self.inner.read().await.ui.clone();
+        change(&mut next);
+        next.revision += 1;
+        self.persist(UI_DOC, &next, DOCUMENT_MODE)?;
+        self.inner.write().await.ui = next.clone();
         Ok(next)
     }
 
@@ -439,6 +456,28 @@ impl MetadataStore for FileMetadataStore {
         })
         .await?;
         Ok(())
+    }
+
+    async fn ui_preferences(&self) -> Result<UiPreferences, MetadataError> {
+        Ok(self.inner.read().await.ui.preferences.clone())
+    }
+
+    async fn set_ui_preferences(
+        &self,
+        patch: &UiPrefsPatch,
+    ) -> Result<UiPreferences, MetadataError> {
+        let patch = patch.clone();
+        let document = self
+            .mutate_ui(move |ui| ui.preferences.apply(patch))
+            .await?;
+        Ok(document.preferences)
+    }
+
+    async fn reset_ui_preferences(&self) -> Result<UiPreferences, MetadataError> {
+        let document = self
+            .mutate_ui(|ui| ui.preferences = UiPreferences::default())
+            .await?;
+        Ok(document.preferences)
     }
 
     async fn put_secret(&self, model_id: &str, key: &str) -> Result<SecretInfo, MetadataError> {
@@ -705,6 +744,7 @@ impl MetadataStore for FileMetadataStore {
                 RECENT_DOC => (size_of(&path), snapshot.recent.revision),
                 MODELS_DOC => (size_of(&path), snapshot.models.revision),
                 SECRETS_DOC => (size_of(&path), snapshot.secrets.revision),
+                UI_DOC => (size_of(&path), snapshot.ui.revision),
                 PROMPT_SOURCES_DOC => (size_of(&path), snapshot.prompt_sources.revision),
                 _ => (0, 0),
             };

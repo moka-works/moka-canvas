@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SPLIT_MAX, SPLIT_START, useStageSplit } from "../stores/stageSplit";
@@ -34,7 +35,7 @@ const STAGE_RECT = {
 
 describe("stageSplit control", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetUiPrefs();
     useStageSplit.setState({ share: SPLIT_START });
     // A drag holds the edge it started on, however far the pointer travels.
     Element.prototype.setPointerCapture = vi.fn();

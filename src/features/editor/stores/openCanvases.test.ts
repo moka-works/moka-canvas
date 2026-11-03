@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildGoldenMokaFile } from "../../../shared/domain/fixtures";
 import type { MokaFile } from "../../../shared/domain";
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { useOpenCanvases } from "./openCanvases";
 import { useProjectStore } from "./projectStore";
 
@@ -20,7 +21,7 @@ function store() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   store().forget();
 });
 

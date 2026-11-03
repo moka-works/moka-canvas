@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 use super::types::{
     Defaults, ModelDraft, Preferences, PromptItem, PromptQuery, PromptSource, Protocol,
-    RecentProject, VideoPreferences, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    RecentProject, StoryPlace, TimelineView, UiPrefsPatch, VideoPreferences, MAX_RECENT,
+    MAX_SEARCH_PAGE_SIZE,
 };
 use super::{MetadataError, MetadataStore, MetadataStoreKind};
 use crate::domain::Capability;
@@ -78,6 +79,11 @@ pub async fn run_metadata_suite(open: &StoreFactory) -> Vec<ContractFailure> {
         &mut failures,
         "defaults_and_preferences",
         defaults_and_preferences(store).await,
+    );
+    record(
+        &mut failures,
+        "ui_preferences_merge",
+        ui_preferences_merge(store).await,
     );
     record(
         &mut failures,
@@ -363,6 +369,81 @@ async fn defaults_and_preferences(store: &dyn MetadataStore) -> Result<(), Strin
     }
     if snapshot.preferences != preferences {
         return Err("preferences did not persist".to_string());
+    }
+    Ok(())
+}
+
+async fn ui_preferences_merge(store: &dyn MetadataStore) -> Result<(), String> {
+    let reset = describe("reset ui", store.reset_ui_preferences()).await?;
+    if reset.locale != "system" || !reset.clip_snap {
+        return Err(format!("the reset is not the documented start: {reset:?}"));
+    }
+
+    let patch = UiPrefsPatch {
+        locale: Some("zh".to_string()),
+        clip_snap: Some(false),
+        clip_timelines: [("p1".to_string(), Some("tl-1".to_string()))]
+            .into_iter()
+            .collect(),
+        story_places: [(
+            "p1".to_string(),
+            Some(StoryPlace {
+                story_id: Some("story-1".to_string()),
+                step: Some("outline".to_string()),
+            }),
+        )]
+        .into_iter()
+        .collect(),
+        clip_views: [(
+            "tl-1".to_string(),
+            Some(TimelineView {
+                px_per_sec: 120.0,
+                scroll_left_px: 90.0,
+                playhead_ms: 4_321.0,
+            }),
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let after = describe("set ui", store.set_ui_preferences(&patch)).await?;
+    if after.locale != "zh" || after.clip_snap {
+        return Err("the scalars did not persist".to_string());
+    }
+    if after.clip_timelines.get("p1").map(String::as_str) != Some("tl-1") {
+        return Err("a map entry did not persist".to_string());
+    }
+
+    // A second window changing only the palette must not undo the first
+    // window's entries beside it.
+    let palette = UiPrefsPatch {
+        canvas_theme: Some("paper".to_string()),
+        ..Default::default()
+    };
+    let merged = describe("merge ui", store.set_ui_preferences(&palette)).await?;
+    if merged.canvas_theme != "paper" || merged.locale != "zh" {
+        return Err("a patch replaced fields it did not name".to_string());
+    }
+    if merged.story_places.get("p1") != after.story_places.get("p1") {
+        return Err("a patch dropped a map entry it did not name".to_string());
+    }
+
+    // A map entry sent as null is removed; the rest of the map stays.
+    let remove = UiPrefsPatch {
+        clip_timelines: [("p1".to_string(), None)].into_iter().collect(),
+        ..Default::default()
+    };
+    let removed = describe("remove ui entry", store.set_ui_preferences(&remove)).await?;
+    if removed.clip_timelines.contains_key("p1") {
+        return Err("a null map entry did not remove its row".to_string());
+    }
+    if removed.story_places.get("p1") != merged.story_places.get("p1") {
+        return Err("removing one map entry removed another".to_string());
+    }
+
+    let read = describe("read ui", store.ui_preferences()).await?;
+    if read != removed {
+        return Err("the written preferences did not round-trip".to_string());
     }
     Ok(())
 }

@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  currentUiPrefs,
+  defaultUiPrefs,
+  replaceUiPrefs,
+  resetUiPrefs,
+} from "../../../shared/prefs/prefsData";
+import type { UiPreferences } from "../../../shared/prefs/types";
+import {
   SPLIT_MAX,
   SPLIT_MIN,
   SPLIT_START,
@@ -10,7 +17,7 @@ import {
 
 describe("stageSplit", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetUiPrefs();
     useStageSplit.setState({ share: SPLIT_START });
   });
 
@@ -40,11 +47,9 @@ describe("stageSplit", () => {
     expect(useStageSplit.getState().share).toBe(SPLIT_START);
   });
 
-  it("keeps the share in the browser's own store, and reads it back", async () => {
+  it("keeps the share in the preferences file, and reads it back", async () => {
     useStageSplit.getState().setShare(0.42);
-    expect(
-      JSON.parse(localStorage.getItem("moka-canvas:clip-stage-split")!),
-    ).toBe(0.42);
+    expect(currentUiPrefs().stageSplit).toBe(0.42);
 
     // Read again the way a second visit to the room reads: from what was kept.
     vi.resetModules();
@@ -52,17 +57,17 @@ describe("stageSplit", () => {
     expect(kept.useStageSplit.getState().share).toBe(0.42);
   });
 
-  it("takes nothing from a store holding something else", async () => {
-    localStorage.setItem(
-      "moka-canvas:clip-stage-split",
-      JSON.stringify("wide"),
-    );
+  it("takes nothing from a file holding something else", async () => {
+    replaceUiPrefs({
+      ...defaultUiPrefs(),
+      stageSplit: "wide",
+    } as unknown as UiPreferences);
 
     vi.resetModules();
     const kept = await import("./stageSplit");
     expect(kept.useStageSplit.getState().share).toBe(SPLIT_START);
 
-    localStorage.setItem("moka-canvas:clip-stage-split", JSON.stringify(4));
+    replaceUiPrefs({ ...defaultUiPrefs(), stageSplit: 4 });
     vi.resetModules();
     const clamped = await import("./stageSplit");
     expect(clamped.useStageSplit.getState().share).toBe(SPLIT_MAX);

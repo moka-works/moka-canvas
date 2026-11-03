@@ -1,6 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { create } from "zustand";
+import { currentUiPrefs, rememberUiPrefs } from "../prefs/prefsData";
 import enAgent from "./locales/en/agent.json" with { type: "json" };
 import enApp from "./locales/en/app.json" with { type: "json" };
 import enAssets from "./locales/en/assets.json" with { type: "json" };
@@ -39,23 +40,16 @@ export type Locale = "en" | "zh";
 /** The languages the interface carries words for. */
 export const LOCALES: Locale[] = ["en", "zh"];
 
-/** Kept on this machine, beside the other choices that are about the reader. */
-const STORED_UNDER = "moka-canvas:locale";
-
 /**
  * The host this module is running in, reached instead of named.
  *
  * The words are not only read by the browser: unit tests and the browser
  * suite's project compile this module too, and those have no DOM declared —
- * so the page, the store, and the machine's language are looked up rather
- * than spelled. Each is absent where it has no meaning, and the code below
- * says what it does without one.
+ * so the page and the machine's language are looked up rather than spelled.
+ * Each is absent where it has no meaning, and the code below says what it
+ * does without one.
  */
 type Host = {
-  localStorage?: {
-    getItem(key: string): string | null;
-    setItem(key: string, value: string): void;
-  };
   navigator?: { language?: string };
   document?: {
     title: string;
@@ -69,26 +63,12 @@ function host(): Host {
 }
 
 function readMode(): LocaleMode {
-  // A host with no store to read wants the start.
-  const store = host().localStorage;
-  if (store === undefined) return "system";
-  try {
-    const kept = store.getItem(STORED_UNDER);
-    return LOCALE_MODES.find((mode) => mode === kept) ?? "system";
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return "system";
-  }
+  const kept = currentUiPrefs().locale;
+  return LOCALE_MODES.find((mode) => mode === kept) ?? "system";
 }
 
 function keepMode(mode: LocaleMode) {
-  const store = host().localStorage;
-  if (store === undefined) return;
-  try {
-    store.setItem(STORED_UNDER, mode);
-  } catch {
-    // A store that will not take it costs the remembering, not the choice.
-  }
+  rememberUiPrefs({ locale: mode });
 }
 
 /** Every Chinese dialect reads the same Chinese interface; others read English. */
@@ -188,5 +168,18 @@ export const useLocale = create<LocaleState>()((set) => ({
     void i18n.changeLanguage(resolveLocale(mode));
   },
 }));
+
+/**
+ * Adopts the language the preferences file was left with.
+ *
+ * The module starts before the file has been read — the API client imports
+ * these words — so the choice is applied once the read lands, before anything
+ * is drawn, without writing the same choice back.
+ */
+export function applyStoredLocale(): void {
+  const mode = readMode();
+  useLocale.setState({ mode });
+  void i18n.changeLanguage(resolveLocale(mode));
+}
 
 export { i18n };

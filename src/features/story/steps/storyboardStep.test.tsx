@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -446,7 +447,7 @@ beforeEach(() => {
   answers = {};
   landed = {};
   serving();
-  localStorage.clear();
+  resetUiPrefs();
   // Every test starts on a machine whose settings say nothing, which is the
   // state a room is read in unless a test sets a deployment of its own.
   useModelStore.setState({ view: null });

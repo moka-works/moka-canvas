@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { forgetProjects, projectHome } from "./helpers";
 
 // The browser is asked for English in playwright.config.ts, so the machine

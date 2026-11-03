@@ -9,3 +9,4 @@ export * from "./runs";
 export * from "./models";
 export * from "./generate";
 export * from "./tools";
+export * from "./uiPrefs";

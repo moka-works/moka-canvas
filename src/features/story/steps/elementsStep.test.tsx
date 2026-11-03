@@ -22,6 +22,7 @@ import {
   storyIds,
 } from "../../../shared/domain/fixtures";
 import { actCast } from "../../../shared/domain/story";
+import { currentUiPrefs, resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { undo } from "../../editor/commands/execute";
 import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
 import { useAppStore } from "../../editor/stores/appStore";
@@ -319,7 +320,7 @@ beforeEach(() => {
   speechAsks = [];
   useModelStore.setState({ view: null });
   serving();
-  localStorage.clear();
+  resetUiPrefs();
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useStoryStore.getState().forget();
@@ -756,9 +757,7 @@ describe("the model a reading is asked of", () => {
     });
     expect(starts[0]?.model).toBe("scribe-2");
     // The choice is the machine's, so the next reading is asked of it too.
-    expect(localStorage.getItem("moka-canvas:story-models")).toBe(
-      JSON.stringify({ text: "scribe-2" }),
-    );
+    expect(currentUiPrefs().storyModels).toEqual({ text: "scribe-2" });
   });
 });
 

@@ -81,12 +81,13 @@ const RUN_RECORDS: &str = "history/runs/";
 /// Application-level metadata documents that sit at the project root only.
 /// Matching the whole relative path keeps an asset that happens to share a
 /// name — a project may well contain its own `meta.json` — in the package.
-const METADATA_DOCUMENTS: [&str; 5] = [
+const METADATA_DOCUMENTS: [&str; 6] = [
     docs::META_DOC,
     docs::RECENT_DOC,
     docs::MODELS_DOC,
     docs::LEGACY_PROVIDERS_DOC,
     docs::PROMPT_SOURCES_DOC,
+    docs::UI_DOC,
 ];
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -693,6 +694,7 @@ mod tests {
             "recent-projects.json",
             "providers.json",
             "prompts/sources.json",
+            "ui.json",
             "secrets.json",
             "master.key",
             "assets/secrets.json",

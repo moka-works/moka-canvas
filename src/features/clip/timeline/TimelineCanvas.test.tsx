@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { useRef } from "react";
@@ -54,7 +55,7 @@ const RECT = {
 } as DOMRect;
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   useClipStore.setState({
     activeTimelineId: null,
     view: { pxPerSec: 60, scrollLeftPx: 0 },

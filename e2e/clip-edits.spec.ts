@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import process from "node:process";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { RULER_H, TRACK_HEIGHT } from "../src/features/clip/timeline/geometry";
 import {
   createProject,

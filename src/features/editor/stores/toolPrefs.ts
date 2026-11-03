@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { PictureTool } from "../../../api/tools";
 import { MAX_DIVISIONS } from "../../../shared/domain";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /** The tools that work on a picture here, without asking anybody for anything. */
 export const PICTURE_TOOLS: readonly PictureTool[] = [
@@ -95,46 +99,30 @@ const START: StoredPrefs = {
 };
 
 /**
- * Where these are kept: the browser's own store on this machine.
+ * Where these are kept: the interface preferences file.
  *
  * Which tools somebody likes to see, and the grid they last divided by, are
  * about them rather than about the work, so they are kept beside the work and
  * never inside it — a package handed to somebody else carries none of it.
  */
-const STORED_UNDER = "moka-canvas:picture-tools";
-
 function read(): StoredPrefs {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return START;
-  try {
-    const kept = localStorage.getItem(STORED_UNDER);
-    if (!kept) return START;
-    const parsed = JSON.parse(kept) as Partial<StoredPrefs>;
-    return {
-      shown: Array.isArray(parsed.shown)
-        ? BAR_ENTRIES.filter((entry) => parsed.shown?.includes(entry))
-        : START.shown,
-      cropRatio: typeof parsed.cropRatio === "string" ? parsed.cropRatio : null,
-      grid:
-        parsed.grid &&
-        Number.isInteger(parsed.grid.rows) &&
-        Number.isInteger(parsed.grid.cols)
-          ? { rows: parsed.grid.rows, cols: parsed.grid.cols }
-          : null,
-    };
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return START;
-  }
+  const kept = currentUiPrefs().pictureTools;
+  return {
+    shown: Array.isArray(kept.shown)
+      ? BAR_ENTRIES.filter((entry) => kept.shown?.includes(entry))
+      : START.shown,
+    cropRatio: typeof kept.cropRatio === "string" ? kept.cropRatio : null,
+    grid:
+      kept.grid &&
+      Number.isInteger(kept.grid.rows) &&
+      Number.isInteger(kept.grid.cols)
+        ? { rows: kept.grid.rows, cols: kept.grid.cols }
+        : null,
+  };
 }
 
 function keep(prefs: StoredPrefs) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(STORED_UNDER, JSON.stringify(prefs));
-  } catch {
-    // A store that will not take it costs the remembering, not the tool.
-  }
+  rememberUiPrefs({ pictureTools: prefs });
 }
 
 export interface ToolPrefsState extends StoredPrefs {

@@ -8,6 +8,10 @@ import {
   type StoryStep,
 } from "../../../shared/domain";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /**
  * Where a reader is standing in a story: which one is open and which step of
@@ -38,14 +42,6 @@ interface StoryState {
   forget: () => void;
 }
 
-/** Kept on this machine, a place per project, beside the locale choice. */
-const STORED_UNDER = "moka-canvas:story-place:";
-
-interface StoredPlace {
-  storyId?: unknown;
-  step?: unknown;
-}
-
 /** The place this machine remembers for a project, which may be nowhere. */
 export function rememberedPlace(projectId: string):
   | {
@@ -54,36 +50,26 @@ export function rememberedPlace(projectId: string):
       step?: StoryStep;
     }
   | undefined {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return undefined;
-  try {
-    const raw = localStorage.getItem(STORED_UNDER + projectId);
-    if (!raw) return undefined;
-    const kept = JSON.parse(raw) as StoredPlace;
-    const step = STORY_STEPS.find((each) => each === kept.step);
-    return {
-      storyId: typeof kept.storyId === "string" ? kept.storyId : null,
-      ...(step ? { step } : {}),
-    };
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return undefined;
-  }
+  const kept: unknown = currentUiPrefs().storyPlaces[projectId];
+  if (typeof kept !== "object" || kept === null) return undefined;
+  const record = kept as Record<string, unknown>;
+  const step = STORY_STEPS.find((each) => each === record.step);
+  return {
+    storyId: typeof record.storyId === "string" ? record.storyId : null,
+    ...(step ? { step } : {}),
+  };
 }
 
 function rememberPlace(
   projectId: string | null,
   place: { storyId: string | null; step: StoryStep },
 ): void {
-  if (projectId === null || typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(
-      STORED_UNDER + projectId,
-      JSON.stringify({ storyId: place.storyId, step: place.step }),
-    );
-  } catch {
-    // A store that will not take it costs the remembering, not the choice.
-  }
+  if (projectId === null) return;
+  rememberUiPrefs({
+    storyPlaces: {
+      [projectId]: { storyId: place.storyId, step: place.step },
+    },
+  });
 }
 
 /**

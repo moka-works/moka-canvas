@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import {
   addNode,
   askToExport,

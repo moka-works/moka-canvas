@@ -1,6 +1,6 @@
 import { basename, join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import {
   backToLauncher,
   createProject,

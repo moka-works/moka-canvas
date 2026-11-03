@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { parseSrt } from "../src/features/clip/subtitles/srt";
 import { frameAligned } from "../src/features/clip/timeline/timecode";
 import {

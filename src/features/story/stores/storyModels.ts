@@ -18,6 +18,10 @@
 import { create } from "zustand";
 
 import type { StoryJobKind } from "../../../api/story";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 
 /** Where one kind of the room's work is asked. */
 export type StoryAskPlace = "text" | "image" | "video" | "audio" | "music";
@@ -54,36 +58,20 @@ export function askPlaceOfKind(kind: StoryJobKind): StoryAskPlace {
  * deployment's default. */
 export type StoryModelChoices = Partial<Record<StoryAskPlace, string>>;
 
-const STORED_UNDER = "moka-canvas:story-models";
-
 function read(): StoryModelChoices {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const kept = localStorage.getItem(STORED_UNDER);
-    if (!kept) return {};
-    const parsed = JSON.parse(kept) as Record<string, unknown>;
-    const choices: StoryModelChoices = {};
-    for (const place of STORY_ASK_PLACES) {
-      const reference = parsed[place];
-      if (typeof reference === "string" && reference !== "") {
-        choices[place] = reference;
-      }
+  const parsed = currentUiPrefs().storyModels;
+  const choices: StoryModelChoices = {};
+  for (const place of STORY_ASK_PLACES) {
+    const reference: unknown = parsed[place];
+    if (typeof reference === "string" && reference !== "") {
+      choices[place] = reference;
     }
-    return choices;
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return {};
   }
+  return choices;
 }
 
-function keep(choices: StoryModelChoices) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(STORED_UNDER, JSON.stringify(choices));
-  } catch {
-    // A store that will not take it costs the remembering, not the choice.
-  }
+function keep(place: StoryAskPlace, reference: string | null) {
+  rememberUiPrefs({ storyModels: { [place]: reference } });
 }
 
 interface StoryModelsState {
@@ -97,9 +85,10 @@ export const useStoryModels = create<StoryModelsState>()((set, get) => ({
 
   choose(place, reference) {
     const choices: StoryModelChoices = { ...get().choices };
-    if (reference === null || reference === "") delete choices[place];
-    else choices[place] = reference;
-    keep(choices);
+    const kept = reference === "" ? null : reference;
+    if (kept === null) delete choices[place];
+    else choices[place] = kept;
+    keep(place, kept);
     set({ choices });
   },
 }));

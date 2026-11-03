@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import App from "../../App";
 import { buildGoldenMokaFile } from "../../shared/domain/fixtures";
+import { currentUiPrefs, resetUiPrefs } from "../../shared/prefs/prefsData";
 import { useAppStore } from "./stores/appStore";
 import { useHistoryStore } from "./stores/historyStore";
 import { usePanelFolds } from "./stores/panelFolds";
@@ -68,7 +69,7 @@ async function openGolden() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  resetUiPrefs();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   useProjectStore.getState().close();
@@ -156,8 +157,6 @@ describe("the corners that fold the columns away", () => {
     expect(screen.getByTestId("panel-unfold-left")).toBeTruthy();
     expect(screen.getByTestId("panel-unfold-right")).toBeTruthy();
     expect(screen.getByTestId("canvas-host")).toBeTruthy();
-    expect(
-      JSON.parse(localStorage.getItem("moka-canvas:panel-folds")!),
-    ).toEqual({ left: true, right: true });
+    expect(currentUiPrefs().panelFolds).toEqual({ left: true, right: true });
   });
 });

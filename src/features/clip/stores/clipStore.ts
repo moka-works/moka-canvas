@@ -11,6 +11,10 @@ import type {
   TrackId,
   TransitionId,
 } from "../../../shared/domain";
+import {
+  currentUiPrefs,
+  rememberUiPrefs,
+} from "../../../shared/prefs/prefsData";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { clampAdjust } from "../inspector/clipFieldMath";
 import {
@@ -33,33 +37,18 @@ import {
 export type ClipFace = "cut" | "text" | "filters" | "adjust";
 
 /**
- * Which timeline a project was last left looking at, kept on this machine
- * beside the project rather than inside it.
+ * Which timeline a project was last left looking at, kept in the interface
+ * preferences beside the project rather than inside it.
  *
  * Which cut somebody was working on is about them and their afternoon, not
  * about the work: a package handed to somebody else opens onto the first
  * timeline like any other, and closing a project does not forget what was on
  * screen — the memory is the machine's, beside the board tabs' own.
  */
-const STORED_UNDER = "moka-canvas:clip-timeline";
-
-function keyFor(projectId: string): string {
-  return `${STORED_UNDER}:${projectId}`;
-}
-
 /** The timeline this machine remembers for a project, or null. */
 export function rememberedTimelineId(projectId: string): TimelineId | null {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return null;
-  try {
-    const kept = localStorage.getItem(keyFor(projectId));
-    if (!kept) return null;
-    const parsed: unknown = JSON.parse(kept);
-    return typeof parsed === "string" && parsed.length > 0 ? parsed : null;
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return null;
-  }
+  const kept: unknown = currentUiPrefs().clipTimelines[projectId];
+  return typeof kept === "string" && kept.length > 0 ? kept : null;
 }
 
 /** Writes the timeline a project was left on; null forgets it. */
@@ -67,16 +56,7 @@ export function rememberTimelineId(
   projectId: string,
   timelineId: TimelineId | null,
 ): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    if (timelineId === null) {
-      localStorage.removeItem(keyFor(projectId));
-    } else {
-      localStorage.setItem(keyFor(projectId), JSON.stringify(timelineId));
-    }
-  } catch {
-    // A store that will not take it costs the remembering, not the cut.
-  }
+  rememberUiPrefs({ clipTimelines: { [projectId]: timelineId } });
 }
 
 /**
@@ -101,12 +81,6 @@ export interface RememberedView {
   playheadMs: number;
 }
 
-const VIEW_STORED_UNDER = "moka-canvas:clip-view";
-
-function viewKeyFor(timelineId: TimelineId): string {
-  return `${VIEW_STORED_UNDER}:${timelineId}`;
-}
-
 /**
  * What a timeline was last read at, or null for one never opened.
  *
@@ -117,52 +91,39 @@ function viewKeyFor(timelineId: TimelineId): string {
  * at the head.
  */
 export function rememberedView(timelineId: TimelineId): RememberedView | null {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return null;
-  try {
-    const kept = localStorage.getItem(viewKeyFor(timelineId));
-    if (!kept) return null;
-    const parsed: unknown = JSON.parse(kept);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const record = parsed as Record<string, unknown>;
-    const pxPerSec =
-      typeof record.pxPerSec === "number"
-        ? clampPxPerSec(record.pxPerSec)
-        : DEFAULT_PX_PER_SEC;
-    const scrollLeftPx =
-      typeof record.scrollLeftPx === "number" && record.scrollLeftPx >= 0
-        ? record.scrollLeftPx
-        : 0;
-    const playheadMs =
-      typeof record.playheadMs === "number" && record.playheadMs >= 0
-        ? record.playheadMs
-        : 0;
-    return { view: { pxPerSec, scrollLeftPx }, playheadMs };
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return null;
-  }
+  const parsed: unknown = currentUiPrefs().clipViews[timelineId];
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const record = parsed as Record<string, unknown>;
+  const pxPerSec =
+    typeof record.pxPerSec === "number"
+      ? clampPxPerSec(record.pxPerSec)
+      : DEFAULT_PX_PER_SEC;
+  const scrollLeftPx =
+    typeof record.scrollLeftPx === "number" && record.scrollLeftPx >= 0
+      ? record.scrollLeftPx
+      : 0;
+  const playheadMs =
+    typeof record.playheadMs === "number" && record.playheadMs >= 0
+      ? record.playheadMs
+      : 0;
+  return { view: { pxPerSec, scrollLeftPx }, playheadMs };
 }
 
-/** Writes down where a timeline was left; a store that will not take it costs the remembering. */
+/** Writes down where a timeline was left. */
 export function rememberView(
   timelineId: TimelineId,
   view: TimelineView,
   playheadMs: number,
 ): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(
-      viewKeyFor(timelineId),
-      JSON.stringify({
+  rememberUiPrefs({
+    clipViews: {
+      [timelineId]: {
         pxPerSec: view.pxPerSec,
         scrollLeftPx: view.scrollLeftPx,
         playheadMs,
-      }),
-    );
-  } catch {
-    // A store that will not take it costs the remembering, not the cut.
-  }
+      },
+    },
+  });
 }
 
 /** What is chosen on the timeline: some clips, and at most one seam. */
@@ -245,34 +206,16 @@ export type CueEditorSession =
  */
 export type PreviewQuality = "full" | "half" | "quarter";
 
-const QUALITY_STORED_UNDER = "moka-canvas:clip-quality";
-const VOLUME_STORED_UNDER = "moka-canvas:clip-volume";
-const SNAP_STORED_UNDER = "moka-canvas:clip-snap";
-
 /** The preview tier this machine was last left on. */
 export function rememberedQuality(): PreviewQuality {
-  // Tests that do not ask for a DOM have no store to read, and want the start.
-  if (typeof localStorage === "undefined") return "full";
-  try {
-    const kept = localStorage.getItem(QUALITY_STORED_UNDER);
-    return kept === "half" || kept === "quarter" ? kept : "full";
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return "full";
-  }
+  const kept = currentUiPrefs().clipQuality;
+  return kept === "half" || kept === "quarter" ? kept : "full";
 }
 
 /** The master level this machine was last left at, 0..1. */
 export function rememberedMasterVolume(): number {
-  if (typeof localStorage === "undefined") return 1;
-  try {
-    const kept = localStorage.getItem(VOLUME_STORED_UNDER);
-    const parsed = kept === null ? Number.NaN : Number(kept);
-    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 1;
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return 1;
-  }
+  const kept = currentUiPrefs().clipVolume;
+  return typeof kept === "number" && kept >= 0 && kept <= 1 ? kept : 1;
 }
 
 /**
@@ -281,22 +224,7 @@ export function rememberedMasterVolume(): number {
  * ones that are not are dragged with Shift held.
  */
 export function rememberedSnapEnabled(): boolean {
-  if (typeof localStorage === "undefined") return true;
-  try {
-    return localStorage.getItem(SNAP_STORED_UNDER) !== "off";
-  } catch {
-    // A store this cannot read is one that has nothing in it.
-    return true;
-  }
-}
-
-function remember(key: string, value: string): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // A store that will not take it costs the remembering, not the cut.
-  }
+  return currentUiPrefs().clipSnap !== false;
 }
 
 interface ClipState {
@@ -668,7 +596,7 @@ export const useClipStore = create<ClipState>()((set, get) => {
     },
 
     setQuality(quality) {
-      remember(QUALITY_STORED_UNDER, quality);
+      rememberUiPrefs({ clipQuality: quality });
       set({ quality });
     },
 
@@ -676,12 +604,12 @@ export const useClipStore = create<ClipState>()((set, get) => {
       const level = Number.isFinite(volume)
         ? Math.min(1, Math.max(0, volume))
         : 0;
-      remember(VOLUME_STORED_UNDER, String(level));
+      rememberUiPrefs({ clipVolume: level });
       set({ masterVolume: level });
     },
 
     setSnapEnabled(enabled) {
-      remember(SNAP_STORED_UNDER, enabled ? "on" : "off");
+      rememberUiPrefs({ clipSnap: enabled });
       set({ snapEnabled: enabled });
     },
 

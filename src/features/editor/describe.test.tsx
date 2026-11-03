@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resetUiPrefs } from "../../shared/prefs/prefsData";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -224,7 +225,7 @@ beforeEach(() => {
   fetchMock.mockImplementation((input, init) =>
     Promise.resolve(route(String(input), init as RequestInit)),
   );
-  localStorage.clear();
+  resetUiPrefs();
   useToolPrefs.setState({
     shown: [...BAR_ENTRIES],
     cropRatio: null,

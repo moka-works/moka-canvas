@@ -14,6 +14,7 @@ import {
   goldenNodeIds,
 } from "../../shared/domain/fixtures";
 import { MAX_OPERATED_PIXELS, type SelfCheckReport } from "../../shared/domain";
+import { currentUiPrefs, resetUiPrefs } from "../../shared/prefs/prefsData";
 import { useAppStore } from "./stores/appStore";
 import { useEditorStore } from "./stores/editorStore";
 import { useHistoryStore } from "./stores/historyStore";
@@ -133,7 +134,7 @@ beforeEach(() => {
       }),
     ),
   );
-  localStorage.clear();
+  resetUiPrefs();
   useToolPrefs.setState({
     shown: [...BAR_ENTRIES],
     cropRatio: null,
@@ -297,9 +298,12 @@ describe("the tools offered on a picture node", () => {
     ).toEqual(["Crop", "Split", "Repaint", "Describe"]);
     // Kept here rather than in the document: a bar somebody tidied stays tidied
     // without the tidying travelling with the project.
-    expect(
-      JSON.parse(localStorage.getItem("moka-canvas:picture-tools")!).shown,
-    ).toEqual(["crop", "split", "repaint", "describe"]);
+    expect(currentUiPrefs().pictureTools.shown).toEqual([
+      "crop",
+      "split",
+      "repaint",
+      "describe",
+    ]);
   });
 });
 
