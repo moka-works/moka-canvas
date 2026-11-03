@@ -88,7 +88,7 @@
   },
   "confirm": {
     "button": "Confirm content",
-    "gapIdea": "The premise is not written yet: write at least {{min}} characters, or upload a manuscript",
+    "gapIdea": "The premise is not written yet: write at least {{min}} characters, or load a manuscript",
     "gapNoChapters": "There are no chapters yet: set how many episodes and write them",
     "gapChapters": "{{count}} chapters still have no title or synopsis (chapter {{list}})",
     "gapNoElements": "Nothing has been found to tell it with yet: read the chapters, or add an element yourself",
@@ -124,7 +124,7 @@
       "music": "File an act's score"
     },
     "brief": "Write the premise",
-    "source": "Upload a manuscript",
+    "source": "Load a manuscript",
     "chapters": "Write the chapters",
     "elements": "Write the elements",
     "storyboard": "Write the board",
@@ -163,7 +163,7 @@
     "lead": "Say what the story is about, and how long it runs. Everything after this is written from here.",
     "tabs": "Where the story comes from",
     "tabWrite": "Write a premise",
-    "tabUpload": "Upload a novel or a script",
+    "tabUpload": "Existing novel or script",
     "writeLabel": "The premise",
     "writePlaceholder": "Eleven at night, and the last train stops at a platform it has no business stopping at…",
     "liftOpening": "Start from the manuscript's opening",
@@ -174,7 +174,7 @@
     "badType": "That is not a text file. Turn it into a .txt first.",
     "tooBig": "That file is larger than 8 MB",
     "tooLong": "That manuscript is longer than a story will hold",
-    "sourceUnnamed": "the uploaded file",
+    "sourceUnnamed": "the loaded file",
     "sourceChars": "{{count}} characters",
     "sourceBytes": "{{count}} not read yet",
     "sourceUnread": "not read yet",
@@ -199,7 +199,7 @@
     "styleHint": "Written into every picture prompt, which is what the pictures look like",
     "styleHintMissing": "Without a genre and a look, the prompts ask for them plainly",
     "afterOutline": "Changing the premise does not re-split the chapters by itself — the outline step has “split again”",
-    "needsIdea": "Write a premise, or upload a manuscript",
+    "needsIdea": "Write a premise, or load a manuscript",
     "next": "Next: the outline"
   },
   "element": {
@@ -212,7 +212,7 @@
     "source": "Where the chapters come from",
     "modeExpand": "From the premise",
     "modeSplit": "From the manuscript",
-    "modeSplitLocked": "Upload a manuscript first, in the step before this one",
+    "modeSplitLocked": "Load a manuscript first, in the step before this one",
     "chapters": "Chapters",
     "fewer": "One chapter fewer",
     "more": "One chapter more",

@@ -88,7 +88,7 @@
   },
   "confirm": {
     "button": "确认内容",
-    "gapIdea": "故事设想还没有写好：写一段 {{min}} 字以上的设想，或上传一份文稿",
+    "gapIdea": "故事设想还没有写好：写一段 {{min}} 字以上的设想，或载入一份文稿",
     "gapNoChapters": "还没有章节：先设置章节数并开始拆解",
     "gapChapters": "还有 {{count}} 章的标题或梗概没有写好（第 {{list}} 章）",
     "gapNoElements": "还没有角色、场景或物品：先从章节里识别一遍，或自己添加",
@@ -124,7 +124,7 @@
       "music": "归档一幕的音乐"
     },
     "brief": "写下创意",
-    "source": "上传稿子",
+    "source": "载入稿子",
     "chapters": "改写章节",
     "elements": "改写元素",
     "storyboard": "写分镜",
@@ -163,7 +163,7 @@
     "lead": "说说这个故事讲的是什么、要讲多久。后面每一步都从这里写起。",
     "tabs": "故事从哪里来",
     "tabWrite": "写一段创意",
-    "tabUpload": "上传小说 / 剧本",
+    "tabUpload": "已有小说 / 剧本",
     "writeLabel": "创意",
     "writePlaceholder": "夜里十一点，末班列车停在一个不该停的站台……",
     "liftOpening": "从原文开头写起",
@@ -174,7 +174,7 @@
     "badType": "这不是文本文件。请先转成 .txt。",
     "tooBig": "文件超过 8 MB",
     "tooLong": "这部稿子比一个故事能装下的更长",
-    "sourceUnnamed": "已上传的文件",
+    "sourceUnnamed": "已载入的文件",
     "sourceChars": "{{count}} 字",
     "sourceBytes": "{{count}}，尚未读入",
     "sourceUnread": "尚未读入",
@@ -199,7 +199,7 @@
     "styleHint": "写进所有画面提示词，决定画面长什么样",
     "styleHintMissing": "没有影片风格与视觉风格时，提示词只按画面本身来写",
     "afterOutline": "改动创意不会自动重拆章节——大纲那一步有「重新拆解」",
-    "needsIdea": "写一段创意，或上传一部稿子",
+    "needsIdea": "写一段创意，或载入一部稿子",
     "next": "下一步：剧本大纲"
   },
   "element": {
@@ -212,7 +212,7 @@
     "source": "章节从哪里来",
     "modeExpand": "根据创意扩写",
     "modeSplit": "按稿子分章",
-    "modeSplitLocked": "请先在上一上传一部稿子",
+    "modeSplitLocked": "请先在上一步载入一部稿子",
     "chapters": "章节数",
     "fewer": "少一章",
     "more": "多一章",
