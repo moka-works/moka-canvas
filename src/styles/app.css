@@ -763,27 +763,47 @@ button.room-choice:hover .room-choice-arrow,
 }
 
 .settings-body {
-  /* Rows sit at the height their own content asks for rather than being
-     stretched to share out the room below them, which is what a grid left to
-     itself does with a body taller than what it holds. */
-  align-content: start;
+  /* A column rather than a grid: rows keep the height their own content asks
+     for, and a form's own Save can be pushed to the bottom of a panel it does
+     not fill. */
   background: var(--canvas);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-md);
-  display: grid;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   gap: 14px;
+  justify-content: flex-start;
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
 }
 
-/* A form taller than the panel must not push its own Save out of reach. */
+/* A form's Save stays in reach of a form taller than the panel, and spans the
+   body's padding so it reaches the panel's own bottom edge instead of
+   floating a gutter above it. */
 .settings-body .dialog-actions {
   background: var(--canvas);
-  bottom: 0;
-  padding-top: 10px;
+  bottom: -16px;
+  margin: 0 -16px -16px;
+  padding: 10px 16px 16px;
   position: sticky;
+  z-index: 1;
+}
+
+/* A model editor owns the whole body: its rows stack from the top, and its
+   Save stands at the bottom whether or not the form fills the panel. */
+.settings-body > .model-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.settings-body > .model-editor > .dialog-actions {
+  flex: none;
+  margin-top: auto;
 }
 
 .settings-section {

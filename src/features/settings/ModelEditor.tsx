@@ -522,7 +522,7 @@ export function ModelEditor({
   );
 
   return (
-    <div className="settings-section">
+    <div className="settings-section model-editor">
       <h3 className="settings-heading">
         {model !== null
           ? // The category went out of the form as a field of its own; the
