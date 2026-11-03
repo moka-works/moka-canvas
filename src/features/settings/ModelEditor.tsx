@@ -9,8 +9,11 @@ import type {
 import {
   CAPABILITY_LABELS,
   MAX_MODEL_NAME_LENGTH,
+  MAX_TEMPERATURE,
+  MAX_TEXT_TOKENS,
   MAX_VIDEO_SECONDS,
   MODEL_SCENE_LABELS,
+  REASONING_EFFORTS,
   SCENES_OF_CATEGORY,
   type Capability,
   type ModelScene,
@@ -54,6 +57,12 @@ interface FormState {
   displayName: string;
   /** The longest one clip may be, as text so a blank field can mean none. */
   maxVideoSeconds: string;
+  /** A text model's own effort; "auto" leaves it to the preferences. */
+  reasoningEffort: string;
+  /** The most one answer may write, as text so a blank field can mean none. */
+  maxTokens: string;
+  /** How freely a text model may answer, as text so blank can mean none. */
+  temperature: string;
   /** The scenarios the first group's own model answers. */
   scenes: ModelScene[];
   /** Whether the first group's fields show. */
@@ -161,6 +170,9 @@ function initialForm(
         MAX_MODEL_NAME_LENGTH,
       ),
       maxVideoSeconds: ceilingText(copySource.maxVideoSeconds),
+      reasoningEffort: copySource.reasoningEffort || "auto",
+      maxTokens: numberText(copySource.maxTokens),
+      temperature: numberText(copySource.temperature),
       scenes: initialScenes(category, copySource),
       open: true,
       groups: draftGroups(copySource.subModels),
@@ -179,6 +191,9 @@ function initialForm(
       model: "",
       displayName: "",
       maxVideoSeconds: "",
+      reasoningEffort: "auto",
+      maxTokens: "",
+      temperature: "",
       scenes: initialScenes(category, null),
       open: true,
       groups: [],
@@ -192,6 +207,9 @@ function initialForm(
     model: model.model,
     displayName: model.displayName,
     maxVideoSeconds: ceilingText(model.maxVideoSeconds),
+    reasoningEffort: model.reasoningEffort || "auto",
+    maxTokens: numberText(model.maxTokens),
+    temperature: numberText(model.temperature),
     scenes: initialScenes(category, model),
     open: true,
     groups: draftGroups(model.subModels),
@@ -203,6 +221,11 @@ function initialForm(
 /** A stored clip ceiling as the field shows it: a number, or nothing. */
 function ceilingText(seconds: number | null | undefined): string {
   return seconds == null ? "" : String(seconds);
+}
+
+/** A stored sampling number as its field shows it: a number, or nothing. */
+function numberText(value: number | null | undefined): string {
+  return value == null ? "" : String(value);
 }
 
 /**
@@ -321,6 +344,25 @@ export function ModelEditor({
       Number.isInteger(ceilingNumber) &&
       ceilingNumber >= 1 &&
       ceilingNumber <= MAX_VIDEO_SECONDS);
+  // A blank sampling field is no setting at all — the preferences or the
+  // provider decide — and anything typed must be something to send.
+  const tokensText = form.maxTokens.trim();
+  const tokensNumber = tokensText === "" ? null : Number(tokensText);
+  const tokensOk =
+    tokensText === "" ||
+    (tokensNumber !== null &&
+      Number.isInteger(tokensNumber) &&
+      tokensNumber >= 1 &&
+      tokensNumber <= MAX_TEXT_TOKENS);
+  const temperatureText = form.temperature.trim();
+  const temperatureNumber =
+    temperatureText === "" ? null : Number(temperatureText);
+  const temperatureOk =
+    temperatureText === "" ||
+    (temperatureNumber !== null &&
+      Number.isFinite(temperatureNumber) &&
+      temperatureNumber >= 0 &&
+      temperatureNumber <= MAX_TEMPERATURE);
   // The scenarios a routed category has that no group answers for, and whether
   // any group answers for one at all. A configuration claiming nothing would
   // answer everything by the server's oldest rule, which is not what an
@@ -336,6 +378,8 @@ export function ModelEditor({
     form.displayName.trim() !== "" &&
     form.model.trim() !== "" &&
     ceilingOk &&
+    tokensOk &&
+    temperatureOk &&
     urlShaped &&
     !claimedEmpty &&
     form.groups.every((group) => groupProblem(group) === null);
@@ -374,6 +418,15 @@ export function ModelEditor({
     // window, and a form that never showed the field leaves it out entirely.
     if (category === "video" && ceilingNumber !== null) {
       draft.maxVideoSeconds = ceilingNumber;
+    }
+    // Sampling settings belong to text models. Auto is the absence of a
+    // choice rather than a value: it leaves the global preference in charge.
+    if (category === "text") {
+      if (form.reasoningEffort !== "auto") {
+        draft.reasoningEffort = form.reasoningEffort;
+      }
+      if (tokensNumber !== null) draft.maxTokens = tokensNumber;
+      if (temperatureNumber !== null) draft.temperature = temperatureNumber;
     }
     // Scenario claims belong to video and image models, and they travel only
     // where there is something to say — or something stored to clear.
@@ -584,6 +637,89 @@ export function ModelEditor({
           </p>
 
           {modelField(null)}
+
+          {category === "text" && (
+            <section
+              className="settings-section"
+              data-testid="model-text-params"
+            >
+              <h3 className="settings-heading">
+                {t("settings:editor.textParams")}
+              </h3>
+              <label className="dialog-field">
+                <span>{t("settings:editor.reasoningEffort")}</span>
+                <select
+                  aria-label={t("settings:editor.reasoningEffort")}
+                  onChange={(event) =>
+                    edit({ reasoningEffort: event.target.value })
+                  }
+                  value={form.reasoningEffort}
+                >
+                  <option value="auto">
+                    {t("settings:editor.reasoningAuto")}
+                  </option>
+                  {REASONING_EFFORTS.filter((effort) => effort !== "auto").map(
+                    (effort) => (
+                      <option key={effort} value={effort}>
+                        {effort}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <p className="settings-hint">
+                {t("settings:editor.reasoningEffortHint")}
+              </p>
+              <div className="settings-columns">
+                <div>
+                  <label className="dialog-field">
+                    <span>{t("settings:editor.maxTokens")}</span>
+                    <input
+                      aria-label={t("settings:editor.maxTokens")}
+                      max={MAX_TEXT_TOKENS}
+                      min={1}
+                      onChange={(event) =>
+                        edit({ maxTokens: event.target.value })
+                      }
+                      placeholder="—"
+                      step={1}
+                      type="number"
+                      value={form.maxTokens}
+                    />
+                  </label>
+                  <p className="settings-hint">
+                    {tokensOk
+                      ? t("settings:editor.maxTokensHint")
+                      : t("settings:editor.maxTokensRange", {
+                          max: MAX_TEXT_TOKENS,
+                        })}
+                  </p>
+                </div>
+                <div>
+                  <label className="dialog-field">
+                    <span>{t("settings:editor.temperature")}</span>
+                    <input
+                      aria-label={t("settings:editor.temperature")}
+                      max={MAX_TEMPERATURE}
+                      min={0}
+                      onChange={(event) =>
+                        edit({ temperature: event.target.value })
+                      }
+                      placeholder="—"
+                      step={0.1}
+                      type="number"
+                      value={form.temperature}
+                    />
+                  </label>
+                  <p className="settings-hint">
+                    {temperatureOk
+                      ? t("settings:editor.temperatureHint")
+                      : t("settings:editor.temperatureRange")}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
 
           {category === "video" && (
             <>

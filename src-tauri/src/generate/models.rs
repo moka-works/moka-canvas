@@ -32,6 +32,9 @@ const MAX_NAME_LEN: usize = 120;
 
 const MAX_IMAGES_PER_RUN: u32 = 10;
 const MAX_VIDEO_SECONDS: u32 = 600;
+const MAX_TEXT_TOKENS: u32 = 1_000_000;
+const MAX_TEMPERATURE: f64 = 2.0;
+const MAX_EFFORT_LEN: usize = 32;
 
 /// How many scenario rows one configuration may carry. The scenes a category
 /// has are few, and a list longer than this is a form somebody filled by
@@ -82,7 +85,7 @@ impl ApiKeyView {
 
 /// A model configuration as the client sees it: the stored fields plus the
 /// credential's disclosable state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelView {
     pub id: String,
@@ -94,6 +97,12 @@ pub struct ModelView {
     /// The longest one clip this model films, when the deployment knows it.
     /// `None` means the app's own ceiling stands in for it.
     pub max_video_seconds: Option<u32>,
+    /// How hard a text model is asked to think before it answers.
+    pub reasoning_effort: Option<String>,
+    /// The most a text model may write back in one answer.
+    pub max_tokens: Option<u32>,
+    /// How freely a text model may depart from its likeliest answer.
+    pub temperature: Option<f64>,
     /// The scenarios this configuration's own model answers, where the
     /// deployment routes them.
     pub scenes: Vec<Scene>,
@@ -180,6 +189,9 @@ impl ModelRepo {
                 model: model.model,
                 display_name: model.display_name,
                 max_video_seconds: model.max_video_seconds,
+                reasoning_effort: model.reasoning_effort,
+                max_tokens: model.max_tokens,
+                temperature: model.temperature,
                 scenes: model.scenes,
                 sub_models: model.sub_models,
                 enabled: model.enabled,
@@ -245,6 +257,7 @@ impl ModelRepo {
         // any other kind: a text model carrying one is dropped rather than
         // refused, since what it asks for is a form that never had the field.
         draft.max_video_seconds = check_video_ceiling(draft.category, draft.max_video_seconds)?;
+        check_text_params(&mut draft)?;
         check_scene_claims(&mut draft)?;
         Ok(self.metadata.upsert_model(&draft).await?)
     }
@@ -744,6 +757,50 @@ fn check_video_ceiling(
     }
 }
 
+/// The sampling knobs a text model is asked with, bounded and trimmed.
+///
+/// They belong to text models alone, the way a clip ceiling belongs to video:
+/// a configuration of any other kind that carries them is dropped rather than
+/// refused, since what it asks for is a form that never had the fields.
+fn check_text_params(draft: &mut ModelDraft) -> Result<(), ProviderError> {
+    if draft.category != Capability::Text {
+        draft.reasoning_effort = None;
+        draft.max_tokens = None;
+        draft.temperature = None;
+        return Ok(());
+    }
+    // "Auto" is the absence of a choice rather than a value a provider knows:
+    // it leaves the global preference in charge instead of replacing it.
+    draft.reasoning_effort = draft
+        .reasoning_effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|effort| !effort.is_empty() && !effort.eq_ignore_ascii_case("auto"))
+        .map(str::to_string);
+    if let Some(effort) = &draft.reasoning_effort {
+        if effort.chars().count() > MAX_EFFORT_LEN {
+            return Err(ProviderError::invalid(format!(
+                "a reasoning effort must be at most {MAX_EFFORT_LEN} characters"
+            )));
+        }
+    }
+    if let Some(tokens) = draft.max_tokens {
+        if !(1..=MAX_TEXT_TOKENS).contains(&tokens) {
+            return Err(ProviderError::invalid(format!(
+                "max output tokens must be between 1 and {MAX_TEXT_TOKENS}"
+            )));
+        }
+    }
+    if let Some(temperature) = draft.temperature {
+        if !temperature.is_finite() || !(0.0..=MAX_TEMPERATURE).contains(&temperature) {
+            return Err(ProviderError::invalid(format!(
+                "temperature must be between 0 and {MAX_TEMPERATURE}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Bounds the numbers that reach a provider call. The rest of the
 /// preferences are free text the provider gets to reject.
 fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> {
@@ -793,6 +850,9 @@ mod tests {
             model: id.to_string(),
             display_name: format!("Model {id}"),
             max_video_seconds: None,
+            reasoning_effort: None,
+            max_tokens: None,
+            temperature: None,
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
@@ -908,6 +968,9 @@ mod tests {
             model: "filmer".to_string(),
             display_name: "Filmer".to_string(),
             max_video_seconds: None,
+            reasoning_effort: None,
+            max_tokens: None,
+            temperature: None,
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
@@ -1303,6 +1366,50 @@ mod tests {
             ..Default::default()
         };
         assert!(validate_preferences(&split_finer_than_a_line).is_err());
+    }
+
+    #[test]
+    fn sampling_settings_belong_to_a_text_model_and_are_bounded() {
+        let mut draft = video_draft();
+        draft.category = Capability::Text;
+        draft.protocol = Protocol::from_wire_name("openaiChat");
+        draft.reasoning_effort = Some(" auto ".into());
+        draft.max_tokens = Some(2048);
+        draft.temperature = Some(0.5);
+        check_text_params(&mut draft).unwrap();
+        assert_eq!(
+            draft.reasoning_effort, None,
+            "auto leaves the preference in charge"
+        );
+        assert_eq!(draft.max_tokens, Some(2048));
+        assert_eq!(draft.temperature, Some(0.5));
+
+        draft.reasoning_effort = Some("  high ".into());
+        check_text_params(&mut draft).unwrap();
+        assert_eq!(draft.reasoning_effort.as_deref(), Some("high"));
+
+        draft.max_tokens = Some(0);
+        assert!(check_text_params(&mut draft).is_err());
+        draft.max_tokens = Some(MAX_TEXT_TOKENS + 1);
+        assert!(check_text_params(&mut draft).is_err());
+
+        draft.max_tokens = Some(2048);
+        draft.temperature = Some(-0.1);
+        assert!(check_text_params(&mut draft).is_err());
+        draft.temperature = Some(MAX_TEMPERATURE + 0.1);
+        assert!(check_text_params(&mut draft).is_err());
+
+        // A kind that writes no words drops them rather than refusing a form
+        // that never showed the fields.
+        let mut picture = draft;
+        picture.category = Capability::Image;
+        picture.max_tokens = Some(2048);
+        picture.temperature = Some(0.5);
+        picture.reasoning_effort = Some("high".into());
+        check_text_params(&mut picture).unwrap();
+        assert_eq!(picture.max_tokens, None);
+        assert_eq!(picture.temperature, None);
+        assert_eq!(picture.reasoning_effort, None);
     }
 
     #[test]

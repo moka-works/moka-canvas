@@ -153,7 +153,7 @@ pub struct SubModel {
 /// credential field: the API key lives in a separate encrypted document,
 /// keyed by this configuration's `id`, and never appears in a snapshot handed
 /// to the generation hot path.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelConfig {
     pub id: String,
@@ -176,6 +176,19 @@ pub struct ModelConfig {
     /// absent means the app's own ceiling stands in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_video_seconds: Option<u32>,
+    /// How hard a text model is asked to think before it answers. `None`
+    /// leaves the choice to the global preferences, and a request that states
+    /// one of its own keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    /// The most a text model may write back in one answer. `None` leaves the
+    /// ceiling to the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    /// How freely a text model may depart from its likeliest answer. `None`
+    /// leaves the value to the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
     /// The scenarios the model above answers, where the deployment splits its
     /// work by scenario. Empty claims nothing, which with no sub-models either
     /// leaves the model above answering every request — the way every
@@ -193,7 +206,7 @@ pub struct ModelConfig {
 
 /// Caller-supplied model configuration contents for an upsert, with the
 /// optional revision the caller last read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelDraft {
     pub id: String,
@@ -204,6 +217,12 @@ pub struct ModelDraft {
     pub display_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_video_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenes: Vec<Scene>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -596,6 +615,9 @@ mod tests {
             model: "gpt-4o".to_string(),
             display_name: "GPT-4o".to_string(),
             max_video_seconds: None,
+            reasoning_effort: None,
+            max_tokens: None,
+            temperature: None,
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,

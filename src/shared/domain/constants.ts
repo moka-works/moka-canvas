@@ -325,6 +325,8 @@ export const MAX_MODEL_ID_LENGTH = 96;
 export const MAX_MODEL_NAME_LENGTH = 120;
 export const MAX_IMAGES_PER_RUN = 10;
 export const MAX_VIDEO_SECONDS = 600;
+export const MAX_TEXT_TOKENS = 1_000_000;
+export const MAX_TEMPERATURE = 2;
 export const MIN_AUDIO_SPEED = 0.25;
 export const MAX_AUDIO_SPEED = 4;
 

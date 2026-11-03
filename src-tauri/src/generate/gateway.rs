@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use crate::config::GenerateConfig;
 use crate::domain::Capability;
-use crate::metadata::{Preferences, Protocol, Scene};
+use crate::metadata::{ModelsSnapshot, Preferences, Protocol, Scene};
 use crate::project::store::FsProjectStore;
 use crate::project::ProjectStore;
 use crate::telemetry::GenerationNote;
@@ -483,11 +483,15 @@ impl Gateway {
         cancel.check()?;
         let snapshot = self.models.snapshot().await?;
         let capability = request.capability;
+        // What the ask said itself, which the model's own settings may not
+        // replace.
+        let explicit: Vec<String> = request.params.keys().cloned().collect();
         let request = merged(request, &snapshot.preferences);
         // Read after the preferences are merged, because a machine whose video
         // mode is "reference" is saying what its pictures mean.
         let scene = scene_of(&request);
         let resolved = resolve_within(&snapshot, &request.model, capability, scene)?;
+        let request = with_model_params(request, &snapshot, &resolved, &explicit);
         speakable(&resolved, &request)?;
         let inputs = load_inputs(
             session.as_ref(),
@@ -637,6 +641,55 @@ fn merged(mut request: GenerateRequest, preferences: &Preferences) -> GenerateRe
         // which language, how many speakers — belongs to the clip being
         // transcribed rather than to the model, and the request states it.
         Capability::Asr => {}
+    }
+    request
+}
+
+/// A text model's own sampling settings, over what the preferences offered
+/// and under what the ask carried.
+///
+/// The gap-filling merge above cannot do this: preferences are filled before
+/// the model is resolved, and a model's setting is more specific than a
+/// machine-wide preference while less specific than the ask. So an explicit
+/// key is left alone, and anything else the model names replaces whatever the
+/// preference put there.
+fn with_model_params(
+    mut request: GenerateRequest,
+    snapshot: &ModelsSnapshot,
+    resolved: &ResolvedModel,
+    explicit: &[String],
+) -> GenerateRequest {
+    if request.capability != Capability::Text {
+        return request;
+    }
+    let Some(config) = snapshot
+        .models
+        .iter()
+        .find(|model| model.id == resolved.config_id)
+    else {
+        return request;
+    };
+    let asked = |key: &str| explicit.iter().any(|held| held == key);
+    if !asked("reasoningEffort") {
+        if let Some(effort) = &config.reasoning_effort {
+            request
+                .params
+                .insert("reasoningEffort".to_string(), Value::String(effort.clone()));
+        }
+    }
+    if !asked("maxTokens") {
+        if let Some(tokens) = config.max_tokens {
+            request
+                .params
+                .insert("maxTokens".to_string(), Value::from(tokens));
+        }
+    }
+    if !asked("temperature") {
+        if let Some(temperature) = config.temperature {
+            request
+                .params
+                .insert("temperature".to_string(), Value::from(temperature));
+        }
     }
     request
 }
@@ -937,6 +990,56 @@ mod tests {
         let text = merged(request(Capability::Text, json!({})), &preferences());
         assert_eq!(text.params["reasoningEffort"], "high");
         assert_eq!(text.params.len(), 1, "text has one preference of its own");
+    }
+
+    #[test]
+    fn a_models_own_sampling_settings_fill_gaps_below_the_ask() {
+        let snapshot = ModelsSnapshot {
+            models: vec![crate::metadata::ModelConfig {
+                id: "writer".into(),
+                category: Capability::Text,
+                protocol: Protocol::new("openaiChat"),
+                url: "https://provider.test/v1/chat/completions".into(),
+                model: "writer-1".into(),
+                display_name: "Writer".into(),
+                max_video_seconds: None,
+                reasoning_effort: Some("low".into()),
+                max_tokens: Some(2048),
+                temperature: Some(0.5),
+                scenes: Vec::new(),
+                sub_models: Vec::new(),
+                enabled: true,
+            }],
+            ..Default::default()
+        };
+        let resolved = resolve_within(&snapshot, "writer", Capability::Text, None).unwrap();
+
+        // The model's setting is more specific than the machine's preference.
+        let placed = with_model_params(
+            merged(request(Capability::Text, json!({})), &preferences()),
+            &snapshot,
+            &resolved,
+            &[],
+        );
+        assert_eq!(placed.params["reasoningEffort"], "low");
+        assert_eq!(placed.params["maxTokens"], 2048);
+        assert_eq!(placed.params["temperature"], 0.5);
+
+        // What the ask carried itself is left alone.
+        let asked = request(
+            Capability::Text,
+            json!({ "reasoningEffort": "max", "temperature": 1.0 }),
+        );
+        let explicit: Vec<String> = asked.params.keys().cloned().collect();
+        let placed = with_model_params(
+            merged(asked, &preferences()),
+            &snapshot,
+            &resolved,
+            &explicit,
+        );
+        assert_eq!(placed.params["reasoningEffort"], "max");
+        assert_eq!(placed.params["temperature"], 1.0);
+        assert_eq!(placed.params["maxTokens"], 2048, "the rest still applies");
     }
 
     #[test]

@@ -236,6 +236,11 @@ function upsert(draft: ModelDraft) {
     apiKey: key,
     ...(draft.scenes ? { scenes: draft.scenes } : {}),
     ...(draft.subModels ? { subModels: draft.subModels } : {}),
+    ...(draft.reasoningEffort
+      ? { reasoningEffort: draft.reasoningEffort }
+      : {}),
+    ...(draft.maxTokens != null ? { maxTokens: draft.maxTokens } : {}),
+    ...(draft.temperature != null ? { temperature: draft.temperature } : {}),
   };
   view = {
     ...view,
@@ -462,6 +467,46 @@ describe("model settings", () => {
       apiKey: KEY,
       expectedRevision: 1,
     });
+  });
+
+  it("keeps a text model's sampling settings, and leaves them out when auto", async () => {
+    await openSettings();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New text model" }),
+    );
+
+    fireEvent.change(await screen.findByLabelText("Display name"), {
+      target: { value: "Composer" },
+    });
+    fireEvent.change(screen.getByLabelText("Model name"), {
+      target: { value: "composer-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Reasoning effort"), {
+      target: { value: "high" },
+    });
+    fireEvent.change(screen.getByLabelText("Max output tokens"), {
+      target: { value: "4096" },
+    });
+    fireEvent.change(screen.getByLabelText("Temperature"), {
+      target: { value: "0.7" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save model" }));
+    await screen.findByText("Composer");
+
+    const [write] = writesTo("/api/v1/models");
+    expect(write.body).toMatchObject({
+      reasoningEffort: "high",
+      maxTokens: 4096,
+      temperature: 0.7,
+    });
+
+    // A kind that generates no words is never asked for sampling settings.
+    fireEvent.click(screen.getByRole("tab", { name: "Image" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New image model" }),
+    );
+    expect(screen.queryByLabelText("Max output tokens")).toBeNull();
+    expect(screen.queryByLabelText("Temperature")).toBeNull();
   });
 
   it("keeps a video model's own clip ceiling, and asks no other kind for one", async () => {

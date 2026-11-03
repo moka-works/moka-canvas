@@ -54,6 +54,12 @@ export interface ModelView {
    * in pieces is cut to this length.
    */
   maxVideoSeconds?: number | null;
+  /** How hard a text model is asked to think before it answers. */
+  reasoningEffort?: string | null;
+  /** The most a text model may write back in one answer. */
+  maxTokens?: number | null;
+  /** How freely a text model may depart from its likeliest answer. */
+  temperature?: number | null;
   /**
    * The scenarios this configuration's own model answers, where the deployment
    * routes them. Empty claims nothing: with no sub-models either, the model
@@ -162,6 +168,13 @@ export interface ModelDraft {
   displayName: string;
   /** A video model's own clip ceiling; null or omitted means none is kept. */
   maxVideoSeconds?: number | null;
+  /**
+   * A text model's own sampling settings; omitted leaves the choice to the
+   * global preferences or the provider.
+   */
+  reasoningEffort?: string | null;
+  maxTokens?: number | null;
+  temperature?: number | null;
   /**
    * The scenarios the configuration's own model answers; omitted claims
    * nothing, which beside no sub-models leaves it answering everything.

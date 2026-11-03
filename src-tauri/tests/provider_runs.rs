@@ -162,6 +162,9 @@ impl Harness {
                     model: (*id).into(),
                     display_name: (*id).into(),
                     max_video_seconds: None,
+                    reasoning_effort: None,
+                    max_tokens: None,
+                    temperature: None,
                     scenes: Vec::new(),
                     sub_models: Vec::new(),
                     enabled: true,
@@ -204,6 +207,9 @@ impl Harness {
                 model: "shooter-text".into(),
                 display_name: SHOOTER.into(),
                 max_video_seconds: None,
+                reasoning_effort: None,
+                max_tokens: None,
+                temperature: None,
                 scenes: Vec::new(),
                 sub_models: vec![
                     SubModel {
