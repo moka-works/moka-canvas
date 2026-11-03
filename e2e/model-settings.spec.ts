@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   CHANNEL_KEY,
@@ -8,6 +8,54 @@ import {
 import { PROVIDER_ORIGIN, SPEAKER } from "./mock-provider";
 
 const CHAT_URL = `${PROVIDER_ORIGIN}/v1/chat/completions`;
+
+/** One protocol as the converter registry declares it. */
+interface RegistryProtocol {
+  id: string;
+  label: string;
+  urlExample: string;
+  order: number;
+}
+
+/**
+ * A capability's protocols, in the order the form offers them and named the
+ * way this suite's English browser sees them.
+ *
+ * Read from the server rather than written down here: shipping a converter is
+ * adding a directory, and a list in this spec would be wrong the next time one
+ * arrives.
+ */
+async function registryProtocols(
+  page: Page,
+  capability: string,
+): Promise<RegistryProtocol[]> {
+  return page.evaluate(async (capability) => {
+    const response = await fetch("/api/v1/converter/protocols");
+    const body = (await response.json()) as {
+      protocols: Record<
+        string,
+        Record<
+          string,
+          { displayName: string; urlExample?: string; order?: number }
+        >
+      >;
+    };
+    const group = body.protocols[capability] ?? {};
+    return Object.entries(group)
+      .map(([id, entry]) => ({
+        id,
+        label: entry.displayName,
+        urlExample: entry.urlExample ?? "",
+        order: entry.order ?? 1000,
+      }))
+      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }, capability);
+}
+
+/** The protocols this build ships, without the clone this suite deploys. */
+function shipped(protocols: RegistryProtocol[]): RegistryProtocol[] {
+  return protocols.filter((entry) => !entry.label.startsWith("E2E · "));
+}
 
 /**
  * Configuring a model against the real metadata store and the real stand-in.
@@ -253,19 +301,16 @@ test("a category offers only the protocols that serve it", async ({ page }) => {
 
   await dialog.getByRole("button", { name: "New video model" }).click();
   const protocol = dialog.getByLabel("Protocol");
-  await expect(protocol).toHaveValue("openaiVideos");
   // A chat endpoint cannot serve a video model, so it is not on offer; the
   // shapes deployed under the video capability are, in the order their own
   // documents ask for.
-  await expect(protocol.locator("option")).toHaveText([
-    "OpenAI-compatible · Videos API",
-    "Google Gemini · long-running (Veo)",
-    "Alibaba Cloud · Bailian Video",
-    "Volcengine · Ark Video (Seedance)",
-    "MiniMax · Video Generation (Hailuo)",
-  ]);
+  const video = await registryProtocols(page, "video");
+  await expect(protocol).toHaveValue(video[0].id);
+  await expect(protocol.locator("option")).toHaveText(
+    video.map((entry) => entry.label),
+  );
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://api.openai.com/v1/videos",
+    video[0].urlExample,
   );
 });
 
@@ -284,29 +329,25 @@ test("each sound capability offers the shapes deployed under it", async ({
   await dialog.getByRole("tab", { name: "Speech", exact: true }).click();
   await dialog.getByRole("button", { name: "New speech model" }).click();
   const protocol = dialog.getByLabel("Protocol");
-  await expect(protocol).toHaveValue("openaiSpeech");
+  const speech = shipped(await registryProtocols(page, "speech"));
+  await expect(protocol).toHaveValue(speech[0].id);
   await expect(
     protocol.locator("option").filter({ hasNotText: /^E2E · / }),
-  ).toHaveText([
-    "OpenAI-compatible · Speech API",
-    "Alibaba Cloud · Bailian Speech (CosyVoice TTS)",
-    "Alibaba Cloud · Bailian Speech (CosyVoice, voice clone)",
-    "MiniMax · Speech (T2A)",
-  ]);
+  ).toHaveText(speech.map((entry) => entry.label));
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://api.openai.com/v1/audio/speech",
+    speech[0].urlExample,
   );
 
   // A score is asked of a music model, which is a list of its own.
   await dialog.getByRole("tab", { name: "Music" }).click();
   await dialog.getByRole("button", { name: "New music model" }).click();
-  await expect(protocol).toHaveValue("bailianMusic");
-  await expect(protocol.locator("option")).toHaveText([
-    "Alibaba Cloud · Music Generation (fun-music)",
-    "MiniMax · Music Generation",
-  ]);
+  const music = await registryProtocols(page, "music");
+  await expect(protocol).toHaveValue(music[0].id);
+  await expect(protocol.locator("option")).toHaveText(
+    music.map((entry) => entry.label),
+  );
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://{workspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/music/generation",
+    music[0].urlExample,
   );
 });
 
@@ -356,27 +397,31 @@ test("every shape a category offers comes from its converter's model.json", asyn
   await dialog.getByRole("button", { name: "New image model" }).click();
 
   const protocol = dialog.getByLabel("Protocol");
-  // Both image shapes are converter directories deployed on this machine, so
+  // Every image shape is a converter directory deployed on this machine, so
   // the form names and addresses them from what each one's model.json says —
   // this program holds no table of protocols of its own.
-  await expect(protocol.locator("option")).toHaveText([
-    "OpenAI-compatible · Images API",
-    "Alibaba Cloud · Bailian Image (Wan)",
-    "Volcengine · Ark Image (Seedream)",
-    "MiniMax · Image Generation",
-  ]);
-  await protocol.selectOption("bailianImage");
-  await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+  const image = await registryProtocols(page, "image");
+  await expect(protocol.locator("option")).toHaveText(
+    image.map((entry) => entry.label),
   );
+  for (const entry of image) {
+    await protocol.selectOption(entry.id);
+    await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
+      entry.urlExample,
+    );
+  }
 
   // The text shape keeps its own address: the multimodal one is derived from
   // it at the moment a question carries a picture.
   await dialog.getByRole("tab", { name: "Text" }).click();
   await dialog.getByRole("button", { name: "New text model" }).click();
+  const bailianText = (await registryProtocols(page, "text")).find(
+    (entry) => entry.id === "bailianText",
+  );
+  expect(bailianText).toBeTruthy();
   await protocol.selectOption("bailianText");
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+    bailianText!.urlExample,
   );
 });
 
@@ -393,15 +438,15 @@ test("speech recognition offers the script that serves it", async ({
     .getByRole("button", { name: "New speech recognition model" })
     .click();
   const protocol = dialog.getByLabel("Protocol");
-  // The deployed converter is the whole of what the category offers: a
+  // The deployed converters are the whole of what the category offers: a
   // recognition shape is a script and a document, and nothing else.
-  await expect(protocol).toHaveValue("bailianAsr");
-  await expect(protocol.locator("option")).toHaveText([
-    "Alibaba Cloud · Bailian Speech Recognition (recording file)",
-    "MiniMax · Speech Recognition",
-  ]);
+  const asr = shipped(await registryProtocols(page, "asr"));
+  await expect(protocol).toHaveValue(asr[0].id);
+  await expect(
+    protocol.locator("option").filter({ hasNotText: /^E2E · / }),
+  ).toHaveText(asr.map((entry) => entry.label));
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
-    "https://{workspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/asr/transcription",
+    asr[0].urlExample,
   );
 });
 
