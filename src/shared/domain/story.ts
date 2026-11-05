@@ -1305,7 +1305,7 @@ export function actsRegenerationCost(chapter: StoryChapter): {
  * A list cut into the waves a story's jobs are taken in.
  *
  * A batch may hold no more pieces than the story job client's limit allows, and
- * a telling may ask for more than that at once — sixty episodes of a
+ * a telling may ask for more than that at once — five hundred episodes of a
  * manuscript, eight episodes of boards at a time. The pieces are the same
  * pieces either way; what the waves decide is how many asks the telling is
  * made of, and a list that fits in one wave comes back as one.

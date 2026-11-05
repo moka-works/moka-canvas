@@ -272,6 +272,19 @@ function withManuscript(chapterCount: number): MokaFile {
     sourceAssetId: "asset-novel",
     sourceName: "novel.txt",
   };
+  // The manuscript is the project's own copy, as an upload always files one:
+  // a chapter's offsets point into a file the project controls.
+  moka.resources.texts = [
+    ...(moka.resources.texts ?? []),
+    {
+      id: "asset-novel",
+      name: "novel.txt",
+      path: "assets/texts/novel-00000000.txt",
+      mime: "text/plain",
+      createdAt: "2026-01-02T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    },
+  ];
   manuscript = Array.from(
     { length: chapterCount },
     (_, index) =>

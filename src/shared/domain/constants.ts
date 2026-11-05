@@ -341,7 +341,7 @@ export const STORY_NAME_MAX = 60;
 export const STORY_IDEA_MAX = 20_000;
 /** How much manuscript a story will hold, measured in characters. */
 export const STORY_SOURCE_TEXT_MAX = 2_000_000;
-export const MAX_CHAPTERS_PER_STORY = 60;
+export const MAX_CHAPTERS_PER_STORY = 500;
 export const MAX_ELEMENTS_PER_STORY = 200;
 /** How many drawings one place keeps before the oldest is let go. */
 export const MAX_TAKES_PER_SLOT = 12;
@@ -369,13 +369,6 @@ export const MAX_TOTAL_DURATION_MS = 8 * 60 * 60 * 1000;
 export const MAX_ITEMS_PER_STORY_JOB = 40;
 /**
  * How much of a telling one ask may carry, in characters, when the reader has
- * not said. A manuscript is cut into the parts a chapter is written from, and
- * the chapters are read for their cast a part at a time; both boundaries are
- * the reader's to move, since how much a model can hold is a property of the
- * deployment rather than of the telling.
- */
-/**
- * How much of a telling one ask may carry, in characters, when the reader has
  * not said. A manuscript is read in windows this wide and cut at the places
  * the model finds; the chapters are read for their cast a part at a time.
  * Both boundaries are the reader's to move, since how much a model can hold is
@@ -384,17 +377,14 @@ export const MAX_ITEMS_PER_STORY_JOB = 40;
  * The split window is deliberately large: a model that holds 256K tokens can
  * hold a few hundred thousand characters of a manuscript, and asking it about
  * one window is both cheaper and more coherent than asking it about a dozen.
+ * The same ceiling serves a reading, since the reader may raise it to the
+ * whole telling when the model behind the room can hold one.
  */
 export const STORY_SPLIT_CHARS_DEFAULT = 500_000;
 export const STORY_READ_CHARS_DEFAULT = 8_000;
-/**
- * What either boundary may be set to. The split window's ceiling is the size
- * of a manuscript this app accepts; the reading boundary stays small enough
- * that the cast of a whole telling is not asked about in one answer.
- */
+/** What either boundary may be set to, in characters. */
 export const STORY_CHARS_MIN = 1_000;
-export const STORY_SPLIT_CHARS_MAX = 1_000_000;
-export const STORY_READ_CHARS_MAX = 16_000;
+export const STORY_CHARS_MAX = 1_000_000;
 /**
  * The words each of the story room's enums is said in, the way
  * `CAPABILITY_LABELS` says a capability: the table is the label's address, and

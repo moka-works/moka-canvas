@@ -460,12 +460,12 @@ async fn a_preference_outside_its_bounds_is_refused() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(problem["code"], "VALIDATION_FAILED");
 
-    // A telling cut finer than a scene is not a telling, and one carrying more
-    // than the instructions leave room for would not survive the job's own
-    // ceiling on what a piece may ask.
+    // Neither boundary may fall outside the room's own floor or ceiling, and
+    // the two share them: a reading may be as large as a split window when the
+    // model behind the room can hold one.
     for story in [
         json!({ "splitChars": 900, "readChars": 8_000 }),
-        json!({ "splitChars": 12_000, "readChars": 20_000 }),
+        json!({ "splitChars": 12_000, "readChars": 1_000_001 }),
     ] {
         let (status, problem) = send(
             &harness.app,

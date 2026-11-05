@@ -346,12 +346,12 @@ impl Default for MusicPreferences {
     }
 }
 
-/// What the story room cuts a telling to, in characters.
+/// What the story room reads a telling in, in characters.
 ///
-/// A long telling reaches a model a piece at a time, and how much one piece may
-/// carry is a property of the deployment the room is talking to rather than of
-/// any one telling: a manuscript is cut into the parts a chapter is written
-/// from, and the chapters are read for their cast a part at a time.
+/// A long telling reaches a model a window at a time, and how much one window
+/// may carry is a property of the deployment the room is talking to rather
+/// than of any one telling: a manuscript is cut in windows this wide, and the
+/// chapters are read for their cast a part at a time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct StoryPreferences {

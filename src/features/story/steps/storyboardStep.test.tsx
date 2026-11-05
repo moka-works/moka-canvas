@@ -1507,7 +1507,7 @@ describe("a reading too long for its shot", () => {
   });
 });
 
-describe("a telling at every ceiling", () => {
+describe("a telling at the stress ceilings", () => {
   it("draws the episode it stands on and no other", () => {
     const moka = buildLongStory();
     const standing = moka.stories![0].chapters[0]!;

@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "./fixtures";
+import { expect, test, type Page } from "./fixtures";
 import {
   configureTextModel,
   createProject,
@@ -9,6 +10,14 @@ import {
   openStoryRoom,
   projectHome,
 } from "./helpers";
+
+/** The project as the server has it written down, verbatim. */
+async function projectText(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/v1/projects/current");
+    return await response.text();
+  });
+}
 
 /**
  * A manuscript cut into chapters without changing a word of it.
@@ -48,6 +57,27 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
     await expect(page.getByTestId("story-source")).toBeVisible({
       timeout: 15_000,
     });
+
+    // The words are copied into the project before any offsets are taken:
+    // the manuscript the chapters point into is the project's own file, not
+    // the one the reader picked, which an editor could change underneath it.
+    const filedSource = async (): Promise<string> => {
+      const filed = JSON.parse(await projectText(page)) as {
+        moka?: {
+          stories?: Array<{ brief?: { sourceAssetId?: string } }>;
+          resources?: { texts?: Array<{ id: string; path: string }> };
+        };
+      };
+      const sourceId = (filed.moka?.stories ?? [])[0]?.brief?.sourceAssetId;
+      return (
+        (filed.moka?.resources?.texts ?? []).find(
+          (entry) => entry.id === sourceId,
+        )?.path ?? ""
+      );
+    };
+    await expect.poll(filedSource).toMatch(/^assets\/texts\//);
+    expect(existsSync(join(home, "project", await filedSource()))).toBe(true);
+
     await page.getByTestId("story-confirm-idea").click();
 
     await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
@@ -78,14 +108,9 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
     // The document keeps where the words are, not the words: a novel cut into
     // chapters does not double the project's save. The room saves in the
     // background, so the check waits for the story to have been written.
-    const projectText = async () =>
-      page.evaluate(async () => {
-        const response = await fetch("/api/v1/projects/current");
-        return await response.text();
-      });
     await expect
       .poll(async () => {
-        const body = JSON.parse(await projectText()) as {
+        const body = JSON.parse(await projectText(page)) as {
           moka?: {
             stories?: Array<{
               chapters?: Array<{ source?: unknown }>;
@@ -103,7 +128,7 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
       })
       .toEqual([2, true, true]);
 
-    const written = await projectText();
+    const written = await projectText(page);
     expect(written).not.toContain("末班列车停在一个不该停的站台");
   } finally {
     forgetHome(home);

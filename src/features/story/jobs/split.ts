@@ -31,6 +31,7 @@ import {
 } from "../../../shared/domain/storySource";
 import { failureText } from "../../../shared/i18n/problems";
 import { i18n } from "../../../shared/i18n";
+import { useProjectStore } from "../../editor/stores/projectStore";
 import {
   storySplitPrompt,
   storySplitRepairPrompt,
@@ -265,6 +266,22 @@ export async function runManuscriptSplit(
   if (assetId === undefined) {
     throw new SplitFailure(i18n.t("story:outline.splitNoSource"));
   }
+  // A chapter is a pair of offsets into the file. If the file is not the
+  // project's own copy, the offsets belong to something the project does not
+  // control: an editor, a sync folder or a path outside the project can change
+  // it under the telling, and every chapter after the change would point at
+  // the wrong words. The shelf keeps its own copy of everything uploaded, so a
+  // manuscript that is not inside it is one to load again.
+  const entry = useProjectStore
+    .getState()
+    .moka?.resources.texts.find((held) => held.id === assetId);
+  const inside =
+    entry !== undefined &&
+    entry.path.startsWith("assets/") &&
+    !entry.path.split(/[\\/]/).includes("..");
+  if (!inside) {
+    throw new SplitFailure(i18n.t("story:outline.splitSourceOutside"));
+  }
   const budget = Math.max(1_000, Math.floor(options.budget));
   const wanted = Math.max(1, Math.floor(options.chapters));
   const minutes = Math.max(1, Math.round(story.brief.chapterMs / 60_000));
@@ -283,7 +300,8 @@ export async function runManuscriptSplit(
     const final = end >= text.length;
     // The count is the telling's, not the window's: a window holding a tenth
     // of the manuscript is asked for about a tenth of the chapters, so the
-    // whole comes out near the number the reader set rather than sixty a batch.
+    // whole comes out near the number the reader set rather than the whole
+    // count in every batch.
     const expected = Math.max(
       1,
       Math.round((wanted * (end - cursor)) / Math.max(1, text.length)),

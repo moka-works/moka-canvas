@@ -255,7 +255,8 @@
     "splitTooManyParts": "the manuscript needs too many batches; raise the characters per batch",
     "chapterGone": "That chapter is no longer in the story; split it again",
     "wave": "Batch {{at}} of {{of}}",
-    "cutting": "Cutting"
+    "cutting": "Cutting",
+    "splitSourceOutside": "The manuscript is not stored inside this project; load it again"
   },
   "panels": {
     "close": "Close",

@@ -1,7 +1,6 @@
 import {
   CANVAS_SCHEMA_VERSION,
   MAX_ACTS_PER_CHAPTER,
-  MAX_CHAPTERS_PER_STORY,
   MAX_KEYFRAMES_PER_ACT,
   MOKA_FILE_VERSION,
   REFERENCE_IMAGES_DEFAULT,
@@ -1217,14 +1216,25 @@ export function buildEmptyStory(name = "新的故事"): MokaFile {
 }
 
 /**
- * A telling at every ceiling at once: sixty episodes, thirty acts each, and
- * twelve shots in every act. Built on demand, since it is twenty-one thousand
- * shots and no test wants two of them.
+ * How many episodes the stress file carries.
+ *
+ * The room allows five hundred chapters, but a document that is also at the
+ * act and shot ceilings at once is not a file the app promises to turn around
+ * quickly: five hundred chapters of thirty full acts each is a different order
+ * of magnitude. Sixty is the shape the performance budget was written against,
+ * and the chapter ceiling is checked on its own where it belongs.
+ */
+const STRESS_CHAPTERS = 60;
+
+/**
+ * A telling at the stress ceilings together: sixty episodes, thirty acts each,
+ * and twelve shots in every act. Built on demand, since it is twenty-one
+ * thousand shots and no test wants two of them.
  */
 export function buildLongStory(): MokaFile {
   const moka = buildEmptyStory("很长的一篇");
   const story = moka.stories![0];
-  story.chapters = Array.from({ length: MAX_CHAPTERS_PER_STORY }, (_, c) => ({
+  story.chapters = Array.from({ length: STRESS_CHAPTERS }, (_, c) => ({
     id: `chapter-${c}`,
     title: `第 ${c + 1} 章`,
     synopsis: "梗概",

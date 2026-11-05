@@ -255,7 +255,8 @@
     "splitTooManyParts": "稿子分出的批次太多，请把每批的字数调大一些",
     "chapterGone": "这一章已经不在故事里了，请重新拆解一次",
     "wave": "第 {{at}}/{{of}} 批",
-    "cutting": "分章中"
+    "cutting": "分章中",
+    "splitSourceOutside": "这部稿子没有存进项目目录，请重新载入一份"
   },
   "panels": {
     "close": "关闭",

@@ -160,7 +160,7 @@
     "splitChars": "Manuscript part length",
     "splitCharsTip": "The most manuscript text one split ask carries, in characters; a longer manuscript is read in batches, with the unfinished tail carried into the next one",
     "readChars": "Characters per reading",
-    "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time",
+    "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time, and the parts are merged without repeats",
     "save": "Save preferences"
   },
   "pictureTools": {

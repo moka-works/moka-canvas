@@ -41,13 +41,11 @@ const MAX_EFFORT_LEN: usize = 32;
 /// mistake rather than a deployment's shape.
 const MAX_SUB_MODELS: usize = 8;
 
-/// How much of a telling one ask may carry, in characters. The split window is
-/// the reader's own and may be large enough to hold a whole stretch of a
-/// manuscript; the reading boundary stays small enough that a telling's cast is
-/// not asked about in one answer.
+/// How much of a telling one ask may carry, in characters. Both the split
+/// window and the cast reading are the reader's own: a model that holds a
+/// quarter of a million tokens holds far more prose than a canvas prompt does.
 const MIN_STORY_CHARS: u32 = 1_000;
-const MAX_STORY_SPLIT_CHARS: u32 = 1_000_000;
-const MAX_STORY_READ_CHARS: u32 = 16_000;
+const MAX_STORY_CHARS: u32 = 1_000_000;
 
 /// What may be disclosed about a model's credential. Never the credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -821,21 +819,13 @@ fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> 
             "speech speed must be between 0.25 and 4".to_string(),
         ));
     }
-    for (name, chars, max) in [
-        (
-            "splitChars",
-            preferences.story.split_chars,
-            MAX_STORY_SPLIT_CHARS,
-        ),
-        (
-            "readChars",
-            preferences.story.read_chars,
-            MAX_STORY_READ_CHARS,
-        ),
+    for (name, chars) in [
+        ("splitChars", preferences.story.split_chars),
+        ("readChars", preferences.story.read_chars),
     ] {
-        if !(MIN_STORY_CHARS..=max).contains(&chars) {
+        if !(MIN_STORY_CHARS..=MAX_STORY_CHARS).contains(&chars) {
             return Err(ProviderError::invalid(format!(
-                "story {name} must be between {MIN_STORY_CHARS} and {max} characters"
+                "story {name} must be between {MIN_STORY_CHARS} and {MAX_STORY_CHARS} characters"
             )));
         }
     }
@@ -1361,7 +1351,7 @@ mod tests {
 
         let overlong_reading = Preferences {
             story: StoryPreferences {
-                read_chars: MAX_STORY_READ_CHARS + 1,
+                read_chars: MAX_STORY_CHARS + 1,
                 ..Default::default()
             },
             ..Default::default()
@@ -1371,7 +1361,7 @@ mod tests {
         let whole_manuscript_in_one_ask = Preferences {
             story: StoryPreferences {
                 split_chars: 500_000,
-                ..Default::default()
+                read_chars: 500_000,
             },
             ..Default::default()
         };
