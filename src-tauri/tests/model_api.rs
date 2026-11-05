@@ -424,7 +424,7 @@ async fn a_partial_preference_edit_keeps_the_rest() {
     assert_eq!(view["preferences"]["video"]["seconds"], 6);
     // The story room's own group arrives with the document's defaults and moves
     // whole, the way every other group does.
-    assert_eq!(view["preferences"]["story"]["splitChars"], 12_000);
+    assert_eq!(view["preferences"]["story"]["splitChars"], 500_000);
     assert_eq!(view["preferences"]["story"]["readChars"], 8_000);
 
     let (_, view) = send(
@@ -482,7 +482,7 @@ async fn a_preference_outside_its_bounds_is_refused() {
 
     let (_, view) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
     assert_eq!(view["preferences"]["image"]["count"], 1);
-    assert_eq!(view["preferences"]["story"]["splitChars"], 12_000);
+    assert_eq!(view["preferences"]["story"]["splitChars"], 500_000);
 }
 
 #[tokio::test]

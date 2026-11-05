@@ -1,41 +1,34 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { StoryJobItemDraft, StoryJobRecord } from "../../../api/story";
 import {
   MAX_CHAPTERS_PER_STORY,
-  MAX_ITEMS_PER_STORY_JOB,
   MAX_TOTAL_DURATION_MS,
   MIN_TOTAL_DURATION_MS,
   chapterRegenerationCost,
   chapterWritten,
-  chunkWaves,
   defaultChapterCount,
   formatDuration,
+  mergeChaptersAt,
   type StoryChapter,
-  type StoryChapterDraft,
   type StoryDocument,
 } from "../../../shared/domain";
-import {
-  splitSource,
-  sourceHeadings,
-} from "../../../shared/domain/storySource";
-import { errorText } from "../../../api/client";
-import { i18n } from "../../../shared/i18n";
+import type { DocumentCommand } from "../../../shared/domain/types";
+import { sourceHeadings } from "../../../shared/domain/storySource";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
+import { useProjectStore } from "../../editor/stores/projectStore";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
-import { applyFixedOutline, readOutlineAnswer } from "../jobs/apply";
 import { planOutline, storySplitChars } from "../jobs/plan";
-import { readTextAsset } from "../readText";
+import { SplitCancelled, runManuscriptSplit } from "../jobs/split";
+import { chapterText, readTextAsset } from "../readText";
 import {
   jobProgress,
   kindJob,
   pieceRunning,
-  redoChapterPart,
-  retryFailed,
+  redoGeneratedChapter,
   useRunningJob,
   useStoryJobs,
   useStoryJobStore,
@@ -51,10 +44,7 @@ const STORY_SLOW_MS = 90_000;
 /** The synopsis length the hint asks for, in characters. */
 const SYNOPSIS_COMFORT = [200, 400] as const;
 
-/** How many of a reading's warnings are shown before the rest are folded up. */
-const WARNINGS_SHOWN = 6;
-
-function toast(kind: "info" | "error", message: string): void {
+function toast(kind: "info" | "success" | "error", message: string): void {
   useAppStore.getState().pushToast(kind, message);
 }
 
@@ -64,19 +54,18 @@ function messageOf(problem: unknown): string {
 
 /**
  * The second step: the premise written into the chapters it is told in, or a
- * manuscript divided at its own seams and written into them one part at a time.
+ * manuscript whose own chapters are cut out of it.
  *
- * Nothing is asked for without being counted first. The number of chapters is
- * the reader's, the two ways of getting them are named, and a story that
- * already has chapters is not split again without being told what that costs —
- * a chapter keeps its board as long as it stands where it stood, so the answer
- * to "what will this overwrite" is what the reader is shown.
+ * Both paths leave the words of a chapter in the reader's hands. The premise
+ * is asked for as chapters, and any one of them can be written again. A
+ * manuscript is not asked for at all: the model is asked where its chapters
+ * begin, and the text between those places is kept exactly as it was written —
+ * a chapter cut from a manuscript is a window into the file, not a second copy
+ * of it.
  *
- * The answers arrive as one batch and are written into the document as one
- * step, so a reader who does not like what came back undoes the whole telling
- * rather than twelve chapters. What could not be read is not thrown away: the
- * answer stays on the record, is shown as it came, and can be repaired by hand
- * and applied.
+ * Nothing is asked for without being counted first, and a story that already
+ * has chapters is not split again without being told what that costs — a
+ * chapter keeps its board as long as it stands where it stood.
  */
 export function OutlineStep({ story }: { story: StoryDocument }) {
   const { t } = useTranslation();
@@ -99,12 +88,11 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const [headings, setHeadings] = useState(0);
   const [manuscript, setManuscript] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
-  const [waves, setWaves] = useState<StoryJobItemDraft[][]>([]);
-  const [totalWaves, setTotalWaves] = useState(0);
   const [asking, setAsking] = useState(false);
-  // A batch is being handed over, whether for the first part or a later one.
-  const startingBatch = useStoryJobStore((state) => state.starting);
-  const starting = useRef(false);
+  const [splitting, setSplitting] = useState(false);
+  const [splitPart, setSplitPart] = useState(0);
+  const [splitFound, setSplitFound] = useState(0);
+  const [splitError, setSplitError] = useState<string | null>(null);
 
   const wanted = clampChapters(chapters);
   const cost = chapterRegenerationCost(story, wanted);
@@ -150,77 +138,73 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     };
   }, [mode, sourceId, headings]);
 
-  // A telling longer than one batch is taken in waves, the next one beginning
-  // when the one before it is over rather than when the reader presses again —
-  // and not while a batch is still being handed over, nor while the table it
-  // writes into is still being written.
-  useEffect(() => {
-    if (
-      starting.current ||
-      startingBatch ||
-      writing !== null ||
-      waves.length === 0
-    )
-      return;
-    const next = waves[0];
-    if (next === undefined) return;
-    starting.current = true;
-    void useStoryJobStore
-      .getState()
-      .start(story.id, "outline", next)
-      .then((record) => {
-        setWaves((held) => (record === null ? [] : held.slice(1)));
-      })
-      .finally(() => {
-        starting.current = false;
-      });
-  }, [writing, waves, story.id, startingBatch]);
-
   const begin = async (count: number) => {
     setAsking(false);
+    setSplitError(null);
     if (mode === "expand") {
-      setWaves([]);
-      setTotalWaves(0);
       await useStoryJobStore
         .getState()
-        .start(
-          story.id,
-          "outline",
-          planOutline(story, { mode: "expand", chapters: count }),
-        );
+        .start(story.id, "outline", planOutline(story, { chapters: count }));
       return;
     }
     const text = await needText();
-    if (text === null) return;
-    const chunks = splitSource(text, {
-      targetChapters: count,
-      maxChars: storySplitChars(),
-    });
-    const items = planOutline(story, {
-      mode: "split",
-      chapters: count,
-      chunks,
-    });
-    const cut = chunkWaves(items, MAX_ITEMS_PER_STORY_JOB);
-    setTotalWaves(cut.length);
-    setWaves(cut.slice(1));
-    const first = cut[0];
-    if (first === undefined) return;
-    const record = await useStoryJobStore
-      .getState()
-      .start(story.id, "outline", first);
-    if (record === null) {
-      setWaves([]);
+    if (text === null) {
+      if (sourceId === undefined) {
+        setSplitError(t("story:outline.splitNoSource"));
+      }
       return;
     }
-    if (brief.sourceSplit !== true) {
-      execute(t("story:history.brief"), [
-        {
+    setSplitting(true);
+    setSplitPart(1);
+    setSplitFound(0);
+    try {
+      const drafts = await runManuscriptSplit(story, text, {
+        chapters: count,
+        budget: storySplitChars(),
+        onProgress: ({ part, chapters: found }) => {
+          setSplitPart(part);
+          setSplitFound(found);
+        },
+      });
+      // The cut can take several batches and minutes: what it is written onto
+      // is the story as it stands now, not as it stood when the button was
+      // pressed.
+      const current =
+        useProjectStore
+          .getState()
+          .moka?.stories?.find((held) => held.id === story.id) ?? story;
+      const table = mergeChaptersAt(
+        current.chapters,
+        drafts.map((draft, at) => ({ at, draft })),
+        true,
+      );
+      const commands: DocumentCommand[] = [];
+      if (current.brief.sourceSplit !== true) {
+        commands.push({
           type: "updateStoryBrief",
           storyId: story.id,
           patch: { sourceSplit: true },
-        },
-      ]);
+        });
+      }
+      commands.push({
+        type: "setStoryChapters",
+        storyId: story.id,
+        chapters: table,
+      });
+      const done = execute(t("story:history.apply.outline"), commands);
+      if (done === null) {
+        setSplitError(t("story:page.saveConflict"));
+        return;
+      }
+      toast("success", t("story:outline.splitDone", { count: drafts.length }));
+    } catch (problem) {
+      if (problem instanceof SplitCancelled) return;
+      const reason = messageOf(problem);
+      setSplitError(reason);
+      toast("error", reason);
+    } finally {
+      setSplitting(false);
+      setSplitPart(0);
     }
   };
 
@@ -233,12 +217,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     void begin(count);
   };
 
-  const answers = newestAnswers(jobs);
-  const unreadable =
-    story.chapters.length === 0 &&
-    answers !== undefined &&
-    answers.reads.every((read) => read.draft === undefined) &&
-    writing === null;
+  const busy = writing !== null || reading || splitting;
 
   return (
     <div className="story-step-scroll" data-testid="story-step-outline-body">
@@ -334,18 +313,21 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
             <span className="story-hint" data-testid="story-outline-will-ask">
               {t("story:outline.willAsk", { count: wanted })}
             </span>
-            {totalWaves > 1 && (running !== null || waves.length > 0) && (
-              <span className="story-hint" data-testid="story-outline-wave">
-                {t("story:outline.wave", {
-                  at: Math.max(1, totalWaves - waves.length),
-                  of: totalWaves,
+            {splitting && (
+              <span
+                className="story-hint"
+                data-testid="story-outline-splitting"
+              >
+                {t("story:outline.splitting", {
+                  part: splitPart,
+                  found: splitFound,
                 })}
               </span>
             )}
             <button
               className="primary"
               data-testid="story-outline-start"
-              disabled={writing !== null || reading}
+              disabled={busy}
               onClick={start}
               type="button"
             >
@@ -353,17 +335,21 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
                 ? t("story:jobs.busy", jobProgress(writing))
                 : reading
                   ? t("story:outline.reading")
-                  : story.chapters.length > 0
-                    ? t("story:outline.resplit")
-                    : t("story:outline.start")}
+                  : splitting
+                    ? t("story:outline.splittingButton", { part: splitPart })
+                    : story.chapters.length > 0
+                      ? t("story:outline.resplit")
+                      : mode === "split"
+                        ? t("story:outline.startSplit")
+                        : t("story:outline.start")}
             </button>
             <StepConfirm step="outline" story={story} />
           </div>
         </div>
 
-        {failure !== null && (
+        {(failure !== null || splitError !== null) && (
           <p className="story-hint" data-testid="story-outline-error">
-            {failure}
+            {splitError ?? failure}
           </p>
         )}
 
@@ -375,9 +361,11 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
           >
             <span>
               {t(
-                running.kind === "outline"
-                  ? "story:outline.writing"
-                  : "story:jobs.generating",
+                running.kind !== "outline"
+                  ? "story:jobs.generating"
+                  : mode === "split"
+                    ? "story:outline.cutting"
+                    : "story:outline.writing",
               )}{" "}
               · {formatDuration(elapsed)}
             </span>
@@ -397,41 +385,18 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
           </div>
         )}
 
-        {unreadable ? (
-          <div
-            className="clip-empty clip-empty-first"
-            data-testid="story-outline-empty"
-          >
-            <p>{t("story:outline.unreadable")}</p>
-            <div className="story-step-actions">
-              <button
-                className="link"
-                data-testid="story-outline-again"
-                onClick={() => void retryFailed(story, answers.job)}
-                type="button"
-              >
-                {t("story:outline.again")}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <ol className="story-chapters">
-            {story.chapters.map((chapter, index) => (
-              <ChapterCard
-                chapter={chapter}
-                index={index}
-                key={chapter.id}
-                offerRedo={mode === "split" && sourceId !== undefined}
-                redoBusy={pieceRunning(jobs, `outline:${index + 1}`)}
-                story={story}
-              />
-            ))}
-          </ol>
-        )}
-
-        {answers !== undefined && (
-          <AnswersPanel job={answers.job} reads={answers.reads} story={story} />
-        )}
+        <ol className="story-chapters">
+          {story.chapters.map((chapter, index) => (
+            <ChapterCard
+              chapter={chapter}
+              index={index}
+              key={chapter.id}
+              offerRedo={mode === "expand"}
+              redoBusy={pieceRunning(jobs, `outline:rewrite:${index + 1}`)}
+              story={story}
+            />
+          ))}
+        </ol>
       </div>
 
       {asking && (
@@ -450,7 +415,7 @@ function clampChapters(value: number): number {
   return Math.min(MAX_CHAPTERS_PER_STORY, Math.max(1, Math.round(value)));
 }
 
-/** One episode, as the reader writes it. */
+/** One episode, as the reader writes it or as the manuscript wrote it. */
 function ChapterCard({
   story,
   chapter,
@@ -461,6 +426,7 @@ function ChapterCard({
   story: StoryDocument;
   chapter: StoryChapter;
   index: number;
+  /** Whether this chapter was written from a premise and can be written again. */
   offerRedo: boolean;
   /** Whether this chapter's own ask for a new telling of it is out just now. */
   redoBusy: boolean;
@@ -470,7 +436,7 @@ function ChapterCard({
     const chapters = story.chapters.map((held, at) =>
       at === index ? { ...held, ...patch } : held,
     );
-    execute(i18n.t("story:history.chapters"), [
+    execute(t("story:history.chapters"), [
       { type: "setStoryChapters", storyId: story.id, chapters },
     ]);
   };
@@ -481,6 +447,8 @@ function ChapterCard({
   const synopsis = useField(chapter.synopsis, (value) => {
     write({ synopsis: value });
   });
+  const cut = chapter.source !== undefined;
+  const source = cut ? chapterText(chapter) : "";
   const minutes = Math.round((chapter.targetDurationMs / 60_000) * 10) / 10;
 
   return (
@@ -516,26 +484,41 @@ function ChapterCard({
           </button>
         )}
       </div>
-      <textarea
-        aria-label={t("story:outline.synopsis")}
-        className="story-chapter-synopsis"
-        data-testid={`story-chapter-synopsis-${index}`}
-        maxLength={2000}
-        onBlur={synopsis.commit}
-        onChange={(event) => synopsis.set(event.target.value)}
-        rows={3}
-        value={synopsis.value}
-      />
+      {cut ? (
+        <textarea
+          aria-label={t("story:outline.chapterSource")}
+          className="story-chapter-synopsis"
+          data-testid={`story-chapter-source-${index}`}
+          readOnly
+          rows={6}
+          value={source}
+        />
+      ) : (
+        <textarea
+          aria-label={t("story:outline.synopsis")}
+          className="story-chapter-synopsis"
+          data-testid={`story-chapter-synopsis-${index}`}
+          maxLength={2000}
+          onBlur={synopsis.commit}
+          onChange={(event) => synopsis.set(event.target.value)}
+          rows={3}
+          value={synopsis.value}
+        />
+      )}
       <div className="story-chapter-foot">
         <span
           className="story-count"
           data-testid={`story-chapter-count-${index}`}
         >
-          {t("story:outline.synopsisHint", {
-            used: synopsis.value.length,
-            low: SYNOPSIS_COMFORT[0],
-            high: SYNOPSIS_COMFORT[1],
-          })}
+          {cut
+            ? t("story:outline.sourceHint", {
+                count: Array.from(source).length,
+              })
+            : t("story:outline.synopsisHint", {
+                used: synopsis.value.length,
+                low: SYNOPSIS_COMFORT[0],
+                high: SYNOPSIS_COMFORT[1],
+              })}
         </span>
         <div className="story-stepper">
           <button
@@ -584,7 +567,7 @@ function ChapterCard({
               className="link"
               data-testid={`story-chapter-redo-${index}`}
               disabled={redoBusy}
-              onClick={() => void redoChapterPart(story, index)}
+              onClick={() => void redoGeneratedChapter(story, index)}
               type="button"
             >
               {t("story:outline.redo")}
@@ -602,236 +585,4 @@ function stepDuration(chapter: StoryChapter, by: number): number {
 
 function clampDuration(ms: number): number {
   return Math.min(MAX_TOTAL_DURATION_MS, Math.max(MIN_TOTAL_DURATION_MS, ms));
-}
-
-// -----------------------------------------------------------------------------
-// The answers, as the reader reads them
-// -----------------------------------------------------------------------------
-
-interface AnswerRead {
-  item: StoryJobRecord["items"][number];
-  warnings: string[];
-  draft?: StoryChapterDraft;
-  error?: string;
-}
-
-/** The newest batch of this story that has answers in it, read back. */
-function newestAnswers(jobs: StoryJobRecord[]):
-  | {
-      job: StoryJobRecord;
-      reads: AnswerRead[];
-    }
-  | undefined {
-  const job = jobs.find(
-    (held) =>
-      held.kind === "outline" &&
-      held.items.some((item) => item.text !== undefined),
-  );
-  if (job === undefined) return undefined;
-  return {
-    job,
-    reads: job.items
-      .filter((item) => item.text !== undefined)
-      .map((item) => {
-        const read = readOutlineAnswer(item.text ?? "");
-        return {
-          item,
-          warnings: read.warnings,
-          draft: read.drafts?.[0],
-          error: read.error,
-        };
-      }),
-  };
-}
-
-/**
- * What the batch said about itself: what the reading had to warn about, and
- * the answers exactly as they arrived.
- *
- * An answer nobody could read is not thrown away — it is the only thing the
- * reader has to repair — so it is shown whole, can be copied out, and can be
- * rewritten in place and applied, judged by the same reading as before.
- */
-function AnswersPanel({
-  job,
-  reads,
-  story,
-}: {
-  job: StoryJobRecord;
-  reads: AnswerRead[];
-  story: StoryDocument;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [allWarnings, setAllWarnings] = useState(false);
-  const [at, setAt] = useState(0);
-  const [fixing, setFixing] = useState(false);
-  const [fixed, setFixed] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
-  const chosen = reads[Math.min(at, reads.length - 1)];
-  const warnings = reads.flatMap((read) =>
-    read.warnings.map((warning) => `${read.item.id}: ${warning}`),
-  );
-  const shown = allWarnings ? warnings : warnings.slice(0, WARNINGS_SHOWN);
-
-  const applyFix = () => {
-    const failure = applyFixedOutline(
-      story,
-      chosen?.item.id ?? "outline",
-      fixed,
-    );
-    if (failure !== undefined) {
-      setProblem(failure);
-      return;
-    }
-    setProblem(null);
-    setFixing(false);
-  };
-
-  return (
-    <div className="story-answers">
-      {warnings.length > 0 && (
-        <div
-          className="story-warnings"
-          data-testid="story-outline-warnings"
-          role="status"
-        >
-          <ul>
-            {shown.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-          {warnings.length > WARNINGS_SHOWN && (
-            <button
-              className="link"
-              data-testid="story-outline-warnings-more"
-              onClick={() => setAllWarnings(!allWarnings)}
-              type="button"
-            >
-              {allWarnings
-                ? t("story:outline.fewerWarnings")
-                : t("story:outline.moreWarnings", {
-                    count: warnings.length - WARNINGS_SHOWN,
-                  })}
-            </button>
-          )}
-        </div>
-      )}
-
-      <button
-        className="link"
-        data-testid="story-outline-answer-toggle"
-        onClick={() => setOpen(!open)}
-        type="button"
-      >
-        {open ? t("story:outline.hideAnswer") : t("story:outline.showAnswer")}
-      </button>
-
-      {open && chosen !== undefined && (
-        <div className="story-answer" data-testid="story-outline-answer">
-          {reads.length > 1 && (
-            <div className="story-answer-tabs">
-              {reads.map((read, index) => (
-                <button
-                  aria-pressed={index === at}
-                  className={`story-choice${read.draft === undefined ? " is-failed" : ""}`}
-                  data-testid={`story-outline-answer-${index}`}
-                  key={read.item.id}
-                  onClick={() => {
-                    setAt(index);
-                    setFixed("");
-                    setProblem(null);
-                  }}
-                  type="button"
-                >
-                  {t("story:outline.part", { number: index + 1 })}
-                </button>
-              ))}
-            </div>
-          )}
-          {chosen.error !== undefined && (
-            <p
-              className="story-answer-error"
-              data-testid="story-outline-answer-error"
-            >
-              {t("story:parse.failed")} — {chosen.error}
-            </p>
-          )}
-          <pre
-            className="dialog-answer"
-            data-testid="story-outline-answer-text"
-          >
-            {chosen.item.text}
-          </pre>
-          <div className="story-step-actions">
-            <button
-              className="link"
-              data-testid="story-outline-answer-copy"
-              onClick={() => {
-                // A copy that was refused says so: "nothing happened" is what
-                // a reader would otherwise be left with.
-                void navigator.clipboard
-                  ?.writeText(chosen.item.text ?? "")
-                  .catch((problem: unknown) => {
-                    toast(
-                      "error",
-                      t("story:outline.copyFailed", {
-                        reason: errorText(problem).message,
-                      }),
-                    );
-                  });
-              }}
-              type="button"
-            >
-              {t("story:outline.copy")}
-            </button>
-            <button
-              className="link"
-              data-testid="story-outline-answer-fix"
-              onClick={() => {
-                setFixing(!fixing);
-                setFixed(chosen.item.text ?? "");
-                setProblem(null);
-              }}
-              type="button"
-            >
-              {t("story:outline.fix")}
-            </button>
-          </div>
-          {fixing && (
-            <div className="story-answer-fix">
-              <textarea
-                aria-label={t("story:outline.fixLabel", { id: chosen.item.id })}
-                data-testid="story-outline-answer-edit"
-                onChange={(event) => setFixed(event.target.value)}
-                rows={8}
-                value={fixed}
-              />
-              {problem !== null && (
-                <p
-                  className="story-answer-error"
-                  data-testid="story-outline-answer-problem"
-                >
-                  {problem}
-                </p>
-              )}
-              <div className="story-step-actions">
-                <button
-                  className="primary"
-                  data-testid="story-outline-answer-apply"
-                  onClick={applyFix}
-                  type="button"
-                >
-                  {t("story:outline.apply")}
-                </button>
-              </div>
-            </div>
-          )}
-          <p className="story-hint">
-            {t("story:outline.answerFrom", { model: job.model })}
-          </p>
-        </div>
-      )}
-    </div>
-  );
 }

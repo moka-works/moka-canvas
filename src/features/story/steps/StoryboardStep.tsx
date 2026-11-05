@@ -19,6 +19,7 @@ import { REFERENCE_IMAGES_MAX } from "../../../shared/domain/constants";
 import { createAct } from "../../../shared/domain/factories";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
+import { useAppStore } from "../../editor/stores/appStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
 import { StoryModelPicks } from "../components/StoryModelPicks";
@@ -28,6 +29,7 @@ import { ActCard } from "../panels/ActCard";
 import { writeActs } from "../panels/writeBoard";
 import { chapterGuesses } from "../jobs/apply";
 import { jobKey, planKeyframeArt, planStoryboard } from "../jobs/plan";
+import { ensureStoryText } from "../readText";
 import {
   actRuns,
   boardRuns,
@@ -183,6 +185,22 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     writeGranularity(next);
   };
 
+  /** Boards these episodes, reading the manuscript the board is written from first. */
+  const boardEpisodes = async (chapterIds: string[]) => {
+    try {
+      await ensureStoryText(story);
+    } catch (problem) {
+      useAppStore
+        .getState()
+        .pushToast(
+          "error",
+          problem instanceof Error ? problem.message : String(problem),
+        );
+      return;
+    }
+    await run(story.id, "storyboard", planStoryboard(story, chapterIds));
+  };
+
   const boardAll = async () => {
     const cut = chunkWaves(
       boardable.map((held) => held.id),
@@ -192,7 +210,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     setWaves(cut.slice(1));
     const first = cut[0] ?? [];
     if (first.length === 0) return;
-    await run(story.id, "storyboard", planStoryboard(story, first));
+    await boardEpisodes(first);
   };
 
   if (chapter === undefined) {
@@ -301,11 +319,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                   setAsking(true);
                   return;
                 }
-                void run(
-                  story.id,
-                  "storyboard",
-                  planStoryboard(story, [chapter.id]),
-                );
+                void boardEpisodes([chapter.id]);
               }}
               type="button"
             >
@@ -476,11 +490,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           onCancel={() => setAsking(false)}
           onConfirm={() => {
             setAsking(false);
-            void run(
-              story.id,
-              "storyboard",
-              planStoryboard(story, [chapter.id]),
-            );
+            void boardEpisodes([chapter.id]);
           }}
           testId="regenerate-board"
           title={t("story:storyboard.regenerateTitle", { number: index + 1 })}

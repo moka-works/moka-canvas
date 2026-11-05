@@ -60,6 +60,7 @@ import {
   planStoryboard,
   spokenLine,
 } from "./jobs/plan";
+import { chapterText } from "./readText";
 
 /** How far apart the columns stand, and how wide every card is drawn. */
 const COLUMN_PITCH = 400;
@@ -606,7 +607,7 @@ function tellingBand(
       CHAPTER_COLUMN,
       chapterRow,
       `${chapterAt + 1}. ${chapter.title}`,
-      chapter.synopsis,
+      chapterText(chapter),
       planStoryboard(story, [chapter.id])[0],
     );
     if (premise !== undefined) wire(sheet, premise, chapterCard, "prompt");
@@ -771,7 +772,6 @@ export function planStoryCanvas(
           i18n.t("story:import.premise"),
           idea,
           planOutline(story, {
-            mode: "expand",
             chapters: Math.max(1, story.chapters.length),
           })[0],
         );

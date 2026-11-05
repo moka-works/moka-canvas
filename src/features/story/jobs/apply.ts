@@ -236,10 +236,6 @@ export function readOutlineAnswer(text: string): OutlineReading {
   return { warnings: [], error: one.error };
 }
 
-function chaptersIn(item: StoryJobItem): StoryChapterDraft[] | undefined {
-  return readOutlineAnswer(item.text ?? "").drafts;
-}
-
 /** What one elements answer said, as the reading of it came out. */
 export interface ElementsReading {
   drafts?: StoryElementDraft[];
@@ -345,8 +341,14 @@ export function chapterGuesses(
   return marks;
 }
 
-/** The part of a manuscript an outline piece was asked for, when it was one. */
-const PART = /^outline:(\d+)$/;
+/**
+ * The place in the table an outline piece's answer belongs.
+ *
+ * `outline` is the whole table, `outline:N` is the Nth part of a manuscript
+ * cut one chapter at a time, and `outline:rewrite:N` is the Nth chapter asked
+ * for again — all three name a place, so the reading is the same.
+ */
+const PART = /^outline:(?:rewrite:)?(\d+)$/;
 
 /** One part of a telling's chapters, when a reading was asked for one. */
 const PART_ELEMENTS = /^elements:\d+$/;
@@ -358,11 +360,19 @@ function partAt(itemId: string): number {
 }
 
 /** Every chapter this piece's answer holds, at the places it asked for. */
-function chapterWrites(item: StoryJobItem): ChapterWrite[] | undefined {
-  const drafts = chaptersIn(item);
-  if (drafts === undefined) return undefined;
+function chapterWrites(item: StoryJobItem):
+  | {
+      writes: ChapterWrite[];
+      warnings: string[];
+    }
+  | undefined {
+  const read = readOutlineAnswer(item.text ?? "");
+  if (read.drafts === undefined) return undefined;
   const first = partAt(item.id);
-  return drafts.map((draft, index) => ({ at: first + index, draft }));
+  return {
+    writes: read.drafts.map((draft, index) => ({ at: first + index, draft })),
+    warnings: read.warnings,
+  };
 }
 
 /**
@@ -378,7 +388,14 @@ function outlineCommands(
   record: StoryJobRecord,
   report: ApplyReport,
 ): DocumentCommand[] {
-  const pieces = record.items.filter((item) => item.target.kind === "outline");
+  const pieces = record.items.filter(
+    (item) =>
+      item.target.kind === "outline" &&
+      // A manuscript's cut is found by {@link runManuscriptSplit} from its own
+      // records: its answer names boundaries rather than chapters, and is not
+      // a table to write.
+      !item.id.startsWith("outline:split:"),
+  );
   if (pieces.length === 0) return [];
   // One ask for every chapter answers with the table itself, and the chapters
   // it left out are dropped; a manuscript's parts each answer for their own
@@ -393,8 +410,16 @@ function outlineCommands(
       report.notes.push(i18n.t("story:jobs.unreadableAnswer", { at: item.id }));
       continue;
     }
+    if (found.warnings.length > 0) {
+      report.notes.push(
+        i18n.t("story:jobs.answerNotes", {
+          at: item.id,
+          notes: found.warnings.join(" "),
+        }),
+      );
+    }
     read += 1;
-    writes.push(...found);
+    writes.push(...found.writes);
   }
   if (writes.length === 0) return [];
   const chapters = spreadTargets(
@@ -431,30 +456,6 @@ function spreadTargets(
       ? chapter
       : { ...chapter, targetDurationMs: share },
   );
-}
-
-/** The story's chapters as an answer a reader fixed by hand makes them. */
-export function applyFixedOutline(
-  story: StoryDocument,
-  itemId: string,
-  text: string,
-): string | undefined {
-  const read = readOutlineAnswer(text);
-  if (read.drafts === undefined) {
-    return read.error ?? i18n.t("story:parse.failed");
-  }
-  const writes = read.drafts.map((draft, index) => ({
-    at: partAt(itemId) + index,
-    draft,
-  }));
-  const chapters = spreadTargets(
-    story,
-    mergeChaptersAt(story.chapters, writes, PART.exec(itemId) === null),
-  );
-  const done = execute(i18n.t("story:history.apply.outline"), [
-    { type: "setStoryChapters", storyId: story.id, chapters },
-  ]);
-  return done === null ? i18n.t("story:page.saveConflict") : undefined;
 }
 
 /**

@@ -13,6 +13,7 @@ import { StoryFlow } from "./StoryFlow";
 import { StoryIcon } from "./components/StoryIcons";
 import { StoryTopBar } from "./components/StoryTopBar";
 import { StorySide } from "./panels/StorySide";
+import { forgetTextAssets, readTextAsset } from "./readText";
 import { useStoryJobStore } from "./stores/storyJobStore";
 import { useActiveStory, useStoryStore } from "./stores/storyStore";
 
@@ -63,6 +64,20 @@ export function StoryPage() {
   }, [storyId]);
 
   /**
+   * The manuscript behind the chapters, read as soon as the story is in hand.
+   *
+   * The steps after the outline plan their asks from the manuscript's own words,
+   * and planning is synchronous: the text has to be read before a button is
+   * pressed rather than fetched from inside the ask. A read that fails is said
+   * where the manuscript is used, not here.
+   */
+  const sourceId = story?.brief.sourceAssetId;
+  useEffect(() => {
+    if (sourceId === undefined) return;
+    void readTextAsset(sourceId).catch(() => {});
+  }, [sourceId]);
+
+  /**
    * Going home from here puts the project down first.
    *
    * There is no dialog about unsaved work on this page, since nothing on it
@@ -95,6 +110,7 @@ export function StoryPage() {
       // The batches were that project's: a reader who put the project down is
       // not waited on for anything, and the records are read again on opening.
       useStoryJobStore.getState().reset();
+      forgetTextAssets();
     }
     useAppStore.getState().setPhase("launcher");
   };

@@ -25,6 +25,7 @@ import type {
   StoryCameraAngle,
   StoryCameraMove,
   StoryChapter,
+  StoryChapterSource,
   StoryDialogueLine,
   StoryDocument,
   StoryElement,
@@ -141,9 +142,14 @@ function chapterClipMade(act: StoryAct): boolean {
   );
 }
 
-/** Whether an episode has the words step two settles: a title and a synopsis. */
+/** Whether a chapter has words behind it: a synopsis, or a window into a manuscript. */
+export function chapterHasWords(chapter: StoryChapter): boolean {
+  return chapter.source !== undefined || chapter.synopsis.trim() !== "";
+}
+
+/** Whether an episode has the words step two settles: a title and its text. */
 export function chapterWritten(chapter: StoryChapter): boolean {
-  return chapter.title.trim() !== "" && chapter.synopsis.trim() !== "";
+  return chapter.title.trim() !== "" && chapterHasWords(chapter);
 }
 
 /** Whether an element has the words every picture of it is made from. */
@@ -362,6 +368,8 @@ export function stepComplete(story: StoryDocument, step: StoryStep): boolean {
 export interface StoryChapterDraft {
   title: string;
   synopsis: string;
+  /** The manuscript window a cut chapter stands for, when one wrote it. */
+  source?: StoryChapterSource;
   targetDurationMs?: number;
 }
 
@@ -488,15 +496,21 @@ export function mergeChaptersAt(
   for (const { at, draft } of sorted) {
     const place = Math.min(at, table.length);
     const held = table[place];
-    table[place] =
-      held === undefined
-        ? createChapter(draft.title, draft.synopsis)
-        : {
-            ...held,
-            title: draft.title,
-            synopsis: draft.synopsis,
-            targetDurationMs: draft.targetDurationMs ?? held.targetDurationMs,
-          };
+    if (held === undefined) {
+      table[place] = createChapter(draft.title, draft.synopsis, draft.source);
+      continue;
+    }
+    const next: StoryChapter = {
+      ...held,
+      title: draft.title,
+      synopsis: draft.synopsis,
+      targetDurationMs: draft.targetDurationMs ?? held.targetDurationMs,
+    };
+    // A chapter asked for again from the premise is no longer the manuscript's
+    // own text, and a re-cut chapter is.
+    if (draft.source === undefined) delete next.source;
+    else next.source = draft.source;
+    table[place] = next;
   }
   if (!whole) return table;
   const length = writes.reduce(
@@ -1236,9 +1250,9 @@ export function storyDeleteCost(story: StoryDocument): {
  *
  * A chapter keeps everything made for it as long as it stands where it stood,
  * so what a re-split costs is the words it replaces — every chapter that has a
- * synopsis — and the boards of the chapters the new telling has no room for.
- * Counting the acts that would go is why the count is asked for before the
- * split rather than after it.
+ * synopsis or a manuscript window — and the boards of the chapters the new
+ * telling has no room for. Counting the acts that would go is why the count is
+ * asked for before the split rather than after it.
  */
 export function chapterRegenerationCost(
   story: StoryDocument,
@@ -1246,8 +1260,7 @@ export function chapterRegenerationCost(
 ): { chapters: number; acts: number } {
   const kept = Math.max(0, Math.min(chapterCount, story.chapters.length));
   return {
-    chapters: story.chapters.filter((chapter) => chapter.synopsis.trim() !== "")
-      .length,
+    chapters: story.chapters.filter(chapterHasWords).length,
     acts: story.chapters
       .slice(kept)
       .reduce((sum, chapter) => sum + chapter.acts.length, 0),
@@ -1306,9 +1319,13 @@ export function chunkWaves<T>(items: T[], per: number): T[][] {
   return waves;
 }
 
-/** What a chapter costs the ask that carries it: its title and its synopsis. */
+/** What a chapter costs the ask that carries it: its title and its own text. */
 function chapterWords(chapter: StoryChapter): number {
-  return Array.from(`${chapter.title}${chapter.synopsis}`).length;
+  const held =
+    chapter.source === undefined
+      ? Array.from(chapter.synopsis).length
+      : Math.max(0, chapter.source.end - chapter.source.start);
+  return Array.from(chapter.title).length + held;
 }
 
 /**
@@ -1323,13 +1340,14 @@ function chapterWords(chapter: StoryChapter): number {
 export function chapterWaves(
   chapters: StoryChapter[],
   budget: number,
+  weigh: (chapter: StoryChapter) => number = chapterWords,
 ): StoryChapter[][] {
   const limit = Math.max(1, Math.floor(budget));
   const waves: StoryChapter[][] = [];
   let held: StoryChapter[] = [];
   let weight = 0;
   for (const chapter of chapters) {
-    const words = chapterWords(chapter);
+    const words = weigh(chapter);
     if (held.length > 0 && weight + words > limit) {
       waves.push(held);
       held = [];

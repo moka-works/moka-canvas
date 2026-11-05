@@ -158,7 +158,7 @@
     "storyDefaults": "Story defaults",
     "story": "Story",
     "splitChars": "Manuscript part length",
-    "splitCharsTip": "The most of a manuscript one chapter is written from, in characters; a longer part is cut at the nearest sentence end",
+    "splitCharsTip": "The most manuscript text one split ask carries, in characters; a longer manuscript is read in batches, with the unfinished tail carried into the next one",
     "readChars": "Characters per reading",
     "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time",
     "save": "Save preferences"

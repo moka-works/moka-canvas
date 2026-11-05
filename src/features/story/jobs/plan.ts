@@ -43,11 +43,12 @@ import {
   targetKey,
   voiceFor,
 } from "../../../shared/domain/story";
-import type { SourceChunk } from "../../../shared/domain/storySource";
+import { chapterText } from "../readText";
 import type { StoryElement } from "../../../shared/domain";
 import type {
   StoryAct,
   StoryAspect,
+  StoryChapter,
   StoryDialogueLine,
   StoryDocument,
   StoryFilmRole,
@@ -57,13 +58,13 @@ import type {
 import {
   storyActMusicPrompt,
   storyActVideoPrompt,
+  storyChapterPrompt,
   storyElementMainPrompt,
   storyElementTurnaroundPrompt,
   storyElementsPrompt,
   storyKeyframePrompt,
   storyKeyframeVideoPrompt,
   storyOutlinePrompt,
-  storySplitPrompt,
   storyStoryboardPrompt,
   storySystemPrompt,
   type StoryFacts,
@@ -381,42 +382,16 @@ function lookOf(story: StoryDocument): StoryLook {
 // -----------------------------------------------------------------------------
 
 /**
- * The outline: either the premise written into chapters, or a manuscript's
- * parts written into them one at a time.
+ * The outline: the premise written into chapters.
  *
- * A part is not a chapter yet when it is sent — what comes back is — so the
- * pieces are numbered and applied in order, which is the order the manuscript
- * was read in.
+ * A manuscript is not written from here. Its chapters are cut out of its own
+ * text by the split planner, which asks the model only where the cuts fall and
+ * keeps every word as it was.
  */
 export function planOutline(
   story: StoryDocument,
-  options: {
-    mode: "expand" | "split";
-    chapters: number;
-    chunks?: SourceChunk[];
-  },
+  options: { chapters: number },
 ): StoryJobItemDraft[] {
-  if (options.mode === "split") {
-    const chunks = options.chunks ?? [];
-    return chunks.map((chunk, index) => ({
-      id: `outline:${index + 1}`,
-      target: { kind: "outline" },
-      capability: "text",
-      system: storySystemPrompt(),
-      prompt: storySplitPrompt({
-        // The heading the manuscript itself wrote for this part travels with
-        // it: a chapter is asked for by the name it was written under.
-        text:
-          chunk.title === undefined
-            ? chunk.text
-            : `${chunk.title}\n${chunk.text}`,
-        index: index + 1,
-        total: chunks.length,
-        genre: story.brief.genre,
-        style: story.brief.style,
-      }),
-    }));
-  }
   return [
     {
       id: "outline",
@@ -430,6 +405,56 @@ export function planOutline(
       }),
     },
   ];
+}
+
+/** What a chapter's words are, as the ask that writes around it reads them. */
+function chapterWordsOf(chapter: StoryChapter): string {
+  const held = chapterText(chapter);
+  // A window whose manuscript has not been read this session falls back to the
+  // synopsis rather than planning an ask from nothing.
+  return held === "" ? chapter.synopsis : held;
+}
+
+/**
+ * One chapter of a premise written again, in the place it already stands.
+ *
+ * The chapters around it travel as the short reading the telling already holds,
+ * so a chapter written again is in the same stretch of the story as its
+ * neighbours rather than a fresh telling with one chapter replaced.
+ */
+export function planChapterRewrite(
+  story: StoryDocument,
+  index: number,
+): StoryJobItemDraft | undefined {
+  const chapter = story.chapters[index];
+  if (chapter === undefined) return undefined;
+  const around = (at: number) => {
+    const held = story.chapters[at];
+    return held === undefined
+      ? undefined
+      : {
+          number: at + 1,
+          title: held.title,
+          text: chapterWordsOf(held).slice(0, 1200),
+        };
+  };
+  return {
+    id: `outline:rewrite:${index + 1}`,
+    target: { kind: "outline" },
+    capability: "text",
+    system: storySystemPrompt(),
+    prompt: storyChapterPrompt({
+      idea: story.brief.idea,
+      chapters: story.chapters.length,
+      number: index + 1,
+      ...(index > 0 ? { previous: around(index - 1) } : {}),
+      ...(index + 1 < story.chapters.length ? { next: around(index + 1) } : {}),
+      current: {
+        title: chapter.title,
+        text: chapterWordsOf(chapter).slice(0, 1200),
+      },
+    }),
+  };
 }
 
 /**
@@ -467,7 +492,7 @@ export function planElements(
         chapters: asked.map(({ number, chapter }) => ({
           number,
           title: chapter.title,
-          synopsis: chapter.synopsis,
+          text: chapterWordsOf(chapter),
         })),
         genre: story.brief.genre,
         style: story.brief.style,
@@ -499,7 +524,10 @@ export function planStoryboard(
         prompt: storyStoryboardPrompt({
           ...facts,
           number: number + 1,
-          chapter: { title: chapter.title, synopsis: chapter.synopsis },
+          chapter: {
+            title: chapter.title,
+            text: chapterWordsOf(chapter),
+          },
           targetDurationMs: chapter.targetDurationMs,
           elements: story.elements.map((element) => ({
             kind: element.kind,
@@ -1115,7 +1143,6 @@ export function itemsForTargets(
     switch (target.kind) {
       case "outline":
         return planOutline(story, {
-          mode: "expand",
           chapters: Math.max(1, story.chapters.length),
         });
       case "elements":

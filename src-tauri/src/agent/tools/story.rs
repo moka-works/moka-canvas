@@ -362,6 +362,7 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
                 id,
                 title: String::new(),
                 synopsis: String::new(),
+                source: None,
                 target_duration_ms: 60_000,
                 acts: Vec::new(),
             },

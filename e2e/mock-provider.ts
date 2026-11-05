@@ -342,11 +342,32 @@ function jsonAnswer(prompt: string): string | undefined {
       })),
     });
   }
-  const part = /Part (\d+) of (\d+)/.exec(prompt);
-  if (part !== null) {
+  if (/Cut this part into chapters|Find the boundaries again/.test(prompt)) {
+    const open = prompt.indexOf("---\n");
+    const close = prompt.lastIndexOf("\n---");
+    const text = open < 0 || close < 0 ? "" : prompt.slice(open + 4, close);
+    const lines = text.split("\n");
+    const headings: Array<{ title: string; start: number }> = [];
+    let at = 0;
+    for (const line of lines) {
+      if (
+        /^[ \t]*(第[ \t]*[0-9一二三四五六七八九十]+[ \t]*[章回节集卷]|Chapter\s+\d+)/.test(
+          line,
+        )
+      ) {
+        headings.push({ title: line.trim(), start: at });
+      }
+      at += line.length + 1;
+    }
     return JSON.stringify({
-      title: `Chapter ${part[1]}`,
-      synopsis: `What happens in part ${part[1]} of the manuscript.`,
+      chapters:
+        headings.length > 0
+          ? headings.map((heading, index) => ({
+              number: index + 1,
+              title: heading.title,
+              ...(index === 0 ? {} : { start: heading.title }),
+            }))
+          : [{ number: 1, title: "Chapter 1" }],
     });
   }
   // One episode's board: two acts of two shots each, with the cast the

@@ -43,6 +43,7 @@ import type {
   StoryCameraAngle,
   StoryCameraMove,
   StoryChapter,
+  StoryChapterSource,
   StoryDocument,
   StoryElement,
   StoryElementKind,
@@ -756,11 +757,16 @@ export function nextStoryName(moka: MokaFile): string {
 }
 
 /** An episode of a telling, with nothing said about it yet. */
-export function createChapter(title: string, synopsis = ""): StoryChapter {
+export function createChapter(
+  title: string,
+  synopsis = "",
+  source?: StoryChapterSource,
+): StoryChapter {
   return {
     id: newId(),
     title,
     synopsis,
+    ...(source === undefined ? {} : { source }),
     targetDurationMs: 0,
     acts: [],
   };

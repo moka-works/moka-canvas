@@ -1,13 +1,27 @@
-Part {{ index }} of {{ total }} of a manuscript, which is the telling's own text:
+You are given part {{ part }} of a manuscript, exactly as it was written. It begins at the start of a chapter, except for the first part, which may begin with front matter.
+
+Cut this part into chapters at the places the manuscript itself divides: a heading such as 第…章, 第…集, 回 or Chapter …, a scene break, or a change of place or time. Where it has no division, choose a point that makes an episode of about {{ minutes }} minutes of film; this part should hold about {{ chapters }} chapters, and the whole telling runs {{ total }}. Never cut inside a sentence or a paragraph, and stay as close as you can to the manuscript's own breaks.
+
+Change nothing. Do not rewrite, shorten, summarize, continue, add or correct a single character of the text.
+
+If this part begins with a table of contents, a synopsis of the whole work, a preface, or any other matter that stands before chapter one, give it its own entry with "discard": true and "number": 0. That text is not part of the telling and will be left out.
+
+For every chapter in order:
+- "number": the chapter number the manuscript gives it, or the next number when it gives none.
+- "title": the heading the manuscript writes for it, copied exactly; when it writes none, a short title in the manuscript's language.
+- "start": the first 20 to 60 characters of the chapter, copied exactly from the text below, including its heading line. Leave it empty only when the chapter begins at the very start of this part.
+- "before": the last 20 to 60 characters of the chapter before it, copied exactly; empty for the first chapter.
+
+Do not give a chapter that does not begin inside this part: a part may end in the middle of one, and that unfinished chapter belongs to the next part.
+
+The manuscript:
 
 ---
 {{ text }}
 ---
 
-Write this part as one chapter of the telling: a title, and a synopsis of what happens in it — a paragraph, not a retelling. Do not copy the manuscript's sentences; say what the chapter tells. The tone it is told in is {{ genre }}, {{ style }}.
-
 Answer with a single fenced json block and nothing else:
 
 ```json
-{ "title": "…", "synopsis": "…" }
+{ "chapters": [ { "number": 1, "title": "…", "start": "…", "before": "…" } ] }
 ```

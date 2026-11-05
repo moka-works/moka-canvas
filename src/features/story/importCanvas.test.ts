@@ -184,12 +184,12 @@ describe("the board a telling makes", () => {
       ).generation;
 
     expect(asked(card(canvas, "Premise"))?.prompt).toBe(
-      planOutline(story, { mode: "expand", chapters: 2 })[0]?.prompt,
+      planOutline(story, { chapters: 2 })[0]?.prompt,
     );
     // The standing instruction a written answer was asked under rides in the
     // parameters, where a text ask carries the framing of its answer.
     expect(asked(card(canvas, "Premise"))?.params.instructions).toBe(
-      planOutline(story, { mode: "expand", chapters: 2 })[0]?.system,
+      planOutline(story, { chapters: 2 })[0]?.system,
     );
     expect(asked(card(canvas, "1. 第一章 站台"))?.prompt).toBe(
       planStoryboard(story, [ids.chapterFirst])[0]?.prompt,

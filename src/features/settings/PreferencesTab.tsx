@@ -14,8 +14,9 @@ import {
   MAX_IMAGES_PER_RUN,
   MAX_VIDEO_SECONDS,
   MIN_AUDIO_SPEED,
-  STORY_CHARS_MAX,
   STORY_CHARS_MIN,
+  STORY_READ_CHARS_MAX,
+  STORY_SPLIT_CHARS_MAX,
 } from "../../shared/domain";
 import { useModelStore } from "./modelStore";
 import {
@@ -378,7 +379,7 @@ function GenerationDefaults() {
           <label className="dialog-field">
             <span>{t("settings:generation.splitChars")}</span>
             <input
-              max={STORY_CHARS_MAX}
+              max={STORY_SPLIT_CHARS_MAX}
               min={STORY_CHARS_MIN}
               onChange={(event) =>
                 editStory({
@@ -396,7 +397,7 @@ function GenerationDefaults() {
           <label className="dialog-field">
             <span>{t("settings:generation.readChars")}</span>
             <input
-              max={STORY_CHARS_MAX}
+              max={STORY_READ_CHARS_MAX}
               min={STORY_CHARS_MIN}
               onChange={(event) =>
                 editStory({

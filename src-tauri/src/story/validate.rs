@@ -10,7 +10,7 @@
 use super::jobs::{StoryJobItem, StoryJobKind, StoryTarget};
 use super::{STORY_JOB_BUSY, STORY_JOB_ITEM_LIMIT, STORY_NOT_FOUND, STORY_TARGET_INVALID};
 use crate::config::StoryConfig;
-use crate::domain::validate::{generation_param_keys, MAX_PROMPT_LENGTH};
+use crate::domain::validate::generation_param_keys;
 use crate::domain::{Capability, MokaFile, ResourceRegistry, ValidationIssue};
 
 /// The longest an item id may be, and the characters it may be made of.
@@ -20,6 +20,15 @@ use crate::domain::{Capability, MokaFile, ResourceRegistry, ValidationIssue};
 /// dialogue is a place too, and its path names four of them — and plain enough
 /// that nothing has to escape it.
 const MAX_ITEM_ID: usize = 200;
+
+/// How much of a telling one story ask may carry, in characters.
+///
+/// A manuscript is read in windows the reader sizes, and a model that holds a
+/// quarter of a million tokens holds far more prose than a canvas prompt does.
+/// The ceiling is the reader's own window at its largest, with room beside it
+/// for the instructions that travel with the text; the canvas's much tighter
+/// prompt limit is not this one.
+const MAX_STORY_PROMPT_LENGTH: usize = 1_100_000;
 
 fn issue(code: &str, message: impl Into<String>) -> ValidationIssue {
     ValidationIssue {
@@ -79,10 +88,10 @@ pub fn validate_start(
                 "VALIDATION_FAILED",
                 format!("Item {at} asks with an empty prompt"),
             ));
-        } else if item.prompt.chars().count() > MAX_PROMPT_LENGTH {
+        } else if item.prompt.chars().count() > MAX_STORY_PROMPT_LENGTH {
             issues.push(issue(
                 "VALIDATION_FAILED",
-                format!("Item {at} asks for more than {MAX_PROMPT_LENGTH} characters"),
+                format!("Item {at} asks for more than {MAX_STORY_PROMPT_LENGTH} characters"),
             ));
         }
         if !item_id_shaped(&item.id) {

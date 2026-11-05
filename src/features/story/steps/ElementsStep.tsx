@@ -16,6 +16,7 @@ import {
 import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
+import { useAppStore } from "../../editor/stores/appStore";
 import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
@@ -30,6 +31,7 @@ import {
   resolveVoice,
   storyReadChars,
 } from "../jobs/plan";
+import { ensureStoryText, chapterLength } from "../readText";
 import {
   jobProgress,
   kindRunning,
@@ -177,9 +179,22 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   /** Reads the telling, whole or a part at a time. */
   const begin = async () => {
     setAsking(false);
-    const cut = chapterWaves(story.chapters, storyReadChars()).map((wave) =>
-      wave.map((chapter) => chapter.id),
-    );
+    try {
+      await ensureStoryText(story);
+    } catch (problem) {
+      useAppStore
+        .getState()
+        .pushToast(
+          "error",
+          problem instanceof Error ? problem.message : String(problem),
+        );
+      return;
+    }
+    const cut = chapterWaves(
+      story.chapters,
+      storyReadChars(),
+      (chapter) => chapterLength(chapter) + chapter.title.length,
+    ).map((wave) => wave.map((chapter) => chapter.id));
     setTotalWaves(Math.max(1, cut.length));
     setWaves(cut.slice(1));
     const first = cut[0] ?? [];

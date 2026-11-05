@@ -17,6 +17,7 @@ import type {
 } from "../../../api/story";
 import type { MokaFile } from "../../../shared/domain";
 import { createChapter } from "../../../shared/domain/factories";
+import { isSourceHeading } from "../../../shared/domain/storySource";
 import {
   buildEmptyStory,
   buildStoryMokaFile,
@@ -28,6 +29,7 @@ import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import { StoryPage } from "../StoryPage";
+import { chapterText } from "../readText";
 import { useStoryJobStore } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 
@@ -45,11 +47,6 @@ let manuscript = "";
 /**
  * The server under the test: the project as it stands, the batches the room
  * starts, and the answers they come home with.
- *
- * A batch is answered when it is asked about on its own, which is what a poll
- * and a room coming back to a batch both do. The project route answers with
- * the document the room already holds, since reading it again between two
- * commands must not be what a test notices.
  */
 function serving(): void {
   vi.stubGlobal(
@@ -65,8 +62,6 @@ function serving(): void {
           }),
         );
       if (url.includes("/story/jobs")) {
-        // A batch's answer being written down as read: the record as it stands
-        // with the room's note on it, which is what the server answers with.
         const readIn = /\/story\/jobs\/([^/?]+)\/read$/.exec(url);
         if (readIn !== null) {
           const found = held.find((job) => job.id === readIn[1]);
@@ -144,18 +139,80 @@ function batchOf(
   };
 }
 
+/** The manuscript a split prompt carries, between its own marks. */
+function windowOf(prompt: string): string {
+  const open = prompt.indexOf("---\n");
+  const close = prompt.lastIndexOf("\n---");
+  return open < 0 || close < 0 ? "" : prompt.slice(open + 4, close);
+}
+
+/** The headings in a window, with the offset each stands at. */
+function headingsOf(text: string): Array<{ title: string; start: number }> {
+  const found: Array<{ title: string; start: number }> = [];
+  let at = 0;
+  for (const line of text.split("\n")) {
+    if (isSourceHeading(line)) {
+      found.push({ title: line.trim(), start: at });
+    }
+    at += line.length + 1;
+  }
+  return found;
+}
+
+/** The paragraphs in a window, with the offset each stands at. */
+function paragraphsOf(text: string): Array<{ title: string; start: number }> {
+  const found: Array<{ title: string; start: number }> = [];
+  let at = 0;
+  for (const part of text.split("\n\n")) {
+    const title = part.split("\n")[0]?.trim() ?? "";
+    if (title !== "") found.push({ title, start: at });
+    at += part.length + 2;
+  }
+  return found;
+}
+
+/**
+ * What a stand-in model answers a split ask with.
+ *
+ * The boundaries are read off the window it was given: headings when the
+ * manuscript writes them, paragraphs otherwise. What the suite proves is that
+ * the answer's quotations are found, the text between them is kept, and a
+ * window's unfinished tail moves into the next ask rather than being cut.
+ */
+function splitAnswer(prompt: string): string | undefined {
+  const text = windowOf(prompt);
+  if (text === "") return undefined;
+  const headings = headingsOf(text);
+  const points = headings.length > 0 ? headings : paragraphsOf(text);
+  if (points.length === 0) return undefined;
+  return JSON.stringify({
+    chapters: points.map((point, index) => ({
+      number: index + 1,
+      title: point.title,
+      ...(index === 0 ? {} : { start: point.title.slice(0, 40) }),
+    })),
+  });
+}
+
 /** The same batch as it comes home, every piece answered as the test said. */
 function answered(record: StoryJobRecord): StoryJobRecord {
   return {
     ...record,
     status: "succeeded",
-    items: record.items.map((item) => ({
-      ...item,
-      status: "succeeded" as const,
-      ...(answers[item.id] !== undefined ? { text: answers[item.id] } : {}),
-    })),
+    items: record.items.map((item) => {
+      const split = item.id.startsWith("outline:split:");
+      const text =
+        answers[item.id] ?? (split ? splitAnswer(item.prompt) : undefined);
+      return {
+        ...item,
+        status: "succeeded" as const,
+        ...(text === undefined ? {} : { text }),
+      };
+    }),
   };
 }
+
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 /** The batch the room started last, coming home with its answers. */
 async function comesBack(): Promise<void> {
@@ -164,6 +221,24 @@ async function comesBack(): Promise<void> {
   await act(async () => {
     await useStoryJobStore.getState().adopt(found.id);
   });
+}
+
+/** Answers whatever batch is out, and stops when the room asks for no more. */
+async function answerEveryBatch(limit = 10): Promise<void> {
+  for (let n = 0; n < limit; n += 1) {
+    if (starts.length <= n) {
+      await waitFor(() => expect(starts.length).toBeGreaterThan(n));
+    }
+    const id = `job-${n + 1}`;
+    if (!held.some((job) => job.id === id)) return;
+    await act(async () => {
+      await useStoryJobStore.getState().adopt(id);
+    });
+    await act(async () => {
+      await sleep(10);
+    });
+    if (starts.length === n + 1) return;
+  }
 }
 
 /** A telling with a premise and no chapters: where step two begins. */
@@ -188,7 +263,7 @@ function withChapters(): MokaFile {
   return moka;
 }
 
-/** The same telling with a manuscript on the shelf. */
+/** The same telling with a manuscript on the shelf that writes its own chapters. */
 function withManuscript(chapterCount: number): MokaFile {
   const moka = atTheOutline();
   const story = moka.stories![0];
@@ -202,6 +277,17 @@ function withManuscript(chapterCount: number): MokaFile {
     (_, index) =>
       `第${index + 1}章 站台\n他在站台上等一班已经停运的列车，风把雨吹成斜的。`,
   ).join("\n");
+  return moka;
+}
+
+/** A manuscript of plain paragraphs, for a window that has no headings. */
+function withLongManuscript(paragraphs: number): MokaFile {
+  const moka = withManuscript(0);
+  manuscript = Array.from(
+    { length: paragraphs },
+    (_, index) =>
+      `第 ${index + 1} 段。${"雨落在站台上，灯一盏一盏亮起来，车迟迟没有来。".repeat(10)}`,
+  ).join("\n\n");
   return moka;
 }
 
@@ -232,8 +318,6 @@ function openRoom(moka: MokaFile): void {
 function openAtOutline(moka: MokaFile): void {
   openRoom(moka);
   if (useStoryStore.getState().step === "idea") {
-    // Step two opens on a premise the reader has settled, the way it does for
-    // a telling that has only been named.
     const box = screen.getByTestId("story-idea-input") as HTMLTextAreaElement;
     if (box.value.trim() === "") {
       fireEvent.change(box, {
@@ -270,14 +354,8 @@ function chaptersAnswer(...titles: string[]): string {
   });
 }
 
-const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-
 /**
  * A deployment whose story room is set to cut the manuscript at a length.
- *
- * The boundary is the reader's, since how much of a telling a model can hold is
- * a property of the model: what a test sets here is what the room reads when it
- * plans a batch.
  */
 function cuttingAt(splitChars: number): void {
   useModelStore.setState({
@@ -372,8 +450,6 @@ describe("writing a premise into chapters", () => {
       "车厢",
       "天亮",
     ]);
-    // Every chapter is given a running time to be boarded against, since the
-    // model was not asked for one.
     expect(chapters()[0]?.targetDurationMs).toBe(60_000);
   });
 
@@ -384,10 +460,9 @@ describe("writing a premise into chapters", () => {
     fireEvent.click(screen.getByTestId("story-confirm-outline"));
     expect(
       screen.getByTestId("story-confirm-gaps-outline").textContent,
-    ).toContain("1 chapters still have no title or synopsis (chapter 2)");
+    ).toContain("1 chapters still have no title or text (chapter 2)");
     expect(story().confirmedSteps).not.toContain("outline");
 
-    // Written through, and the press settles it as one step of the history.
     fireEvent.change(screen.getByTestId("story-chapter-synopsis-1"), {
       target: { value: "车厢里只有两个人。" },
     });
@@ -415,39 +490,13 @@ describe("writing a premise into chapters", () => {
     fireEvent.blur(synopsis);
     expect(chapters()[0]?.synopsis).toBe("他在站台上等到天亮。");
   });
-
-  it("asks for nothing at all while the reader is only counting", () => {
-    openAtOutline(atTheOutline());
-
-    fireEvent.change(field("story-outline-chapters"), {
-      target: { value: "7" },
-    });
-    fireEvent.click(screen.getByTestId("story-outline-chapters"));
-    expect(starts).toHaveLength(0);
-    expect(screen.getByTestId("story-outline-will-ask").textContent).toContain(
-      "7",
-    );
-  });
 });
 
 describe("splitting a manuscript", () => {
-  it("asks for every part of it, in order, with the part's own words", async () => {
+  it("cuts at the boundaries the model names, keeping the manuscript's words", async () => {
     openAtOutline(withManuscript(3));
-    answers["outline:1"] = JSON.stringify({
-      title: "第一章 站台",
-      synopsis: "他在站台上等车。",
-    });
-    answers["outline:2"] = JSON.stringify({
-      title: "第二章 车厢",
-      synopsis: "车厢里只有两个人。",
-    });
-    answers["outline:3"] = JSON.stringify({
-      title: "第三章 天亮",
-      synopsis: "天亮了，他下了车。",
-    });
 
     fireEvent.click(screen.getByTestId("story-outline-mode-split"));
-    // The manuscript writes three chapters of its own, and says so.
     await waitFor(() => {
       expect(
         screen.getByTestId("story-outline-chapters-hint").textContent,
@@ -459,106 +508,104 @@ describe("splitting a manuscript", () => {
     await waitFor(() => {
       expect(starts).toHaveLength(1);
     });
-
     const ask = starts[0];
-    expect(ask?.items.map((item) => item.id)).toEqual([
-      "outline:1",
-      "outline:2",
-      "outline:3",
-    ]);
+    expect(ask?.items).toHaveLength(1);
+    expect(ask?.items[0]?.id).toBe("outline:split:1");
     expect(ask?.items[0]?.prompt).toContain("第1章 站台");
-    expect(ask?.items[2]?.prompt).toContain("第3章 站台");
-    // Reading the manuscript is when the document is told it was divided.
-    await waitFor(() => {
-      expect(story().brief.sourceSplit).toBe(true);
-    });
+    expect(ask?.items[0]?.prompt).toContain("第3章 站台");
 
     await comesBack();
     await waitFor(() => {
       expect(chapters()).toHaveLength(3);
     });
     expect(chapters().map((chapter) => chapter.title)).toEqual([
-      "第一章 站台",
-      "第二章 车厢",
-      "第三章 天亮",
+      "第1章 站台",
+      "第2章 站台",
+      "第3章 站台",
     ]);
+    // The chapter is a window into the manuscript, not a copy of it, and the
+    // heading it is titled with is not repeated in its text.
+    expect(chapters()[0]?.source?.assetId).toBe("asset-novel");
+    expect(chapters()[0]?.source?.end).toBeGreaterThan(
+      chapters()[0]?.source?.start ?? 0,
+    );
+    expect(chapterText(chapters()[0]!)).toBe(
+      "他在站台上等一班已经停运的列车，风把雨吹成斜的。",
+    );
+    expect(story().brief.sourceSplit).toBe(true);
   });
 
-  it("cuts a part to the length the settings allow", async () => {
-    // A telling longer than a model can hold is cut before it is asked about,
-    // and how long a part may be is the reader's to set.
-    cuttingAt(120);
-    const moka = atTheOutline();
-    const story = moka.stories![0];
-    story.brief = {
-      ...story.brief,
-      sourceAssetId: "asset-novel",
-      sourceName: "novel.txt",
-    };
-    const sentences = Array.from(
-      { length: 30 },
-      (_, index) => `第${index + 1}句，雨落在站台上。`,
-    );
-    manuscript = `第一章 站台\n${sentences.join("")}`;
+  it("takes a manuscript longer than one window in batches, carrying its tail", async () => {
+    cuttingAt(1_000);
+    openAtOutline(withLongManuscript(8));
 
-    openAtOutline(moka);
-    fireEvent.change(field("story-outline-chapters"), {
-      target: { value: "1" },
-    });
     fireEvent.click(screen.getByTestId("story-outline-mode-split"));
     fireEvent.click(screen.getByTestId("story-outline-start"));
+    await answerEveryBatch();
 
-    await waitFor(() => {
-      expect(starts).toHaveLength(1);
-    });
-    const asked = starts[0]?.items[0]?.prompt ?? "";
-    expect(asked).toContain("第1句，雨落在站台上。");
-    // The whole chapter is many times the length it was cut to: what the ask
-    // carries is the part, not the manuscript.
-    expect(asked).not.toContain("第20句");
+    await waitFor(() => expect(chapters()).toHaveLength(8));
+    // Every window is a different part of the same reading, and the text is
+    // cut once: no paragraph appears in two chapters.
+    expect(starts.length).toBeGreaterThan(1);
+    expect(starts.map((ask) => ask.items[0]?.id)).toEqual(
+      starts.map((_, index) => `outline:split:${index + 1}`),
+    );
+    const held = chapters().map((chapter) => chapterText(chapter));
+    expect(new Set(held).size).toBe(held.length);
+    expect(held.join("\n").match(/第 \d 段。/g)?.length).toBe(8);
   });
 
-  it("takes a manuscript longer than one batch in waves", async () => {
-    openAtOutline(withManuscript(41));
-    for (let part = 1; part <= 41; part += 1) {
-      answers[`outline:${part}`] = JSON.stringify({
-        title: `第 ${part} 章`,
-        synopsis: `第 ${part} 段里的事。`,
-      });
-    }
+  it("drops front matter the model marks as chapter zero", async () => {
+    openAtOutline(withManuscript(2));
+    answers["outline:split:1"] = JSON.stringify({
+      chapters: [
+        { number: 0, title: "目录", discard: true, start: "目录" },
+        { number: 1, title: "第1章 站台", start: "第1章 站台" },
+        { number: 2, title: "第2章 站台", start: "第2章 站台" },
+      ],
+    });
+    manuscript = `目录\n第一章介绍\n第1章 站台\n他在站台上等车。\n第2章 站台\n车厢里只有两个人。`;
 
     fireEvent.click(screen.getByTestId("story-outline-mode-split"));
-    await waitFor(() => {
-      expect(field("story-outline-chapters").value).toBe("41");
-    });
     fireEvent.click(screen.getByTestId("story-outline-start"));
-
-    await waitFor(() => {
-      expect(starts).toHaveLength(1);
-    });
-    expect(starts[0]?.items).toHaveLength(40);
-    // The second wave waits for the first to come home rather than being
-    // started over the top of it.
-    await sleep(20);
-    expect(starts).toHaveLength(1);
-    expect(screen.getByTestId("story-outline-wave").textContent).toBe(
-      "Batch 1 of 2",
-    );
-
+    await waitFor(() => expect(starts).toHaveLength(1));
     await comesBack();
+    await waitFor(() => expect(chapters()).toHaveLength(2));
+    expect(chapters().map((chapter) => chapter.title)).toEqual([
+      "第1章 站台",
+      "第2章 站台",
+    ]);
+    expect(
+      chapters()
+        .map((chapter) => chapterText(chapter))
+        .join(),
+    ).not.toContain("目录");
+  });
+
+  it("says the split failed after the model keeps losing the boundaries", async () => {
+    openAtOutline(withManuscript(2));
+    answers["outline:split:1"] = "I am afraid I cannot help with that.";
+
+    fireEvent.click(screen.getByTestId("story-outline-mode-split"));
+    fireEvent.click(screen.getByTestId("story-outline-start"));
+    await answerEveryBatch();
+
     await waitFor(() => {
-      expect(starts).toHaveLength(2);
+      expect(screen.getByTestId("story-outline-error").textContent).toContain(
+        "The split failed",
+      );
     });
-    expect(starts[1]?.items).toHaveLength(1);
-    expect(screen.getByTestId("story-outline-wave").textContent).toBe(
-      "Batch 2 of 2",
-    );
+    expect(starts).toHaveLength(3);
+    expect(chapters()).toHaveLength(0);
+    // The raw answer is not a feature of the step any more.
+    expect(screen.queryByTestId("story-outline-answer")).toBeNull();
   });
 });
 
 describe("splitting again", () => {
   it("says what it costs before it writes over a board, and does nothing if refused", () => {
     openAtOutline(withTheBoardLast());
+    manuscript = "第1章 站台\n他在站台上等车。\n第2章 车厢\n车厢里只有两个人。";
     fireEvent.change(field("story-outline-chapters"), {
       target: { value: "1" },
     });
@@ -571,147 +618,62 @@ describe("splitting again", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByTestId("resplit-story")).toBeNull();
     expect(starts).toHaveLength(0);
-    // The board is where it was: refusing the question changed nothing.
     expect(chapters()[1]?.acts).toHaveLength(1);
   });
 
-  it("goes ahead when the reader agrees", async () => {
+  it("goes ahead when the reader agrees, and keeps a chapter's board", async () => {
     openAtOutline(buildStoryMokaFile());
-    answers.outline = chaptersAnswer("站台", "车厢");
+    manuscript =
+      "第一章 站台\n他在站台上等一班已经停运的列车。\n第二章 车厢\n车厢比站台更暗。";
 
     fireEvent.click(screen.getByTestId("story-outline-start"));
     fireEvent.click(screen.getByTestId("resplit-story-confirm"));
-
-    await waitFor(() => {
-      expect(starts).toHaveLength(1);
-    });
-    // A split keeps what was made for a chapter that stands where it stood:
-    // the act of the first chapter is still there after the re-write.
+    await waitFor(() => expect(starts).toHaveLength(1));
     await comesBack();
+
     await waitFor(() => {
       expect(chapters()).toHaveLength(2);
     });
     expect(chapters()[0]?.acts).toHaveLength(1);
+    expect(chapters()[0]?.source).toBeDefined();
   });
 });
 
 describe("what the table waits on", () => {
-  /** A telling split into two chapters, whose parts have come home. */
-  async function twoChaptersWritten(): Promise<void> {
+  it("offers no redo for a chapter cut from the manuscript", async () => {
     openAtOutline(withManuscript(2));
-    answers["outline:1"] = JSON.stringify({
-      title: "第一章 站台",
-      synopsis: "他在站台上等车。",
-    });
-    answers["outline:2"] = JSON.stringify({
-      title: "第二章 车厢",
-      synopsis: "车厢里只有两个人。",
-    });
     fireEvent.click(screen.getByTestId("story-outline-mode-split"));
-    await waitFor(() =>
-      expect(field("story-outline-chapters").value).toBe("2"),
-    );
     fireEvent.click(screen.getByTestId("story-outline-start"));
     await waitFor(() => expect(starts).toHaveLength(1));
     await comesBack();
     await waitFor(() => expect(chapters()).toHaveLength(2));
-  }
 
-  /** A batch of drawings out for the story, which step two knows nothing of. */
-  async function drawingElsewhere(): Promise<void> {
-    await act(async () => {
-      await useStoryJobStore.getState().start(story().id, "keyframeArt", [
-        {
-          id: `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`,
-          target: {
-            kind: "keyframeArt",
-            chapterId: ids.chapterFirst,
-            actId: ids.act,
-            keyframeId: ids.frameFirst,
-          },
-          capability: "image",
-          prompt: "雨中的站台。",
-        },
-      ]);
-    });
-  }
-
-  it("is not held back by a batch of drawings", async () => {
-    await twoChaptersWritten();
-    await drawingElsewhere();
-
-    // The buttons belong to the table: pictures being painted for a board are
-    // not a chapter being written, and do not shut the step.
-    expect(
-      (screen.getByTestId("story-outline-start") as HTMLButtonElement).disabled,
-    ).toBe(false);
-    expect(screen.getByTestId("story-confirm-outline")).toBeTruthy();
-    expect(
-      (screen.getByTestId("story-chapter-redo-0") as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
-    expect(
-      (screen.getByTestId("story-chapter-redo-1") as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
-    // And the button the step is asked through still says what it would do
-    // rather than counting a batch that has nothing to do with the table.
-    expect(screen.getByTestId("story-outline-start").textContent).toBe(
-      "Split it again",
-    );
+    expect(screen.queryByTestId("story-chapter-redo-0")).toBeNull();
+    expect(screen.getByTestId("story-chapter-source-0")).toBeTruthy();
   });
 
-  it("waits on one chapter at a time, and not on the chapter beside it", async () => {
-    await twoChaptersWritten();
-    fireEvent.click(screen.getByTestId("story-chapter-redo-0"));
-    await waitFor(() => expect(starts).toHaveLength(2));
+  it("offers a redo for a chapter written from the premise, and waits on it alone", async () => {
+    openAtOutline(withChapters());
+    answers["outline:rewrite:1"] = JSON.stringify({
+      title: "站台",
+      synopsis: "站台上只剩一个人。",
+    });
 
-    // The chapter being written again waits on its own ask...
+    fireEvent.click(screen.getByTestId("story-chapter-redo-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]?.items[0]?.id).toBe("outline:rewrite:1");
     expect(
       (screen.getByTestId("story-chapter-redo-0") as HTMLButtonElement)
         .disabled,
     ).toBe(true);
-    // ...while the chapter beside it is still one the reader can ask for.
     expect(
       (screen.getByTestId("story-chapter-redo-1") as HTMLButtonElement)
         .disabled,
     ).toBe(false);
-  });
-});
 
-describe("an answer nobody could read", () => {
-  it("says so, and takes a repaired answer by hand", async () => {
-    openAtOutline(atTheOutline());
-    answers.outline = "I am afraid I cannot help with that.";
-
-    fireEvent.click(screen.getByTestId("story-outline-start"));
-    await waitFor(() => {
-      expect(starts).toHaveLength(1);
-    });
     await comesBack();
-    expect(chapters()).toHaveLength(0);
-    expect(screen.getByTestId("story-outline-empty")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("story-outline-answer-toggle"));
-    // The answer is kept as it came, with what the reading made of it.
-    expect(
-      screen.getByTestId("story-outline-answer-error").textContent,
-    ).toContain("chapter table");
-    fireEvent.click(screen.getByTestId("story-outline-answer-fix"));
-    const edit = screen.getByTestId(
-      "story-outline-answer-edit",
-    ) as HTMLTextAreaElement;
-    expect(edit.value).toBe("I am afraid I cannot help with that.");
-    fireEvent.change(edit, {
-      target: { value: chaptersAnswer("站台", "车厢") },
-    });
-    fireEvent.click(screen.getByTestId("story-outline-answer-apply"));
-
     await waitFor(() => {
-      expect(chapters().map((chapter) => chapter.title)).toEqual([
-        "站台",
-        "车厢",
-      ]);
+      expect(chapters()[0]?.synopsis).toBe("站台上只剩一个人。");
     });
   });
 });

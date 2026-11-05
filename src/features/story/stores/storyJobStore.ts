@@ -38,7 +38,7 @@ import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import { applyJobResults } from "../jobs/apply";
-import { itemsForTargets, jobKey } from "../jobs/plan";
+import { itemsForTargets, jobKey, planChapterRewrite } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { useStoryStore } from "./storyStore";
 
@@ -409,6 +409,13 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             const unreferenced = failedItems.every(
               (item) => item.errorCode === "MODEL_REFERENCE_AUDIO_REQUIRED",
             );
+            // A split's piece is not a place that can be asked for again on its
+            // own: asking again means reading the manuscript from a window that
+            // only the step knows. The step says so itself, so no retry is
+            // offered over the top of it.
+            const split = failedItems.some((item) =>
+              item.id.startsWith("outline:split:"),
+            );
             toast(
               "error",
               voiceless
@@ -437,7 +444,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
                             .getState()
                             .openSettings(failedItems[0].capability),
                       }
-                    : story === undefined
+                    : story === undefined || split
                       ? undefined
                       : {
                           label: i18n.t("story:jobs.retryFailed"),
@@ -672,24 +679,31 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
 });
 
 /**
- * Waits out one batch, whichever way it ends.
+ * Waits out one batch, whichever way it ends, and answers with it as it is.
  *
  * The room's own poll goes on looking the batch up all the same; this is the
- * asker's own wait, so that the wave after this one is not planned against a
- * story the answers have not been read into yet.
+ * asker's own wait, so that what comes next is not planned against a story the
+ * answers have not been read into yet.
  */
-async function awaitSettled(id: string): Promise<void> {
+export async function waitForJob(id: string): Promise<StoryJobRecord> {
   for (;;) {
-    try {
-      await useStoryJobStore.getState().adopt(id);
-    } catch {
-      // A batch that cannot be looked up cannot be waited on: the room's own
-      // poll goes on asking, and what came back is read into the story then.
-      return;
-    }
+    await useStoryJobStore.getState().adopt(id);
     const held = useStoryJobStore.getState().jobs.find((job) => job.id === id);
-    if (held === undefined || !isRunning(held.status)) return;
+    if (held === undefined) {
+      throw new Error(`the batch ${id} is no longer on file`);
+    }
+    if (!isRunning(held.status)) return held;
     await new Promise((settle) => setTimeout(settle, POLL_MS));
+  }
+}
+
+/** The same wait, for a caller with nothing to do with the record after it. */
+async function awaitSettled(id: string): Promise<void> {
+  try {
+    await waitForJob(id);
+  } catch {
+    // A batch that cannot be looked up cannot be waited on: the room's own
+    // poll goes on asking, and what came back is read into the story then.
   }
 }
 
@@ -707,7 +721,9 @@ export async function retryFailed(
   story: StoryDocument,
   job: StoryJobRecord,
 ): Promise<void> {
-  const failed = job.items.filter((item) => item.status === "failed");
+  const failed = job.items.filter(
+    (item) => item.status === "failed" && !item.id.startsWith("outline:split:"),
+  );
   if (failed.length === 0) return;
   // A place's ask is one piece per name however many of the old batch's pieces
   // failed: an act filmed in pieces that lost two of them is asked for again as
@@ -737,40 +753,26 @@ function againFor(
   return itemsForTargets(story, [item.target]);
 }
 
-/** An outline piece that answers for one part of a manuscript, not for all. */
-const PART_ITEM = /^outline:\d+$/;
+/** An outline piece that answers for one place in the table, not for all. */
+const PART_ITEM = /^outline:(?:rewrite:)?\d+$/;
 
 /**
- * Asks again for one episode that was written from a manuscript's part.
+ * Asks again for one chapter that was written from a premise.
  *
- * The part is not planned again for the same reason a failed one is not: the
- * ask for a part is the part itself. What the record kept is sent again, so an
- * episode the reader did not like comes back from the same words it came from
- * the first time.
+ * A chapter cut from a manuscript is not written at all, so there is nothing
+ * to ask for again: only the chapters the telling invented have a synopsis a
+ * second answer could replace.
  */
-export async function redoChapterPart(
+export async function redoGeneratedChapter(
   story: StoryDocument,
   chapterIndex: number,
 ): Promise<void> {
-  const id = `outline:${chapterIndex + 1}`;
-  const recorded = useStoryJobStore
-    .getState()
-    .jobs.filter((job) => job.storyId === story.id && job.kind === "outline")
-    .flatMap((job) => job.items)
-    .find((item) => item.id === id);
-  if (recorded === undefined) {
-    toast("info", i18n.t("story:outline.partGone"));
+  const item = planChapterRewrite(story, chapterIndex);
+  if (item === undefined) {
+    toast("info", i18n.t("story:outline.chapterGone"));
     return;
   }
-  await useStoryJobStore.getState().start(story.id, "outline", [
-    {
-      id,
-      target: { kind: "outline" },
-      capability: recorded.capability,
-      prompt: recorded.prompt,
-      system: recorded.system,
-    },
-  ]);
+  await useStoryJobStore.getState().start(story.id, "outline", [item]);
 }
 
 /** Makes one place again, from the story as it stands now. */

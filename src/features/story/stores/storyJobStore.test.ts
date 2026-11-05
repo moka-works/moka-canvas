@@ -11,7 +11,7 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import {
   jobProgress,
-  redoChapterPart,
+  redoGeneratedChapter,
   retryFailed,
   stepFailure,
   targetRunning,
@@ -1124,42 +1124,28 @@ describe("asking again for what did not come back", () => {
     ]);
   });
 
-  it("asks again for one part of a manuscript from the record it was made for", async () => {
-    serving({
-      "/api/v1/projects/current/story/jobs": [
-        job({
-          kind: "outline",
-          items: [
-            {
-              ...job().items[0],
-              id: "outline:2",
-              target: { kind: "outline" },
-              capability: "text",
-              prompt:
-                "Part 2 of 3 of a manuscript, which is the telling's own text:",
-              status: "succeeded",
-            },
-          ],
-        }),
-      ],
-    });
-    await useStoryJobStore.getState().load(ids.story);
-
-    await redoChapterPart(openStory(), 1);
-
-    const [again] = lastAsk().items;
-    expect(again?.id).toBe("outline:2");
-    expect(again?.prompt).toContain("Part 2 of 3");
-  });
-
-  it("says so when the part it would ask for is no longer on file", async () => {
+  it("asks for one written chapter again in the place it stands", async () => {
     serving({ "/api/v1/projects/current/story/jobs": [] });
     await useStoryJobStore.getState().load(ids.story);
 
-    await redoChapterPart(openStory(), 0);
+    await redoGeneratedChapter(openStory(), 1);
+
+    const [again] = lastAsk().items;
+    expect(again?.id).toBe("outline:rewrite:2");
+    expect(again?.prompt).toContain("This is chapter 2.");
+    expect(again?.prompt).toContain(
+      "末班列车上，两个陌生人交换了各自要说的话。",
+    );
+  });
+
+  it("says so when the chapter it would ask for is no longer there", async () => {
+    serving({ "/api/v1/projects/current/story/jobs": [] });
+    await useStoryJobStore.getState().load(ids.story);
+
+    await redoGeneratedChapter(openStory(), 99);
 
     expect(useAppStore.getState().toasts.at(-1)?.message).toContain(
-      "split it again",
+      "no longer in the story",
     );
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   });

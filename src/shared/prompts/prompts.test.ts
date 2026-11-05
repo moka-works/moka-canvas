@@ -18,8 +18,11 @@ import {
   storyKeyframePrompt,
   storyKeyframePromptParts,
   storyKeyframeVideoPrompt,
+  storyChapterPrompt,
   storyOutlinePrompt,
   storySplitPrompt,
+  storySplitRepairPrompt,
+  storySplitSystemPrompt,
   storyStoryboardPrompt,
   storySystemPrompt,
   type StoryFacts,
@@ -152,25 +155,59 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("{{");
   });
 
-  it("asks for one part of a manuscript, and says which part it is", () => {
+  it("asks where a manuscript's chapters begin, not what they say", () => {
     const prompt = storySplitPrompt({
       text: "他在站台上等一班已经停运的列车。",
-      index: 2,
-      total: 5,
-      genre: "对白剧情",
-      style: "现代都市风",
+      part: 2,
+      chapters: 5,
+      minutes: 3,
+      total: "15:00",
     });
-    expect(prompt).toContain("Part 2 of 5");
+    expect(prompt).toContain("part 2 of a manuscript");
     expect(prompt).toContain("他在站台上等一班已经停运的列车。");
-    expect(prompt).toContain("对白剧情");
+    expect(prompt).toContain("about 3 minutes");
+    expect(prompt).toContain("about 5 chapters");
+    expect(prompt).toContain('"start"');
+    expect(prompt).toContain("Change nothing");
+    expect(prompt).not.toContain("Write this part");
+    expect(prompt).not.toContain("{{");
+  });
+
+  it("asks again for boundaries that could not be found, naming them", () => {
+    const prompt = storySplitRepairPrompt({
+      text: "他在站台上等一班已经停运的列车。",
+      part: 2,
+      chapters: 5,
+      minutes: 3,
+      total: "15:00",
+      missing: ["第四章 天亮"],
+    });
+    expect(prompt).toContain("第四章 天亮");
+    expect(prompt).toContain("Copy every");
+    expect(prompt).not.toContain("{{");
+  });
+
+  it("writes one chapter of a premise again in its place", () => {
+    const prompt = storyChapterPrompt({
+      idea: "末班列车上，两个陌生人交换了各自要说的话。",
+      chapters: 4,
+      number: 2,
+      previous: { number: 1, title: "站台", text: "他等着。" },
+      next: { number: 3, title: "天亮", text: "他下了车。" },
+      current: { title: "车厢", text: "两个人都不说话。" },
+    });
+    expect(prompt).toContain("This is chapter 2.");
+    expect(prompt).toContain("The chapter before it: 1. 站台 — 他等着。");
+    expect(prompt).toContain("The chapter after it: 3. 天亮 — 他下了车。");
+    expect(prompt).toContain("What the chapter says now: 车厢");
     expect(prompt).not.toContain("{{");
   });
 
   it("lists the chapters an answer is read for elements, one person per character", () => {
     const prompt = storyElementsPrompt({
       chapters: [
-        { number: 1, title: "第一章 站台", synopsis: "他在站台上等列车。" },
-        { number: 2, title: "第二章 车厢", synopsis: "车厢比站台更暗。" },
+        { number: 1, title: "第一章 站台", text: "他在站台上等列车。" },
+        { number: 2, title: "第二章 车厢", text: "车厢比站台更暗。" },
       ],
       genre: "对白剧情",
       style: "现代都市风",
@@ -195,7 +232,7 @@ describe("story prompts", () => {
   it("keeps a scene to one place, and its change to its description", () => {
     const prompt = storyElementsPrompt({
       chapters: [
-        { number: 1, title: "第一章 站台", synopsis: "他在站台上等列车。" },
+        { number: 1, title: "第一章 站台", text: "他在站台上等列车。" },
       ],
       genre: "对白剧情",
       style: "现代都市风",
@@ -222,7 +259,7 @@ describe("story prompts", () => {
   it("asks for props a shot must show, not light or weather", () => {
     const prompt = storyElementsPrompt({
       chapters: [
-        { number: 1, title: "第一章 站台", synopsis: "他在站台上等列车。" },
+        { number: 1, title: "第一章 站台", text: "他在站台上等列车。" },
       ],
       genre: "对白剧情",
       style: "现代都市风",
@@ -244,7 +281,7 @@ describe("story prompts", () => {
     const prompt = storyStoryboardPrompt({
       ...facts,
       number: 2,
-      chapter: { title: "第二章 车厢", synopsis: "车厢比站台更暗。" },
+      chapter: { title: "第二章 车厢", text: "车厢比站台更暗。" },
       targetDurationMs: 60_000,
       elements: [
         { kind: "character", name: "林", description: "四十岁上下。" },
@@ -471,16 +508,26 @@ describe("story prompts", () => {
       storyOutlinePrompt({ ...facts, idea: "…", chapters: 1 }),
       storySplitPrompt({
         text: "…",
-        index: 1,
-        total: 1,
-        genre: "…",
-        style: "…",
+        part: 1,
+        chapters: 1,
+        minutes: 1,
+        total: "1:00",
       }),
+      storySplitRepairPrompt({
+        text: "…",
+        part: 1,
+        chapters: 1,
+        minutes: 1,
+        total: "1:00",
+        missing: ["…"],
+      }),
+      storySplitSystemPrompt(),
+      storyChapterPrompt({ idea: "…", chapters: 1, number: 1 }),
       storyElementsPrompt({ chapters: [], genre: "…", style: "…" }),
       storyStoryboardPrompt({
         ...facts,
         number: 1,
-        chapter: { title: "…", synopsis: "…" },
+        chapter: { title: "…", text: "…" },
         targetDurationMs: 1000,
         elements: [],
         shotSizes: [],

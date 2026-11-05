@@ -1,74 +1,19 @@
 /**
- * Cutting an uploaded manuscript into the parts a chapter is written from.
+ * Reading a manuscript in windows, and the headings it writes its own
+ * chapters with.
  *
- * A whole novel cannot be handed to a model in one ask, and asking for the
- * chapters up front from a text nobody has read produces an outline of the
- * text's beginning. So the manuscript is cut here first — by its own chapter
- * headings when it has them, by its own breaks when it has those, and by
- * arithmetic when it has neither — and each part is written into one chapter on
- * its own. What is cut is never written into the document: the manuscript stays
- * an asset on the shelf, and the story keeps the one premise its reader stands
- * behind.
- *
- * Cutting is measured in code points rather than in the string's own units, so
- * a break never lands between the halves of a character that is written with
- * two.
+ * A whole novel cannot be handed to a model in one ask, but a model today can
+ * hold far more than one episode's worth of it. So the manuscript is read in
+ * windows of the reader's own size, each cut back to a paragraph boundary so a
+ * window never ends in the middle of one, and whatever the window did not
+ * manage to divide is carried into the next one. The carry is what keeps a
+ * chapter from being cut twice: the next window starts where the last unplaced
+ * chapter starts, and takes on only as much new text as still fits.
  */
 
-/** One part of a manuscript, with the heading its own text gave it. */
-export interface SourceChunk {
-  title?: string;
-  text: string;
-}
-
-export interface SplitOptions {
-  /** How many chapters the telling is meant to have. */
-  targetChapters: number;
-  /** The longest a part may be; longer ones are cut to fit. */
-  maxChars: number;
-}
-
-/**
- * The headings a manuscript writes its own chapters with, in the two orders
- * this app is read in: `第一章`, `第 12 回`, `Chapter 3`, `3、`.
- */
+/** The headings a manuscript writes its own chapters with, in the two orders this app is read in. */
 const HEADING =
-  /^[ \t]*(第[一二三四五六七八九十百千零两0-9]+[章回节卷]|Chapter\s+[0-9IVXLCivxlc]+|CHAPTER\s+[0-9IVXLCivxlc]+|[0-9]{1,3}\s*[、.．]\s*\S)/;
-
-/** The marks a manuscript makes a break with, without saying anything. */
-const BREAK_MARKS = ["\\*\\s*\\*\\s*\\*", "---", "===", "◇◇◇", "◆◆◆"];
-const BREAK_LINE = new RegExp(`^[ \\t]*(?:${BREAK_MARKS.join("|")})[ \\t]*$`);
-const BREAK_JOIN = new RegExp(
-  `\\n[ \\t]*(?:${BREAK_MARKS.join("|")})[ \\t]*\\n`,
-);
-
-/**
- * A manuscript cut into the parts a chapter is written from.
- *
- * At least one part always comes back, even for an empty text: a part with no
- * words in it is a chapter the model will be asked to write from nothing, which
- * is the same answer as not asking at all, and the caller decides what to do
- * with it.
- */
-export function splitSource(
-  text: string,
-  options: SplitOptions,
-): SourceChunk[] {
-  const target = Math.max(1, Math.floor(options.targetChapters));
-  const source = text.replace(/\r\n/g, "\n").trim();
-  if (source === "") return [{ text: "" }];
-
-  const byHeading = splitAtHeadings(source, target);
-  const parts =
-    byHeading ??
-    packIntoParts(scenesOf(source), target) ??
-    evenParts(source, target);
-
-  return parts.map((part) => ({
-    ...(part.title !== undefined ? { title: part.title } : {}),
-    text: fit(part.text.trim(), options.maxChars),
-  }));
-}
+  /^[ \t]*(第[ \t]*[一二三四五六七八九十百千零两0-9]+[ \t]*[章回节集卷]|Chapter\s+[0-9IVXLCivxlc]+|CHAPTER\s+[0-9IVXLCivxlc]+|[0-9]{1,3}\s*[、.．]\s*\S)/;
 
 /**
  * How many chapters a manuscript writes of its own, or none when it writes too
@@ -84,147 +29,115 @@ export function sourceHeadings(text: string): number {
   return found >= 2 ? found : 0;
 }
 
+/** Whether this line is a chapter heading the manuscript wrote itself. */
+export function isSourceHeading(line: string): boolean {
+  return HEADING.test(line);
+}
+
 /**
- * The manuscript cut at its own chapter headings, when it has any and they
- * agree with how many chapters were asked for.
+ * Where a window opened at `from` ends, no further than `budget` characters on.
  *
- * Headings are only trusted when there are enough of them to be a structure
- * rather than a line that happened to start with a number, and when they do not
- * cut the telling into meaningfully more pieces than were asked for — a novel
- * with a hundred and twenty headings is not one with twelve.
+ * The cut is pulled back to the last paragraph break when there is one worth
+ * taking, so a window ends where a reader would pause rather than inside a
+ * paragraph; failing that it is pulled back to a line break, and failing that
+ * it stands where the budget says. The text between `from` and the answer is
+ * always shorter than the budget unless the budget falls inside one paragraph.
  */
-function splitAtHeadings(
+export function windowEndAt(
   text: string,
-  target: number,
-): SourceChunk[] | undefined {
-  const lines = text.split("\n");
-  const at: number[] = [];
-  lines.forEach((line, index) => {
-    if (HEADING.test(line)) at.push(index);
-  });
-  if (at.length < 2 || at.length > target * 2) return undefined;
-
-  return at.map((start, position) => {
-    const end = at[position + 1] ?? lines.length;
-    const heading = lines[start].trim();
-    const body = lines
-      .slice(start + 1, end)
-      .join("\n")
-      .trim();
-    return { title: heading, text: body };
-  });
-}
-
-/**
- * The manuscript's scenes: what its break marks and its blank stretches cut it
- * into, in order. One scene is what a manuscript with no breaks at all is.
- */
-function scenesOf(text: string): Array<{ text: string }> {
-  const atBreaks = pieces(text.split(BREAK_JOIN));
-  const atParagraphs = pieces(text.split(/\n[ \t]*\n+/));
-  const scenes = atBreaks.length > 1 ? atBreaks : atParagraphs;
-  return (scenes.length > 0 ? scenes : [text.trim()]).map((scene) => ({
-    text: scene,
-  }));
-}
-
-/** The pieces of a split that hold words, without the marks they were cut at. */
-function pieces(parts: string[]): string[] {
-  return parts
-    .map((part) =>
-      part
-        .split("\n")
-        .filter((line) => !BREAK_LINE.test(line))
-        .join("\n")
-        .trim(),
-    )
-    .filter((part) => part !== "");
-}
-
-/**
- * Scenes packed into the number of parts that was asked for.
- *
- * Packed by weight rather than by count, so a part holding three short scenes
- * and one holding a long one come out about the same length: what a chapter is
- * written from is a share of the telling, not a share of its paragraphs. Once
- * the parts are used up the rest is laid on the last one.
- */
-function packIntoParts(
-  scenes: Array<{ text: string }>,
-  target: number,
-): SourceChunk[] | undefined {
-  if (scenes.length < target) return undefined;
-  const total = scenes.reduce((sum, scene) => sum + scene.text.length, 0);
-  const per = Math.ceil(total / target);
-  const parts: SourceChunk[] = [];
-  let held: string[] = [];
-  let length = 0;
-  const flush = () => {
-    if (held.length === 0) return;
-    parts.push({ text: held.join("\n\n") });
-    held = [];
-    length = 0;
-  };
-  for (const scene of scenes) {
-    // Once the parts that were asked for are used up, everything left is the
-    // last of them: a manuscript cut into one more part than was asked for is
-    // a chapter the telling has no room for.
-    if (
-      parts.length < target - 1 &&
-      held.length > 0 &&
-      length + scene.text.length > per
-    ) {
-      flush();
-    }
-    held.push(scene.text);
-    length += scene.text.length;
-  }
-  flush();
-  return parts;
-}
-
-/**
- * The manuscript cut into equal shares, for one that has no seams to cut at.
- *
- * The breaks are looked for near where the share ends — a sentence end, a line
- * end, a space — so a part ends where a reader would pause, and no part is left
- * with nothing in it.
- */
-function evenParts(text: string, target: number): SourceChunk[] {
-  const points = Array.from(text);
-  if (points.length <= target) return [{ text }];
-  const parts: SourceChunk[] = [];
-  const share = Math.ceil(points.length / target);
-  let start = 0;
-  while (start < points.length) {
-    const wanted = Math.min(points.length, start + share);
-    const end =
-      wanted >= points.length ? points.length : nearestBreak(points, wanted);
-    parts.push({ text: points.slice(start, end).join("") });
-    start = end;
-  }
-  return parts;
-}
-
-/** How far past the wanted break a better one is still worth taking. */
-const BREAK_REACH = 120;
-
-function nearestBreak(points: string[], wanted: number): number {
-  const reach = Math.min(BREAK_REACH, Math.floor(wanted / 2));
-  for (let step = 0; step <= reach; step += 1) {
-    for (const at of [wanted + step, wanted - step]) {
-      if (at <= 0 || at >= points.length) continue;
-      const before = points[at - 1];
-      if (before === "\n" || /[。！？!?；;]/.test(before)) return at;
-    }
-  }
+  from: number,
+  budget: number,
+): number {
+  if (from >= text.length) return text.length;
+  const wanted = Math.min(text.length, from + Math.max(1, Math.floor(budget)));
+  if (wanted >= text.length) return text.length;
+  // A window much shorter than the budget is not a window: looking for a break
+  // over the whole of it would turn a small overrun into half an ask.
+  const floor = from + Math.floor((wanted - from) / 2);
+  const paragraph = text.lastIndexOf("\n\n", wanted);
+  if (paragraph > floor) return paragraph + 2;
+  const line = text.lastIndexOf("\n", wanted);
+  if (line > floor) return line + 1;
+  // A hard cut is the last resort, and it must not land between the halves of
+  // a character written with two.
+  const before = text.charCodeAt(wanted - 1);
+  if (wanted > 0 && before >= 0xd800 && before <= 0xdbff) return wanted - 1;
   return wanted;
 }
 
-/** The text cut to fit, at a break if one is near the cut. */
-function fit(text: string, maxChars: number): string {
-  const points = Array.from(text);
-  if (points.length <= maxChars) return text;
-  const end = nearestBreak(points, maxChars);
-  return points.slice(0, Math.max(1, end)).join("");
+/**
+ * A quotation as it is compared with the manuscript.
+ *
+ * Models add and drop air around a quotation — a leading ellipsis, quotes that
+ * are not in the text, a space after a punctuation mark — and none of that is
+ * a reason to lose a chapter. What is not forgiven is a rephrasing: the words
+ * themselves have to be the manuscript's.
+ */
+function comparable(text: string): string {
+  return text.replace(/\s+/g, "");
+}
+
+/** A quotation with the decorations a model wraps around one taken off. */
+function bareQuote(quote: string): string {
+  return quote
+    .trim()
+    .replace(/^['"“”‘’「『《【(（\s.…]+/, "")
+    .replace(/['"“”‘’」』》】)）\s.…]+$/, "");
+}
+
+/** A window's words with their whitespace taken out, and where each one stood. */
+export interface CompactWindow {
+  text: string;
+  /** The window offset of each character in `text`. */
+  map: number[];
+}
+
+/** The whitespace-free reading of a window, made once for all its quotations. */
+export function compactWindow(window: string): CompactWindow {
+  const map: number[] = [];
+  const text: string[] = [];
+  for (let at = 0; at < window.length; at += 1) {
+    const character = window[at];
+    if (character === undefined || /\s/.test(character)) continue;
+    map.push(at);
+    text.push(character);
+  }
+  return { text: text.join(""), map };
+}
+
+/** The index in a compact window of the first character at or after `from`. */
+function compactIndex(compact: CompactWindow, from: number): number {
+  let low = 0;
+  let high = compact.map.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((compact.map[mid] ?? 0) < from) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
+ * Where a quotation stands in the window, searching from `from` on.
+ *
+ * The exact words are looked for first; then the same words with their
+ * whitespace ignored, which catches a model that reflowed a line rather than
+ * rewrote it. An occurrence before `from` is not this chapter's: chapters are
+ * named in order, and the same words earlier in the window belong to one
+ * already placed.
+ */
+export function findQuote(
+  window: string,
+  quote: string,
+  from: number,
+  compact: CompactWindow = compactWindow(window),
+): number | undefined {
+  const bare = bareQuote(quote);
+  if (bare === "" || Array.from(bare).length < 2) return undefined;
+  const exact = window.indexOf(bare, from);
+  if (exact >= 0) return exact;
+  const target = comparable(bare);
+  const at = compactIndex(compact, from);
+  const found = compact.text.indexOf(target, at);
+  return found < 0 ? undefined : compact.map[found];
 }

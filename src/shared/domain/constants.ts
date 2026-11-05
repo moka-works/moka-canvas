@@ -374,15 +374,27 @@ export const MAX_ITEMS_PER_STORY_JOB = 40;
  * the reader's to move, since how much a model can hold is a property of the
  * deployment rather than of the telling.
  */
-export const STORY_SPLIT_CHARS_DEFAULT = 12_000;
+/**
+ * How much of a telling one ask may carry, in characters, when the reader has
+ * not said. A manuscript is read in windows this wide and cut at the places
+ * the model finds; the chapters are read for their cast a part at a time.
+ * Both boundaries are the reader's to move, since how much a model can hold is
+ * a property of the deployment rather than of the telling.
+ *
+ * The split window is deliberately large: a model that holds 256K tokens can
+ * hold a few hundred thousand characters of a manuscript, and asking it about
+ * one window is both cheaper and more coherent than asking it about a dozen.
+ */
+export const STORY_SPLIT_CHARS_DEFAULT = 500_000;
 export const STORY_READ_CHARS_DEFAULT = 8_000;
 /**
- * What either boundary may be set to. The ceiling leaves room for the
- * instructions that travel with the telling's own words, since the whole
- * prompt is what a batch is measured against.
+ * What either boundary may be set to. The split window's ceiling is the size
+ * of a manuscript this app accepts; the reading boundary stays small enough
+ * that the cast of a whole telling is not asked about in one answer.
  */
 export const STORY_CHARS_MIN = 1_000;
-export const STORY_CHARS_MAX = 16_000;
+export const STORY_SPLIT_CHARS_MAX = 1_000_000;
+export const STORY_READ_CHARS_MAX = 16_000;
 /**
  * The words each of the story room's enums is said in, the way
  * `CAPABILITY_LABELS` says a capability: the table is the label's address, and

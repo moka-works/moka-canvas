@@ -16,6 +16,7 @@ import {
   planActMusic,
   planActVideos,
   planActVoice,
+  planChapterRewrite,
   planElementArt,
   planElements,
   planKeyframeArt,
@@ -268,7 +269,7 @@ describe("planning the words", () => {
   it("asks under the room's standing instruction, which drawings never carry", () => {
     // A written answer is shaped by it — one json block and nothing around it —
     // and a picture has no room for a shape that is about words.
-    const words = planOutline(story(), { mode: "expand", chapters: 2 });
+    const words = planOutline(story(), { chapters: 2 });
     expect(words[0].system).toContain("Answer with one json shape");
     expect(planElements(story())[0].system).toContain("json shape");
     expect(planStoryboard(story(), [ids.chapterFirst])[0].system).toContain(
@@ -282,7 +283,7 @@ describe("planning the words", () => {
   });
 
   it("asks for the telling as chapters, from the premise as typed", () => {
-    const items = planOutline(story(), { mode: "expand", chapters: 2 });
+    const items = planOutline(story(), { chapters: 2 });
 
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe("outline");
@@ -298,25 +299,20 @@ describe("planning the words", () => {
     expect(items[0].prompt).not.toContain("{{");
   });
 
-  it("asks for each part of a manuscript on its own, numbered in order", () => {
-    const items = planOutline(story(), {
-      mode: "split",
-      chapters: 2,
-      chunks: [
-        { title: "第一章", text: "他在站台上等一班已经停运的列车。" },
-        { title: "第二章", text: "车厢比站台更暗。" },
-      ],
-    });
+  it("asks for one chapter again in the place it stands, with its neighbours", () => {
+    const held = story();
+    const item = planChapterRewrite(held, 0);
 
-    // The number on the piece is the place in the telling its answer belongs,
-    // so the parts are in the order the manuscript was read in.
-    expect(items.map((item) => item.id)).toEqual(["outline:1", "outline:2"]);
-    expect(items[0].prompt).toContain("Part 1 of 2");
-    expect(items[1].prompt).toContain("Part 2 of 2");
-    expect(items[1].prompt).toContain("车厢比站台更暗。");
-    // A chapter is asked for under the name the manuscript gave it.
-    expect(items[0].prompt).toContain("第一章");
-    expect(items[1].prompt).toContain("第二章");
+    expect(item?.id).toBe("outline:rewrite:1");
+    expect(item?.target).toEqual({ kind: "outline" });
+    expect(item?.prompt).toContain("This is chapter 1.");
+    expect(item?.prompt).toContain(
+      "末班列车上，两个陌生人交换了各自要说的话。",
+    );
+    // The chapter after it travels as the reading the table already holds.
+    expect(item?.prompt).toContain("The chapter after it: 2. 第二章 车厢");
+    expect(item?.prompt).toContain("车厢比站台更暗。");
+    expect(item?.prompt).not.toContain("{{");
   });
 
   it("asks what the telling is made of, chapter by chapter", () => {

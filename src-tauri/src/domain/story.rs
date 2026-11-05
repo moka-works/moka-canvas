@@ -460,12 +460,29 @@ pub struct StoryAct {
     pub music: Option<StorySlot>,
 }
 
+/// Where a chapter's words sit in the manuscript it was cut from.
+///
+/// The manuscript is an asset rather than part of the document, so a chapter
+/// that is the manuscript's own text keeps a window into that file. Offsets are
+/// in the manuscript's own string units, from its first character.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryChapterSource {
+    pub asset_id: AssetId,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryChapter {
     pub id: String,
     pub title: String,
     pub synopsis: String,
+    /// The manuscript window this chapter was cut from, when it was cut rather
+    /// than written. A chapter with one holds no synopsis of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<StoryChapterSource>,
     pub target_duration_ms: i64,
     pub acts: Vec<StoryAct>,
 }

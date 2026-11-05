@@ -362,7 +362,7 @@ pub struct StoryPreferences {
 impl Default for StoryPreferences {
     fn default() -> Self {
         Self {
-            split_chars: 12_000,
+            split_chars: 500_000,
             read_chars: 8_000,
         }
     }
@@ -927,7 +927,7 @@ mod tests {
         assert_eq!(preferences.speech.voice, "");
         assert!(!preferences.music.watermark);
         assert_eq!(preferences.reasoning_effort, "auto");
-        assert_eq!(preferences.story.split_chars, 12_000);
+        assert_eq!(preferences.story.split_chars, 500_000);
         assert_eq!(preferences.story.read_chars, 8_000);
     }
 

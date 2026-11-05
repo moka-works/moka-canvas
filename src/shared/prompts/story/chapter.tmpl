@@ -1,0 +1,17 @@
+The premise, in the author's own words:
+
+{{ idea }}
+
+The telling is {{ chapters }} chapters long. This is chapter {{ number }}.
+
+{% if previous %}The chapter before it: {{ previous.number }}. {{ previous.title }} — {{ previous.text }}
+{% endif %}{% if next %}The chapter after it: {{ next.number }}. {{ next.title }} — {{ next.text }}
+{% endif %}{% if current %}What the chapter says now: {{ current.title }} — {{ current.text }}
+{% endif %}
+Write this one chapter again, in its place in the telling: a title, and a synopsis of what happens in it — a paragraph, not a treatment. Keep it in the same stretch of the story as its neighbours and let it carry the telling forward. Do not write the other chapters.
+
+Answer with a single fenced json block and nothing else:
+
+```json
+{ "title": "…", "synopsis": "…" }
+```

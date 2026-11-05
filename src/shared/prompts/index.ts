@@ -29,6 +29,9 @@ import storySystem from "./story/system.tmpl?raw";
 import storyFacts from "./story/facts.tmpl?raw";
 import storyOutline from "./story/outline.tmpl?raw";
 import storySplit from "./story/split.tmpl?raw";
+import storySplitSystem from "./story/split-system.tmpl?raw";
+import storySplitRepair from "./story/split-repair.tmpl?raw";
+import storyChapter from "./story/chapter.tmpl?raw";
 import storyElements from "./story/elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
@@ -199,19 +202,50 @@ export function storyOutlinePrompt(
 }
 
 /**
- * One part of a manuscript written into one chapter.
+ * One part of a manuscript, asking only where its chapters begin.
  *
- * The index and the total are carried so the model knows where in the whole it
- * is standing: a part read as the first reads differently from the last.
+ * Nothing is written in the answer: the part is cut by the positions the model
+ * names, so the manuscript's own words are the chapter's words. The index says
+ * which part of the reading this is, so a part that starts before chapter one
+ * can say what to leave out.
  */
 export function storySplitPrompt(input: {
   text: string;
-  index: number;
-  total: number;
-  genre: string;
-  style: string;
+  part: number;
+  chapters: number;
+  minutes: number;
+  total: string;
 }): string {
   return render(storySplit, input);
+}
+
+/** The same part asked again, naming the quotations that were not found. */
+export function storySplitRepairPrompt(input: {
+  text: string;
+  part: number;
+  chapters: number;
+  minutes: number;
+  total: string;
+  missing: string[];
+}): string {
+  return render(storySplitRepair, input);
+}
+
+/** The standing instruction a manuscript's cut is answered under. */
+export function storySplitSystemPrompt(): string {
+  return render(storySplitSystem, {});
+}
+
+/** One chapter of a premise written again, in the place it already stands. */
+export function storyChapterPrompt(input: {
+  idea: string;
+  chapters: number;
+  number: number;
+  previous?: { number: number; title: string; text: string };
+  next?: { number: number; title: string; text: string };
+  current?: { title: string; text: string };
+}): string {
+  return render(storyChapter, input);
 }
 
 /**
@@ -224,7 +258,7 @@ export function storySplitPrompt(input: {
  * answer says which chapter each thing was noticed in by that number.
  */
 export function storyElementsPrompt(input: {
-  chapters: Array<{ number: number; title: string; synopsis: string }>;
+  chapters: Array<{ number: number; title: string; text: string }>;
   genre: string;
   style: string;
   part?: number;
@@ -243,7 +277,7 @@ export function storyElementsPrompt(input: {
 export function storyStoryboardPrompt(
   input: StoryFacts & {
     number: number;
-    chapter: { title: string; synopsis: string };
+    chapter: { title: string; text: string };
     targetDurationMs: number;
     elements: Array<{
       kind: StoryElementKind;

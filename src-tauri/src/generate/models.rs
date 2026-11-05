@@ -41,11 +41,13 @@ const MAX_EFFORT_LEN: usize = 32;
 /// mistake rather than a deployment's shape.
 const MAX_SUB_MODELS: usize = 8;
 
-/// How much of a telling one ask may carry, in characters. The ceiling leaves
-/// room for the instructions that travel with the telling's own words, since
-/// the whole prompt is what the story room's job validation measures.
+/// How much of a telling one ask may carry, in characters. The split window is
+/// the reader's own and may be large enough to hold a whole stretch of a
+/// manuscript; the reading boundary stays small enough that a telling's cast is
+/// not asked about in one answer.
 const MIN_STORY_CHARS: u32 = 1_000;
-const MAX_STORY_CHARS: u32 = 16_000;
+const MAX_STORY_SPLIT_CHARS: u32 = 1_000_000;
+const MAX_STORY_READ_CHARS: u32 = 16_000;
 
 /// What may be disclosed about a model's credential. Never the credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -819,13 +821,21 @@ fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> 
             "speech speed must be between 0.25 and 4".to_string(),
         ));
     }
-    for (name, chars) in [
-        ("splitChars", preferences.story.split_chars),
-        ("readChars", preferences.story.read_chars),
+    for (name, chars, max) in [
+        (
+            "splitChars",
+            preferences.story.split_chars,
+            MAX_STORY_SPLIT_CHARS,
+        ),
+        (
+            "readChars",
+            preferences.story.read_chars,
+            MAX_STORY_READ_CHARS,
+        ),
     ] {
-        if !(MIN_STORY_CHARS..=MAX_STORY_CHARS).contains(&chars) {
+        if !(MIN_STORY_CHARS..=max).contains(&chars) {
             return Err(ProviderError::invalid(format!(
-                "story {name} must be between {MIN_STORY_CHARS} and {MAX_STORY_CHARS} characters"
+                "story {name} must be between {MIN_STORY_CHARS} and {max} characters"
             )));
         }
     }
@@ -1351,12 +1361,21 @@ mod tests {
 
         let overlong_reading = Preferences {
             story: StoryPreferences {
-                read_chars: MAX_STORY_CHARS + 1,
+                read_chars: MAX_STORY_READ_CHARS + 1,
                 ..Default::default()
             },
             ..Default::default()
         };
         assert!(validate_preferences(&overlong_reading).is_err());
+
+        let whole_manuscript_in_one_ask = Preferences {
+            story: StoryPreferences {
+                split_chars: 500_000,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(validate_preferences(&whole_manuscript_in_one_ask).is_ok());
 
         let split_finer_than_a_line = Preferences {
             story: StoryPreferences {
