@@ -15,20 +15,6 @@
 const HEADING =
   /^[ \t]*(第[ \t]*[一二三四五六七八九十百千零两0-9]+[ \t]*[章回节集卷]|Chapter\s+[0-9IVXLCivxlc]+|CHAPTER\s+[0-9IVXLCivxlc]+|[0-9]{1,3}\s*[、.．]\s*\S)/;
 
-/**
- * How many chapters a manuscript writes of its own, or none when it writes too
- * few to be a structure rather than a line that happened to start with a
- * number.
- *
- * Read before the manuscript is cut, so the number the telling is divided into
- * can be the number it already has rather than the one the running time
- * suggests.
- */
-export function sourceHeadings(text: string): number {
-  const found = text.split("\n").filter((line) => HEADING.test(line)).length;
-  return found >= 2 ? found : 0;
-}
-
 /** Whether this line is a chapter heading the manuscript wrote itself. */
 export function isSourceHeading(line: string): boolean {
   return HEADING.test(line);

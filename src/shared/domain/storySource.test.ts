@@ -1,19 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findQuote, sourceHeadings, windowEndAt } from "./storySource";
-
-describe("counting the chapters a manuscript writes", () => {
-  it("says how many headings it has, and none when they are too few to be one", () => {
-    expect(
-      sourceHeadings("第一章 站台\n他等着。\n第二章 车厢\n车厢很暗。"),
-    ).toBe(2);
-    expect(sourceHeadings("第1章\n第二章\nChapter 3\n3、第四段")).toBe(4);
-    expect(sourceHeadings("第 1 章 站台\n第 2 集 车厢")).toBe(2);
-    // One heading is a line that happened to start with a number.
-    expect(sourceHeadings("第一章 站台\n他等着。")).toBe(0);
-    expect(sourceHeadings("他等着，没有章节标题。")).toBe(0);
-  });
-});
+import { findQuote, windowEndAt } from "./storySource";
 
 describe("reading a manuscript in windows", () => {
   it("cuts a window back to the last paragraph break it can take", () => {

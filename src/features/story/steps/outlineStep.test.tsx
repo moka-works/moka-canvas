@@ -526,12 +526,12 @@ describe("splitting a manuscript", () => {
     openAtOutline(withManuscript(3));
 
     fireEvent.click(screen.getByTestId("story-outline-mode-split"));
-    await waitFor(() => {
-      expect(
-        screen.getByTestId("story-outline-chapters-hint").textContent,
-      ).toContain("3");
-    });
-    expect(field("story-outline-chapters").value).toBe("3");
+    // The manuscript's own divisions decide the count, so no number is set
+    // before it is cut.
+    expect(screen.queryByTestId("story-outline-chapters")).toBeNull();
+    expect(screen.getByTestId("story-outline-will-ask").textContent).toBe(
+      "Cuts at the manuscript's own chapters",
+    );
 
     fireEvent.click(screen.getByTestId("story-outline-start"));
     await waitFor(() => {
@@ -638,14 +638,13 @@ describe("splitting again", () => {
   it("says what it costs before it writes over a board, and does nothing if refused", () => {
     openAtOutline(withTheBoardLast());
     manuscript = "第1章 站台\n他在站台上等车。\n第2章 车厢\n车厢里只有两个人。";
-    fireEvent.change(field("story-outline-chapters"), {
-      target: { value: "1" },
-    });
 
     fireEvent.click(screen.getByTestId("story-outline-start"));
     const asked = screen.getByTestId("resplit-story");
+    // A new cut's chapter count is the model's to say, so what the question
+    // counts is the words that are written over, not boards it cannot know.
     expect(asked.textContent).toContain("2 chapters");
-    expect(asked.textContent).toContain("1 acts");
+    expect(asked.textContent).toContain("a chapter keeps its board");
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByTestId("resplit-story")).toBeNull();

@@ -68,8 +68,6 @@ export interface SplitProgress {
 }
 
 export interface SplitOptions {
-  /** How many chapters the telling is meant to have, when it has a number. */
-  chapters: number;
   /** The most text one ask may carry, in characters. */
   budget: number;
   onProgress?: (progress: SplitProgress) => void;
@@ -268,7 +266,6 @@ export async function runManuscriptSplit(
     throw new SplitFailure(i18n.t("story:outline.splitSourceOutside"));
   }
   const budget = Math.max(1_000, Math.floor(options.budget));
-  const wanted = Math.max(1, Math.floor(options.chapters));
   const minutes = Math.max(1, Math.round(story.brief.chapterMs / 60_000));
   const total = formatDuration(story.brief.totalDurationMs);
   const chapters: CutChapter[] = [];
@@ -283,14 +280,6 @@ export async function runManuscriptSplit(
     const end = windowEndAt(text, cursor, budget);
     const window = text.slice(cursor, end);
     const final = end >= text.length;
-    // The count is the telling's, not the window's: a window holding a tenth
-    // of the manuscript is asked for about a tenth of the chapters, so the
-    // whole comes out near the number the reader set rather than the whole
-    // count in every batch.
-    const expected = Math.max(
-      1,
-      Math.round((wanted * (end - cursor)) / Math.max(1, text.length)),
-    );
     let reading: WindowReading | undefined;
     let reason = "";
 
@@ -300,14 +289,12 @@ export async function runManuscriptSplit(
           ? storySplitPrompt({
               text: window,
               part,
-              chapters: expected,
               minutes,
               total,
             })
           : storySplitRepairPrompt({
               text: window,
               part,
-              chapters: expected,
               minutes,
               total,
               missing: [reason],

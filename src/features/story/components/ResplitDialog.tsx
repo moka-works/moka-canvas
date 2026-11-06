@@ -12,10 +12,13 @@ import { useTranslation } from "react-i18next";
  */
 export function ResplitDialog({
   cost,
+  split,
   onCancel,
   onConfirm,
 }: {
   cost: { chapters: number; acts: number };
+  /** Whether the new table comes from the manuscript rather than a count. */
+  split: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -46,10 +49,12 @@ export function ResplitDialog({
       >
         <h2 id="resplit-title">{t("story:outline.resplitTitle")}</h2>
         <p>
-          {t("story:outline.resplitBody", {
-            chapters: cost.chapters,
-            acts: cost.acts,
-          })}
+          {split
+            ? t("story:outline.resplitBodySplit", { chapters: cost.chapters })
+            : t("story:outline.resplitBody", {
+                chapters: cost.chapters,
+                acts: cost.acts,
+              })}
         </p>
         <p className="dialog-note">{t("story:outline.resplitKeeps")}</p>
         <div className="dialog-actions">

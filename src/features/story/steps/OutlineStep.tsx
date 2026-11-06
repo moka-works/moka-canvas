@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { assetsApi } from "../../../api";
@@ -16,7 +16,6 @@ import {
   type StoryDocument,
 } from "../../../shared/domain";
 import type { DocumentCommand } from "../../../shared/domain/types";
-import { sourceHeadings } from "../../../shared/domain/storySource";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
@@ -88,7 +87,6 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const [chapters, setChapters] = useState(() =>
     defaultChapterCount(brief.totalDurationMs, brief.chapterMs),
   );
-  const [headings, setHeadings] = useState(0);
   const [manuscript, setManuscript] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -99,7 +97,13 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const [deleting, setDeleting] = useState<number | null>(null);
 
   const wanted = clampChapters(chapters);
-  const cost = chapterRegenerationCost(story, wanted);
+  // A manuscript is cut at its own divisions, so how many chapters it will make
+  // is the model's answer rather than a number set here; only the chapters the
+  // table already holds can be counted before it is asked.
+  const cost =
+    mode === "expand"
+      ? chapterRegenerationCost(story, wanted)
+      : chapterRegenerationCost(story);
   const spoken = story.chapters.some(chapterWritten);
   const drawn = story.chapters.some((chapter) => chapter.acts.length > 0);
 
@@ -120,35 +124,17 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     }
   };
 
-  // A manuscript that writes its own chapters says how many the telling has:
-  // the count it is cut into is offered as the count it already is.
-  useEffect(() => {
-    if (mode !== "split" || sourceId === undefined || headings > 0) return;
-    let live = true;
-    void readTextAsset(sourceId)
-      .then((text) => {
-        if (!live) return;
-        setManuscript(text);
-        const found = sourceHeadings(text);
-        if (found === 0) return;
-        setHeadings(found);
-        setChapters(Math.min(MAX_CHAPTERS_PER_STORY, found));
-      })
-      .catch((problem: unknown) => {
-        if (live) toast("error", messageOf(problem));
-      });
-    return () => {
-      live = false;
-    };
-  }, [mode, sourceId, headings]);
-
-  const begin = async (count: number) => {
+  const begin = async () => {
     setAsking(false);
     setSplitError(null);
     if (mode === "expand") {
       await useStoryJobStore
         .getState()
-        .start(story.id, "outline", planOutline(story, { chapters: count }));
+        .start(
+          story.id,
+          "outline",
+          planOutline(story, { chapters: clampChapters(chapters) }),
+        );
       return;
     }
     const assetId = sourceId;
@@ -163,7 +149,6 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     setSplitFound(0);
     try {
       const drafts = await runManuscriptSplit(story, text, {
-        chapters: count,
         budget: storySplitChars(),
         onProgress: ({ part, chapters: found }) => {
           setSplitPart(part);
@@ -238,12 +223,11 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   };
 
   const start = () => {
-    const count = clampChapters(chapters);
     if (story.chapters.length > 0 && (spoken || drawn)) {
       setAsking(true);
       return;
     }
-    void begin(count);
+    void begin();
   };
 
   /** One empty chapter after the one at `at`, with the episode length to hand. */
@@ -301,45 +285,49 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         </div>
         <div className="story-step-bar">
           <StoryModelPicks places={["text"]} />
-          <div className="story-outline-count">
-            <span className="story-field-label">
-              {t("story:outline.chapters")}
-            </span>
-            <button
-              aria-label={t("story:outline.fewer")}
-              className="story-step-count"
-              onClick={() => setChapters(clampChapters(wanted - 1))}
-              type="button"
-            >
-              −
-            </button>
-            <input
-              aria-label={t("story:outline.chapters")}
-              className="story-outline-chapters"
-              data-testid="story-outline-chapters"
-              max={MAX_CHAPTERS_PER_STORY}
-              min={1}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) setChapters(clampChapters(value));
-              }}
-              type="number"
-              value={wanted}
-            />
-            <button
-              aria-label={t("story:outline.more")}
-              className="story-step-count"
-              onClick={() => setChapters(clampChapters(wanted + 1))}
-              type="button"
-            >
-              +
-            </button>
-          </div>
+          {mode === "expand" && (
+            <div className="story-outline-count">
+              <span className="story-field-label">
+                {t("story:outline.chapters")}
+              </span>
+              <button
+                aria-label={t("story:outline.fewer")}
+                className="story-step-count"
+                onClick={() => setChapters(clampChapters(wanted - 1))}
+                type="button"
+              >
+                −
+              </button>
+              <input
+                aria-label={t("story:outline.chapters")}
+                className="story-outline-chapters"
+                data-testid="story-outline-chapters"
+                max={MAX_CHAPTERS_PER_STORY}
+                min={1}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value)) setChapters(clampChapters(value));
+                }}
+                type="number"
+                value={wanted}
+              />
+              <button
+                aria-label={t("story:outline.more")}
+                className="story-step-count"
+                onClick={() => setChapters(clampChapters(wanted + 1))}
+                type="button"
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
 
         <p className="story-hint" data-testid="story-outline-chapters-hint">
-          {headings > 0 && sourceId !== undefined
-            ? t("story:outline.detected", { count: headings })
+          {mode === "split"
+            ? t("story:outline.splitHint", {
+                duration: formatDuration(brief.totalDurationMs),
+              })
             : t("story:outline.chaptersHint", {
                 minutes: Math.round(
                   Math.max(1, brief.totalDurationMs / wanted) / 60_000,
@@ -384,7 +372,9 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
 
           <div className="story-step-actions">
             <span className="story-hint" data-testid="story-outline-will-ask">
-              {t("story:outline.willAsk", { count: wanted })}
+              {mode === "split"
+                ? t("story:outline.splitWillAsk")
+                : t("story:outline.willAsk", { count: wanted })}
             </span>
             {splitting && (
               <span
@@ -489,7 +479,8 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         <ResplitDialog
           cost={cost}
           onCancel={() => setAsking(false)}
-          onConfirm={() => void begin(wanted)}
+          onConfirm={() => void begin()}
+          split={mode === "split"}
         />
       )}
 

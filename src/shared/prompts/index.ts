@@ -212,7 +212,6 @@ export function storyOutlinePrompt(
 export function storySplitPrompt(input: {
   text: string;
   part: number;
-  chapters: number;
   minutes: number;
   total: string;
 }): string {
@@ -223,7 +222,6 @@ export function storySplitPrompt(input: {
 export function storySplitRepairPrompt(input: {
   text: string;
   part: number;
-  chapters: number;
   minutes: number;
   total: string;
   missing: string[];

@@ -83,9 +83,11 @@ test("a manuscript is cut at its own headings, and its words move into the chapt
     await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
     await page.getByTestId("story-outline-mode-split").click();
 
-    // The manuscript writes its own chapters, and the step counts them.
-    await expect(page.getByTestId("story-outline-chapters-hint")).toContainText(
-      "2",
+    // The manuscript's own divisions decide the count, so the step asks for a
+    // cut rather than a number of chapters.
+    await expect(page.getByTestId("story-outline-chapters")).toHaveCount(0);
+    await expect(page.getByTestId("story-outline-will-ask")).toHaveText(
+      "Cuts at the manuscript's own chapters",
     );
     await page.getByTestId("story-outline-start").click();
 

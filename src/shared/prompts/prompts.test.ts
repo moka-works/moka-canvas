@@ -159,14 +159,15 @@ describe("story prompts", () => {
     const prompt = storySplitPrompt({
       text: "他在站台上等一班已经停运的列车。",
       part: 2,
-      chapters: 5,
       minutes: 3,
       total: "15:00",
     });
     expect(prompt).toContain("part 2 of a manuscript");
     expect(prompt).toContain("他在站台上等一班已经停运的列车。");
     expect(prompt).toContain("about 3 minutes");
-    expect(prompt).toContain("about 5 chapters");
+    // The manuscript's own divisions decide the count; no number is asked for.
+    expect(prompt).toContain("the manuscript's to say");
+    expect(prompt).not.toContain("about 5 chapters");
     expect(prompt).toContain('"start"');
     expect(prompt).toContain("Change nothing");
     expect(prompt).not.toContain("Write this part");
@@ -177,7 +178,6 @@ describe("story prompts", () => {
     const prompt = storySplitRepairPrompt({
       text: "他在站台上等一班已经停运的列车。",
       part: 2,
-      chapters: 5,
       minutes: 3,
       total: "15:00",
       missing: ["第四章 天亮"],
@@ -509,14 +509,12 @@ describe("story prompts", () => {
       storySplitPrompt({
         text: "…",
         part: 1,
-        chapters: 1,
         minutes: 1,
         total: "1:00",
       }),
       storySplitRepairPrompt({
         text: "…",
         part: 1,
-        chapters: 1,
         minutes: 1,
         total: "1:00",
         missing: ["…"],
