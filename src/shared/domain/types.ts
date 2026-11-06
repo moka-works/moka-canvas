@@ -911,20 +911,6 @@ export interface StoryAct {
   music?: StorySlot;
 }
 
-/**
- * Where a chapter's words sit in the manuscript it was cut from.
- *
- * A manuscript lives on the shelf rather than in the document, so a chapter
- * that is the manuscript's own text keeps a window into that file instead of
- * a copy of it. The offsets are in the manuscript's own string units as the
- * app reads them, from its first character.
- */
-export interface StoryChapterSource {
-  assetId: AssetId;
-  start: number;
-  end: number;
-}
-
 /** A chapter — one episode of the telling. */
 export interface StoryChapter {
   id: string;
@@ -934,12 +920,6 @@ export interface StoryChapter {
    * synopsis a chapter written from the premise was given.
    */
   synopsis: string;
-  /**
-   * Where the chapter was cut from, for documents written before chapters kept
-   * their own text. A cut made now stores the prose in `synopsis` and leaves
-   * this off, since the manuscript is released once it has been cut.
-   */
-  source?: StoryChapterSource;
   /** What this episode is meant to run for; the brief's total shares out evenly. */
   targetDurationMs: number;
   /** The board for this episode, made in step four. */

@@ -495,15 +495,6 @@ function encodeStoryChapter(chapter: StoryChapter): Record<string, unknown> {
     id: chapter.id,
     title: chapter.title,
     synopsis: chapter.synopsis,
-    ...(chapter.source === undefined
-      ? {}
-      : {
-          source: {
-            assetId: chapter.source.assetId,
-            start: chapter.source.start,
-            end: chapter.source.end,
-          },
-        }),
     targetDurationMs: asLong(chapter.targetDurationMs),
     acts: chapter.acts.map(encodeStoryAct),
   };
@@ -1552,17 +1543,6 @@ function decodeStoryChapter(value: unknown): StoryChapter {
     ),
     acts: asArray(doc.acts ?? [], "chapters[].acts").map(decodeStoryAct),
   };
-  if (doc.source !== undefined) {
-    const source = asRecord(doc.source, "chapters[].source");
-    chapter.source = {
-      assetId: asString(source.assetId, "chapters[].source.assetId"),
-      start: requireField(
-        unwrapNumber(source.start),
-        "chapters[].source.start",
-      ),
-      end: requireField(unwrapNumber(source.end), "chapters[].source.end"),
-    };
-  }
   return chapter;
 }
 

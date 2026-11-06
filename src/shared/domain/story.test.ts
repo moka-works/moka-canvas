@@ -2176,6 +2176,14 @@ describe("chapterReadingWaves", () => {
     for (const piece of first.slice(0, -1)) {
       expect(piece.text.endsWith("\n\n")).toBe(true);
     }
+    // The boundary is taken backwards, so no ask runs past its ceiling.
+    for (const wave of waves) {
+      const weight = wave.reduce(
+        (sum, piece) => sum + piece.text.length + piece.title.length,
+        0,
+      );
+      expect(weight).toBeLessThanOrEqual(100);
+    }
   });
 
   it("keeps a chapter with no words in the reading", () => {

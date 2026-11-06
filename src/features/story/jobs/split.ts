@@ -79,8 +79,6 @@ export interface SplitOptions {
 interface CutChapter {
   title: string;
   body: string;
-  start: number;
-  end: number;
 }
 
 /** One boundary the answer named, as it was found in the window. */
@@ -210,8 +208,6 @@ function cutWindow(
     // beginning rather than this one keeping half of it.
     if (next === undefined && !final) continue;
     let body = window.slice(start, end);
-    let from = start;
-    let to = end;
     const lineEnd = body.indexOf("\n");
     const firstLine = (lineEnd === -1 ? body : body.slice(0, lineEnd)).trim();
     const title = titleFor(window, boundary, chapters.length + 1);
@@ -220,20 +216,10 @@ function cutWindow(
     // title, not a heading, and cutting it away would lose the chapter's words.
     if (firstLine === title.trim() && isSourceHeading(firstLine)) {
       body = lineEnd === -1 ? "" : body.slice(lineEnd + 1);
-      from = start + (lineEnd === -1 ? body.length : lineEnd + 1);
     }
-    const leading = body.length - body.trimStart().length;
-    const trailing = body.length - body.trimEnd().length;
-    from += leading;
-    to -= trailing;
     body = body.trim();
     if (body === "") continue;
-    chapters.push({
-      title,
-      body,
-      start: windowStart + from,
-      end: windowStart + to,
-    });
+    chapters.push({ title, body });
   }
   const last = boundaries[boundaries.length - 1];
   return {
@@ -399,7 +385,6 @@ export async function runManuscriptSplit(
         // away for outgrowing the telling.
         const last = chapters[chapters.length - 1];
         if (last !== undefined) {
-          last.end = chapter.end;
           last.body = `${last.body}\n\n${chapter.body}`;
         }
         continue;

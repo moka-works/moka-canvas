@@ -289,7 +289,7 @@ function withManuscript(chapterCount: number): MokaFile {
     sourceName: "novel.txt",
   };
   // The manuscript is the project's own copy, as an upload always files one:
-  // a chapter's offsets point into a file the project controls.
+  // the cut is read from a file the project controls.
   moka.resources.texts = [
     ...(moka.resources.texts ?? []),
     {
@@ -555,7 +555,6 @@ describe("splitting a manuscript", () => {
     // The chapter keeps the manuscript's own words, and the heading it is
     // titled with is not repeated in its text. The file itself is released:
     // the brief no longer points at it and the shelf entry is gone.
-    expect(chapters()[0]?.source).toBeUndefined();
     expect(chapterText(chapters()[0]!)).toBe(
       "他在站台上等一班已经停运的列车，风把雨吹成斜的。",
     );
@@ -668,7 +667,6 @@ describe("splitting again", () => {
       expect(chapters()).toHaveLength(2);
     });
     expect(chapters()[0]?.acts).toHaveLength(1);
-    expect(chapters()[0]?.source).toBeUndefined();
     expect(chapterText(chapters()[0]!)).toContain(
       "他在站台上等一班已经停运的列车。",
     );
@@ -690,7 +688,6 @@ describe("editing the chapter table", () => {
 
     fireEvent.blur(content);
     expect(chapters()[0]?.synopsis).toBe("他在站台上等到天亮，车始终没有来。");
-    expect(chapters()[0]?.source).toBeUndefined();
   });
 
   it("inserts a chapter between two, with the episode length it stood beside", () => {

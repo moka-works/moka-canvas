@@ -113,7 +113,7 @@ test("a manuscript is cut at its own headings, and its words move into the chapt
         const body = JSON.parse(await projectText(page)) as {
           moka?: {
             stories?: Array<{
-              chapters?: Array<{ synopsis?: string; source?: unknown }>;
+              chapters?: Array<{ synopsis?: string }>;
               brief?: { sourceSplit?: boolean; sourceAssetId?: string };
             }>;
             resources?: { texts?: Array<{ path: string }> };
@@ -123,9 +123,6 @@ test("a manuscript is cut at its own headings, and its words move into the chapt
         return {
           chapters: story?.chapters?.length ?? 0,
           bodies: (story?.chapters ?? []).map((chapter) => chapter.synopsis),
-          windows: (story?.chapters ?? []).some(
-            (chapter) => chapter.source !== undefined,
-          ),
           split: story?.brief?.sourceSplit ?? false,
           source: story?.brief?.sourceAssetId ?? null,
           filed: (body.moka?.resources?.texts ?? []).some(
@@ -139,7 +136,6 @@ test("a manuscript is cut at its own headings, and its words move into the chapt
           "末班列车停在一个不该停的站台，车门开了，没有人上车。",
           "车厢比站台更暗，两个人隔着一条过道坐着。",
         ],
-        windows: false,
         split: true,
         source: null,
         filed: false,

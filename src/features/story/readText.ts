@@ -1,18 +1,14 @@
 import { assetUrl } from "../../api";
-import type { AssetId, StoryChapter, StoryDocument } from "../../shared/domain";
+import type { AssetId, StoryChapter } from "../../shared/domain";
 
 /**
  * The words of a text asset, read whole.
  *
- * A manuscript lives on the shelf as a file and never in the document: what a
- * story holds is where the words are, not the words themselves, so that a novel
- * uploaded once does not swell every save. Reading it back is this one call,
- * made when the story is about to be written from it.
- *
- * The words are kept for the session once read: a split manuscript is cut in
- * batches and the steps after it are planned from the same text, and fetching
- * a few hundred kilobytes again for every batch would be a second copy made
- * over and over. The cache is cleared when the project is put down.
+ * A manuscript is filed on the shelf while it is being cut, read here once,
+ * and released when the chapters hold its words. Reading it back is this one
+ * call; the text is kept for the session because a long manuscript is cut in
+ * batches from the same copy. The cache is cleared when the project is put
+ * down.
  */
 const held = new Map<AssetId, string>();
 
@@ -40,32 +36,7 @@ export async function readTextAsset(assetId: AssetId): Promise<string> {
   return text;
 }
 
-/**
- * The words behind a chapter: the text it was cut with, or the synopsis it was
- * written with.
- *
- * A document written before chapters kept their own prose holds a window into
- * a manuscript instead; a window whose manuscript has not been read this
- * session reads as nothing. The room reads such a manuscript when it opens,
- * and every step that plans an ask from it waits for that read.
- */
+/** The words behind a chapter: the text it was cut with, or its synopsis. */
 export function chapterText(chapter: StoryChapter): string {
-  const source = chapter.source;
-  if (source === undefined) return chapter.synopsis;
-  const text = held.get(source.assetId);
-  return text === undefined ? "" : text.slice(source.start, source.end);
-}
-
-/**
- * Reads the manuscript a story's chapters still point into, when they do.
- *
- * A story written from a premise has no manuscript to read, and a chapter cut
- * now keeps its own text rather than a window, so this is for documents that
- * were split before the text was stored with the chapters.
- */
-export async function ensureStoryText(story: StoryDocument): Promise<void> {
-  const assetId = story.brief.sourceAssetId;
-  if (assetId === undefined) return;
-  if (!story.chapters.some((chapter) => chapter.source !== undefined)) return;
-  await readTextAsset(assetId);
+  return chapter.synopsis;
 }

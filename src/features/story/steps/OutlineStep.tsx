@@ -26,7 +26,7 @@ import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { planOutline, storySplitChars } from "../jobs/plan";
 import { SplitCancelled, runManuscriptSplit } from "../jobs/split";
-import { chapterText, readTextAsset } from "../readText";
+import { readTextAsset } from "../readText";
 import {
   jobProgress,
   kindJob,
@@ -102,9 +102,6 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const cost = chapterRegenerationCost(story, wanted);
   const spoken = story.chapters.some(chapterWritten);
   const drawn = story.chapters.some((chapter) => chapter.acts.length > 0);
-  const hasWindows = story.chapters.some(
-    (chapter) => chapter.source !== undefined,
-  );
 
   /** The manuscript, read once for this telling and kept for the session. */
   const needText = async (): Promise<string | null> => {
@@ -124,18 +121,14 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   };
 
   // A manuscript that writes its own chapters says how many the telling has:
-  // the count it is cut into is offered as the count it already is. A document
-  // from before chapters kept their text also needs its manuscript read, since
-  // those chapters still point into it.
+  // the count it is cut into is offered as the count it already is.
   useEffect(() => {
-    if (sourceId === undefined) return;
-    if (mode !== "split" && !hasWindows) return;
+    if (mode !== "split" || sourceId === undefined || headings > 0) return;
     let live = true;
     void readTextAsset(sourceId)
       .then((text) => {
         if (!live) return;
         setManuscript(text);
-        if (mode !== "split" || headings > 0) return;
         const found = sourceHeadings(text);
         if (found === 0) return;
         setHeadings(found);
@@ -147,7 +140,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     return () => {
       live = false;
     };
-  }, [mode, sourceId, headings, hasWindows]);
+  }, [mode, sourceId, headings]);
 
   const begin = async (count: number) => {
     setAsking(false);
@@ -555,13 +548,10 @@ function ChapterCard({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  const write = (patch: Partial<StoryChapter>, dropSource = false) => {
-    const chapters = story.chapters.map((held, at) => {
-      if (at !== index) return held;
-      const next = { ...held, ...patch };
-      if (dropSource) delete next.source;
-      return next;
-    });
+  const write = (patch: Partial<StoryChapter>) => {
+    const chapters = story.chapters.map((held, at) =>
+      at === index ? { ...held, ...patch } : held,
+    );
     execute(t("story:history.chapters"), [
       { type: "setStoryChapters", storyId: story.id, chapters },
     ]);
@@ -570,19 +560,11 @@ function ChapterCard({
     const trimmed = value.trim();
     if (trimmed !== "") write({ title: trimmed });
   });
-  const cut = chapter.source !== undefined;
-  // A chapter of a manuscript, whether cut now (its words are the synopsis) or
-  // in a document written before chapters kept their text.
-  const manuscriptChapter = cut || story.brief.sourceSplit === true;
-  const held = cut ? chapterText(chapter) : chapter.synopsis;
-  const content = useField(held, (value) => {
-    if (value === held) return;
-    // A window that has not been read back yet is not blank text the reader
-    // asked to erase.
-    if (cut && held === "") return;
-    write({ synopsis: value }, cut);
-  });
-  const synopsis = useField(chapter.synopsis, (value) => {
+  // A chapter of a manuscript is its cut text; a chapter written from the
+  // premise is its synopsis. Both are the same field and both are editable.
+  const manuscriptChapter = story.brief.sourceSplit === true;
+  const content = useField(chapter.synopsis, (value) => {
+    if (value === chapter.synopsis) return;
     write({ synopsis: value });
   });
   const minutes = Math.round((chapter.targetDurationMs / 60_000) * 10) / 10;
@@ -628,7 +610,6 @@ function ChapterCard({
           data-testid={`story-chapter-source-${index}`}
           onBlur={content.commit}
           onChange={(event) => content.set(event.target.value)}
-          readOnly={cut && held === ""}
           rows={6}
           value={content.value}
         />
@@ -638,10 +619,10 @@ function ChapterCard({
           className="story-chapter-synopsis"
           data-testid={`story-chapter-synopsis-${index}`}
           maxLength={2000}
-          onBlur={synopsis.commit}
-          onChange={(event) => synopsis.set(event.target.value)}
+          onBlur={content.commit}
+          onChange={(event) => content.set(event.target.value)}
           rows={3}
-          value={synopsis.value}
+          value={content.value}
         />
       )}
       <div className="story-chapter-foot">
@@ -654,7 +635,7 @@ function ChapterCard({
                 count: Array.from(content.value).length,
               })
             : t("story:outline.synopsisHint", {
-                used: synopsis.value.length,
+                used: content.value.length,
                 low: SYNOPSIS_COMFORT[0],
                 high: SYNOPSIS_COMFORT[1],
               })}

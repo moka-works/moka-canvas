@@ -25,7 +25,6 @@ import type {
   StoryCameraAngle,
   StoryCameraMove,
   StoryChapter,
-  StoryChapterSource,
   StoryDialogueLine,
   StoryDocument,
   StoryElement,
@@ -142,9 +141,9 @@ function chapterClipMade(act: StoryAct): boolean {
   );
 }
 
-/** Whether a chapter has words behind it: text of its own, or an older window. */
+/** Whether a chapter has words behind it. */
 export function chapterHasWords(chapter: StoryChapter): boolean {
-  return chapter.source !== undefined || chapter.synopsis.trim() !== "";
+  return chapter.synopsis.trim() !== "";
 }
 
 /** Whether an episode has the words step two settles: a title and its text. */
@@ -368,8 +367,6 @@ export function stepComplete(story: StoryDocument, step: StoryStep): boolean {
 export interface StoryChapterDraft {
   title: string;
   synopsis: string;
-  /** A manuscript window, for a document written before chapters kept text. */
-  source?: StoryChapterSource;
   targetDurationMs?: number;
 }
 
@@ -497,20 +494,15 @@ export function mergeChaptersAt(
     const place = Math.min(at, table.length);
     const held = table[place];
     if (held === undefined) {
-      table[place] = createChapter(draft.title, draft.synopsis, draft.source);
+      table[place] = createChapter(draft.title, draft.synopsis);
       continue;
     }
-    const next: StoryChapter = {
+    table[place] = {
       ...held,
       title: draft.title,
       synopsis: draft.synopsis,
       targetDurationMs: draft.targetDurationMs ?? held.targetDurationMs,
     };
-    // A chapter asked for again from the premise is no longer the manuscript's
-    // own text, and a re-cut chapter is.
-    if (draft.source === undefined) delete next.source;
-    else next.source = draft.source;
-    table[place] = next;
   }
   if (!whole) return table;
   const length = writes.reduce(
@@ -1329,20 +1321,28 @@ export interface StoryReadingPiece {
 }
 
 /**
- * Where a paragraph that began before `from` ends, or the text's own end.
+ * The last paragraph boundary at or before `limit`.
  *
- * A reading batch is cut upward to a paragraph boundary rather than in the
- * middle of a sentence: the model is shown whole paragraphs, and the batch may
- * run a little past the configured ceiling to finish the one it is in. A text
- * written without paragraph breaks at all is carried whole.
+ * A reading batch ends on a whole paragraph rather than inside one, and it
+ * never runs past the configured ceiling: the boundary is taken backwards, so
+ * the batch may be shorter than the ceiling but not longer. A text with no
+ * paragraph break before the ceiling is cut at its last line break, and a text
+ * with neither is cut at the ceiling.
  */
-function paragraphEndAt(text: string, from: number): number {
-  if (from >= text.length) return text.length;
-  const paragraph = text.indexOf("\n\n", from);
-  if (paragraph >= 0) return paragraph + 2;
-  const line = text.indexOf("\n", from);
+function paragraphCutAt(text: string, limit: number): number {
+  const wanted = Math.min(text.length, Math.max(1, Math.floor(limit)));
+  if (wanted >= text.length) return text.length;
+  if (wanted >= 2) {
+    const paragraph = text.lastIndexOf("\n\n", wanted - 2);
+    if (paragraph >= 0) return paragraph + 2;
+  }
+  const line = text.lastIndexOf("\n", wanted - 1);
   if (line >= 0) return line + 1;
-  return text.length;
+  // A hard cut must not land between the halves of a character written with
+  // two.
+  const before = text.charCodeAt(wanted - 1);
+  if (wanted > 1 && before >= 0xd800 && before <= 0xdbff) return wanted - 1;
+  return wanted;
 }
 
 /**
@@ -1350,9 +1350,9 @@ function paragraphEndAt(text: string, from: number): number {
  *
  * A reading ask carries words, so the packer weighs the words rather than the
  * chapter count: neighbouring chapters share an ask until it is full, and a
- * chapter longer than one ask is cut at a paragraph boundary and carried into
- * the next one. Every piece keeps its chapter's number and title, so what the
- * answer says it noticed still lands on the chapter it was noticed in —
+ * chapter longer than one ask is cut back to a paragraph boundary and carried
+ * into the next one. Every piece keeps its chapter's number and title, so what
+ * the answer says it noticed still lands on the chapter it was noticed in —
  * including a chapter whose text arrived in two pieces.
  *
  * A piece costs its text and its title, since the title is written into the
@@ -1419,7 +1419,7 @@ export function chapterReadingWaves(
         if (used >= limit) flush();
         break;
       }
-      const take = Math.min(rest.length, paragraphEndAt(rest, room));
+      const take = Math.min(rest.length, paragraphCutAt(rest, room));
       wave.push(piece(rest.slice(0, take)));
       used += take + titleCost;
       rest = rest.slice(take);

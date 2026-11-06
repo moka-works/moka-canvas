@@ -158,7 +158,7 @@
     "storyDefaults": "Story defaults",
     "story": "Story",
     "splitChars": "Batch size",
-    "splitCharsTip": "The most text one split or element-reading ask carries, in characters; longer text is sent in batches aligned to whole paragraphs, and the results are merged without repeats",
+    "splitCharsTip": "The most text one split or element-reading ask carries, in characters; longer text is sent in batches cut back to whole paragraphs, never past the ceiling",
     "save": "Save preferences"
   },
   "pictureTools": {
