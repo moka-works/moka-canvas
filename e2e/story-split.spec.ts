@@ -20,14 +20,14 @@ async function projectText(page: Page): Promise<string> {
 }
 
 /**
- * A manuscript cut into chapters without changing a word of it.
+ * A manuscript cut into chapters, with each chapter's text kept in the story.
  *
  * The room is asked only where the chapters begin; the text between those
- * places is the manuscript's own, and the document keeps a window into the
- * file rather than a second copy of the prose.
+ * places becomes each chapter's own words, the uploaded file is released, and
+ * the table is the reader's to edit, insert into, and prune.
  */
 
-test("a manuscript is cut at its own headings, and the words stay on the shelf", async ({
+test("a manuscript is cut at its own headings, and its words move into the chapters", async ({
   page,
 }) => {
   const home = projectHome("story-split");
@@ -58,9 +58,8 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
       timeout: 15_000,
     });
 
-    // The words are copied into the project before any offsets are taken:
-    // the manuscript the chapters point into is the project's own file, not
-    // the one the reader picked, which an editor could change underneath it.
+    // The upload is filed inside the project first: that copy is what the cut
+    // is read from, and it is released once the chapters hold its words.
     const filedSource = async (): Promise<string> => {
       const filed = JSON.parse(await projectText(page)) as {
         moka?: {
@@ -76,7 +75,8 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
       );
     };
     await expect.poll(filedSource).toMatch(/^assets\/texts\//);
-    expect(existsSync(join(home, "project", await filedSource()))).toBe(true);
+    const sourcePath = await filedSource();
+    expect(existsSync(join(home, "project", sourcePath))).toBe(true);
 
     await page.getByTestId("story-confirm-idea").click();
 
@@ -105,31 +105,92 @@ test("a manuscript is cut at its own headings, and the words stay on the shelf",
       "车厢比站台更暗，两个人隔着一条过道坐着。",
     );
 
-    // The document keeps where the words are, not the words: a novel cut into
-    // chapters does not double the project's save. The room saves in the
+    // The chapters keep the words themselves rather than offsets into the
+    // manuscript, and the brief lets the file go. The room saves in the
     // background, so the check waits for the story to have been written.
     await expect
       .poll(async () => {
         const body = JSON.parse(await projectText(page)) as {
           moka?: {
             stories?: Array<{
-              chapters?: Array<{ source?: unknown }>;
-              brief?: { sourceSplit?: boolean };
+              chapters?: Array<{ synopsis?: string; source?: unknown }>;
+              brief?: { sourceSplit?: boolean; sourceAssetId?: string };
             }>;
+            resources?: { texts?: Array<{ path: string }> };
           };
         };
         const story = (body.moka?.stories ?? [])[0];
-        return [
-          story?.chapters?.length ?? 0,
-          story?.chapters?.every((chapter) => chapter.source !== undefined) ??
-            false,
-          story?.brief?.sourceSplit ?? false,
-        ];
+        return {
+          chapters: story?.chapters?.length ?? 0,
+          bodies: (story?.chapters ?? []).map((chapter) => chapter.synopsis),
+          windows: (story?.chapters ?? []).some(
+            (chapter) => chapter.source !== undefined,
+          ),
+          split: story?.brief?.sourceSplit ?? false,
+          source: story?.brief?.sourceAssetId ?? null,
+          filed: (body.moka?.resources?.texts ?? []).some(
+            (entry) => entry.path === sourcePath,
+          ),
+        };
       })
-      .toEqual([2, true, true]);
+      .toEqual({
+        chapters: 2,
+        bodies: [
+          "末班列车停在一个不该停的站台，车门开了，没有人上车。",
+          "车厢比站台更暗，两个人隔着一条过道坐着。",
+        ],
+        windows: false,
+        split: true,
+        source: null,
+        filed: false,
+      });
+    expect(existsSync(join(home, "project", sourcePath))).toBe(false);
+    expect(await projectText(page)).toContain("末班列车停在一个不该停的站台");
 
-    const written = await projectText(page);
-    expect(written).not.toContain("末班列车停在一个不该停的站台");
+    // A cut chapter is the reader's to rewrite: the edit lands on the chapter
+    // itself rather than back in a manuscript window.
+    await page.getByTestId("story-chapter-source-0").fill("改过的第一章。");
+    await page.getByTestId("story-chapter-title-0").click();
+    await expect
+      .poll(async () => {
+        const body = JSON.parse(await projectText(page)) as {
+          moka?: {
+            stories?: Array<{ chapters?: Array<{ synopsis?: string }> }>;
+          };
+        };
+        return (body.moka?.stories ?? [])[0]?.chapters?.[0]?.synopsis ?? "";
+      })
+      .toBe("改过的第一章。");
+
+    // A chapter can be put between two others and filled in like any other.
+    await page.getByTestId("story-chapter-insert-0").click();
+    await expect(page.getByTestId("story-chapter-2")).toBeVisible();
+    await page.getByTestId("story-chapter-title-1").fill("插入章");
+    await page.getByTestId("story-chapter-source-1").fill("插入的正文。");
+    await page.getByTestId("story-chapter-title-0").click();
+
+    // And one can be taken out after the question says what goes with it.
+    await page.getByTestId("story-chapter-delete-2").click();
+    await expect(page.getByTestId("delete-chapter")).toBeVisible();
+    await page.getByTestId("delete-chapter-confirm").click();
+    await expect(page.getByTestId("story-chapter-2")).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const body = JSON.parse(await projectText(page)) as {
+          moka?: {
+            stories?: Array<{
+              chapters?: Array<{ title?: string; synopsis?: string }>;
+            }>;
+          };
+        };
+        return ((body.moka?.stories ?? [])[0]?.chapters ?? []).map(
+          (chapter) => [chapter.title, chapter.synopsis],
+        );
+      })
+      .toEqual([
+        ["第一章 站台", "改过的第一章。"],
+        ["插入章", "插入的正文。"],
+      ]);
   } finally {
     forgetHome(home);
   }

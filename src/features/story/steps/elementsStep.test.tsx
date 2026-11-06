@@ -561,11 +561,11 @@ describe("a telling read in parts", () => {
   /**
    * A deployment whose story room is set to carry little at a time.
    *
-   * How much of a telling one reading may hold is the reader's, since it is the
-   * model answering that decides it: what a test sets here is what the room
-   * reads when it plans the parts.
+   * The batch ceiling is the reader's, since it is the model answering that
+   * decides it: what a test sets here is what the room reads when it plans the
+   * parts.
    */
-  function readingInParts(readChars: number): void {
+  function readingInParts(batchChars: number): void {
     useModelStore.setState({
       view: {
         version: 1,
@@ -602,7 +602,7 @@ describe("a telling read in parts", () => {
             pitch: 1,
           },
           music: { format: "mp3", watermark: false },
-          story: { splitChars: 12_000, readChars },
+          story: { splitChars: batchChars },
         },
         secretStorage: "unset",
       },
@@ -730,7 +730,7 @@ describe("the model a reading is asked of", () => {
             pitch: 1,
           },
           music: { format: "mp3", watermark: false },
-          story: { splitChars: 12_000, readChars: 8_000 },
+          story: { splitChars: 12_000 },
         },
         secretStorage: "unset",
       },
@@ -1278,7 +1278,7 @@ describe("the voice of a character", () => {
             pitch: 1,
           },
           music: { format: "mp3", watermark: false },
-          story: { splitChars: 12_000, readChars: 8_000 },
+          story: { splitChars: 12_000 },
         },
         secretStorage: "unset",
       },

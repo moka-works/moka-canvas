@@ -29,8 +29,8 @@ import {
 import {
   actPlannedMs,
   actsRegenerationCost,
+  chapterReadingWaves,
   chapterRegenerationCost,
-  chapterWaves,
   chunkWaves,
   currentTake,
   elementComplete,
@@ -2133,26 +2133,57 @@ describe("chunkWaves", () => {
   });
 });
 
-describe("chapterWaves", () => {
-  it("packs the chapters into the asks one reading is made of", () => {
-    // How many chapters a reading may hold says nothing about how long they
-    // are: a chapter weighs its title and its synopsis together.
+describe("chapterReadingWaves", () => {
+  it("packs neighbouring chapters into one reading ask", () => {
     const chapters = [
       createChapter("一", "字".repeat(60)),
       createChapter("二", "字".repeat(60)),
       createChapter("三", "字".repeat(60)),
     ];
-    expect(chapterWaves(chapters, 130).map((wave) => wave.length)).toEqual([
-      2, 1,
-    ]);
-    expect(chapterWaves(chapters, 1_000)).toHaveLength(1);
-    expect(chapterWaves([], 1_000)).toEqual([]);
+    const waves = chapterReadingWaves(
+      chapters,
+      130,
+      (chapter) => chapter.synopsis,
+    );
+    // A piece costs its title and its text: two chapters fill the ask.
+    expect(waves.map((wave) => wave.length)).toEqual([2, 1]);
+    expect(waves[0]?.map((piece) => piece.number)).toEqual([1, 2]);
+    expect(waves[1]?.[0]?.number).toBe(3);
+    expect(
+      chapterReadingWaves(chapters, 1_000, (c) => c.synopsis),
+    ).toHaveLength(1);
+    expect(chapterReadingWaves([], 1_000, (c) => c.synopsis)).toEqual([]);
   });
 
-  it("gives a chapter heavier than an ask an ask of its own", () => {
-    const long = createChapter("一", "字".repeat(500));
+  it("carries a chapter longer than an ask across asks without losing words", () => {
+    const text = Array.from(
+      { length: 12 },
+      (_, index) => `第 ${index + 1} 段，${"雨落在站台上。".repeat(10)}`,
+    ).join("\n\n");
+    const long = createChapter("一", text);
     const short = createChapter("二", "短。");
-    expect(chapterWaves([long, short], 100)).toEqual([[long], [short]]);
+    const waves = chapterReadingWaves([long, short], 100, (c) => c.synopsis);
+    expect(waves.length).toBeGreaterThan(1);
+    const pieces = waves.flat();
+    // Every piece keeps the chapter it came from, so an answer's chapter
+    // numbers still land on the right chapter.
+    const first = pieces.filter((piece) => piece.number === 1);
+    expect(first).toHaveLength(waves.length - 1);
+    expect(first.map((piece) => piece.text).join("")).toBe(text);
+    expect(pieces[pieces.length - 1]?.number).toBe(2);
+    // A batch cut inside a chapter ends at a paragraph boundary rather than in
+    // the middle of one; the last piece may end wherever the chapter does.
+    for (const piece of first.slice(0, -1)) {
+      expect(piece.text.endsWith("\n\n")).toBe(true);
+    }
+  });
+
+  it("keeps a chapter with no words in the reading", () => {
+    const empty = createChapter("空章");
+    const waves = chapterReadingWaves([empty], 1_000, (c) => c.synopsis);
+    expect(waves).toEqual([
+      [{ chapterId: empty.id, number: 1, title: "空章", text: "" }],
+    ]);
   });
 });
 

@@ -77,7 +77,7 @@ function settingsWithVideoSeconds(seconds: number): ModelsView {
         pitch: 1,
       },
       music: { format: "mp3", watermark: false },
-      story: { splitChars: 12_000, readChars: 8_000 },
+      story: { splitChars: 12_000 },
     },
     secretStorage: "unset",
   };
@@ -330,7 +330,14 @@ describe("planning the words", () => {
 
   it("reads a long telling a part at a time, and says which part it is", () => {
     const items = planElements(story(), {
-      chapterIds: [ids.chapterSecond],
+      pieces: [
+        {
+          chapterId: ids.chapterSecond,
+          number: 2,
+          title: "第二章 车厢",
+          text: "车厢比站台更暗。",
+        },
+      ],
       part: 2,
       total: 3,
     });

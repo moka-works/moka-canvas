@@ -346,24 +346,22 @@ impl Default for MusicPreferences {
     }
 }
 
-/// What the story room reads a telling in, in characters.
+/// What the story room sends to a model in one ask, in characters.
 ///
 /// A long telling reaches a model a window at a time, and how much one window
 /// may carry is a property of the deployment the room is talking to rather
 /// than of any one telling: a manuscript is cut in windows this wide, and the
-/// chapters are read for their cast a part at a time.
+/// chapters are concatenated into reading batches no wider than this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct StoryPreferences {
     pub split_chars: u32,
-    pub read_chars: u32,
 }
 
 impl Default for StoryPreferences {
     fn default() -> Self {
         Self {
             split_chars: 500_000,
-            read_chars: 8_000,
         }
     }
 }
@@ -928,7 +926,6 @@ mod tests {
         assert!(!preferences.music.watermark);
         assert_eq!(preferences.reasoning_effort, "auto");
         assert_eq!(preferences.story.split_chars, 500_000);
-        assert_eq!(preferences.story.read_chars, 8_000);
     }
 
     #[test]

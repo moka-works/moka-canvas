@@ -260,14 +260,16 @@ test("the settings dialog keeps one box across its tabs", async ({ page }) => {
 });
 
 /**
- * The story room's own boundaries are stored with the rest of the preferences.
+ * The story room's own batch boundary is stored with the rest of the
+ * preferences.
  *
  * How much of a telling one ask may carry is the reader's to set, since it is
  * the model answering that decides it, and it has to outlive the page: the room
- * reads it whenever it plans a batch. The values are put back afterwards, since
- * the suite shares one metadata store.
+ * reads it whenever it plans a batch, whether it is cutting a manuscript or
+ * reading its chapters. The value is put back afterwards, since the suite
+ * shares one metadata store.
  */
-test("the story room's boundaries are kept", async ({ page }) => {
+test("the story room's batch boundary is kept", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
@@ -276,19 +278,16 @@ test("the story room's boundaries are kept", async ({ page }) => {
   };
 
   await openPreferences();
-  await dialog.getByLabel("Manuscript part length").fill("9000");
-  await dialog.getByLabel("Characters per reading").fill("4000");
+  await dialog.getByLabel("Batch size").fill("9000");
   await dialog.getByRole("button", { name: "Save preferences" }).click();
 
   // What was written survives the page being thrown away.
   await page.reload();
   await page.getByRole("button", { name: "Settings" }).click();
   await openPreferences();
-  await expect(dialog.getByLabel("Manuscript part length")).toHaveValue("9000");
-  await expect(dialog.getByLabel("Characters per reading")).toHaveValue("4000");
+  await expect(dialog.getByLabel("Batch size")).toHaveValue("9000");
 
-  await dialog.getByLabel("Manuscript part length").fill("12000");
-  await dialog.getByLabel("Characters per reading").fill("8000");
+  await dialog.getByLabel("Batch size").fill("12000");
   await dialog.getByRole("button", { name: "Save preferences" }).click();
 });
 

@@ -393,29 +393,10 @@ function GenerationDefaults() {
               value={draft.story.splitChars}
             />
           </label>
-          <label className="dialog-field">
-            <span>{t("settings:generation.readChars")}</span>
-            <input
-              max={STORY_CHARS_MAX}
-              min={STORY_CHARS_MIN}
-              onChange={(event) =>
-                editStory({
-                  readChars: toNumber(
-                    event.target.value,
-                    draft.story.readChars,
-                  ),
-                })
-              }
-              step={500}
-              type="number"
-              value={draft.story.readChars}
-            />
-          </label>
         </div>
         <p className="settings-hint">
           {t("settings:generation.splitCharsTip")}
         </p>
-        <p className="settings-hint">{t("settings:generation.readCharsTip")}</p>
       </section>
 
       <div className="dialog-actions">

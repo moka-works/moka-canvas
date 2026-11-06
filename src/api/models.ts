@@ -118,12 +118,11 @@ export interface MusicPreferences {
 }
 
 /**
- * What the story room cuts a telling to, in characters: the manuscript one
- * chapter is written from, and the chapters one reading is asked about.
+ * What the story room sends to a model in one ask, in characters: a window of
+ * a manuscript being split, or a batch of chapters being read for their cast.
  */
 export interface StoryPreferences {
   splitChars: number;
-  readChars: number;
 }
 
 /** Global generation defaults; a node's own parameters override these. */

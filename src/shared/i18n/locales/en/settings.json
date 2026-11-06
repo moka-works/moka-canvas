@@ -157,10 +157,8 @@
     "music": "Music",
     "storyDefaults": "Story defaults",
     "story": "Story",
-    "splitChars": "Manuscript part length",
-    "splitCharsTip": "The most manuscript text one split ask carries, in characters; a longer manuscript is read in batches, with the unfinished tail carried into the next one",
-    "readChars": "Characters per reading",
-    "readCharsTip": "The most of the chapters one element reading carries, in characters; a longer telling is read a part at a time, and the parts are merged without repeats",
+    "splitChars": "Batch size",
+    "splitCharsTip": "The most text one split or element-reading ask carries, in characters; longer text is sent in batches aligned to whole paragraphs, and the results are merged without repeats",
     "save": "Save preferences"
   },
   "pictureTools": {

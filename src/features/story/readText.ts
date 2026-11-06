@@ -41,13 +41,13 @@ export async function readTextAsset(assetId: AssetId): Promise<string> {
 }
 
 /**
- * The words behind a chapter: the manuscript window it was cut from, or the
- * synopsis it was written with.
+ * The words behind a chapter: the text it was cut with, or the synopsis it was
+ * written with.
  *
- * A window whose manuscript has not been read this session reads as nothing.
- * The room reads the manuscript when it opens, and every step that plans an ask
- * from it waits for that read, so this is the shape of a state that should not
- * be reached rather than a second kind of chapter.
+ * A document written before chapters kept their own prose holds a window into
+ * a manuscript instead; a window whose manuscript has not been read this
+ * session reads as nothing. The room reads such a manuscript when it opens,
+ * and every step that plans an ask from it waits for that read.
  */
 export function chapterText(chapter: StoryChapter): string {
   const source = chapter.source;
@@ -56,19 +56,12 @@ export function chapterText(chapter: StoryChapter): string {
   return text === undefined ? "" : text.slice(source.start, source.end);
 }
 
-/** What a chapter carries into an ask, counted in characters. */
-export function chapterLength(chapter: StoryChapter): number {
-  if (chapter.source !== undefined) {
-    return Math.max(0, chapter.source.end - chapter.source.start);
-  }
-  return Array.from(chapter.synopsis).length;
-}
-
 /**
- * Reads the manuscript a story's chapters were cut from, when they were.
+ * Reads the manuscript a story's chapters still point into, when they do.
  *
- * A story written from a premise has no manuscript to read, and a manuscript
- * whose chapters nobody has cut yet is read by the step that cuts it.
+ * A story written from a premise has no manuscript to read, and a chapter cut
+ * now keeps its own text rather than a window, so this is for documents that
+ * were split before the text was stored with the chapters.
  */
 export async function ensureStoryText(story: StoryDocument): Promise<void> {
   const assetId = story.brief.sourceAssetId;

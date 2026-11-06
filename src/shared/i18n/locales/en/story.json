@@ -208,7 +208,7 @@
     "prop": "Prop"
   },
   "outline": {
-    "lead": "Break the premise into the episodes it is told in, or have a manuscript cut at its own chapter and scene divisions — the words stay exactly as written. Nothing is filmed until you say so.",
+    "lead": "Break the premise into the episodes it is told in, or cut a manuscript at its own chapter and scene divisions — every chapter keeps its text, which you can edit afterwards; the uploaded file is released once it has been cut. Nothing is filmed until you say so.",
     "source": "Where the chapters come from",
     "modeExpand": "From the premise",
     "modeSplit": "From the manuscript",
@@ -242,8 +242,8 @@
     "resplitCancel": "Cancel",
     "startSplit": "Cut the manuscript",
     "untitled": "Chapter {{number}}",
-    "chapterSource": "The chapter as written",
-    "sourceHint": "{{count}} characters, unchanged",
+    "chapterSource": "Chapter text",
+    "sourceHint": "{{count}} characters, editable",
     "splitting": "Finding the cuts in batch {{part}}; {{found}} chapters so far",
     "splittingButton": "Cutting batch {{part}}…",
     "splitDone": "The manuscript was cut into {{count}} chapters",
@@ -256,7 +256,16 @@
     "chapterGone": "That chapter is no longer in the story; split it again",
     "wave": "Batch {{at}} of {{of}}",
     "cutting": "Cutting",
-    "splitSourceOutside": "The manuscript is not stored inside this project; load it again"
+    "splitSourceOutside": "The manuscript is not stored inside this project; load it again",
+    "insertChapter": "Insert a chapter after this one",
+    "deleteChapter": "Delete chapter",
+    "deleteTitle": "Delete this chapter?",
+    "deleteBody": "Chapter {{number}}, “{{title}}”, will be taken out of the story.",
+    "deleteActs": "The board of {{acts}} acts goes with it; the drawings and clips stay on the shelf.",
+    "deleteConfirm": "Delete",
+    "chapterLimit": "This story already holds as many chapters as it can ({{max}})",
+    "sourceReleased": "The manuscript has been cut and released; load it again in the previous step to split it once more",
+    "sourceKeepFailed": "The chapters are written, but the manuscript file could not be released: {{reason}}"
   },
   "panels": {
     "close": "Close",

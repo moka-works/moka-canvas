@@ -206,7 +206,7 @@ function fixture(): ModelsView {
         pitch: 1,
       },
       music: { format: "mp3", watermark: false },
-      story: { splitChars: 12_000, readChars: 8_000 },
+      story: { splitChars: 12_000 },
     },
     secretStorage: "file",
     secretStorageOptions: ["file", "keyring"],
@@ -1227,11 +1227,11 @@ describe("model settings", () => {
     });
   });
 
-  it("sends the story room's boundaries when they move", async () => {
+  it("sends the story room's batch boundary when it moves", async () => {
     await openSettings();
     fireEvent.click(await screen.findByRole("tab", { name: "Preferences" }));
 
-    fireEvent.change(await screen.findByLabelText("Manuscript part length"), {
+    fireEvent.change(await screen.findByLabelText("Batch size"), {
       target: { value: "6000" },
     });
     const save = screen.getByRole("button", { name: "Save preferences" });
@@ -1242,7 +1242,7 @@ describe("model settings", () => {
 
     const [write] = writesTo("/api/v1/models/preferences");
     expect(write.body).toEqual({
-      story: { splitChars: 6_000, readChars: 8_000 },
+      story: { splitChars: 6_000 },
       expectedRevision: 1,
     });
   });

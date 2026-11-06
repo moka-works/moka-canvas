@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { assetsApi } from "../../../api";
 import {
   MAX_CHAPTERS_PER_STORY,
   MAX_TOTAL_DURATION_MS,
   MIN_TOTAL_DURATION_MS,
   chapterRegenerationCost,
   chapterWritten,
+  createChapter,
   defaultChapterCount,
   formatDuration,
   mergeChaptersAt,
@@ -17,7 +19,8 @@ import type { DocumentCommand } from "../../../shared/domain/types";
 import { sourceHeadings } from "../../../shared/domain/storySource";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
-import { useProjectStore } from "../../editor/stores/projectStore";
+import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
@@ -59,9 +62,9 @@ function messageOf(problem: unknown): string {
  * Both paths leave the words of a chapter in the reader's hands. The premise
  * is asked for as chapters, and any one of them can be written again. A
  * manuscript is not asked for at all: the model is asked where its chapters
- * begin, and the text between those places is kept exactly as it was written —
- * a chapter cut from a manuscript is a window into the file, not a second copy
- * of it.
+ * begin, the text between those places becomes each chapter's own words, and
+ * the manuscript itself is released once it has been cut — every chapter can
+ * be edited, inserted around, or removed without a file behind it.
  *
  * Nothing is asked for without being counted first, and a story that already
  * has chapters is not split again without being told what that costs — a
@@ -80,7 +83,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const failure = useStoryJobStore((state) => state.error);
   const elapsed = useElapsed(running?.createdAt);
   const [mode, setMode] = useState<"expand" | "split">(
-    brief.sourceSplit === true && sourceId !== undefined ? "split" : "expand",
+    brief.sourceSplit === true ? "split" : "expand",
   );
   const [chapters, setChapters] = useState(() =>
     defaultChapterCount(brief.totalDurationMs, brief.chapterMs),
@@ -93,11 +96,15 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const [splitPart, setSplitPart] = useState(0);
   const [splitFound, setSplitFound] = useState(0);
   const [splitError, setSplitError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   const wanted = clampChapters(chapters);
   const cost = chapterRegenerationCost(story, wanted);
   const spoken = story.chapters.some(chapterWritten);
   const drawn = story.chapters.some((chapter) => chapter.acts.length > 0);
+  const hasWindows = story.chapters.some(
+    (chapter) => chapter.source !== undefined,
+  );
 
   /** The manuscript, read once for this telling and kept for the session. */
   const needText = async (): Promise<string | null> => {
@@ -117,14 +124,18 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   };
 
   // A manuscript that writes its own chapters says how many the telling has:
-  // the count it is cut into is offered as the count it already is.
+  // the count it is cut into is offered as the count it already is. A document
+  // from before chapters kept their text also needs its manuscript read, since
+  // those chapters still point into it.
   useEffect(() => {
-    if (mode !== "split" || sourceId === undefined || headings > 0) return;
+    if (sourceId === undefined) return;
+    if (mode !== "split" && !hasWindows) return;
     let live = true;
     void readTextAsset(sourceId)
       .then((text) => {
         if (!live) return;
         setManuscript(text);
+        if (mode !== "split" || headings > 0) return;
         const found = sourceHeadings(text);
         if (found === 0) return;
         setHeadings(found);
@@ -136,7 +147,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     return () => {
       live = false;
     };
-  }, [mode, sourceId, headings]);
+  }, [mode, sourceId, headings, hasWindows]);
 
   const begin = async (count: number) => {
     setAsking(false);
@@ -147,13 +158,13 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         .start(story.id, "outline", planOutline(story, { chapters: count }));
       return;
     }
-    const text = await needText();
-    if (text === null) {
-      if (sourceId === undefined) {
-        setSplitError(t("story:outline.splitNoSource"));
-      }
+    const assetId = sourceId;
+    if (assetId === undefined) {
+      setSplitError(t("story:outline.splitNoSource"));
       return;
     }
+    const text = await needText();
+    if (text === null) return;
     setSplitting(true);
     setSplitPart(1);
     setSplitFound(0);
@@ -178,25 +189,50 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         drafts.map((draft, at) => ({ at, draft })),
         true,
       );
-      const commands: DocumentCommand[] = [];
-      if (current.brief.sourceSplit !== true) {
-        commands.push({
-          type: "updateStoryBrief",
-          storyId: story.id,
-          patch: { sourceSplit: true },
-        });
-      }
-      commands.push({
-        type: "setStoryChapters",
-        storyId: story.id,
-        chapters: table,
-      });
+      // The chapters now hold the manuscript's words. The brief lets the file
+      // go at the same moment: it is no longer what any chapter is read from,
+      // and keeping a stale reference would keep the file itself.
+      const patch: {
+        sourceSplit?: boolean;
+        sourceAssetId: null;
+        sourceName: null;
+      } = { sourceAssetId: null, sourceName: null };
+      if (current.brief.sourceSplit !== true) patch.sourceSplit = true;
+      const commands: DocumentCommand[] = [
+        { type: "updateStoryBrief", storyId: story.id, patch },
+        { type: "setStoryChapters", storyId: story.id, chapters: table },
+      ];
       const done = execute(t("story:history.apply.outline"), commands);
       if (done === null) {
         setSplitError(t("story:page.saveConflict"));
         return;
       }
       toast("success", t("story:outline.splitDone", { count: drafts.length }));
+      // The file is removed only after the document that no longer points at
+      // it has landed: the server refuses to delete an asset still in use.
+      await useProjectStore.getState().flush();
+      const after = useProjectStore.getState();
+      if (after.pending.length > 0 || after.saveStatus !== "saved") {
+        toast(
+          "error",
+          t("story:outline.sourceKeepFailed", {
+            reason: saveTrouble().message,
+          }),
+        );
+        return;
+      }
+      try {
+        const removed = await assetsApi.remove(assetId);
+        useProjectStore.getState().removeAssetEntry(assetId, removed);
+        setManuscript(null);
+      } catch (problem) {
+        toast(
+          "error",
+          t("story:outline.sourceKeepFailed", {
+            reason: messageOf(problem),
+          }),
+        );
+      }
     } catch (problem) {
       if (problem instanceof SplitCancelled) return;
       const reason = messageOf(problem);
@@ -215,6 +251,50 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
       return;
     }
     void begin(count);
+  };
+
+  /** One empty chapter after the one at `at`, with the episode length to hand. */
+  const insertAfter = (at: number) => {
+    if (story.chapters.length >= MAX_CHAPTERS_PER_STORY) {
+      toast(
+        "info",
+        t("story:outline.chapterLimit", { max: MAX_CHAPTERS_PER_STORY }),
+      );
+      return;
+    }
+    const before = story.chapters[at];
+    const chapter = {
+      ...createChapter(""),
+      targetDurationMs: clampDuration(
+        before !== undefined && before.targetDurationMs > 0
+          ? before.targetDurationMs
+          : story.brief.chapterMs,
+      ),
+    };
+    const chapters = [
+      ...story.chapters.slice(0, at + 1),
+      chapter,
+      ...story.chapters.slice(at + 1),
+    ];
+    execute(t("story:history.chapters"), [
+      { type: "setStoryChapters", storyId: story.id, chapters },
+    ]);
+  };
+
+  /** The chapter the reader agreed to delete, taken out of the table. */
+  const dropChapter = () => {
+    if (deleting === null) return;
+    const removed = story.chapters[deleting];
+    const chapters = story.chapters.filter((_, at) => at !== deleting);
+    const done = execute(t("story:history.chapters"), [
+      { type: "setStoryChapters", storyId: story.id, chapters },
+    ]);
+    if (done !== null && removed !== undefined) {
+      if (useStoryStore.getState().openChapterId === removed.id) {
+        useStoryStore.getState().openChapter(null);
+      }
+    }
+    setDeleting(null);
   };
 
   const busy = writing !== null || reading || splitting;
@@ -265,7 +345,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         </div>
 
         <p className="story-hint" data-testid="story-outline-chapters-hint">
-          {headings > 0
+          {headings > 0 && sourceId !== undefined
             ? t("story:outline.detected", { count: headings })
             : t("story:outline.chaptersHint", {
                 minutes: Math.round(
@@ -327,7 +407,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
             <button
               className="primary"
               data-testid="story-outline-start"
-              disabled={busy}
+              disabled={busy || (mode === "split" && sourceId === undefined)}
               onClick={start}
               type="button"
             >
@@ -346,6 +426,17 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
             <StepConfirm step="outline" story={story} />
           </div>
         </div>
+
+        {mode === "split" &&
+          sourceId === undefined &&
+          story.chapters.length > 0 && (
+            <p
+              className="story-hint"
+              data-testid="story-outline-source-released"
+            >
+              {t("story:outline.sourceReleased")}
+            </p>
+          )}
 
         {(failure !== null || splitError !== null) && (
           <p className="story-hint" data-testid="story-outline-error">
@@ -392,6 +483,8 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
               index={index}
               key={chapter.id}
               offerRedo={mode === "expand"}
+              onDelete={() => setDeleting(index)}
+              onInsert={() => insertAfter(index)}
               redoBusy={pieceRunning(jobs, `outline:rewrite:${index + 1}`)}
               story={story}
             />
@@ -404,6 +497,30 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
           cost={cost}
           onCancel={() => setAsking(false)}
           onConfirm={() => void begin(wanted)}
+        />
+      )}
+
+      {deleting !== null && story.chapters[deleting] !== undefined && (
+        <ConfirmDialog
+          body={t("story:outline.deleteBody", {
+            number: deleting + 1,
+            title:
+              story.chapters[deleting].title.trim() !== ""
+                ? story.chapters[deleting].title
+                : t("story:outline.untitled", { number: deleting + 1 }),
+          })}
+          confirm={t("story:outline.deleteConfirm")}
+          note={
+            (story.chapters[deleting].acts.length ?? 0) > 0
+              ? t("story:outline.deleteActs", {
+                  acts: story.chapters[deleting].acts.length,
+                })
+              : undefined
+          }
+          onCancel={() => setDeleting(null)}
+          onConfirm={dropChapter}
+          testId="delete-chapter"
+          title={t("story:outline.deleteTitle")}
         />
       )}
     </div>
@@ -422,6 +539,8 @@ function ChapterCard({
   index,
   offerRedo,
   redoBusy,
+  onInsert,
+  onDelete,
 }: {
   story: StoryDocument;
   chapter: StoryChapter;
@@ -430,12 +549,19 @@ function ChapterCard({
   offerRedo: boolean;
   /** Whether this chapter's own ask for a new telling of it is out just now. */
   redoBusy: boolean;
+  /** Adds an empty chapter after this one. */
+  onInsert: () => void;
+  /** Asks to take this chapter out of the story. */
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  const write = (patch: Partial<StoryChapter>) => {
-    const chapters = story.chapters.map((held, at) =>
-      at === index ? { ...held, ...patch } : held,
-    );
+  const write = (patch: Partial<StoryChapter>, dropSource = false) => {
+    const chapters = story.chapters.map((held, at) => {
+      if (at !== index) return held;
+      const next = { ...held, ...patch };
+      if (dropSource) delete next.source;
+      return next;
+    });
     execute(t("story:history.chapters"), [
       { type: "setStoryChapters", storyId: story.id, chapters },
     ]);
@@ -444,11 +570,21 @@ function ChapterCard({
     const trimmed = value.trim();
     if (trimmed !== "") write({ title: trimmed });
   });
+  const cut = chapter.source !== undefined;
+  // A chapter of a manuscript, whether cut now (its words are the synopsis) or
+  // in a document written before chapters kept their text.
+  const manuscriptChapter = cut || story.brief.sourceSplit === true;
+  const held = cut ? chapterText(chapter) : chapter.synopsis;
+  const content = useField(held, (value) => {
+    if (value === held) return;
+    // A window that has not been read back yet is not blank text the reader
+    // asked to erase.
+    if (cut && held === "") return;
+    write({ synopsis: value }, cut);
+  });
   const synopsis = useField(chapter.synopsis, (value) => {
     write({ synopsis: value });
   });
-  const cut = chapter.source !== undefined;
-  const source = cut ? chapterText(chapter) : "";
   const minutes = Math.round((chapter.targetDurationMs / 60_000) * 10) / 10;
 
   return (
@@ -468,6 +604,7 @@ function ChapterCard({
               title.commit();
             }
           }}
+          placeholder={t("story:outline.untitled", { number: index + 1 })}
           value={title.value}
         />
         {chapter.acts.length > 0 && (
@@ -484,14 +621,16 @@ function ChapterCard({
           </button>
         )}
       </div>
-      {cut ? (
+      {manuscriptChapter ? (
         <textarea
           aria-label={t("story:outline.chapterSource")}
           className="story-chapter-synopsis"
           data-testid={`story-chapter-source-${index}`}
-          readOnly
+          onBlur={content.commit}
+          onChange={(event) => content.set(event.target.value)}
+          readOnly={cut && held === ""}
           rows={6}
-          value={source}
+          value={content.value}
         />
       ) : (
         <textarea
@@ -510,9 +649,9 @@ function ChapterCard({
           className="story-count"
           data-testid={`story-chapter-count-${index}`}
         >
-          {cut
+          {manuscriptChapter
             ? t("story:outline.sourceHint", {
-                count: Array.from(source).length,
+                count: Array.from(content.value).length,
               })
             : t("story:outline.synopsisHint", {
                 used: synopsis.value.length,
@@ -561,8 +700,8 @@ function ChapterCard({
         {chapter.acts.length > 0 && (
           <span className="story-hint">{t("story:outline.durationBoard")}</span>
         )}
-        {offerRedo && (
-          <span className="story-chapter-actions">
+        <span className="story-chapter-actions">
+          {offerRedo && (
             <button
               className="link"
               data-testid={`story-chapter-redo-${index}`}
@@ -572,8 +711,25 @@ function ChapterCard({
             >
               {t("story:outline.redo")}
             </button>
-          </span>
-        )}
+          )}
+          <button
+            className="link"
+            data-testid={`story-chapter-insert-${index}`}
+            disabled={story.chapters.length >= MAX_CHAPTERS_PER_STORY}
+            onClick={onInsert}
+            type="button"
+          >
+            {t("story:outline.insertChapter")}
+          </button>
+          <button
+            className="link"
+            data-testid={`story-chapter-delete-${index}`}
+            onClick={onDelete}
+            type="button"
+          >
+            {t("story:outline.deleteChapter")}
+          </button>
+        </span>
       </div>
     </li>
   );

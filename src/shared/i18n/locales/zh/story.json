@@ -208,7 +208,7 @@
     "prop": "物品"
   },
   "outline": {
-    "lead": "把创意拆成它要讲的几集，或者把一部稿子按它自己的章节和场景切开——原文不改，只分章。你不点，什么都还没开始拍。",
+    "lead": "把创意拆成它要讲的几集，或者把一部稿子按它自己的章节和场景切开——每章正文都会存进故事里，随时可以继续改；切完后原稿文件不再留在项目中。你不点，什么都还没开始拍。",
     "source": "章节从哪里来",
     "modeExpand": "根据创意扩写",
     "modeSplit": "按稿子分章",
@@ -242,8 +242,8 @@
     "resplitCancel": "取消",
     "startSplit": "按稿子分章",
     "untitled": "第 {{number}} 章",
-    "chapterSource": "本章原文",
-    "sourceHint": "{{count}} 字，原文照录",
+    "chapterSource": "章节内容",
+    "sourceHint": "{{count}} 字，可编辑",
     "splitting": "正在识别第 {{part}} 批的分章位置，已找到 {{found}} 章",
     "splittingButton": "正在拆解第 {{part}} 批…",
     "splitDone": "已把稿子切成 {{count}} 章",
@@ -256,7 +256,16 @@
     "chapterGone": "这一章已经不在故事里了，请重新拆解一次",
     "wave": "第 {{at}}/{{of}} 批",
     "cutting": "分章中",
-    "splitSourceOutside": "这部稿子没有存进项目目录，请重新载入一份"
+    "splitSourceOutside": "这部稿子没有存进项目目录，请重新载入一份",
+    "insertChapter": "在这一章后面插入一章",
+    "deleteChapter": "删除本章",
+    "deleteTitle": "删除这一章？",
+    "deleteBody": "第 {{number}} 章「{{title}}」会从故事里移除。",
+    "deleteActs": "其中 {{acts}} 幕的分镜会一并丢弃；画好的图和剪好的片段仍留在素材架上。",
+    "deleteConfirm": "删除",
+    "chapterLimit": "这个故事已经达到 {{max}} 章的上限",
+    "sourceReleased": "稿子已经拆完并从项目中移除；要重新按稿分章，请回到上一步重新载入",
+    "sourceKeepFailed": "章节已经写入，但原稿文件没能从项目中移除：{{reason}}"
   },
   "panels": {
     "close": "关闭",

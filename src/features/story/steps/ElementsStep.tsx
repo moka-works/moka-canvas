@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   STORY_ELEMENT_KINDS,
   STORY_NAME_MAX,
-  chapterWaves,
+  chapterReadingWaves,
   currentTake,
   elementDescribed,
   targetKey,
@@ -12,6 +12,7 @@ import {
   type StoryDocument,
   type StoryElement,
   type StoryElementKind,
+  type StoryReadingPiece,
 } from "../../../shared/domain";
 import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
@@ -29,9 +30,9 @@ import {
   planElementArt,
   planElements,
   resolveVoice,
-  storyReadChars,
+  storySplitChars,
 } from "../jobs/plan";
-import { ensureStoryText, chapterLength } from "../readText";
+import { ensureStoryText, chapterText } from "../readText";
 import {
   jobProgress,
   kindRunning,
@@ -74,7 +75,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [pages, setPages] = useState(1);
-  const [waves, setWaves] = useState<string[][]>([]);
+  const [waves, setWaves] = useState<StoryReadingPiece[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
   // A batch is being handed over, whether for the first part or a later one.
   const sending = useStoryJobStore((state) => state.starting);
@@ -163,7 +164,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         story.id,
         "elements",
         planElements(story, {
-          chapterIds: next,
+          pieces: next,
           part,
           total: totalWaves,
         }),
@@ -190,11 +191,11 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         );
       return;
     }
-    const cut = chapterWaves(
+    const cut = chapterReadingWaves(
       story.chapters,
-      storyReadChars(),
-      (chapter) => chapterLength(chapter) + chapter.title.length,
-    ).map((wave) => wave.map((chapter) => chapter.id));
+      storySplitChars(),
+      chapterText,
+    );
     setTotalWaves(Math.max(1, cut.length));
     setWaves(cut.slice(1));
     const first = cut[0] ?? [];
@@ -206,8 +207,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         planElements(
           story,
           cut.length <= 1
-            ? {}
-            : { chapterIds: first, part: 1, total: cut.length },
+            ? { pieces: first }
+            : { pieces: first, part: 1, total: cut.length },
         ),
       );
     // A first part that never went out leaves nothing for the rest to be read

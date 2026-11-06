@@ -478,9 +478,11 @@ pub struct StoryChapterSource {
 pub struct StoryChapter {
     pub id: String,
     pub title: String,
+    /// The chapter's words: the text cut for it from a manuscript, or the
+    /// synopsis a chapter written from the premise was given.
     pub synopsis: String,
-    /// The manuscript window this chapter was cut from, when it was cut rather
-    /// than written. A chapter with one holds no synopsis of its own.
+    /// Where the chapter was cut from, for documents written before chapters
+    /// kept their own text. A cut made now stores the prose in `synopsis`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<StoryChapterSource>,
     pub target_duration_ms: i64,

@@ -3,9 +3,10 @@
  *
  * The model is asked only where chapters begin, never what they say. Its
  * answer is a handful of quotations, and this module finds those quotations in
- * the manuscript, cuts the text between them, and keeps the result as a window
- * into the source file. What is never done is writing the chapter: a chapter
- * here is the manuscript's own words, from one cut to the next.
+ * the manuscript and cuts the text between them. The words between two cuts
+ * become the chapter's own text: the document keeps the prose itself rather
+ * than offsets into a file, so every chapter can be edited, inserted around,
+ * and thrown away without the manuscript behind it.
  *
  * A manuscript larger than one ask is read in windows. A window's last chapter
  * is usually unfinished — the window had to end somewhere — so it is not kept:
@@ -266,12 +267,10 @@ export async function runManuscriptSplit(
   if (assetId === undefined) {
     throw new SplitFailure(i18n.t("story:outline.splitNoSource"));
   }
-  // A chapter is a pair of offsets into the file. If the file is not the
-  // project's own copy, the offsets belong to something the project does not
-  // control: an editor, a sync folder or a path outside the project can change
-  // it under the telling, and every chapter after the change would point at
-  // the wrong words. The shelf keeps its own copy of everything uploaded, so a
-  // manuscript that is not inside it is one to load again.
+  // The manuscript is read once, from the project's own copy, and the text is
+  // written into the chapters. A file outside the project is still refused:
+  // the copy on the shelf is the one the reader filed, and a path the project
+  // does not control can change under the cut.
   const entry = useProjectStore
     .getState()
     .moka?.resources.texts.find((held) => held.id === assetId);
@@ -427,8 +426,7 @@ export async function runManuscriptSplit(
   const drafts = withDurations(chapters, story.brief.totalDurationMs);
   return drafts.map((chapter) => ({
     title: chapter.title,
-    synopsis: "",
-    source: { assetId, start: chapter.start, end: chapter.end },
+    synopsis: chapter.body,
     targetDurationMs: chapter.targetDurationMs,
   }));
 }

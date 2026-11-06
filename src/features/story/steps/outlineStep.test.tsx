@@ -98,8 +98,24 @@ function serving(): void {
         }
         return json(held);
       }
+      if (url.includes("/assets/") && method === "DELETE") {
+        const revision =
+          useProjectStore.getState().moka?.metadata.revision ?? 1;
+        return json({
+          revision: revision + 1,
+          updatedAt: "2026-01-02T00:00:00Z",
+        });
+      }
       if (url.includes("/assets/")) {
         return Promise.resolve(new Response(manuscript));
+      }
+      if (url.includes("/api/v1/projects/current/commands")) {
+        const revision =
+          useProjectStore.getState().moka?.metadata.revision ?? 1;
+        return json({
+          revision: revision + 1,
+          updatedAt: "2026-01-02T00:00:00Z",
+        });
       }
       if (url.includes("/api/v1/projects/current")) {
         return json({
@@ -407,7 +423,7 @@ function cuttingAt(splitChars: number): void {
           pitch: 1,
         },
         music: { format: "mp3", watermark: false },
-        story: { splitChars, readChars: 8_000 },
+        story: { splitChars },
       },
       secretStorage: "unset",
     },
@@ -492,7 +508,7 @@ describe("writing a premise into chapters", () => {
   });
 
   it("writes the words of a chapter when the reader looks away from them", () => {
-    openAtOutline(buildStoryMokaFile());
+    openAtOutline(withChapters());
 
     const synopsis = screen.getByTestId(
       "story-chapter-synopsis-0",
@@ -536,16 +552,20 @@ describe("splitting a manuscript", () => {
       "第2章 站台",
       "第3章 站台",
     ]);
-    // The chapter is a window into the manuscript, not a copy of it, and the
-    // heading it is titled with is not repeated in its text.
-    expect(chapters()[0]?.source?.assetId).toBe("asset-novel");
-    expect(chapters()[0]?.source?.end).toBeGreaterThan(
-      chapters()[0]?.source?.start ?? 0,
-    );
+    // The chapter keeps the manuscript's own words, and the heading it is
+    // titled with is not repeated in its text. The file itself is released:
+    // the brief no longer points at it and the shelf entry is gone.
+    expect(chapters()[0]?.source).toBeUndefined();
     expect(chapterText(chapters()[0]!)).toBe(
       "他在站台上等一班已经停运的列车，风把雨吹成斜的。",
     );
     expect(story().brief.sourceSplit).toBe(true);
+    expect(story().brief.sourceAssetId).toBeUndefined();
+    expect(
+      useProjectStore
+        .getState()
+        .moka?.resources.texts?.some((entry) => entry.id === "asset-novel"),
+    ).toBe(false);
   });
 
   it("takes a manuscript longer than one window in batches, carrying its tail", async () => {
@@ -648,7 +668,68 @@ describe("splitting again", () => {
       expect(chapters()).toHaveLength(2);
     });
     expect(chapters()[0]?.acts).toHaveLength(1);
-    expect(chapters()[0]?.source).toBeDefined();
+    expect(chapters()[0]?.source).toBeUndefined();
+    expect(chapterText(chapters()[0]!)).toContain(
+      "他在站台上等一班已经停运的列车。",
+    );
+  });
+});
+
+describe("editing the chapter table", () => {
+  it("writes an edited manuscript chapter back as its own text", () => {
+    openAtOutline(buildStoryMokaFile());
+
+    const content = screen.getByTestId(
+      "story-chapter-source-0",
+    ) as HTMLTextAreaElement;
+    expect(content.value).toBe("他在站台上等一班已经停运的列车。");
+    fireEvent.change(content, {
+      target: { value: "他在站台上等到天亮，车始终没有来。" },
+    });
+    expect(chapters()[0]?.synopsis).not.toContain("等到天亮");
+
+    fireEvent.blur(content);
+    expect(chapters()[0]?.synopsis).toBe("他在站台上等到天亮，车始终没有来。");
+    expect(chapters()[0]?.source).toBeUndefined();
+  });
+
+  it("inserts a chapter between two, with the episode length it stood beside", () => {
+    openAtOutline(buildStoryMokaFile());
+    expect(chapters()).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId("story-chapter-insert-0"));
+
+    expect(chapters()).toHaveLength(3);
+    expect(chapters().map((chapter) => chapter.title)).toEqual([
+      "第一章 站台",
+      "",
+      "第二章 车厢",
+    ]);
+    expect(chapters()[1]?.targetDurationMs).toBe(60_000);
+    expect(
+      (screen.getByTestId("story-chapter-title-1") as HTMLInputElement).value,
+    ).toBe("");
+    expect(
+      (screen.getByTestId("story-chapter-title-1") as HTMLInputElement)
+        .placeholder,
+    ).toBe("Chapter 2");
+  });
+
+  it("takes a chapter out only after the reader agrees, and says what is lost", () => {
+    openAtOutline(buildStoryMokaFile());
+
+    fireEvent.click(screen.getByTestId("story-chapter-delete-0"));
+    const asked = screen.getByTestId("delete-chapter");
+    expect(asked.textContent).toContain("Chapter 1");
+    expect(asked.textContent).toContain("1 acts");
+
+    fireEvent.click(screen.getByTestId("delete-chapter-cancel"));
+    expect(chapters()).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId("story-chapter-delete-0"));
+    fireEvent.click(screen.getByTestId("delete-chapter-confirm"));
+    expect(chapters()).toHaveLength(1);
+    expect(chapters()[0]?.title).toBe("第二章 车厢");
   });
 });
 

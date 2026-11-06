@@ -142,7 +142,7 @@ function chapterClipMade(act: StoryAct): boolean {
   );
 }
 
-/** Whether a chapter has words behind it: a synopsis, or a window into a manuscript. */
+/** Whether a chapter has words behind it: text of its own, or an older window. */
 export function chapterHasWords(chapter: StoryChapter): boolean {
   return chapter.source !== undefined || chapter.synopsis.trim() !== "";
 }
@@ -368,7 +368,7 @@ export function stepComplete(story: StoryDocument, step: StoryStep): boolean {
 export interface StoryChapterDraft {
   title: string;
   synopsis: string;
-  /** The manuscript window a cut chapter stands for, when one wrote it. */
+  /** A manuscript window, for a document written before chapters kept text. */
   source?: StoryChapterSource;
   targetDurationMs?: number;
 }
@@ -1249,10 +1249,10 @@ export function storyDeleteCost(story: StoryDocument): {
  * is asked before it.
  *
  * A chapter keeps everything made for it as long as it stands where it stood,
- * so what a re-split costs is the words it replaces — every chapter that has a
- * synopsis or a manuscript window — and the boards of the chapters the new
- * telling has no room for. Counting the acts that would go is why the count is
- * asked for before the split rather than after it.
+ * so what a re-split costs is the words it replaces — every chapter that has
+ * text of its own — and the boards of the chapters the new telling has no room
+ * for. Counting the acts that would go is why the count is asked for before
+ * the split rather than after it.
  */
 export function chapterRegenerationCost(
   story: StoryDocument,
@@ -1319,43 +1319,113 @@ export function chunkWaves<T>(items: T[], per: number): T[][] {
   return waves;
 }
 
-/** What a chapter costs the ask that carries it: its title and its own text. */
-function chapterWords(chapter: StoryChapter): number {
-  const held =
-    chapter.source === undefined
-      ? Array.from(chapter.synopsis).length
-      : Math.max(0, chapter.source.end - chapter.source.start);
-  return Array.from(chapter.title).length + held;
+/** One chapter's words as a reading ask carries them, possibly a slice of it. */
+export interface StoryReadingPiece {
+  chapterId: string;
+  /** The chapter's number in the telling, counted from one. */
+  number: number;
+  title: string;
+  text: string;
 }
 
 /**
- * The chapters of a telling packed into the asks it is read in.
+ * Where a paragraph that began before `from` ends, or the text's own end.
  *
- * A batch is sized by what it carries rather than by how many chapters it
- * names: chapter counts say nothing about length, and how much of a telling one
- * ask may hold depends on the model answering it. The chapters are packed in
- * telling order, and a chapter that weighs more than an ask may carry is an ask
- * of its own rather than left out.
+ * A reading batch is cut upward to a paragraph boundary rather than in the
+ * middle of a sentence: the model is shown whole paragraphs, and the batch may
+ * run a little past the configured ceiling to finish the one it is in. A text
+ * written without paragraph breaks at all is carried whole.
  */
-export function chapterWaves(
+function paragraphEndAt(text: string, from: number): number {
+  if (from >= text.length) return text.length;
+  const paragraph = text.indexOf("\n\n", from);
+  if (paragraph >= 0) return paragraph + 2;
+  const line = text.indexOf("\n", from);
+  if (line >= 0) return line + 1;
+  return text.length;
+}
+
+/**
+ * The chapters of a telling packed into the asks that read them.
+ *
+ * A reading ask carries words, so the packer weighs the words rather than the
+ * chapter count: neighbouring chapters share an ask until it is full, and a
+ * chapter longer than one ask is cut at a paragraph boundary and carried into
+ * the next one. Every piece keeps its chapter's number and title, so what the
+ * answer says it noticed still lands on the chapter it was noticed in —
+ * including a chapter whose text arrived in two pieces.
+ *
+ * A piece costs its text and its title, since the title is written into the
+ * ask as well; a chapter with no words still travels so the reading can say it
+ * holds nothing. A batch that is less than half full is closed rather than
+ * carried forward, since a small tail costs an ask of its own.
+ */
+export function chapterReadingWaves(
   chapters: StoryChapter[],
   budget: number,
-  weigh: (chapter: StoryChapter) => number = chapterWords,
-): StoryChapter[][] {
+  textOf: (chapter: StoryChapter) => string,
+): StoryReadingPiece[][] {
   const limit = Math.max(1, Math.floor(budget));
-  const waves: StoryChapter[][] = [];
-  let held: StoryChapter[] = [];
-  let weight = 0;
-  for (const chapter of chapters) {
-    const words = weigh(chapter);
-    if (held.length > 0 && weight + words > limit) {
-      waves.push(held);
-      held = [];
-      weight = 0;
+  const floor = Math.max(1, Math.floor(limit / 2));
+  const waves: StoryReadingPiece[][] = [];
+  let wave: StoryReadingPiece[] = [];
+  let used = 0;
+  const flush = () => {
+    if (wave.length === 0) return;
+    waves.push(wave);
+    wave = [];
+    used = 0;
+  };
+  chapters.forEach((chapter, index) => {
+    const title = chapter.title;
+    const titleCost = Array.from(title).length;
+    const piece = (text: string): StoryReadingPiece => ({
+      chapterId: chapter.id,
+      number: index + 1,
+      title,
+      text,
+    });
+    let rest = textOf(chapter).trim();
+    if (rest === "") {
+      wave.push(piece(""));
+      used += titleCost;
+      if (used >= limit) flush();
+      return;
     }
-    held.push(chapter);
-    weight += words;
-  }
-  if (held.length > 0) waves.push(held);
+    while (rest !== "") {
+      const remaining = limit - used;
+      if (remaining < floor) {
+        flush();
+        continue;
+      }
+      const room = remaining - titleCost;
+      if (room <= 0) {
+        if (wave.length > 0) {
+          flush();
+          continue;
+        }
+        // A title wider than the ask it is carried in fills one on its own
+        // rather than leaving the packer with nowhere to put the words.
+        wave.push(piece(rest));
+        used += rest.length + titleCost;
+        rest = "";
+        flush();
+        break;
+      }
+      if (rest.length <= room) {
+        wave.push(piece(rest));
+        used += rest.length + titleCost;
+        rest = "";
+        if (used >= limit) flush();
+        break;
+      }
+      const take = Math.min(rest.length, paragraphEndAt(rest, room));
+      wave.push(piece(rest.slice(0, take)));
+      used += take + titleCost;
+      rest = rest.slice(take);
+      flush();
+    }
+  });
+  flush();
   return waves;
 }

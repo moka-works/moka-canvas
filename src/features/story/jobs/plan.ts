@@ -22,7 +22,6 @@ import type {
 import {
   MAX_ITEMS_PER_STORY_JOB,
   MAX_VIDEO_SECONDS,
-  STORY_READ_CHARS_DEFAULT,
   STORY_SPLIT_CHARS_DEFAULT,
 } from "../../../shared/domain/constants";
 import {
@@ -42,6 +41,7 @@ import {
   takeFile,
   targetKey,
   voiceFor,
+  type StoryReadingPiece,
 } from "../../../shared/domain/story";
 import { chapterText } from "../readText";
 import type { StoryElement } from "../../../shared/domain";
@@ -321,21 +321,16 @@ export function actClipPieces(act: StoryAct, ceiling: number): ActClipPiece[] {
 /**
  * How much of a telling one ask may carry, as the story settings say.
  *
- * Read where a batch is planned, the way the clip ceiling is: a telling cut to
- * yesterday's boundary is a telling already being read.
+ * The same ceiling cuts a manuscript and packs a reading: both are asks of a
+ * model about words, and what one ask can hold is a property of the model
+ * behind the room. Read where a batch is planned, the way the clip ceiling is:
+ * a telling cut to yesterday's boundary is a telling already being read.
  */
 export function storySplitChars(): number {
   const chars = useModelStore.getState().view?.preferences.story.splitChars;
   return typeof chars === "number" && chars > 0
     ? chars
     : STORY_SPLIT_CHARS_DEFAULT;
-}
-
-export function storyReadChars(): number {
-  const chars = useModelStore.getState().view?.preferences.story.readChars;
-  return typeof chars === "number" && chars > 0
-    ? chars
-    : STORY_READ_CHARS_DEFAULT;
 }
 
 /**
@@ -461,27 +456,30 @@ export function planChapterRewrite(
  * The characters, places and things the chapters are made of.
  *
  * One ask for the whole telling wherever it fits, and otherwise a part of the
- * chapters at a time — a long telling's synopses are more than one prompt may
- * carry. A part is numbered the way a manuscript's parts are, and what it
- * names is read into the cast beside what earlier parts found rather than in
- * place of it.
+ * words at a time — a long telling's chapters are more than one prompt may
+ * carry. A part is numbered the way a manuscript's parts are, and what it names
+ * is read into the cast beside what earlier parts found rather than in place of
+ * it.
  *
- * The chapters are listed under the telling's own numbers even where a part
- * holds a few of them, because those numbers are how the answer says where each
- * thing was noticed and how the reading files them: a part-local count would be
- * read against the whole table and land on the wrong chapters.
+ * A part arrives already cut to the reading budget, because a chapter longer
+ * than one ask is carried across parts. The pieces keep the telling's own
+ * chapter numbers even where a part holds a slice or a few chapters, because
+ * those numbers are how the answer says where each thing was noticed and how
+ * the reading files them: a part-local count would be read against the whole
+ * table and land on the wrong chapters.
  */
 export function planElements(
   story: StoryDocument,
-  options: { chapterIds?: string[]; part?: number; total?: number } = {},
+  options: { pieces?: StoryReadingPiece[]; part?: number; total?: number } = {},
 ): StoryJobItemDraft[] {
-  const asked = story.chapters
-    .map((chapter, at) => ({ number: at + 1, chapter }))
-    .filter(
-      ({ chapter }) =>
-        options.chapterIds === undefined ||
-        options.chapterIds.includes(chapter.id),
-    );
+  const pieces =
+    options.pieces ??
+    story.chapters.map((chapter, at) => ({
+      chapterId: chapter.id,
+      number: at + 1,
+      title: chapter.title,
+      text: chapterWordsOf(chapter),
+    }));
   return [
     {
       id: options.part === undefined ? "elements" : `elements:${options.part}`,
@@ -489,10 +487,10 @@ export function planElements(
       capability: "text",
       system: storySystemPrompt(),
       prompt: storyElementsPrompt({
-        chapters: asked.map(({ number, chapter }) => ({
+        chapters: pieces.map(({ number, title, text }) => ({
           number,
-          title: chapter.title,
-          text: chapterWordsOf(chapter),
+          title,
+          text,
         })),
         genre: story.brief.genre,
         style: story.brief.style,

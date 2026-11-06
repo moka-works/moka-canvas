@@ -819,15 +819,10 @@ fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> 
             "speech speed must be between 0.25 and 4".to_string(),
         ));
     }
-    for (name, chars) in [
-        ("splitChars", preferences.story.split_chars),
-        ("readChars", preferences.story.read_chars),
-    ] {
-        if !(MIN_STORY_CHARS..=MAX_STORY_CHARS).contains(&chars) {
-            return Err(ProviderError::invalid(format!(
-                "story {name} must be between {MIN_STORY_CHARS} and {MAX_STORY_CHARS} characters"
-            )));
-        }
+    if !(MIN_STORY_CHARS..=MAX_STORY_CHARS).contains(&preferences.story.split_chars) {
+        return Err(ProviderError::invalid(format!(
+            "story splitChars must be between {MIN_STORY_CHARS} and {MAX_STORY_CHARS} characters"
+        )));
     }
     Ok(())
 }
@@ -1349,19 +1344,9 @@ mod tests {
         };
         assert!(validate_preferences(&endless_video).is_err());
 
-        let overlong_reading = Preferences {
-            story: StoryPreferences {
-                read_chars: MAX_STORY_CHARS + 1,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert!(validate_preferences(&overlong_reading).is_err());
-
         let whole_manuscript_in_one_ask = Preferences {
             story: StoryPreferences {
                 split_chars: 500_000,
-                read_chars: 500_000,
             },
             ..Default::default()
         };
@@ -1370,7 +1355,6 @@ mod tests {
         let split_finer_than_a_line = Preferences {
             story: StoryPreferences {
                 split_chars: MIN_STORY_CHARS - 1,
-                ..Default::default()
             },
             ..Default::default()
         };

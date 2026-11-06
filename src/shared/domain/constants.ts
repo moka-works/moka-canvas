@@ -377,12 +377,12 @@ export const MAX_ITEMS_PER_STORY_JOB = 40;
  * The split window is deliberately large: a model that holds 256K tokens can
  * hold a few hundred thousand characters of a manuscript, and asking it about
  * one window is both cheaper and more coherent than asking it about a dozen.
- * The same ceiling serves a reading, since the reader may raise it to the
- * whole telling when the model behind the room can hold one.
+ * The same ceiling serves a reading: chapters are concatenated into batches no
+ * wider than this, and the reader may raise it to the whole telling when the
+ * model behind the room can hold one.
  */
 export const STORY_SPLIT_CHARS_DEFAULT = 500_000;
-export const STORY_READ_CHARS_DEFAULT = 8_000;
-/** What either boundary may be set to, in characters. */
+/** What the batch ceiling may be set to, in characters. */
 export const STORY_CHARS_MIN = 1_000;
 export const STORY_CHARS_MAX = 1_000_000;
 /**

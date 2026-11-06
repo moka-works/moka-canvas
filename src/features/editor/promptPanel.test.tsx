@@ -84,7 +84,7 @@ function models(models: ModelsView["models"]): ModelsView {
         pitch: 1,
       },
       music: { format: "mp3", watermark: false },
-      story: { splitChars: 12_000, readChars: 8_000 },
+      story: { splitChars: 12_000 },
     },
     secretStorage: "unset",
   };

@@ -425,19 +425,17 @@ async fn a_partial_preference_edit_keeps_the_rest() {
     // The story room's own group arrives with the document's defaults and moves
     // whole, the way every other group does.
     assert_eq!(view["preferences"]["story"]["splitChars"], 500_000);
-    assert_eq!(view["preferences"]["story"]["readChars"], 8_000);
 
     let (_, view) = send(
         &harness.app,
         json_request(
             "PATCH",
             "/api/v1/models/preferences",
-            json!({ "story": { "splitChars": 4_000, "readChars": 2_000 } }),
+            json!({ "story": { "splitChars": 4_000 } }),
         ),
     )
     .await;
     assert_eq!(view["preferences"]["story"]["splitChars"], 4_000);
-    assert_eq!(view["preferences"]["story"]["readChars"], 2_000);
     assert_eq!(view["preferences"]["image"]["size"], "16:9");
 }
 
@@ -460,12 +458,10 @@ async fn a_preference_outside_its_bounds_is_refused() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(problem["code"], "VALIDATION_FAILED");
 
-    // Neither boundary may fall outside the room's own floor or ceiling, and
-    // the two share them: a reading may be as large as a split window when the
-    // model behind the room can hold one.
+    // The batch ceiling may not fall outside the room's own floor or ceiling.
     for story in [
-        json!({ "splitChars": 900, "readChars": 8_000 }),
-        json!({ "splitChars": 12_000, "readChars": 1_000_001 }),
+        json!({ "splitChars": 900 }),
+        json!({ "splitChars": 1_000_001 }),
     ] {
         let (status, problem) = send(
             &harness.app,

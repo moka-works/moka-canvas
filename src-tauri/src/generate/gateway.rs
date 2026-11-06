@@ -923,10 +923,7 @@ mod tests {
                 format: "wav".into(),
                 watermark: true,
             },
-            story: crate::metadata::StoryPreferences {
-                split_chars: 6_000,
-                read_chars: 3_000,
-            },
+            story: crate::metadata::StoryPreferences { split_chars: 6_000 },
         }
     }
 
