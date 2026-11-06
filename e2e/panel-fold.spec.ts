@@ -7,6 +7,7 @@ import {
   openAssetsRoom,
   openClipRoom,
   openRecent,
+  openStoryRoom,
   projectHome,
 } from "./helpers";
 
@@ -216,6 +217,42 @@ test("the cutting room folds its columns beside its rail", async ({ page }) => {
   await unfoldLeft.click();
   await expect(page.locator(".clip-column")).toBeVisible();
   await expect(page.getByTestId("panel-fold-left")).toBeVisible();
+});
+
+test("the story room folds its column from the corner beside the stage", async ({
+  page,
+}) => {
+  const home = projectHome("panel-fold-story");
+
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, join(home, "project"), "Folded Story");
+  await openStoryRoom(page);
+
+  // The stories column carries its fold in the corner beside the stage, not
+  // over the stage itself: its box is the column's, so the corner it stands in
+  // is the column's own top-right edge.
+  const column = page.locator(".story-side");
+  const foldLeft = page.getByTestId("panel-fold-left");
+  await expect(foldLeft).toBeVisible();
+  const stories = await column.boundingBox();
+  const fold = await cornerOf(foldLeft);
+  expect(fold.y).toBe(Math.round(stories!.y));
+  expect(fold.right).toBe(Math.round(stories!.x + stories!.width) - 1);
+  expect(await filledHalf(page, foldLeft, "right")).toBe(true);
+  expect(await filledHalf(page, foldLeft, "left")).toBe(false);
+
+  // And the click folds the column away and brings it back from the page corner.
+  await foldLeft.click();
+  await expect(column).toHaveCount(0);
+  const unfoldLeft = page.getByTestId("panel-unfold-left");
+  await expect(unfoldLeft).toBeVisible();
+  expect((await cornerOf(unfoldLeft)).x).toBe(0);
+  await unfoldLeft.click();
+  await expect(column).toBeVisible();
+  await expect(foldLeft).toBeVisible();
+
+  forgetHome(home);
 });
 
 test("the shelf folds each column from its own corner", async ({ page }) => {
