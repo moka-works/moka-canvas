@@ -64,7 +64,30 @@ async fn a_fresh_machine_reads_the_documented_defaults() {
     assert_eq!(body["locale"], "system");
     assert_eq!(body["canvasTheme"], "graphite");
     assert_eq!(body["clipSnap"], true);
+    assert_eq!(body["storyParallel"], 3);
     assert_eq!(body["panelFolds"], json!({ "left": false, "right": false }));
+}
+
+#[tokio::test]
+async fn the_story_room_count_stays_within_what_the_room_can_use() {
+    let root = tempfile::tempdir().unwrap();
+    let app = harness(root.path());
+
+    let (status, high) = send(
+        &app,
+        json_request("PATCH", "/api/v1/ui-prefs", json!({ "storyParallel": 99 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(high["storyParallel"], 8);
+
+    let (status, low) = send(
+        &app,
+        json_request("PATCH", "/api/v1/ui-prefs", json!({ "storyParallel": 0 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(low["storyParallel"], 1);
 }
 
 #[tokio::test]

@@ -6,6 +6,11 @@ import {
   useStoryModels,
   type StoryAskPlace,
 } from "../stores/storyModels";
+import {
+  STORY_PARALLEL_MIN,
+  storyMaxParallel,
+  useStoryBatch,
+} from "../stores/storyBatch";
 
 /**
  * Which capability a place is asked of.
@@ -33,7 +38,14 @@ const CAPABILITY_OF_PLACE: Record<StoryAskPlace, Capability> = {
  * kept per place — a telling's score is not its voice, even when one model
  * does both.
  */
-export function StoryModelPicks({ places }: { places: StoryAskPlace[] }) {
+export function StoryModelPicks({
+  places,
+  withParallel = false,
+}: {
+  places: StoryAskPlace[];
+  /** Whether the band also offers the count the step's batches run at. */
+  withParallel?: boolean;
+}) {
   const { t } = useTranslation();
   const choices = useStoryModels((state) => state.choices);
 
@@ -68,6 +80,49 @@ export function StoryModelPicks({ places }: { places: StoryAskPlace[] }) {
           </div>
         ),
       )}
+      {withParallel && <ParallelPick />}
+    </div>
+  );
+}
+
+/**
+ * How many generations the step's batches ask one model to run at once.
+ *
+ * The count is per model rather than per batch: two batches asking the same
+ * model wait in the same queue, while a different model keeps a queue of its
+ * own. The deployment's ceiling is the most this picker offers.
+ */
+function ParallelPick() {
+  const { t } = useTranslation();
+  const parallel = useStoryBatch((state) => state.parallel);
+  const choose = useStoryBatch((state) => state.choose);
+  const most = storyMaxParallel();
+  const value = Math.min(parallel, most);
+  const counts = Array.from(
+    { length: most - STORY_PARALLEL_MIN + 1 },
+    (_, at) => STORY_PARALLEL_MIN + at,
+  );
+
+  return (
+    <div
+      className="story-model"
+      data-testid="story-model-parallel"
+      title={t("story:models.parallelTip", { max: most })}
+    >
+      <label className="dialog-field">
+        <span>{t("story:models.parallel")}</span>
+        <select
+          data-testid="story-parallel"
+          onChange={(event) => choose(Number(event.target.value))}
+          value={value}
+        >
+          {counts.map((count) => (
+            <option key={count} value={count}>
+              {count}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

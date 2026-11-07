@@ -104,6 +104,11 @@ export interface StoryJobRecord {
   status: StoryJobStatus;
   /** The model this batch resolved to, for a reader reading the record later. */
   model: string;
+  /**
+   * How many pieces of the batch may be in flight against that model at once.
+   * Absent on records written before the room asked with a count of its own.
+   */
+  parallel?: number;
   items: StoryJobItem[];
   error?: string;
   cancelRequested: boolean;
@@ -147,11 +152,18 @@ export const storyApi = {
     kind: StoryJobKind,
     items: StoryJobItemDraft[],
     model?: string | null,
+    parallel?: number,
     signal?: AbortSignal,
   ): Promise<StoryJobRecord> {
     return http.request<StoryJobRecord>(jobsPath, {
       method: "POST",
-      body: { storyId, kind, items, model: model ?? null },
+      body: {
+        storyId,
+        kind,
+        items,
+        model: model ?? null,
+        ...(parallel === undefined ? {} : { parallel }),
+      },
       signal,
     });
   },

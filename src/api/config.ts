@@ -19,6 +19,8 @@ export interface PublicConfig {
   maxUploadBytes: number;
   allowedMediaTypes: string[];
   limits: PublicLimits;
+  /** The most the story room may ask one model to serve at once. */
+  storyMaxParallelItems?: number;
   capabilities: PublicCapabilities;
 }
 

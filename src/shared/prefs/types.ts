@@ -66,6 +66,8 @@ export interface UiPreferences {
   stageSplit: number;
   storyModels: Record<string, string>;
   storyPlaces: Record<string, StoryPlace>;
+  /** How many generations the story room may have in flight against one model. */
+  storyParallel: number;
   directorOnboarding: string | null;
   lastUpdateCheck: number | null;
 }
@@ -84,6 +86,7 @@ export interface UiPrefsPatch {
   clipVolume?: number;
   clipSnap?: boolean;
   stageSplit?: number;
+  storyParallel?: number;
   directorOnboarding?: string;
   lastUpdateCheck?: number;
   openCanvases?: Record<string, string[] | null>;

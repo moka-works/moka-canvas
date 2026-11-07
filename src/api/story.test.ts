@@ -98,6 +98,14 @@ describe("story job client", () => {
     expect(sent[0].body).toMatchObject({ model: "scribe-2" });
   });
 
+  it("carries the count the batch may run at once", async () => {
+    stub(record());
+
+    await storyApi.start("story-1", "elementArt", [], null, 4);
+
+    expect(sent[0].body).toMatchObject({ parallel: 4 });
+  });
+
   it("lists one story's batches, or the project's when none is named", async () => {
     stub([record()]);
 

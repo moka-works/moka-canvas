@@ -19,6 +19,7 @@ import {
   useStoryJobStore,
   watchedStepFailure,
 } from "./storyJobStore";
+import { useStoryBatch } from "./storyBatch";
 import { useStoryStore } from "./storyStore";
 
 const ids = storyIds();
@@ -150,6 +151,7 @@ beforeEach(() => {
   useHistoryStore.getState().clear();
   useAppStore.setState({ toasts: [] });
   useStoryJobStore.getState().reset();
+  useStoryBatch.setState({ parallel: 3 });
   open();
 });
 
@@ -186,6 +188,18 @@ describe("starting a batch", () => {
     );
     expect(saved).toBeGreaterThanOrEqual(0);
     expect(saved).toBeLessThan(asked);
+  });
+
+  it("asks with the count the room is set to run at once", async () => {
+    serving({ "/api/v1/projects/current/story/jobs": job() });
+    useStoryBatch.setState({ parallel: 4 });
+
+    await useStoryJobStore.getState().start(ids.story, "keyframeArt", []);
+
+    const asked = calls.find(
+      (call) => call.method === "POST" && call.url.endsWith("/story/jobs"),
+    );
+    expect(JSON.parse(asked?.body ?? "{}").parallel).toBe(4);
   });
 
   it("asks for nothing while the document it would be asked against is unsaved", async () => {

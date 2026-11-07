@@ -139,15 +139,6 @@ export function ElementCard({
           }}
           value={named.value}
         />
-        <button
-          aria-label={t("story:elements.remove", { name: element.name })}
-          className="story-element-remove"
-          data-testid={`story-element-remove-${element.name}`}
-          onClick={() => setRemoving(true)}
-          type="button"
-        >
-          ✕
-        </button>
       </div>
 
       <ChapterLine
@@ -183,6 +174,14 @@ export function ElementCard({
 
       <div className="story-element-actions">
         <span className="story-hint">{t("story:elements.rewriteText")}</span>
+        <button
+          className="link"
+          data-testid={`story-element-remove-${element.name}`}
+          onClick={() => setRemoving(true)}
+          type="button"
+        >
+          {t("story:elements.remove")}
+        </button>
       </div>
 
       {removing && (
@@ -346,11 +345,15 @@ function dropTake(
 
 /** Takes an element out of the story, leaving the pictures it was drawn in. */
 function removeElement(story: StoryDocument, elementId: string): void {
-  execute(i18n.t("story:history.elements"), [
+  // Read the live document rather than the card's render: the card may have
+  // been on screen since before an answer landed, and writing its snapshot
+  // back would quietly undo what the reader has said or a batch has filed.
+  const live = liveStory(story.id) ?? story;
+  execute(i18n.t("story:history.removeElement"), [
     {
       type: "setStoryElements",
       storyId: story.id,
-      elements: story.elements.filter((held) => held.id !== elementId),
+      elements: live.elements.filter((held) => held.id !== elementId),
     },
   ]);
 }

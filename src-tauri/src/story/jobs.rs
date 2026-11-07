@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, Notify};
 
 use super::ingest::ingest_story_result;
 use crate::config::StoryConfig;
@@ -33,6 +33,88 @@ use crate::workflow::{ExecutionError, ProgressReporter};
 /// nobody.
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 
+fn default_parallel() -> usize {
+    super::DEFAULT_PARALLEL_ITEMS
+}
+
+/// How many generations one model may be serving at once.
+///
+/// The count is the room's, not the batch's: every batch asking the same model
+/// waits in the same queue, so two bulk presses against one painter cannot
+/// open twice the calls. A different model is a different queue and keeps its
+/// own slots, which is what lets a busy painter and a busy writer run beside
+/// each other.
+///
+/// The limit may be changed while pieces are out — a reader raising it should
+/// not have to wait for the batch to end. A change applies to the pieces that
+/// ask next; what is already under way is not interrupted.
+struct ModelGate {
+    state: Mutex<GateState>,
+    wake: Notify,
+}
+
+struct GateState {
+    limit: usize,
+    in_flight: usize,
+}
+
+impl ModelGate {
+    fn new(limit: usize) -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(GateState {
+                limit: limit.max(1),
+                in_flight: 0,
+            }),
+            wake: Notify::new(),
+        })
+    }
+
+    /// Waits for a slot, and holds it until the permit is dropped.
+    ///
+    /// The interest is registered before the count is read, so a piece that
+    /// finishes between the read and the wait still wakes this one. A waiter
+    /// that is dropped — a cancelled batch — leaves the slot free rather than
+    /// taking it with it.
+    async fn acquire(self: &Arc<Self>) -> GatePermit {
+        loop {
+            let notified = self.wake.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            {
+                let mut state = self.state.lock().expect("the model gate is not poisoned");
+                if state.in_flight < state.limit {
+                    state.in_flight += 1;
+                    return GatePermit(Arc::clone(self));
+                }
+            }
+            notified.await;
+        }
+    }
+
+    fn release(&self) {
+        let mut state = self.state.lock().expect("the model gate is not poisoned");
+        state.in_flight = state.in_flight.saturating_sub(1);
+        drop(state);
+        self.wake.notify_waiters();
+    }
+
+    fn set_limit(&self, limit: usize) {
+        let mut state = self.state.lock().expect("the model gate is not poisoned");
+        state.limit = limit.max(1);
+        drop(state);
+        self.wake.notify_waiters();
+    }
+}
+
+/// A slot in one model's queue, given back when the piece is over.
+struct GatePermit(Arc<ModelGate>);
+
+impl Drop for GatePermit {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
 /// One batch of generations, and how far each piece of it got.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +127,11 @@ pub struct StoryJobRecord {
     /// The model configuration the batch was resolved to, so a reader can see
     /// what answered without opening the settings.
     pub model: String,
+    /// How many pieces of this batch may be in flight against that model at
+    /// once. Kept on the record so a batch picked up by a later process waits
+    /// its turn the way the room asked it to.
+    #[serde(default = "default_parallel")]
+    pub parallel: usize,
     pub items: Vec<StoryJobItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -424,22 +511,43 @@ pub struct StoryJobManager {
     provider: Arc<ProviderExecutor>,
     /// The jobs being driven, by id, each with the flag it answers to.
     active: Mutex<HashMap<String, Cancel>>,
-    /// How many generations may be in flight at once, across every job: a batch
-    /// of twenty pieces does not open twenty connections to a provider, and two
-    /// batches do not open two apiece.
-    permits: Arc<Semaphore>,
+    /// One queue per model, shared by every batch asking it. A batch of twenty
+    /// pieces waits its turn here rather than opening twenty connections, and
+    /// two batches against one model wait in the same queue rather than two.
+    gates: Mutex<HashMap<String, Arc<ModelGate>>>,
     limits: StoryConfig,
 }
 
 impl StoryJobManager {
     pub fn new(provider: Arc<ProviderExecutor>, limits: StoryConfig) -> Arc<Self> {
-        let permits = Arc::new(Semaphore::new(limits.max_parallel_items.max(1)));
         Arc::new(Self {
             provider,
             active: Mutex::new(HashMap::new()),
-            permits,
+            gates: Mutex::new(HashMap::new()),
             limits,
         })
+    }
+
+    /// The queue for one model, created at `limit` the first time it is asked
+    /// for and left as it stands after that.
+    ///
+    /// A batch picked up again by a later process asks for its queue this way:
+    /// what it was started with is the only count it knows, and it must not
+    /// pull a queue a newer batch has already widened or narrowed.
+    fn gate_for(&self, model: &str, limit: usize) -> Arc<ModelGate> {
+        self.gates
+            .lock()
+            .expect("the model gates are not held across a call")
+            .entry(model.to_string())
+            .or_insert_with(|| ModelGate::new(limit))
+            .clone()
+    }
+
+    /// The queue for one model, set to the count a batch is asking with.
+    fn gate_at(&self, model: &str, limit: usize) -> Arc<ModelGate> {
+        let gate = self.gate_for(model, limit);
+        gate.set_limit(limit);
+        gate
     }
 
     /// The limits a batch is started under, which the routes check against.
@@ -459,8 +567,13 @@ impl StoryJobManager {
         story_id: String,
         kind: StoryJobKind,
         model: String,
+        parallel: usize,
         items: Vec<StoryJobItem>,
     ) -> Result<StoryJobRecord, ProjectError> {
+        // The routes refuse a count outside the deployment's ceiling; a
+        // caller that reached here some other way is held to it rather than
+        // opening a queue the deployment never allowed.
+        let parallel = parallel.clamp(1, self.limits.max_parallel_items.max(1));
         let project_id = store
             .current()
             .await?
@@ -469,6 +582,10 @@ impl StoryJobManager {
             .metadata
             .id
             .clone();
+        // The queue is set before the record is written: a batch asked for
+        // with a wider or narrower count is one the room expects to run that
+        // way from its first piece.
+        self.gate_at(&model, parallel);
         let now = now_iso();
         let record = StoryJobRecord {
             id: new_id(),
@@ -477,6 +594,7 @@ impl StoryJobManager {
             kind,
             status: StoryJobStatus::Queued,
             model,
+            parallel,
             items,
             error: None,
             cancel_requested: false,
@@ -591,6 +709,10 @@ impl StoryJobManager {
             kind: record.kind,
             model: record.model.clone(),
         });
+        // The queue this batch waits in is the one its model shares with every
+        // other batch. A fresh start has already set the count; one picked up
+        // again keeps whatever the record says it was asked with.
+        let gate = self.gate_for(&record.model, record.parallel);
         let pending: Vec<usize> = record
             .items
             .iter()
@@ -609,12 +731,13 @@ impl StoryJobManager {
             let sender = sender.clone();
             let cancel = cancel.clone();
             let context = Arc::clone(&context);
+            let gate = Arc::clone(&gate);
             let position = *index;
             let item = record.items[position].clone();
             let placed = item.task_id.clone();
             tokio::spawn(async move {
                 work(
-                    manager, session, context, position, item, placed, cancel, sender,
+                    manager, session, context, gate, position, item, placed, cancel, sender,
                 )
                 .await;
             });
@@ -789,6 +912,7 @@ async fn work(
     manager: Arc<StoryJobManager>,
     store: Arc<FsProjectStore>,
     context: Arc<JobContext>,
+    gate: Arc<ModelGate>,
     index: usize,
     item: StoryJobItem,
     placed: Option<String>,
@@ -796,7 +920,9 @@ async fn work(
     sender: mpsc::Sender<ItemMessage>,
 ) {
     let outcome = match manager
-        .answer(&store, &context, &item, placed, &cancel, &sender, index)
+        .answer(
+            &store, &context, &gate, &item, placed, &cancel, &sender, index,
+        )
         .await
     {
         Ok(outcome) => outcome,
@@ -818,15 +944,16 @@ async fn work(
 impl StoryJobManager {
     /// Asks for one piece and files what comes back.
     ///
-    /// The permit is taken here rather than by the driver so that a batch of
+    /// The slot is taken here rather than by the driver so that a batch of
     /// twenty pieces waits its turn at the provider instead of opening twenty
-    /// connections: what is bounded is how many generations are in flight, not
-    /// how many pieces a batch has.
+    /// connections: what is bounded is how many generations are in flight
+    /// against one model, not how many pieces a batch has.
     #[allow(clippy::too_many_arguments)]
     async fn answer(
         &self,
         store: &Arc<FsProjectStore>,
         context: &JobContext,
+        gate: &Arc<ModelGate>,
         item: &StoryJobItem,
         placed: Option<String>,
         cancel: &Cancel,
@@ -836,12 +963,8 @@ impl StoryJobManager {
         if cancel.is_cancelled() {
             return Ok(ItemOutcome::never_ran());
         }
-        let _permit = self
-            .permits
-            .acquire()
-            .await
-            .map_err(|_| ExecutionError::failed("The generation ceiling is closed"))?;
-        // Asked again once the permit is in hand: waiting for one may have been
+        let _permit = gate.acquire().await;
+        // Asked again once the slot is in hand: waiting for one may have been
         // the whole of what a cancel had to interrupt.
         if cancel.is_cancelled() {
             return Ok(ItemOutcome::never_ran());

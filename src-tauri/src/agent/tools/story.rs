@@ -1389,7 +1389,14 @@ pub async fn effect(
     let model = args.opt_str("model").unwrap_or("").to_string();
     let job = state
         .story_jobs
-        .start(&session.0, story_id, kind, model, parsed)
+        .start(
+            &session.0,
+            story_id,
+            kind,
+            model,
+            crate::story::DEFAULT_PARALLEL_ITEMS,
+            parsed,
+        )
         .await?;
     Ok(ToolOutcome {
         summary: format!("Started a story job with {} items", items.len()),

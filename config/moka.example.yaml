@@ -86,12 +86,15 @@ story:
   maxStoriesPerProject: 20
   # How many pieces one batch may carry.
   maxItemsPerJob: 40
-  # How many generations may be in flight at once, across every batch. A batch
-  # of twenty pieces waits its turn here rather than opening twenty calls.
-  maxParallelItems: 2
+  # How many generations one model may be serving at once. The room's own
+  # setting is bounded by this, and different models do not share these slots:
+  # a batch of twenty pieces waits its turn here rather than opening twenty
+  # calls, and a busy painter does not hold a busy writer back.
+  maxParallelItems: 8
   # How many batches one project may be driving at once. A reader drawing a
   # cast one card at a time makes a batch per card, and those are independent
-  # asks; how many generations are really in flight is maxParallelItems.
+  # asks; how many generations are really in flight is maxParallelItems,
+  # counted against each model on its own.
   maxActiveJobsPerProject: 16
   # How many ended records a project keeps, besides the ones still running.
   keepRecords: 100

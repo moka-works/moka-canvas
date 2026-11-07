@@ -118,6 +118,20 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
     await expect(
       page.getByTestId("story-model-text").getByRole("combobox"),
     ).toHaveValue("");
+    // The pictures this step draws are asked of a model of their own, and the
+    // batch they are asked in runs at a count the reader sets here.
+    await expect(page.getByTestId("story-model-image")).toBeVisible();
+    await expect(page.getByTestId("story-parallel")).toHaveValue("3");
+    await page.getByTestId("story-parallel").selectOption("4");
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/ui-prefs");
+          const body = (await response.json()) as { storyParallel?: number };
+          return body.storyParallel;
+        }),
+      )
+      .toBe(4);
     await page.getByTestId("story-elements-recognise").click();
 
     await expect(page.locator(".story-element")).toHaveCount(4, {

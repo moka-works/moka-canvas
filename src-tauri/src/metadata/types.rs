@@ -459,6 +459,14 @@ pub struct StoryPlace {
     pub step: Option<String>,
 }
 
+/// The widest the interface lets the story room ask one model to serve at
+/// once. The deployment's own ceiling is read separately; this only bounds
+/// what the interface file accepts.
+pub const MAX_STORY_PARALLEL: usize = 8;
+
+/// The count the story room starts from before anybody has chosen one.
+pub const DEFAULT_STORY_PARALLEL: usize = 3;
+
 /// Choices about the interface rather than about the work.
 ///
 /// Kept in the metadata directory beside the model configuration rather than
@@ -482,6 +490,8 @@ pub struct UiPreferences {
     pub stage_split: f64,
     pub story_models: BTreeMap<String, String>,
     pub story_places: BTreeMap<String, StoryPlace>,
+    /// How many generations the room may have in flight against one model.
+    pub story_parallel: usize,
     pub director_onboarding: Option<String>,
     pub last_update_check: Option<i64>,
 }
@@ -503,6 +513,7 @@ impl Default for UiPreferences {
             stage_split: 0.6,
             story_models: BTreeMap::new(),
             story_places: BTreeMap::new(),
+            story_parallel: DEFAULT_STORY_PARALLEL,
             director_onboarding: None,
             last_update_check: None,
         }
@@ -540,6 +551,9 @@ impl UiPreferences {
         }
         if let Some(split) = patch.stage_split {
             self.stage_split = split;
+        }
+        if let Some(parallel) = patch.story_parallel {
+            self.story_parallel = parallel.clamp(1, MAX_STORY_PARALLEL);
         }
         if let Some(onboarding) = patch.director_onboarding {
             self.director_onboarding = Some(onboarding);
@@ -614,6 +628,7 @@ pub struct UiPrefsPatch {
     pub clip_volume: Option<f64>,
     pub clip_snap: Option<bool>,
     pub stage_split: Option<f64>,
+    pub story_parallel: Option<usize>,
     pub director_onboarding: Option<String>,
     pub last_update_check: Option<i64>,
     pub open_canvases: BTreeMap<String, Option<Vec<String>>>,
