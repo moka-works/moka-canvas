@@ -312,7 +312,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           <p className="story-step-lead">{t("story:elements.lead")}</p>
           <StoryImportButton story={story} target="canvas" />
         </div>
-        <StoryModelPicks places={["text", "image"]} />
+        <StoryModelPicks places={["text", "image"]} withParallel />
 
         <div className="story-voice-narrator">
           <span className="story-hint" data-testid="story-voice-narrator-tip">

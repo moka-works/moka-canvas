@@ -105,6 +105,7 @@ pub async fn public_config(State(state): State<ApiState>) -> Json<PublicConfigRe
         max_upload_bytes: config.public.max_upload_bytes,
         allowed_media_types: config.public.allowed_media_types.clone(),
         limits: config.limits.clone(),
+        story_max_parallel_items: config.story.max_parallel_items,
         capabilities: CapabilitiesResponse {
             mode: state.mode.as_str().to_string(),
             // The list a run is validated against rather than the one that was
@@ -1280,6 +1281,7 @@ pub async fn start_story_job(
         &request.story_id,
         request.kind,
         &items,
+        request.parallel,
         &opened.moka.resources,
         state.story_jobs.limits(),
     ) {
@@ -1336,6 +1338,7 @@ pub async fn start_story_job(
             request.story_id,
             request.kind,
             resolved.config_id,
+            request.parallel,
             items,
         )
         .await?;

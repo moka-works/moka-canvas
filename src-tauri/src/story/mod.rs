@@ -22,6 +22,11 @@ pub use jobs::{
 };
 pub use validate::validate_start;
 
+/// How many generations a batch asks one model to serve at once when it names
+/// no count of its own. The room always says; a client that predates the
+/// setting gets the number the room used to hard-code.
+pub const DEFAULT_PARALLEL_ITEMS: usize = 2;
+
 /// What a failure to start a job says, in the shape the API reports.
 ///
 /// The codes are the ones `story::validate` files its issues under; the status

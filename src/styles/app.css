@@ -7305,20 +7305,6 @@ body.is-dragging-split {
   outline: none;
 }
 
-.story-element-remove {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  flex: none;
-  font-size: 13px;
-  padding: 4px 6px;
-}
-
-.story-element-remove:hover {
-  color: var(--danger, #e5534b);
-}
-
 .story-element-chapters {
   align-items: center;
   display: flex;

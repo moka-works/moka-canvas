@@ -33,6 +33,12 @@ describe("the interface snapshot", () => {
     expect(prefs.clipTimelines.p1).toBe("tl-1");
   });
 
+  it("keeps the count the story room runs at once", () => {
+    expect(defaultUiPrefs().storyParallel).toBe(3);
+    rememberUiPrefs({ storyParallel: 5 });
+    expect(currentUiPrefs().storyParallel).toBe(5);
+  });
+
   it("writes map rows and removes the ones sent as null", () => {
     rememberUiPrefs({
       openCanvases: { p1: ["c1"], p2: ["c2"] },

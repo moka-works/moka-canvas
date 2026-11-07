@@ -63,6 +63,15 @@ pub struct StartStoryJobRequest {
     /// they picked one; the deployment's default answers otherwise.
     #[serde(default)]
     pub model: Option<String>,
+    /// How many generations this batch may have in flight against its model
+    /// at once. The room's own setting; a client that does not carry it gets
+    /// the count the room used before the setting existed.
+    #[serde(default = "default_parallel")]
+    pub parallel: usize,
+}
+
+fn default_parallel() -> usize {
+    crate::story::DEFAULT_PARALLEL_ITEMS
 }
 
 /// Which batches a reader is asking for: one story's, or the project's.
@@ -310,6 +319,9 @@ pub struct PublicConfigResponse {
     pub max_upload_bytes: u64,
     pub allowed_media_types: Vec<String>,
     pub limits: LimitsConfig,
+    /// The most generations the story room may have in flight against one
+    /// model. The room's picker offers no more than this.
+    pub story_max_parallel_items: usize,
     pub capabilities: CapabilitiesResponse,
 }
 

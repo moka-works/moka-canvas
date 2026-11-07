@@ -36,6 +36,7 @@ export function defaultUiPrefs(): UiPreferences {
     stageSplit: 0.6,
     storyModels: {},
     storyPlaces: {},
+    storyParallel: 3,
     directorOnboarding: null,
     lastUpdateCheck: null,
   };
@@ -94,6 +95,9 @@ export function applyUiPatch(
   if (patch.clipVolume !== undefined) next.clipVolume = patch.clipVolume;
   if (patch.clipSnap !== undefined) next.clipSnap = patch.clipSnap;
   if (patch.stageSplit !== undefined) next.stageSplit = patch.stageSplit;
+  if (patch.storyParallel !== undefined) {
+    next.storyParallel = patch.storyParallel;
+  }
   if (patch.directorOnboarding !== undefined) {
     next.directorOnboarding = patch.directorOnboarding;
   }

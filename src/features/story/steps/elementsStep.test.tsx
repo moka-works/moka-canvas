@@ -31,6 +31,7 @@ import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { StoryPage } from "../StoryPage";
 import { useStoryJobStore } from "../stores/storyJobStore";
+import { useStoryBatch } from "../stores/storyBatch";
 import { useStoryModels } from "../stores/storyModels";
 import { useStoryStore } from "../stores/storyStore";
 
@@ -42,6 +43,8 @@ let starts: Array<{
   items: StoryJobItemDraft[];
   /** The model the batch named, which is none until the room is set to one. */
   model: string | null;
+  /** How many generations the batch may run at once against that model. */
+  parallel?: number;
 }> = [];
 /** The batches the server is holding, newest first. */
 let held: StoryJobRecord[] = [];
@@ -103,11 +106,13 @@ function serving(): void {
             kind: StoryJobKind;
             items: StoryJobItemDraft[];
             model?: string | null;
+            parallel?: number;
           };
           starts.push({
             kind: body.kind,
             items: body.items,
             model: body.model ?? null,
+            parallel: body.parallel,
           });
           const record = batchOf(starts.length, body.kind, body.items);
           held = [record, ...held];
@@ -326,6 +331,7 @@ beforeEach(() => {
   useStoryStore.getState().forget();
   useStoryJobStore.getState().reset();
   useStoryModels.setState({ choices: {} });
+  useStoryBatch.setState({ parallel: 3 });
   useAppStore.setState({ toasts: [] });
 });
 
@@ -811,6 +817,23 @@ describe("the model a reading is asked of", () => {
     // The choice is the machine's, so the next reading is asked of it too.
     expect(currentUiPrefs().storyModels).toEqual({ text: "scribe-2" });
   });
+
+  it("starts its batches at the count the room is set to run at once", async () => {
+    openAtElements(buildStoryMokaFile());
+
+    const parallel = screen.getByTestId("story-parallel");
+    expect((parallel as HTMLSelectElement).value).toBe("3");
+    fireEvent.change(parallel, { target: { value: "2" } });
+    expect(currentUiPrefs().storyParallel).toBe(2);
+
+    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    // The count travels with the batch, so the server queues the pieces
+    // against the model rather than opening the whole cast at once.
+    expect(starts[0]?.parallel).toBe(2);
+  });
 });
 
 describe("a description the reader rewrites", () => {
@@ -1217,6 +1240,9 @@ describe("taking an element out", () => {
     fireEvent.click(screen.getByTestId("remove-element-confirm"));
 
     expect(element("周")).toBeUndefined();
+    expect(useHistoryStore.getState().undoStack.at(-1)?.label).toBe(
+      "Remove element",
+    );
     expect(story().elements.map((each) => each.name)).toEqual([
       "林",
       "末班车车厢",

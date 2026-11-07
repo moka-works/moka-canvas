@@ -45,6 +45,7 @@ import {
   planChapterRewrite,
 } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
+import { storyParallel } from "./storyBatch";
 import { useStoryStore } from "./storyStore";
 
 /** How often a batch that is running is looked at. It runs for minutes. */
@@ -691,15 +692,16 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
           return null;
         }
         // Read here rather than where a batch is planned: every ask is made
-        // with the model the room is set to now, which is what the pickers in
-        // the steps stand for — a retry after the picker was changed is asked
-        // of the model the reader changed it to. A caller naming a model asks
-        // of that one instead, which is what a character's own voice does.
+        // with the model the room is set to now, and the count it is asked to
+        // run at now — a retry after either was changed is asked of what the
+        // room says at the press. A caller naming a model asks of that one
+        // instead, which is what a character's own voice does.
         const record = await storyApi.start(
           storyId,
           kind,
           items,
           model === undefined ? storyAskModel(kind) : model,
+          storyParallel(),
         );
         if (run !== undefined) jobRun.set(record.id, run);
         // Watched from the asking whatever the record comes back as: a batch

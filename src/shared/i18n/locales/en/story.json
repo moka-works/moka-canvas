@@ -66,7 +66,9 @@
     "image": "Pictures",
     "video": "Clips",
     "audio": "Voices",
-    "music": "Score"
+    "music": "Score",
+    "parallel": "Parallel",
+    "parallelTip": "Up to {{max}} generations against one model at once; each model has its own queue"
   },
   "steps": {
     "label": "The five steps",
@@ -112,6 +114,7 @@
     "create": "Create a story",
     "rename": "Rename the story",
     "delete": "Delete the story",
+    "removeElement": "Remove element",
     "apply": {
       "outline": "Write the chapters from the model",
       "elements": "Write the elements from the model",
@@ -331,7 +334,7 @@
     "chaptersMenu": "The chapters it stands in",
     "chapter": "Chapter {{number}}",
     "anyChapter": "Every chapter",
-    "remove": "Remove {{name}}",
+    "remove": "Remove element",
     "removeTitle": "Remove {{name}}?",
     "removeBody": "{{name}} leaves the cast. Where a board names it, the reference is left standing as a gap.",
     "removeNote": "Nothing on the shelf is deleted: the pictures drawn of it stay among the files",

@@ -66,7 +66,9 @@
     "image": "图片",
     "video": "视频",
     "audio": "配音",
-    "music": "配乐"
+    "music": "配乐",
+    "parallel": "并发",
+    "parallelTip": "同一模型最多同时生成 {{max}} 个；不同模型各自计算"
   },
   "steps": {
     "label": "五个步骤",
@@ -112,6 +114,7 @@
     "create": "新建故事",
     "rename": "重命名故事",
     "delete": "删除故事",
+    "removeElement": "删除元素",
     "apply": {
       "outline": "应用模型分的章",
       "elements": "应用模型找出的元素",
@@ -331,7 +334,7 @@
     "chaptersMenu": "它出场的章节",
     "chapter": "第 {{number}} 章",
     "anyChapter": "每一章",
-    "remove": "删除 {{name}}",
+    "remove": "删除元素",
     "removeTitle": "删除 {{name}}？",
     "removeBody": "{{name}} 会离开这份卡司。分镜里引用到它的地方会留下一个空位。",
     "removeNote": "素材库里的东西不会被删：画过的图仍在文件里",

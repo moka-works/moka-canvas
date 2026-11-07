@@ -7,6 +7,7 @@
 //! looked at until it answers, and a batch left waiting on one is picked up
 //! again by the process that opens the project next.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -753,6 +754,83 @@ fn encoded(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+/// What a stand-in provider is serving just now, by the model each request
+/// names: how many are in flight, the most any one model ever had at once, and
+/// the most the provider ever had across every model.
+#[derive(Default)]
+struct Load(Mutex<Tally>);
+
+#[derive(Default)]
+struct Tally {
+    in_flight: HashMap<String, usize>,
+    peak: HashMap<String, usize>,
+    combined: usize,
+    combined_peak: usize,
+}
+
+impl Load {
+    fn enter(&self, model: &str) {
+        let mut tally = self.0.lock().expect("the tally is not poisoned");
+        let count = tally.in_flight.entry(model.to_string()).or_insert(0);
+        *count += 1;
+        let now = *count;
+        tally.combined += 1;
+        let combined = tally.combined;
+        let peak = tally.peak.entry(model.to_string()).or_insert(0);
+        *peak = (*peak).max(now);
+        tally.combined_peak = tally.combined_peak.max(combined);
+    }
+
+    fn leave(&self, model: &str) {
+        let mut tally = self.0.lock().expect("the tally is not poisoned");
+        if let Some(count) = tally.in_flight.get_mut(model) {
+            *count = count.saturating_sub(1);
+        }
+        tally.combined = tally.combined.saturating_sub(1);
+    }
+
+    fn peak_for(&self, model: &str) -> usize {
+        *self
+            .0
+            .lock()
+            .expect("the tally is not poisoned")
+            .peak
+            .get(model)
+            .unwrap_or(&0)
+    }
+
+    fn combined_peak(&self) -> usize {
+        self.0
+            .lock()
+            .expect("the tally is not poisoned")
+            .combined_peak
+    }
+}
+
+/// A provider that paints, but takes its time, so a test can see how many
+/// requests it is holding at once and for which model.
+fn painting_slowly(load: Arc<Load>) -> Router {
+    Router::new().route(
+        "/v1/images/generations",
+        post(move |body: Bytes| {
+            let load = Arc::clone(&load);
+            async move {
+                let model = serde_json::from_slice::<Value>(&body)
+                    .ok()
+                    .and_then(|asked| asked["model"].as_str().map(str::to_string))
+                    .unwrap_or_default();
+                load.enter(&model);
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                load.leave(&model);
+                Json(json!({
+                    "created": 1_700_000_000u64,
+                    "data": [{ "b64_json": encoded(&picture(8, 6)) }],
+                }))
+            }
+        }),
+    )
+}
+
 /// A provider that paints a picture whose shape says which prompt asked for
 /// it: a batch's drawings are told apart by what is in the files it filed.
 fn painting_by_prompt() -> Router {
@@ -849,6 +927,125 @@ async fn a_batch_of_drawings_is_answered_and_filed_under_the_batch_that_asked() 
         entry["name"]
     );
     assert_eq!(recorded.count(), 1, "one piece is one call");
+}
+
+/// A batch asked to run three at a time never has a fourth call out to the one
+/// model, however many pieces it carries.
+#[tokio::test]
+async fn one_model_serves_only_as_many_pieces_as_the_room_asked_for() {
+    let tmp = TempDir::new().unwrap();
+    let harness = harness_at(&tmp);
+    let load = Arc::new(Load::default());
+    let provider = serve(painting_slowly(Arc::clone(&load))).await;
+    harness
+        .configure(&provider, &[(PAINTER, Capability::Image)])
+        .await;
+    harness.project("Story Parallel").await;
+
+    let items = (1..=6)
+        .map(|at| {
+            piece(
+                &format!("kf:{at}"),
+                keyframe_target("chapter-1", "act-1", &format!("frame-{at}")),
+                "image",
+                &format!("雨中的站台 {at}"),
+            )
+        })
+        .collect();
+    let mut request = batch("keyframeArt", items);
+    request["parallel"] = json!(3);
+    let job = harness.start_ok(request).await;
+    assert_eq!(job["parallel"], 3);
+    let id = job["id"].as_str().expect("a job has an id").to_string();
+
+    let settled = harness.settled(&id).await;
+    assert_eq!(settled["status"], "succeeded", "{settled}");
+    assert_eq!(load.peak_for(PAINTER), 3, "three at once, never four");
+}
+
+/// Two models are two queues: each serves the count it was asked with, and
+/// neither waits on the other's pieces.
+#[tokio::test]
+async fn every_model_runs_its_own_queue_beside_the_others() {
+    let tmp = TempDir::new().unwrap();
+    let harness = harness_at(&tmp);
+    let load = Arc::new(Load::default());
+    let provider = serve(painting_slowly(Arc::clone(&load))).await;
+    harness
+        .add_model(&provider, "painter-a", Capability::Image)
+        .await;
+    harness
+        .add_model(&provider, "painter-b", Capability::Image)
+        .await;
+    harness.project("Story Queues").await;
+
+    let asking = |model: &str, prefix: &str| {
+        let items = (1..=4)
+            .map(|at| {
+                piece(
+                    &format!("{prefix}:{at}"),
+                    keyframe_target("chapter-1", "act-1", &format!("{prefix}-frame-{at}")),
+                    "image",
+                    &format!("{prefix} 的第 {at} 格"),
+                )
+            })
+            .collect();
+        let mut request = batch("keyframeArt", items);
+        request["model"] = json!(model);
+        request["parallel"] = json!(2);
+        request
+    };
+
+    let job_a = harness.start_ok(asking("painter-a", "a")).await;
+    let job_b = harness.start_ok(asking("painter-b", "b")).await;
+    let id_a = job_a["id"].as_str().expect("a job has an id").to_string();
+    let id_b = job_b["id"].as_str().expect("a job has an id").to_string();
+
+    let settled_a = harness.settled(&id_a).await;
+    let settled_b = harness.settled(&id_b).await;
+    assert_eq!(settled_a["status"], "succeeded", "{settled_a}");
+    assert_eq!(settled_b["status"], "succeeded", "{settled_b}");
+    assert_eq!(load.peak_for("painter-a"), 2);
+    assert_eq!(load.peak_for("painter-b"), 2);
+    assert!(
+        load.combined_peak() >= 3,
+        "the two queues should have run beside each other, saw {} at once",
+        load.combined_peak()
+    );
+}
+
+/// A count outside what the deployment allows is refused whole, before any
+/// piece is asked for.
+#[tokio::test]
+async fn a_count_outside_the_deployments_ceiling_is_refused() {
+    let tmp = TempDir::new().unwrap();
+    let harness = harness_at(&tmp);
+    let recorded = Recorded::default();
+    let provider = serve(answering(recorded, Arc::new(AtomicBool::new(true)))).await;
+    harness
+        .configure(&provider, &[(PAINTER, Capability::Image)])
+        .await;
+    harness.project("Story Ceiling").await;
+
+    for asked in [0usize, 9] {
+        let mut request = batch(
+            "keyframeArt",
+            vec![piece(
+                "kf:1",
+                keyframe_target("chapter-1", "act-1", "frame-1"),
+                "image",
+                "雨中的站台",
+            )],
+        );
+        request["parallel"] = json!(asked);
+        let (status, problem) = harness.start(request).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asked for {asked}: {problem}"
+        );
+        assert!(problem.to_string().contains("between 1 and 8"), "{problem}");
+    }
 }
 
 /// A batch of characters drawn at once: every piece is a file of its own.

@@ -54,10 +54,21 @@ pub fn validate_start(
     story_id: &str,
     kind: StoryJobKind,
     items: &[StoryJobItem],
+    parallel: usize,
     assets: &ResourceRegistry,
     limits: &StoryConfig,
 ) -> Result<(), Vec<ValidationIssue>> {
     let mut issues = Vec::new();
+
+    if !(1..=limits.max_parallel_items).contains(&parallel) {
+        issues.push(issue(
+            "VALIDATION_FAILED",
+            format!(
+                "One model may serve between 1 and {} pieces of a story at once; {parallel} was asked for",
+                limits.max_parallel_items
+            ),
+        ));
+    }
 
     if !moka
         .stories
