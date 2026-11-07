@@ -255,6 +255,29 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("{{");
   });
 
+  it("names only what the telling returns to, not what passes once", () => {
+    const prompt = storyElementsPrompt({
+      chapters: [
+        { number: 1, title: "第一章 站台", text: "他在站台上等列车。" },
+      ],
+      genre: "对白剧情",
+      style: "现代都市风",
+    });
+    // A listing is a picture every shot of its subject has to keep to, so a
+    // passer-by, a room one shot passes through or an object seen once costs a
+    // drawing nothing needs and a reference the frame has to work around.
+    expect(prompt).toContain("name only what the telling returns to");
+    expect(prompt).toContain(
+      "again in a later chapter, or more than once across the shots of the chapter it lives in",
+    );
+    expect(prompt).toContain(
+      "A passer-by, a room one shot passes through, an object a single shot holds",
+    );
+    expect(prompt).toContain("earns no entry of its own");
+    expect(prompt).toContain("leave it out of all three lists");
+    expect(prompt).toContain("anything only one shot shows");
+  });
+
   it("keeps a scene to one place, and its change to its description", () => {
     const prompt = storyElementsPrompt({
       chapters: [
