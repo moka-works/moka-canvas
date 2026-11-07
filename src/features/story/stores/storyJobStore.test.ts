@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
 
 import type { StoryJobRecord } from "../../../api/story";
+import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useHistoryStore } from "../../editor/stores/historyStore";
@@ -692,6 +693,30 @@ describe("a batch coming back", () => {
     apply.mockRestore();
   });
 
+  it("reads two looks that overlap one after the other", async () => {
+    // A look comes every second and a half whether the one before it has
+    // finished or not. Both see the same answer unread, so a reading that is
+    // not queued behind the other reloads the same revision and both save onto
+    // it — the later save is refused as a document changed elsewhere.
+    const reload = vi
+      .spyOn(useProjectStore.getState(), "reload")
+      .mockResolvedValue(true);
+    const apply = vi
+      .spyOn(useProjectStore.getState(), "applyLocal")
+      .mockReturnValue([]);
+    serving({ "/api/v1/projects/current/story/jobs/job-1": answered() });
+
+    await Promise.all([
+      useStoryJobStore.getState().adopt("job-1"),
+      useStoryJobStore.getState().adopt("job-1"),
+    ]);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledTimes(1);
+    reload.mockRestore();
+    apply.mockRestore();
+  });
+
   it("says a look that failed, once for the reason and not once a look", async () => {
     serving({ "/api/v1/projects/current/story/jobs": [job()] });
     await useStoryJobStore.getState().load(ids.story);
@@ -944,7 +969,10 @@ describe("a room opened over the batches it has already read", () => {
   it("asks again for an answer the document would not take", async () => {
     // A cast longer than a story may hold: the document refuses the lot, so
     // nothing of the answer is in and nothing may be written down about it.
-    const tooMany = Array.from({ length: 201 }, (_, at) => `角色 ${at + 1}`);
+    const tooMany = Array.from(
+      { length: MAX_ELEMENTS_PER_STORY + 1 },
+      (_, at) => `角色 ${at + 1}`,
+    );
     serving({
       ...saved,
       "/api/v1/projects/current/story/jobs": [

@@ -231,6 +231,28 @@ interface BatchRead {
 let readIn = new Map<string, BatchRead>();
 
 /**
+ * The turn an answer is read into the document on.
+ *
+ * A look comes every second and a half whether the look before it has finished
+ * or not, and reading an answer in is a stretch of work: reload the document,
+ * write onto it, save. Two readings at once each reload the same revision and
+ * each save onto it, so the second save arrives with a revision the first has
+ * already replaced — the file is refused as changed elsewhere, and the answer
+ * is read in again on a document that moved under it. Readings queue here, so
+ * what one look read is in the document before the next look reads its own.
+ */
+let readingTurn: Promise<unknown> = Promise.resolve();
+
+function oneReadingAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const turn = readingTurn.then(work, work);
+  readingTurn = turn.then(
+    () => undefined,
+    () => undefined,
+  );
+  return turn;
+}
+
+/**
  * The batches this room has watched be made, by the id of the record.
  *
  * A step's red badge counts the pieces that did not come back, and counts them
@@ -299,7 +321,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
    * command that points at one of them is refused until this client has been
    * told about it.
    */
-  const readAnswers = async (records: StoryJobRecord[]): Promise<void> => {
+  const readAnswersNow = async (records: StoryJobRecord[]): Promise<void> => {
     // Oldest first, though the room lists batches newest first: a batch asked
     // for later than another is the newer word on the places both of them
     // answered for, so reading them in the order they were asked for is what
@@ -470,6 +492,9 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       set({ applying: get().applying.filter((id) => !finished.has(id)) });
     }
   };
+
+  const readAnswers = (records: StoryJobRecord[]): Promise<void> =>
+    oneReadingAtATime(() => readAnswersNow(records));
 
   /** Puts a record where it belongs: newest first, replacing an older copy. */
   const integrate = (record: StoryJobRecord): void => {
