@@ -155,12 +155,13 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("{{");
   });
 
-  it("asks where a manuscript's chapters begin, not what they say", () => {
+  it("asks where a manuscript's chapters begin and end, not what they say", () => {
     const prompt = storySplitPrompt({
       text: "他在站台上等一班已经停运的列车。",
       part: 2,
       minutes: 3,
       total: "15:00",
+      last: false,
     });
     expect(prompt).toContain("part 2 of a manuscript");
     expect(prompt).toContain("他在站台上等一班已经停运的列车。");
@@ -169,9 +170,29 @@ describe("story prompts", () => {
     expect(prompt).toContain("the manuscript's to say");
     expect(prompt).not.toContain("about 5 chapters");
     expect(prompt).toContain('"start"');
+    expect(prompt).toContain('"end"');
+    expect(prompt).toContain("does not reach the end of the manuscript");
     expect(prompt).toContain("Change nothing");
     expect(prompt).not.toContain("Write this part");
     expect(prompt).not.toContain("{{");
+    // The answer's shape stands before the manuscript, so a model does not
+    // read the example as part of the text it is asked to cut.
+    expect(prompt.indexOf('"chapters"')).toBeLessThan(
+      prompt.indexOf("The manuscript:"),
+    );
+  });
+
+  it("tells the last part that the chapter running to its end closes the telling", () => {
+    const prompt = storySplitPrompt({
+      text: "他在站台上等一班已经停运的列车。",
+      part: 3,
+      minutes: 3,
+      total: "15:00",
+      last: true,
+    });
+    expect(prompt).toContain("reaches the end of the manuscript");
+    expect(prompt).not.toContain("does not reach the end");
+    expect(prompt).toContain('"end" stays empty');
   });
 
   it("asks again for boundaries that could not be found, naming them", () => {
@@ -180,10 +201,15 @@ describe("story prompts", () => {
       part: 2,
       minutes: 3,
       total: "15:00",
+      last: false,
       missing: ["第四章 天亮"],
     });
     expect(prompt).toContain("第四章 天亮");
     expect(prompt).toContain("Copy every");
+    expect(prompt).toContain('"end"');
+    expect(prompt.indexOf('"chapters"')).toBeLessThan(
+      prompt.indexOf("The manuscript:"),
+    );
     expect(prompt).not.toContain("{{");
   });
 
@@ -511,12 +537,14 @@ describe("story prompts", () => {
         part: 1,
         minutes: 1,
         total: "1:00",
+        last: true,
       }),
       storySplitRepairPrompt({
         text: "…",
         part: 1,
         minutes: 1,
         total: "1:00",
+        last: true,
         missing: ["…"],
       }),
       storySplitSystemPrompt(),

@@ -1,10 +1,11 @@
 /**
  * Reading the chapter boundaries a split answer names.
  *
- * The answer is not the chapters: it is where they begin. Every position it
- * gives is a quotation from the manuscript that the planner then finds in the
- * text, so an answer that paraphrased one has to be corrected rather than
- * trusted — which is what the warnings and the missing lists are for.
+ * The answer is not the chapters: it is where each begins and where it ends.
+ * Every position it gives is a quotation from the manuscript that the planner
+ * then finds in the text, so an answer that paraphrased one has to be
+ * corrected rather than trusted — which is what the warnings and the missing
+ * lists are for.
  */
 
 import { parseStoryJson, type ParseResult } from "./json";
@@ -16,6 +17,8 @@ export interface SplitPointer {
   title: string;
   /** The first characters of the chapter, as the answer copied them. */
   start?: string;
+  /** The last characters of the chapter, as the answer copied them. */
+  end?: string;
   /** The last characters of the chapter before it. */
   before?: string;
   /** Whether this is front matter to leave out rather than a chapter. */
@@ -80,6 +83,7 @@ export function parseSplitAnswer(text: string): ParseResult<SplitAnswer> {
       return;
     }
     const start = words(entry.start);
+    const end = words(entry.end);
     const before = words(entry.before);
     // The first chapter of a part may begin where the part begins, and there
     // is nothing to quote: it is the part's own opening.
@@ -95,6 +99,7 @@ export function parseSplitAnswer(text: string): ParseResult<SplitAnswer> {
       ...(held === undefined ? {} : { number: held }),
       title: words(entry.title) ?? "",
       ...(start === undefined ? {} : { start }),
+      ...(end === undefined ? {} : { end }),
       ...(before === undefined ? {} : { before }),
       discard,
     });

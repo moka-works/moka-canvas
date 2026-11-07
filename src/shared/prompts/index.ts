@@ -202,18 +202,22 @@ export function storyOutlinePrompt(
 }
 
 /**
- * One part of a manuscript, asking only where its chapters begin.
+ * One part of a manuscript, asking only where its chapters begin and end.
  *
  * Nothing is written in the answer: the part is cut by the positions the model
- * names, so the manuscript's own words are the chapter's words. The index says
- * which part of the reading this is, so a part that starts before chapter one
- * can say what to leave out.
+ * names, so the manuscript's own words are the chapter's words. The end of the
+ * last chapter a part can close is what lets the next part begin right after
+ * it instead of at a chapter that was already named. The index says which part
+ * of the reading this is, so a part that starts before chapter one can say
+ * what to leave out.
  */
 export function storySplitPrompt(input: {
   text: string;
   part: number;
   minutes: number;
   total: string;
+  /** Whether the manuscript ends inside this part. */
+  last: boolean;
 }): string {
   return render(storySplit, input);
 }
@@ -224,6 +228,7 @@ export function storySplitRepairPrompt(input: {
   part: number;
   minutes: number;
   total: string;
+  last: boolean;
   missing: string[];
 }): string {
   return render(storySplitRepair, input);

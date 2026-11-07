@@ -1,18 +1,22 @@
 /**
  * Cutting a manuscript into chapters at the places a model found.
  *
- * The model is asked only where chapters begin, never what they say. Its
- * answer is a handful of quotations, and this module finds those quotations in
- * the manuscript and cuts the text between them. The words between two cuts
- * become the chapter's own text: the document keeps the prose itself rather
- * than offsets into a file, so every chapter can be edited, inserted around,
- * and thrown away without the manuscript behind it.
+ * The model is asked only where chapters begin and where they end, never what
+ * they say. Its answer is a handful of quotations, and this module finds those
+ * quotations in the manuscript and cuts the text between them. The words
+ * between a chapter's first and last quotation become its own text: the
+ * document keeps the prose itself rather than offsets into a file, so every
+ * chapter can be edited, inserted around, and thrown away without the
+ * manuscript behind it.
  *
- * A manuscript larger than one ask is read in windows. A window's last chapter
- * is usually unfinished — the window had to end somewhere — so it is not kept:
- * the next window begins where that chapter begins and takes on more text,
- * which is what keeps a chapter from being cut twice or its text from being
- * sent twice.
+ * A manuscript larger than one ask is read in windows. An end quotation is
+ * what lets a window stop at a chapter's own end: its last chapter is kept
+ * only when the answer showed where it ends, and the next window begins right
+ * after that end. A chapter still running at the window's edge is left out and
+ * taken from its beginning next time, which is what keeps a chapter from being
+ * cut twice. Where the answer cannot place the last end, the window falls back
+ * to the last chapter's beginning, and that chapter is named by the next part
+ * instead.
  */
 
 import type { StoryJobItemDraft } from "../../../api/story";
@@ -84,6 +88,8 @@ interface FoundBoundary {
   at: number;
   title: string;
   discard: boolean;
+  /** Where the chapter's own text is over, when the answer placed it. */
+  end?: number;
 }
 
 /** What a window's answer made of it. */
@@ -123,6 +129,12 @@ function titleFor(
  * first chapter does too, whatever quotation the answer gave. A quotation that
  * cannot be found is left out and reported; the chapters around it still cut,
  * and the chapter it was meant to open is picked up by the next window.
+ *
+ * An end quotation is the first text of the chapter that follows, so it is
+ * placed the way a beginning is: the first copy after this chapter's start.
+ * The text where a chapter ends may repeat itself; the text where the next
+ * chapter opens is what tells the two apart. An end that cannot be placed
+ * leaves the chapter without one, and the planner treats it as unfinished.
  */
 function locateBoundaries(
   window: string,
@@ -132,25 +144,37 @@ function locateBoundaries(
   const boundaries: FoundBoundary[] = [];
   const missed: string[] = [];
   const compact = compactWindow(window);
+  const placed = (
+    at: number,
+    pointer: SplitPointer,
+    discard = false,
+  ): FoundBoundary => {
+    const boundary: FoundBoundary = { at, title: pointer.title, discard };
+    if (!discard && pointer.end !== undefined) {
+      const end = findQuote(window, pointer.end, at, compact);
+      if (end !== undefined) boundary.end = end;
+    }
+    return boundary;
+  };
   let from = 0;
   let first = true;
   for (const pointer of pointers) {
     if (pointer.discard) {
       if (options.firstPart && first) {
-        boundaries.push({ at: 0, title: pointer.title, discard: true });
+        boundaries.push(placed(0, pointer, true));
         first = false;
       }
       continue;
     }
     if (first && pointer.start === undefined && pointer.before === undefined) {
-      boundaries.push({ at: 0, title: pointer.title, discard: false });
+      boundaries.push(placed(0, pointer));
       first = false;
       continue;
     }
     if (!options.firstPart && first) {
       // The window opens on a chapter: the chapter's own beginning is the
       // window's, whether or not the quotation could be found.
-      boundaries.push({ at: 0, title: pointer.title, discard: false });
+      boundaries.push(placed(0, pointer));
       first = false;
       continue;
     }
@@ -171,7 +195,7 @@ function locateBoundaries(
       missed.push(pointer.start ?? pointer.before ?? pointer.title);
       continue;
     }
-    boundaries.push({ at, title: pointer.title, discard: false });
+    boundaries.push(placed(at, pointer));
     from = at;
   }
   return { boundaries, missed };
@@ -181,11 +205,13 @@ function locateBoundaries(
  * The chapters a window's boundaries make of it, and where the next window
  * begins.
  *
- * A chapter is complete once another boundary follows it; the segment after
- * the last boundary is the one the window ended inside, and is not code for
- * anything but "read this again". Front matter is dropped rather than kept.
- * The title's own heading line is taken off the chapter's text because the
- * title is already carrying it — the words are the same words, written once.
+ * A chapter is complete once another boundary follows it, or once the answer
+ * shows the opening of the chapter after it and this part is not the last. The
+ * window's own edge is not an end: a chapter that runs into it has no shown
+ * end, so it is left out, and the next window takes it from its beginning.
+ * Front matter is dropped rather than kept. The title's own heading line is
+ * taken off the chapter's text because the title is already carrying it — the
+ * words are the same words, written once.
  */
 function cutWindow(
   window: string,
@@ -194,53 +220,84 @@ function cutWindow(
   final: boolean,
 ): WindowReading {
   const chapters: CutChapter[] = [];
+  let tailEnd: number | undefined;
   for (let index = 0; index < boundaries.length; index += 1) {
     const boundary = boundaries[index];
     if (boundary === undefined || boundary.discard) continue;
     const next = boundaries[index + 1];
     const start = boundary.at;
+    if (next === undefined && !final) {
+      // The last chapter a part that is not the manuscript's end can keep: one
+      // whose end was placed — the opening of the chapter after it. A chapter
+      // the window stopped inside has no such opening, so it is left to the
+      // next part, which takes it from its beginning.
+      const end = boundary.end;
+      if (end === undefined || end <= start) continue;
+      const chapter = cutChapter(
+        window,
+        start,
+        end,
+        boundary,
+        chapters.length + 1,
+      );
+      if (chapter !== undefined) {
+        chapters.push(chapter);
+        tailEnd = end;
+      }
+      continue;
+    }
     const end = next?.at ?? window.length;
     if (end <= start) continue;
-    // The last segment of a window that is not the manuscript's end is the
-    // chapter the window stopped inside: the next window takes it from its
-    // beginning rather than this one keeping half of it.
-    if (next === undefined && !final) continue;
-    let body = window.slice(start, end);
-    const lineEnd = body.indexOf("\n");
-    const firstLine = (lineEnd === -1 ? body : body.slice(0, lineEnd)).trim();
-    const title = titleFor(window, boundary, chapters.length + 1);
-    // Only a line the manuscript writes as a heading is taken off the text:
-    // a title the model invented that happens to repeat the first line is a
-    // title, not a heading, and cutting it away would lose the chapter's words.
-    if (firstLine === title.trim() && isSourceHeading(firstLine)) {
-      body = lineEnd === -1 ? "" : body.slice(lineEnd + 1);
-    }
-    body = body.trim();
-    if (body === "") continue;
-    chapters.push({ title, body });
+    const chapter = cutChapter(
+      window,
+      start,
+      end,
+      boundary,
+      chapters.length + 1,
+    );
+    if (chapter !== undefined) chapters.push(chapter);
   }
   const last = boundaries[boundaries.length - 1];
   return {
     chapters,
     ...(final || last === undefined
       ? {}
-      : { tailStart: windowStart + last.at }),
+      : { tailStart: windowStart + (tailEnd ?? last.at) }),
   };
 }
 
-/** Whether a window found a chapter that begins after its first character. */
-function madeProgress(boundaries: FoundBoundary[]): boolean {
-  return boundaries.some((boundary) => !boundary.discard && boundary.at > 0);
+/** One chapter's words between two places in a window, or none when empty. */
+function cutChapter(
+  window: string,
+  start: number,
+  end: number,
+  boundary: FoundBoundary,
+  number: number,
+): CutChapter | undefined {
+  let body = window.slice(start, end);
+  const lineEnd = body.indexOf("\n");
+  const firstLine = (lineEnd === -1 ? body : body.slice(0, lineEnd)).trim();
+  const title = titleFor(window, boundary, number);
+  // Only a line the manuscript writes as a heading is taken off the text:
+  // a title the model invented that happens to repeat the first line is a
+  // title, not a heading, and cutting it away would lose the chapter's words.
+  if (firstLine === title.trim() && isSourceHeading(firstLine)) {
+    body = lineEnd === -1 ? "" : body.slice(lineEnd + 1);
+  }
+  body = body.trim();
+  return body === "" ? undefined : { title, body };
 }
 
 /**
- * Cuts one manuscript into chapters, asking the model only where they begin.
+ * Cuts one manuscript into chapters, asking the model only where they begin
+ * and end.
  *
- * Each window is asked for in turn, and the next one is planned from what the
- * one before it left unfinished. A quotation the model got wrong is asked
- * about again with the text beside it; after {@link SPLIT_ATTEMPTS} tries the
- * cut is given up on with the reason, rather than writing a table out of cuts
- * nobody can find.
+ * Each window is asked for in turn, and the next one is planned from the end
+ * the one before it placed. A quotation the model got wrong is asked about
+ * again with the text beside it; after {@link SPLIT_ATTEMPTS} tries the cut is
+ * given up on with the reason, rather than writing a table out of cuts nobody
+ * can find. A last chapter whose end the answer never placed is not a failure:
+ * it is left to the next window, which takes it from its beginning.
  */
 export async function runManuscriptSplit(
   story: StoryDocument,
@@ -291,12 +348,14 @@ export async function runManuscriptSplit(
               part,
               minutes,
               total,
+              last: final,
             })
           : storySplitRepairPrompt({
               text: window,
               part,
               minutes,
               total,
+              last: final,
               missing: [reason],
             });
       const item: StoryJobItemDraft = {
@@ -342,17 +401,22 @@ export async function runManuscriptSplit(
         reason = located.missed[0] ?? i18n.t("story:outline.splitNoBoundary");
         continue;
       }
-      if (
-        !madeProgress(located.boundaries) &&
-        !(final && located.boundaries.some((held) => !held.discard))
-      ) {
+      const cut = cutWindow(window, cursor, located.boundaries, final);
+      // A part that leaves nothing behind has not been cut: either no chapter
+      // could be closed, or the window's own text had no boundary it could use.
+      // A chapter whose end the answer could not place is not a failure — it is
+      // simply left to the next part, which takes it from its beginning.
+      const progressed = final
+        ? cut.chapters.length > 0
+        : cut.tailStart !== undefined && cut.tailStart > cursor;
+      if (!progressed) {
         reason =
           located.missed[0] ??
           parsed.value.warnings[0] ??
           i18n.t("story:outline.splitNoBoundary");
         continue;
       }
-      reading = cutWindow(window, cursor, located.boundaries, final);
+      reading = cut;
       break;
     }
 

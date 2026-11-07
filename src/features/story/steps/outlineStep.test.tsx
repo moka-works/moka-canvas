@@ -41,6 +41,10 @@ let starts: Array<{ kind: StoryJobKind; items: StoryJobItemDraft[] }> = [];
 let held: StoryJobRecord[] = [];
 /** What each piece of the next batch is answered with, by the piece's id. */
 let answers: Record<string, string> = {};
+/** The split answers the stand-in model gave, in the order it gave them. */
+let splitAnswers: string[] = [];
+/** The pieces whose split answer was already logged, so a poll adds it once. */
+let loggedSplits = new Set<string>();
 /** The manuscript the shelf answers with. */
 let manuscript = "";
 
@@ -191,9 +195,11 @@ function paragraphsOf(text: string): Array<{ title: string; start: number }> {
  * What a stand-in model answers a split ask with.
  *
  * The boundaries are read off the window it was given: headings when the
- * manuscript writes them, paragraphs otherwise. What the suite proves is that
- * the answer's quotations are found, the text between them is kept, and a
- * window's unfinished tail moves into the next ask rather than being cut.
+ * manuscript writes them, paragraphs otherwise. Each chapter's end is the
+ * opening of the one after it, and the chapter the part stops inside is not
+ * named at all — the next part takes it from its beginning. What the suite
+ * proves is that the answer's quotations are found, the text between them is
+ * kept, and no chapter is named by two parts.
  */
 function splitAnswer(prompt: string): string | undefined {
   const text = windowOf(prompt);
@@ -201,12 +207,19 @@ function splitAnswer(prompt: string): string | undefined {
   const headings = headingsOf(text);
   const points = headings.length > 0 ? headings : paragraphsOf(text);
   if (points.length === 0) return undefined;
+  const last = prompt.includes("This part reaches the end of the manuscript");
+  const count = last ? points.length : points.length - 1;
   return JSON.stringify({
-    chapters: points.map((point, index) => ({
-      number: index + 1,
-      title: point.title,
-      ...(index === 0 ? {} : { start: point.title.slice(0, 40) }),
-    })),
+    chapters: Array.from({ length: Math.max(0, count) }, (_, index) => {
+      const point = points[index]!;
+      const next = points[index + 1];
+      return {
+        number: index + 1,
+        title: point.title,
+        ...(index === 0 ? {} : { start: point.title.slice(0, 40) }),
+        ...(next === undefined ? {} : { end: next.title.slice(0, 40) }),
+      };
+    }),
   });
 }
 
@@ -219,6 +232,13 @@ function answered(record: StoryJobRecord): StoryJobRecord {
       const split = item.id.startsWith("outline:split:");
       const text =
         answers[item.id] ?? (split ? splitAnswer(item.prompt) : undefined);
+      if (split && text !== undefined) {
+        const key = `${record.id}:${item.id}`;
+        if (!loggedSplits.has(key)) {
+          loggedSplits.add(key);
+          splitAnswers.push(text);
+        }
+      }
       return {
         ...item,
         status: "succeeded" as const,
@@ -434,6 +454,8 @@ beforeEach(() => {
   starts = [];
   held = [];
   answers = {};
+  splitAnswers = [];
+  loggedSplits = new Set();
   manuscript = "";
   useModelStore.setState({ view: null });
   serving();
@@ -582,6 +604,16 @@ describe("splitting a manuscript", () => {
     expect(starts.map((ask) => ask.items[0]?.id)).toEqual(
       starts.map((_, index) => `outline:split:${index + 1}`),
     );
+    // Each chapter is named by one part only: the part that could not see a
+    // chapter's end left it to the next one instead of naming it twice.
+    const named = splitAnswers.flatMap((text) => {
+      const read = JSON.parse(text) as {
+        chapters: Array<{ title: string }>;
+      };
+      return read.chapters.map((chapter) => chapter.title);
+    });
+    expect(named).toHaveLength(8);
+    expect(new Set(named).size).toBe(8);
     const held = chapters().map((chapter) => chapterText(chapter));
     expect(new Set(held).size).toBe(held.length);
     expect(held.join("\n").match(/第 \d 段。/g)?.length).toBe(8);

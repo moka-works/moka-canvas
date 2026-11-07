@@ -5,18 +5,20 @@ A previous answer named chapter boundaries that could not be found in the text:
 {% for quote in missing %}- {{ quote }}
 {% endfor %}
 
-Find the boundaries again. Copy every "start" and "before" exactly as it appears in the text, character for character, including punctuation and line breaks. Do not paraphrase, translate, normalize or complete a quotation. A boundary that cannot be copied exactly is worse than one fewer chapter: leave the chapter out rather than guess.
+Find the boundaries again. Copy every "start" and "end" exactly as it appears in the text, character for character, including punctuation and line breaks. Do not paraphrase, translate, normalize or complete a quotation. A boundary that cannot be copied exactly is worse than one fewer chapter: leave the chapter out rather than guess.
 
-The same rules as before apply. Cut at the manuscript's own chapter or scene divisions, however many that makes; where there are none, choose a point that makes an episode of about {{ minutes }} minutes of film (the whole telling runs {{ total }}). Never cut inside a sentence or paragraph. If front matter stands before chapter one, give it an entry with "discard": true and "number": 0.
+The same rules as before apply. Cut at the manuscript's own chapter or scene divisions, however many that makes; where there are none, choose a point that makes an episode of about {{ minutes }} minutes of film (the whole telling runs {{ total }}). Never cut inside a sentence or paragraph. {% if last %}This part reaches the end of the manuscript: the chapter that runs to the end of the text below is the manuscript's last, and its "end" stays empty.{% else %}This part does not reach the end of the manuscript: a chapter still running at the end of the text below belongs to the next part, and is not yours to give.{% endif %} If front matter stands before chapter one, give it an entry with "discard": true and "number": 0 — only the first part can begin like this.
+
+For every chapter, "start" is the first 20 to 60 characters of the chapter and "end" is the first 20 to 60 characters of the text that follows it, where the next chapter begins.
+
+Answer with a single fenced json block and nothing else:
+
+```json
+{ "chapters": [ { "number": 1, "title": "…", "start": "…", "end": "…" } ] }
+```
 
 The manuscript:
 
 ---
 {{ text }}
 ---
-
-Answer with a single fenced json block and nothing else:
-
-```json
-{ "chapters": [ { "number": 1, "title": "…", "start": "…", "before": "…" } ] }
-```

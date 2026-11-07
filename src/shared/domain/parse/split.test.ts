@@ -7,11 +7,17 @@ describe("reading a split answer", () => {
     const read = parseSplitAnswer(
       JSON.stringify({
         chapters: [
-          { number: 1, title: "第一章 站台", start: "第一章 站台" },
+          {
+            number: 1,
+            title: "第一章 站台",
+            start: "第一章 站台",
+            end: "第二章 车厢",
+          },
           {
             number: 2,
             title: "第二章 车厢",
             start: "第二章 车厢",
+            end: "第三章 天亮",
             before: "车没有来。",
           },
         ],
@@ -24,9 +30,26 @@ describe("reading a split answer", () => {
       number: 1,
       title: "第一章 站台",
       start: "第一章 站台",
+      end: "第二章 车厢",
       discard: false,
     });
+    expect(read.value.pointers[1]?.end).toBe("第三章 天亮");
     expect(read.value.pointers[1]?.before).toBe("车没有来。");
+  });
+
+  it("lets a chapter's end be left for the next part to place", () => {
+    const read = parseSplitAnswer(
+      JSON.stringify({
+        chapters: [
+          { number: 1, title: "第一章", start: "第一章", end: "第二章" },
+          { number: 2, title: "第二章", start: "第二章" },
+        ],
+      }),
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.value.pointers[1]?.end).toBeUndefined();
+    expect(read.value.pointers[1]?.start).toBe("第二章");
   });
 
   it("reads a chapter zero as front matter to leave out", () => {

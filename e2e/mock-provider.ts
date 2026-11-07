@@ -359,15 +359,27 @@ function jsonAnswer(prompt: string): string | undefined {
       }
       at += line.length + 1;
     }
+    // A chapter's end is the opening of the chapter after it; the chapter the
+    // part stops inside is left to the next part. The part that reaches the
+    // manuscript's end keeps its last chapter, with no end of its own.
+    const last = prompt.includes("This part reaches the end of the manuscript");
+    if (headings.length === 0) {
+      return JSON.stringify({ chapters: [{ number: 1, title: "Chapter 1" }] });
+    }
+    const count = last ? headings.length : headings.length - 1;
     return JSON.stringify({
-      chapters:
-        headings.length > 0
-          ? headings.map((heading, index) => ({
-              number: index + 1,
-              title: heading.title,
-              ...(index === 0 ? {} : { start: heading.title }),
-            }))
-          : [{ number: 1, title: "Chapter 1" }],
+      chapters: Array.from({ length: Math.max(0, count) }, (_, index) => {
+        const heading = headings[index]!;
+        const next = headings[index + 1];
+        return {
+          number: index + 1,
+          title: heading.title,
+          ...(index === 0 ? {} : { start: heading.title }),
+          ...(next === undefined
+            ? {}
+            : { end: text.slice(next.start, next.start + 40).trim() }),
+        };
+      }),
     });
   }
   // One episode's board: two acts of two shots each, with the cast the

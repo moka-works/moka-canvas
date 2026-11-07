@@ -4,24 +4,24 @@ Cut this part into chapters at the places the manuscript itself divides: a headi
 
 Change nothing. Do not rewrite, shorten, summarize, continue, add or correct a single character of the text.
 
-If this part begins with a table of contents, a synopsis of the whole work, a preface, or any other matter that stands before chapter one, give it its own entry with "discard": true and "number": 0. That text is not part of the telling and will be left out.
+If this part begins with a table of contents, a synopsis of the whole work, a preface, or any other matter that stands before chapter one, give it its own entry with "discard": true and "number": 0. That text is not part of the telling and will be left out. Only the first part can begin like this; a later part begins at a chapter.
+
+{% if last %}This part reaches the end of the manuscript: the chapter that runs to the end of the text below is the manuscript's last, and its "end" stays empty.{% else %}This part does not reach the end of the manuscript: a chapter still running at the end of the text below belongs to the next part, and is not yours to give.{% endif %}
 
 For every chapter in order:
 - "number": the chapter number the manuscript gives it, or the next number when it gives none.
 - "title": the heading the manuscript writes for it, copied exactly; when it writes none, a short title in the manuscript's language.
 - "start": the first 20 to 60 characters of the chapter, copied exactly from the text below, including its heading line. Leave it empty only when the chapter begins at the very start of this part.
-- "before": the last 20 to 60 characters of the chapter before it, copied exactly; empty for the first chapter.
+- "end": the first 20 to 60 characters of the text that follows this chapter — where the next chapter begins — copied exactly from the text below. Leave it empty only for the chapter that closes the manuscript.
 
-Do not give a chapter that does not begin inside this part: a part may end in the middle of one, and that unfinished chapter belongs to the next part.
+Answer with a single fenced json block and nothing else:
+
+```json
+{ "chapters": [ { "number": 1, "title": "…", "start": "…", "end": "…" } ] }
+```
 
 The manuscript:
 
 ---
 {{ text }}
 ---
-
-Answer with a single fenced json block and nothing else:
-
-```json
-{ "chapters": [ { "number": 1, "title": "…", "start": "…", "before": "…" } ] }
-```
