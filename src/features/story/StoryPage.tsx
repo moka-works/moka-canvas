@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { historyBoundary } from "../editor/commands/execute";
 import { PanelUnfold } from "../editor/components/PanelFold";
@@ -10,6 +10,7 @@ import { usePanelWidths } from "../editor/stores/panelWidths";
 import { useProjectStore } from "../editor/stores/projectStore";
 import { i18n } from "../../shared/i18n";
 import { StoryFlow } from "./StoryFlow";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { StoryIcon } from "./components/StoryIcons";
 import { StoryTopBar } from "./components/StoryTopBar";
 import { StorySide } from "./panels/StorySide";
@@ -63,15 +64,51 @@ export function StoryPage() {
     void useStoryJobStore.getState().load(storyId);
   }, [storyId]);
 
+  const pendingLeave = useStoryStore((state) => state.pendingLeave);
+  const [leavingHome, setLeavingHome] = useState(false);
+  const [leavingTo, setLeavingTo] = useState<
+    "editing" | "clip" | "assets" | null
+  >(null);
+  const leaving =
+    pendingLeave ??
+    (leavingHome
+      ? { kind: "home" as const }
+      : leavingTo !== null
+        ? { kind: "room" as const }
+        : null);
+
   /**
    * Going home from here puts the project down first.
    *
    * There is no dialog about unsaved work on this page, since nothing on it
    * can leave work unsaved: what the room holds when the reader steps over is
    * flushed, and a flush that cannot land says so and keeps the reader here
-   * rather than walking away from the work.
+   * rather than walking away from the work. What is not the document's is the
+   * elements reading still to be sent, and leaving with that out is asked
+   * about first.
    */
   const goHome = async () => {
+    if (elementsReading()) {
+      setLeavingHome(true);
+      return;
+    }
+    await leaveRoom();
+  };
+
+  /** Whether the elements step still has reading only it can send. */
+  const elementsReading = () => {
+    const held = useStoryStore.getState();
+    return held.step === "elements" && held.elementsBusy;
+  };
+
+  /** Whether the room may hand over to another page as it stands. */
+  const onGo = (phase: "editing" | "clip" | "assets"): boolean => {
+    if (!elementsReading()) return true;
+    setLeavingTo(phase);
+    return false;
+  };
+
+  const leaveRoom = async () => {
     const project = useProjectStore.getState();
     if (project.moka) {
       try {
@@ -103,7 +140,7 @@ export function StoryPage() {
 
   return (
     <div className="story-page" data-testid="story-page">
-      <StoryTopBar onHome={() => void goHome()} />
+      <StoryTopBar onGo={onGo} onHome={() => void goHome()} />
       <div className="story-body" style={panelWidthStyle(leftWidth, null)}>
         {leftFolded ? <PanelUnfold side="left" /> : <StorySide />}
         {!leftFolded && <PanelResizer side="left" />}
@@ -111,6 +148,35 @@ export function StoryPage() {
           {story === null ? <StoryEmpty /> : <StoryFlow story={story} />}
         </main>
       </div>
+
+      {leaving !== null && (
+        <ConfirmDialog
+          body={t("story:elements.leaveBody")}
+          confirm={t("story:elements.leaveConfirm")}
+          initialFocus="cancel"
+          onCancel={() => {
+            if (leaving.kind === "home") setLeavingHome(false);
+            else if (leaving.kind === "room") setLeavingTo(null);
+            else useStoryStore.getState().stay();
+          }}
+          onConfirm={() => {
+            if (leaving.kind === "home") {
+              setLeavingHome(false);
+              void leaveRoom();
+            } else if (leaving.kind === "room") {
+              const phase = leavingTo;
+              setLeavingTo(null);
+              if (phase !== null) {
+                useAppStore.getState().setPhase(phase);
+              }
+            } else {
+              useStoryStore.getState().leaveNow();
+            }
+          }}
+          testId="leave-elements"
+          title={t("story:elements.leaveTitle")}
+        />
+      )}
     </div>
   );
 }

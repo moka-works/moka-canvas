@@ -178,7 +178,11 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           role="tabpanel"
           tabIndex={-1}
         >
-          <StoryStepBody step={step} story={story} />
+          {/* Keyed by the story: a step's own in-flight work — the parts it
+              has not sent and the merge that follows them — belongs to the
+              telling it was read from, and another telling opens a step of
+              its own rather than inheriting the last one's. */}
+          <StoryStepBody key={story.id} step={step} story={story} />
           <AgentDock compact room="story" />
         </main>
       </div>

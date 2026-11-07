@@ -33,6 +33,7 @@ import storySplitSystem from "./story/split-system.tmpl?raw";
 import storySplitRepair from "./story/split-repair.tmpl?raw";
 import storyChapter from "./story/chapter.tmpl?raw";
 import storyElements from "./story/elements.tmpl?raw";
+import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
@@ -268,6 +269,25 @@ export function storyElementsPrompt(input: {
   total?: number;
 }): string {
   return render(storyElements, input);
+}
+
+/**
+ * What the parts said about the same name, as one description.
+ *
+ * A long telling is read a part at a time, and a name more than one part
+ * returned to was described more than once. The parts' words are put in front
+ * of the model together, whole names at a time, and what comes back is the one
+ * description the element keeps — a part's words are held rather than written
+ * until this runs, so nothing is lost to whichever part landed last.
+ */
+export function storyMergeElementsPrompt(input: {
+  groups: Array<{ kind: string; name: string; descriptions: string[] }>;
+  genre: string;
+  style: string;
+  part?: number;
+  total?: number;
+}): string {
+  return render(storyMergeElements, input);
 }
 
 /**

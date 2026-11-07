@@ -182,3 +182,67 @@ describe("what the room is showing of a story", () => {
     expect(store().step).toBe("edit");
   });
 });
+
+describe("leaving the elements step with reading still to send", () => {
+  it("asks before stepping away, and goes only when told to", () => {
+    const moka = project("p1");
+    open(moka);
+    store().adopt(moka);
+    store().goStep("elements");
+    store().setElementsBusy(true);
+
+    store().goStep("outline");
+    expect(store().step).toBe("elements");
+    expect(store().pendingLeave).toEqual({ kind: "step", step: "outline" });
+
+    // Staying puts the question down and leaves the reader where they were.
+    store().stay();
+    expect(store().step).toBe("elements");
+    expect(store().pendingLeave).toBeNull();
+
+    store().goStep("outline");
+    store().leaveNow();
+    expect(store().step).toBe("outline");
+    expect(store().pendingLeave).toBeNull();
+  });
+
+  it("goes straight through once the reading is over", () => {
+    const moka = project("p1");
+    open(moka);
+    store().adopt(moka);
+    store().goStep("elements");
+    store().setElementsBusy(true);
+    store().setElementsBusy(false);
+
+    store().goStep("outline");
+    expect(store().step).toBe("outline");
+    expect(store().pendingLeave).toBeNull();
+  });
+
+  it("asks before another story is opened, and opens it when told to", () => {
+    const { moka, id } = withStory(project("p1"), "第二个故事");
+    open(moka);
+    store().adopt(moka);
+    store().goStep("elements");
+    store().setElementsBusy(true);
+
+    store().select(id);
+    expect(store().storyId).toBe(storyIds().story);
+    expect(store().pendingLeave).toEqual({ kind: "story", storyId: id });
+
+    store().leaveNow();
+    expect(store().storyId).toBe(id);
+  });
+
+  it("does not hold a reader back on another step's work", () => {
+    const moka = project("p1");
+    open(moka);
+    store().adopt(moka);
+    // A drawing batch is the elements step's work too, but nothing it has not
+    // sent yet would be lost by standing on another step.
+    store().goStep("storyboard");
+    store().setElementsBusy(true);
+    store().goStep("idea");
+    expect(store().step).toBe("idea");
+  });
+});

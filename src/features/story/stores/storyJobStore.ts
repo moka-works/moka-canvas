@@ -32,13 +32,18 @@ import {
 } from "../../../api/client";
 import { failureText } from "../../../shared/i18n/problems";
 import type { StoryDocument } from "../../../shared/domain/types";
-import type { StoryStep } from "../../../shared/domain/story";
+import { elementKey, type StoryStep } from "../../../shared/domain/story";
 import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
-import { applyJobResults } from "../jobs/apply";
-import { itemsForTargets, jobKey, planChapterRewrite } from "../jobs/plan";
+import { applyJobResults, readElementsAnswer } from "../jobs/apply";
+import {
+  ELEMENT_MERGE_ID,
+  itemsForTargets,
+  jobKey,
+  planChapterRewrite,
+} from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { useStoryStore } from "./storyStore";
 
@@ -185,6 +190,8 @@ interface StoryJobState {
     items: StoryJobItemDraft[],
     /** The model to ask of; undefined is the room's own pick, as before. */
     model?: string | null,
+    /** The recognition run this batch is part of, where it is one. */
+    run?: string,
   ) => Promise<StoryJobRecord | null>;
   /**
    * Asks one wave of pieces after another, each wave settled before the next
@@ -194,7 +201,7 @@ interface StoryJobState {
   startWaves: (
     storyId: string,
     kind: StoryJobKind,
-    waves: Array<{ model: string | null; items: StoryJobItemDraft[] }>,
+    waves: Array<{ model?: string | null; items: StoryJobItemDraft[] }>,
   ) => Promise<void>;
   cancel: (id: string) => Promise<void>;
   /** Fetches one batch and reads it in, which is what a poll does. */
@@ -268,6 +275,17 @@ function oneReadingAtATime<T>(work: () => Promise<T>): Promise<T> {
  */
 let watched = new Set<string>();
 
+/**
+ * Which recognition run each element batch belongs to, by the id of the record.
+ *
+ * One recognition is several asks, and the parts after the first must not write
+ * over the words a part before them already wrote: they hold their descriptions
+ * for the merge instead. A run only means anything while this window is reading
+ * it — a batch from another day carries no run and is read the way it always
+ * was — so this is memory alone, and it is cleared with the story.
+ */
+let jobRun = new Map<string, string>();
+
 /** Takes these records in as ones the room is watching, while they are out. */
 function watching(records: StoryJobRecord[]): void {
   for (const record of records) {
@@ -306,6 +324,50 @@ function sayLookTrouble(reason: string): void {
 /** The same, for a failure in words of its own. */
 function sayLookProblem(problem: unknown): void {
   sayLookTrouble(errorText(problem).message);
+}
+
+/** One part of a telling's elements reading: `elements:1`, `elements:2`… */
+const ELEMENT_PART = /^elements:(\d+)$/;
+
+function partOf(record: StoryJobRecord): number {
+  const found = record.items
+    .map((item) => ELEMENT_PART.exec(item.id))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]));
+  return found.length === 0 ? Number.MAX_SAFE_INTEGER : Math.min(...found);
+}
+
+/**
+ * The names an earlier part of the same recognition already described.
+ *
+ * A part after the first holds its words for the merge rather than writing
+ * them: its answer is still the part's own, but the description the element
+ * keeps is the one the merge writes from every part's words together. Parts
+ * asked for outside a run — a retry, or a batch from an older session — carry
+ * no run and are read as they always were.
+ */
+function heldDescriptionKeys(
+  jobs: StoryJobRecord[],
+  record: StoryJobRecord,
+): Set<string> | undefined {
+  const run = jobRun.get(record.id);
+  if (run === undefined) return undefined;
+  const at = partOf(record);
+  const keys = new Set<string>();
+  for (const job of jobs) {
+    if (job.id === record.id || jobRun.get(job.id) !== run) continue;
+    if (partOf(job) >= at) continue;
+    for (const item of job.items) {
+      if (item.status !== "succeeded" || ELEMENT_PART.exec(item.id) === null) {
+        continue;
+      }
+      const read = readElementsAnswer(item.text ?? "");
+      for (const draft of read.drafts ?? []) {
+        keys.add(elementKey(draft.kind, draft.name));
+      }
+    }
+  }
+  return keys.size === 0 ? undefined : keys;
 }
 
 export const useStoryJobStore = create<StoryJobState>()((set, get) => {
@@ -387,7 +449,10 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       const settled: string[] = [];
       for (const { record, known, fresh, ending } of waiting) {
         if (fresh.length > 0) {
-          const report = applyJobResults({ ...record, items: fresh });
+          const report = applyJobResults(
+            { ...record, items: fresh },
+            { holdDescriptionKeys: heldDescriptionKeys(get().jobs, record) },
+          );
           if (report.refused === true) {
             // The document would not take it, so it is not in: nothing of the
             // answer is written down about it and the next look asks again. The
@@ -587,6 +652,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       if (get().storyId !== storyId) {
         readIn = new Map<string, BatchRead>();
         watched = new Set<string>();
+        jobRun = new Map<string, string>();
       }
       set({ storyId });
       try {
@@ -603,7 +669,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       }
     },
 
-    async start(storyId, kind, items, model) {
+    async start(storyId, kind, items, model, run) {
       // A place asked for twice at once is paid for twice: the second ask is
       // planned against a document the first has not finished saving, so it
       // carries the same description and the same reference as the first. The
@@ -635,6 +701,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
           items,
           model === undefined ? storyAskModel(kind) : model,
         );
+        if (run !== undefined) jobRun.set(record.id, run);
         // Watched from the asking whatever the record comes back as: a batch
         // the room asked for is the room's own news.
         watched.add(record.id);
@@ -690,6 +757,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       stopPolling();
       readIn = new Map<string, BatchRead>();
       watched = new Set<string>();
+      jobRun = new Map<string, string>();
       handingOver = new Set<string>();
       lookTrouble = null;
       set({
@@ -764,6 +832,20 @@ function againFor(
   story: StoryDocument,
   item: StoryJobRecord["items"][number],
 ): StoryJobItemDraft[] {
+  // A merge ask is its own piece: what failed is sent again with the words it
+  // was asked with, since the parts' descriptions are the run's own and do not
+  // need reading out of the cast a second time.
+  if (item.id.startsWith(ELEMENT_MERGE_ID)) {
+    return [
+      {
+        id: item.id,
+        target: item.target,
+        capability: item.capability,
+        prompt: item.prompt,
+        system: item.system,
+      },
+    ];
+  }
   if (item.target.kind === "outline" && PART_ITEM.test(item.id)) {
     return [
       {

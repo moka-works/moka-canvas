@@ -77,6 +77,27 @@ describe("the corner menu's guard", () => {
     cleanup();
   });
 
+  it("lets the page hold a reader who still has work to send", () => {
+    const asked: string[] = [];
+    render(
+      <HomeMenu
+        current="story"
+        onGo={(phase) => {
+          asked.push(phase);
+          return false;
+        }}
+        onHome={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Projects menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clip" }));
+
+    // The row asked the page first, and the page's no is the answer: the app
+    // does not move out from under the work the room is still sending.
+    expect(asked).toEqual(["clip"]);
+    expect(useAppStore.getState().phase).toBe("launcher");
+  });
+
   it("lists the rooms, the story room first", () => {
     openMenu();
     const rooms = screen

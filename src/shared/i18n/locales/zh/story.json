@@ -115,6 +115,7 @@
     "apply": {
       "outline": "应用模型分的章",
       "elements": "应用模型找出的元素",
+      "elementsMerge": "合并各批对同名元素的描述",
       "storyboard": "应用模型写的分镜",
       "elementArt": "归档一张元素图",
       "keyframeArt": "归档一张关键帧",
@@ -155,6 +156,7 @@
     "storyGone": "这批作业要讲的故事已经不在了",
     "unreadableAnswer": "{{at}} 的回答读不出来；原话已留给你手动修正",
     "answerNotes": "{{at}} 的回答有几处没有读进来：{{notes}}",
+    "mergeMissing": "合并落地时这些名字已不在元素里，合并后的描述没有写入：{{names}}",
     "failedWith": "{{total}} 项里有 {{failed}} 项没有回来：{{reason}}",
     "stepFailedWith": "{{failed}} 项没有回来：{{reason}}",
     "lookFailed": "这批作业没能读下去：{{reason}}"
@@ -299,6 +301,10 @@
     "all": "全部（{{count}}）",
     "counts": "{{characters}} 个角色 · {{scenes}} 个场景 · {{props}} 个物品",
     "reading": "正在识别…",
+    "merging": "正在合并各批重复的元素…",
+    "leaveTitle": "元素识别还没结束",
+    "leaveBody": "现在离开，尚未发出的批次和随后的合并就不会再发出；已经发出的批次会继续，答案仍会写入故事。",
+    "leaveConfirm": "仍然离开",
     "recognise": "从章节里识别",
     "recogniseAgain": "重新识别",
     "recogniseTitle": "重新识别一遍？",

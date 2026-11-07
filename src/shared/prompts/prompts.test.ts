@@ -15,6 +15,7 @@ import {
   storyElementTurnaroundPrompt,
   storyElementsPrompt,
   storyFactsPrompt,
+  storyMergeElementsPrompt,
   storyKeyframePrompt,
   storyKeyframePromptParts,
   storyKeyframeVideoPrompt,
@@ -251,6 +252,12 @@ describe("story prompts", () => {
     expect(prompt).toContain(
       "name them after the words it uses and what tells them apart",
     );
+    // A character's entry is the look the drawings have to keep to. A voice, a
+    // habit or a plot the picture cannot show would only make every drawing of
+    // them argue with the words.
+    expect(prompt).toContain("only what a drawing can show");
+    expect(prompt).toContain("no voice or way of speaking");
+    expect(prompt).toContain("nothing that happens in the telling");
     expect(prompt).toContain('"characters"');
     expect(prompt).not.toContain("{{");
   });
@@ -324,6 +331,42 @@ describe("story prompts", () => {
     expect(prompt).toContain(
       "Do not invent anyone or anything that is not in the telling",
     );
+  });
+
+  it("merges the parts' descriptions of one name, and nothing else", () => {
+    const prompt = storyMergeElementsPrompt({
+      groups: [
+        {
+          kind: "character",
+          name: "林玉兰",
+          descriptions: ["五十岁，短发。", "便利店店主，总是系围裙。"],
+        },
+        {
+          kind: "scene",
+          name: "便利店",
+          descriptions: ["深夜仍亮着灯的店面。", "收银台后的货架摆得很满。"],
+        },
+      ],
+      genre: "对白剧情",
+      style: "现代都市风",
+      part: 1,
+      total: 2,
+    });
+    expect(prompt).toContain('- character "林玉兰"');
+    expect(prompt).toContain("  - 五十岁，短发。");
+    expect(prompt).toContain("  - 便利店店主，总是系围裙。");
+    expect(prompt).toContain('- scene "便利店"');
+    // The model is asked for new words about the names it is given, not for a
+    // cast: an entry it invented or left out would change the room's list.
+    expect(prompt).toContain("do not add or leave out an entry");
+    expect(prompt).toContain("do not rename the thing");
+    // Merging the parts' words is still a character's look, not a script: the
+    // merge must not bring a voice or a plot into the description.
+    expect(prompt).toContain("only what a drawing can show");
+    expect(prompt).toContain("no voice, habits, manner");
+    expect(prompt).toContain("This is merge 1 of 2");
+    expect(prompt).toContain('"characters"');
+    expect(prompt).not.toContain("{{");
   });
 
   it("boards a chapter with the names it must be written in", () => {
@@ -573,6 +616,11 @@ describe("story prompts", () => {
       storySplitSystemPrompt(),
       storyChapterPrompt({ idea: "…", chapters: 1, number: 1 }),
       storyElementsPrompt({ chapters: [], genre: "…", style: "…" }),
+      storyMergeElementsPrompt({
+        groups: [{ kind: "character", name: "…", descriptions: ["…", "…"] }],
+        genre: "…",
+        style: "…",
+      }),
       storyStoryboardPrompt({
         ...facts,
         number: 1,

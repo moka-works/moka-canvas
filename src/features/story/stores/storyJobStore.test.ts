@@ -796,6 +796,144 @@ describe("a batch coming back", () => {
   });
 });
 
+describe("a recognition read in parts", () => {
+  /** A server that answers the parts one after another, by the order it asked. */
+  function readingInParts(): void {
+    const batches = new Map<string, StoryJobRecord>();
+    const descriptions = ["第一批的描述。", "后一批的描述。", "另一次的描述。"];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({
+          url,
+          method,
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
+        });
+        const json = (payload: unknown, status = 200) =>
+          Promise.resolve(
+            new Response(JSON.stringify(payload), {
+              status,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        if (method === "POST" && url.endsWith("/story/jobs")) {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            items: StoryJobRecord["items"];
+          };
+          const record: StoryJobRecord = {
+            id: `job-${batches.size + 1}`,
+            projectId: "project-1",
+            storyId: ids.story,
+            kind: "elements",
+            status: "running",
+            model: "a-storyteller",
+            items: body.items.map((item) => ({
+              ...item,
+              inputs: [],
+              params: {},
+              status: "running" as const,
+            })),
+            cancelRequested: false,
+            createdAt: "2026-01-02T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z",
+          };
+          batches.set(record.id, record);
+          return json(record);
+        }
+        const readIn = /\/story\/jobs\/([^/?]+)\/read$/.exec(url);
+        if (readIn !== null) {
+          const found = batches.get(readIn[1] ?? "");
+          if (found === undefined) {
+            return json({ code: "NOT_FOUND", message: "no" }, 404);
+          }
+          const marked = { ...found, readAt: "2026-01-02T01:00:00Z" };
+          batches.set(marked.id, marked);
+          return json(marked);
+        }
+        const one = /\/story\/jobs\/([^/?]+)$/.exec(url);
+        if (one !== null) {
+          const found = batches.get(one[1] ?? "");
+          if (found === undefined) {
+            return json({ code: "NOT_FOUND", message: "no" }, 404);
+          }
+          const part = Number((one[1] ?? "").slice(4)) - 1;
+          const home: StoryJobRecord = {
+            ...found,
+            status: "succeeded",
+            items: found.items.map((item) => ({
+              ...item,
+              status: "succeeded" as const,
+              text: JSON.stringify({
+                characters: [
+                  {
+                    name: "林",
+                    description: descriptions[part] ?? "",
+                    chapters: [part + 1],
+                  },
+                ],
+              }),
+            })),
+          };
+          batches.set(home.id, home);
+          return json(home);
+        }
+        if (url.endsWith("/projects/current/commands")) {
+          return json({ revision: 2, updatedAt: "2026-01-02T00:00:00Z" });
+        }
+        return json({
+          root: "/tmp/moka-story-jobs-test",
+          moka: useProjectStore.getState().moka,
+          selfCheck: { ok: true, issues: [] },
+          selfCheckVerified: true,
+        });
+      }),
+    );
+  }
+
+  function parts(number: number) {
+    return [
+      {
+        id: `elements:${number}`,
+        target: { kind: "elements" as const },
+        capability: "text" as const,
+        prompt: "the telling, chapter by chapter",
+        system: "the system",
+      },
+    ];
+  }
+
+  it("holds a later part's words for the merge, and adds only its chapters", async () => {
+    readingInParts();
+    const run = "recognition-1";
+
+    await useStoryJobStore
+      .getState()
+      .start(ids.story, "elements", parts(1), undefined, run);
+    await useStoryJobStore.getState().adopt("job-1");
+    await useStoryJobStore
+      .getState()
+      .start(ids.story, "elements", parts(2), undefined, run);
+    await useStoryJobStore.getState().adopt("job-2");
+
+    const hero = () =>
+      useProjectStore
+        .getState()
+        .moka?.stories?.[0]?.elements.find((each) => each.name === "林");
+    // The first part's description stands; the second part's words wait for the
+    // merge rather than overwriting them, while its chapter is added at once.
+    expect(hero()?.description).toBe("第一批的描述。");
+    expect(hero()?.chapterIds).toEqual([ids.chapterFirst, ids.chapterSecond]);
+
+    // A part asked for outside a run — a retry, or a reading from another day —
+    // is read the way it always was: its words go straight in.
+    await useStoryJobStore.getState().start(ids.story, "elements", parts(3));
+    await useStoryJobStore.getState().adopt("job-3");
+    expect(hero()?.description).toBe("另一次的描述。");
+  });
+});
+
 describe("a room opened over the batches it has already read", () => {
   /** A reading of the chapters, come home with this cast. */
   function reading(id: string, at: string, names: string[]): StoryJobRecord {

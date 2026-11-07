@@ -160,6 +160,12 @@ interface HomeMenuProps {
    * is a guarded close of an open project or a plain step back.
    */
   onHome: () => void;
+  /**
+   * Whether this page may hand over to another, asked before the app moves:
+   * a page with work that only it can still send checks here, and a false
+   * keeps the reader where they are.
+   */
+  onGo?: (phase: "editing" | "clip" | "assets") => boolean;
 }
 
 /**
@@ -178,7 +184,7 @@ interface HomeMenuProps {
  * and taking one is a way of putting the menu down rather than a way of
  * turning a tab over by mistake.
  */
-export function HomeMenu({ current, onHome }: HomeMenuProps) {
+export function HomeMenu({ current, onHome, onGo }: HomeMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -202,10 +208,12 @@ export function HomeMenu({ current, onHome }: HomeMenuProps) {
   const go = (page: HomeMenuPage) => {
     setOpen(false);
     if (page === current) return;
+    const phase = PHASE[page];
+    if (phase !== "story" && onGo !== undefined && !onGo(phase)) return;
     // The project stays open across the working pages: stepping between the
     // board, the story room, and the cutting room is not a close, and each is
     // standing exactly as it was left.
-    useAppStore.getState().setPhase(PHASE[page]);
+    useAppStore.getState().setPhase(phase);
   };
 
   return (

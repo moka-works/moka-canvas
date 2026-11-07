@@ -24,6 +24,7 @@
 import { nowIso } from "../../../shared/domain/ids";
 import type { DocumentCommand } from "../../../shared/domain/types";
 import {
+  elementKey,
   keyframeAt,
   mergeActs,
   mergeChaptersAt,
@@ -55,7 +56,16 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import type { StoryJobItem, StoryJobRecord } from "../../../api/story";
-import { jobKey } from "./plan";
+import { ELEMENT_MERGE_ID, jobKey, type ElementRepeat } from "./plan";
+
+/** What the room knows about a batch that the record alone does not say. */
+export interface ApplyContext {
+  /**
+   * Names an earlier part of this recognition already described: this part's
+   * words are held for the merge rather than written over them.
+   */
+  holdDescriptionKeys?: Set<string>;
+}
 
 /** What reading one batch's answers did to the story. */
 export interface ApplyReport {
@@ -77,6 +87,12 @@ export interface ApplyReport {
 
 /** The label one batch's answers go into the history under. */
 function historyLabel(record: StoryJobRecord): string {
+  if (
+    record.items.length > 0 &&
+    record.items.every((item) => item.id.startsWith(ELEMENT_MERGE_ID))
+  ) {
+    return i18n.t("story:history.apply.elementsMerge");
+  }
   return i18n.t(`story:history.apply.${record.kind}`);
 }
 
@@ -256,6 +272,62 @@ export function readElementsAnswer(text: string): ElementsReading {
   const parsed = parseElements(read.value);
   if (!parsed.ok) return { warnings: [], error: parsed.error };
   return { drafts: parsed.value, warnings: parsed.warnings };
+}
+
+/** One part of a telling's elements reading: `elements:1`, `elements:2`… */
+const ELEMENT_PART = /^elements:(\d+)$/;
+
+function partOf(record: StoryJobRecord): number {
+  const found = record.items
+    .map((item) => ELEMENT_PART.exec(item.id))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]));
+  return found.length === 0 ? Number.MAX_SAFE_INTEGER : Math.min(...found);
+}
+
+/**
+ * The names this recognition's parts described more than once.
+ *
+ * The parts are read in the order they were asked for, and each name keeps its
+ * descriptions in that order: the first part's words come first, and a part
+ * that said the same thing again adds nothing. A name only one part returned
+ * to is not a repeat and earns no merge ask — the cast already keeps it as the
+ * one part described it.
+ */
+export function collectElementRepeats(
+  records: StoryJobRecord[],
+): ElementRepeat[] {
+  const groups = new Map<string, ElementRepeat>();
+  const order: string[] = [];
+  const ordered = [...records].sort(
+    (one, other) => partOf(one) - partOf(other),
+  );
+  for (const record of ordered) {
+    for (const item of record.items) {
+      if (item.status !== "succeeded" || ELEMENT_PART.exec(item.id) === null) {
+        continue;
+      }
+      const read = readElementsAnswer(item.text ?? "");
+      for (const draft of read.drafts ?? []) {
+        const key = elementKey(draft.kind, draft.name);
+        let group = groups.get(key);
+        if (group === undefined) {
+          group = { kind: draft.kind, name: draft.name, descriptions: [] };
+          groups.set(key, group);
+          order.push(key);
+        }
+        if (!group.descriptions.includes(draft.description)) {
+          group.descriptions.push(draft.description);
+        }
+      }
+    }
+  }
+  return order
+    .map((key) => groups.get(key))
+    .filter(
+      (group): group is ElementRepeat =>
+        group !== undefined && group.descriptions.length >= 2,
+    );
 }
 
 /** What a board's answer said, as the reading of it came out. */
@@ -469,7 +541,7 @@ function spreadTargets(
 export function applyParsedElements(
   story: StoryDocument,
   drafts: StoryElementDraft[],
-  options: { partial?: boolean } = {},
+  options: { partial?: boolean; holdDescriptionKeys?: Set<string> } = {},
 ): DocumentCommand[] {
   if (drafts.length === 0) return [];
   return [
@@ -479,6 +551,55 @@ export function applyParsedElements(
       elements: mergeElements(story.elements, drafts, story.chapters, options),
     },
   ];
+}
+
+/** What one merge ask wrote, and what it could not find to write on. */
+export interface MergedDescriptionWrite {
+  commands: DocumentCommand[];
+  /** Descriptions that changed, which is the work the ask actually did. */
+  changed: number;
+  /** Names the cast no longer holds, which are left out rather than recreated. */
+  missing: string[];
+}
+
+/**
+ * The descriptions one merge ask wrote over the ones on file.
+ *
+ * A merge changes words and nothing else: the element keeps its id, its
+ * drawings, its voice and the chapters that were already added up locally. A
+ * name that no longer matches anything — renamed or taken out while the parts
+ * were being read — is left alone rather than written back as a new element.
+ */
+export function applyMergedDescriptions(
+  story: StoryDocument,
+  drafts: StoryElementDraft[],
+): MergedDescriptionWrite {
+  const byKey = new Map<string, StoryElementDraft>();
+  for (const draft of drafts) {
+    const key = elementKey(draft.kind, draft.name);
+    if (!byKey.has(key)) byKey.set(key, draft);
+  }
+  const held = new Set(
+    story.elements.map((element) => elementKey(element.kind, element.name)),
+  );
+  let changed = 0;
+  const elements = story.elements.map((element) => {
+    const draft = byKey.get(elementKey(element.kind, element.name));
+    if (draft === undefined || draft.description === element.description) {
+      return element;
+    }
+    changed += 1;
+    return { ...element, description: draft.description };
+  });
+  const missing = [...byKey]
+    .filter(([key]) => !held.has(key))
+    .map(([, draft]) => draft.name);
+  if (changed === 0) return { commands: [], changed: 0, missing };
+  return {
+    commands: [{ type: "setStoryElements", storyId: story.id, elements }],
+    changed,
+    missing,
+  };
 }
 
 export function applyParsedActs(
@@ -504,6 +625,7 @@ function commandsFor(
   record: StoryJobRecord,
   item: StoryJobItem,
   report: ApplyReport,
+  context?: ApplyContext,
 ): DocumentCommand[] {
   const target = slotTargetOf(item);
   if (target !== undefined) {
@@ -533,6 +655,34 @@ function commandsFor(
 
   switch (item.target.kind) {
     case "elements": {
+      if (item.id.startsWith(ELEMENT_MERGE_ID)) {
+        const read = readElementsAnswer(item.text ?? "");
+        if (read.drafts === undefined) {
+          report.notes.push(
+            i18n.t("story:jobs.unreadableAnswer", { at: item.id }),
+          );
+          return [];
+        }
+        if (read.warnings.length > 0) {
+          report.notes.push(
+            i18n.t("story:jobs.answerNotes", {
+              at: item.id,
+              notes: read.warnings.join(" "),
+            }),
+          );
+        }
+        const written = applyMergedDescriptions(story, read.drafts);
+        if (written.missing.length > 0) {
+          report.skipped += written.missing.length;
+          report.notes.push(
+            i18n.t("story:jobs.mergeMissing", {
+              names: written.missing.join(", "),
+            }),
+          );
+        }
+        report.applied += written.changed;
+        return written.commands;
+      }
       const read = readElementsAnswer(item.text ?? "");
       if (read.drafts === undefined) {
         report.notes.push(
@@ -554,6 +704,7 @@ function commandsFor(
       report.applied += 1;
       return applyParsedElements(story, read.drafts, {
         partial: PART_ELEMENTS.test(item.id),
+        holdDescriptionKeys: context?.holdDescriptionKeys,
       });
     }
     case "storyboard": {
@@ -657,7 +808,10 @@ function actVideoCommands(
  * is still going has nothing to write, and the room shows why where the piece
  * is rather than in here.
  */
-export function applyJobResults(record: StoryJobRecord): ApplyReport {
+export function applyJobResults(
+  record: StoryJobRecord,
+  context?: ApplyContext,
+): ApplyReport {
   const story = storyOf(record);
   if (story === undefined) {
     return {
@@ -683,7 +837,7 @@ export function applyJobResults(record: StoryJobRecord): ApplyReport {
     if (item.target.kind === "outline" || item.target.kind === "actVideo") {
       continue;
     }
-    commands.push(...commandsFor(story, record, item, report));
+    commands.push(...commandsFor(story, record, item, report, context));
   }
 
   if (commands.length === 0) return report;

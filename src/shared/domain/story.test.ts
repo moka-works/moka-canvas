@@ -571,6 +571,49 @@ describe("mergeElements", () => {
     expect(merged[0].chapterIds).toEqual([chapters[0].id, chapters[1].id]);
   });
 
+  it("holds a later part's words for the merge instead of writing over the first", () => {
+    const chapters = [createChapter("一"), createChapter("二")];
+    const heard = {
+      ...hero,
+      description: "旧描述",
+      chapterIds: [chapters[0].id],
+    };
+    const merged = mergeElements(
+      [heard],
+      [
+        {
+          kind: "character",
+          name: "林",
+          description: "后一批的描述。",
+          chapterIndexes: [1],
+        },
+      ],
+      chapters,
+      {
+        partial: true,
+        holdDescriptionKeys: new Set(["character:林"]),
+      },
+    );
+    // One part's words would overwrite the other's, so the later part's are
+    // held for the merge — while the chapter it read is added straight away.
+    expect(merged).toHaveLength(1);
+    expect(merged[0].description).toBe("旧描述");
+    expect(merged[0].chapterIds).toEqual([chapters[0].id, chapters[1].id]);
+  });
+
+  it("still writes a part's words for a name no earlier part described", () => {
+    const merged = mergeElements(
+      [hero],
+      [{ kind: "character", name: "林", description: "换了衣服。" }],
+      [],
+      {
+        partial: true,
+        holdDescriptionKeys: new Set(["character:周"]),
+      },
+    );
+    expect(merged[0].description).toBe("换了衣服。");
+  });
+
   it("keeps one name from standing in the cast twice", () => {
     const merged = mergeElements(
       [],

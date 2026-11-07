@@ -18,6 +18,7 @@ export function ConfirmDialog({
   testId,
   onCancel,
   onConfirm,
+  initialFocus = "confirm",
 }: {
   title: string;
   body: string;
@@ -26,6 +27,8 @@ export function ConfirmDialog({
   testId: string;
   onCancel: () => void;
   onConfirm: () => void;
+  /** Which answer the keyboard starts on; a warning starts on staying. */
+  initialFocus?: "confirm" | "cancel";
 }) {
   const { t } = useTranslation();
 
@@ -57,6 +60,7 @@ export function ConfirmDialog({
         {note !== undefined && <p className="dialog-note">{note}</p>}
         <div className="dialog-actions">
           <button
+            autoFocus={initialFocus === "cancel"}
             data-testid={`${testId}-cancel`}
             onClick={onCancel}
             type="button"
@@ -64,7 +68,7 @@ export function ConfirmDialog({
             {t("story:panels.cancel")}
           </button>
           <button
-            autoFocus
+            autoFocus={initialFocus === "confirm"}
             className="primary"
             data-testid={`${testId}-confirm`}
             onClick={onConfirm}

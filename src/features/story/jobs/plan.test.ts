@@ -6,8 +6,10 @@ import type {
   StoryDocument,
   StoryFilmRole,
 } from "../../../shared/domain/types";
+import { storyMergeElementsPrompt } from "../../../shared/prompts";
 import { useModelStore } from "../../settings/modelStore";
 import {
+  chunkElementMerges,
   clampSeconds,
   imageSizeForAspect,
   itemsForTargets,
@@ -18,6 +20,7 @@ import {
   planActVoice,
   planChapterRewrite,
   planElementArt,
+  planElementMergeWaves,
   planElements,
   planKeyframeArt,
   planKeyframeVideos,
@@ -26,6 +29,7 @@ import {
   planStoryboard,
   settledRoleFrames,
   voiceParamsFor,
+  type ElementRepeat,
 } from "./plan";
 
 const ids = storyIds();
@@ -351,6 +355,100 @@ describe("planning the words", () => {
     // was noticed, and it is read against the whole table rather than the part.
     expect(items[0].prompt).toContain("2. 第二章 车厢 — 车厢比站台更暗。");
     expect(items[0].prompt).not.toContain("第一章 站台");
+  });
+
+  it("merges the parts' words about one name in one ask", () => {
+    const waves = planElementMergeWaves(story(), [
+      {
+        kind: "character",
+        name: "林",
+        descriptions: ["第一批的描述。", "后一批的描述。"],
+      },
+    ]);
+
+    expect(waves).toHaveLength(1);
+    const item = waves[0].items[0];
+    expect(item.id).toBe("elements:merge:1");
+    expect(item.target).toEqual({ kind: "elements" });
+    expect(item.capability).toBe("text");
+    expect(item.prompt).toContain('- character "林"');
+    expect(item.prompt).toContain("第一批的描述。");
+    expect(item.prompt).toContain("后一批的描述。");
+    // One merge is not numbered as a part of several.
+    expect(item.prompt).not.toContain("This is merge");
+  });
+
+  it("carries whole names into the next ask when one does not fit", () => {
+    const held = story();
+    const groups: ElementRepeat[] = ["甲", "乙", "丙"].map((name) => ({
+      kind: "character",
+      name,
+      descriptions: ["一".repeat(80), "二".repeat(80)],
+    }));
+    const measure = (which: typeof groups) =>
+      storyMergeElementsPrompt({
+        groups: which,
+        genre: held.brief.genre,
+        style: held.brief.style,
+        part: 1,
+        total: groups.length,
+      }).length;
+    const budget = measure(groups.slice(0, 2));
+
+    const waves = chunkElementMerges(held, groups, budget);
+
+    // Two names fit, the third opens the next ask; no ask holds half a name.
+    expect(waves.map((wave) => wave.map((group) => group.name))).toEqual([
+      ["甲", "乙"],
+      ["丙"],
+    ]);
+    for (const wave of waves) {
+      for (const group of wave) {
+        expect(group.descriptions).toHaveLength(2);
+      }
+      expect(measure(wave)).toBeLessThanOrEqual(budget);
+    }
+  });
+
+  it("shortens one name's words rather than cutting the name in two", () => {
+    const held = story();
+    const group = {
+      kind: "character" as const,
+      name: "林",
+      descriptions: ["甲".repeat(200), "乙".repeat(200)],
+    };
+    const bare = storyMergeElementsPrompt({
+      groups: [{ ...group, descriptions: [] }],
+      genre: held.brief.genre,
+      style: held.brief.style,
+      part: 1,
+      total: 1,
+    }).length;
+    const budget = bare + 60;
+
+    const waves = chunkElementMerges(held, [group], budget);
+
+    // The element is one ask by itself: what does not fit is cut from its
+    // descriptions, never from the set of names.
+    expect(waves).toHaveLength(1);
+    expect(waves[0]).toHaveLength(1);
+    expect(waves[0][0].name).toBe("林");
+    expect(waves[0][0].descriptions.join("").length).toBeLessThan(
+      group.descriptions.join("").length,
+    );
+    expect(
+      storyMergeElementsPrompt({
+        groups: waves[0],
+        genre: held.brief.genre,
+        style: held.brief.style,
+        part: 1,
+        total: 1,
+      }).length,
+    ).toBeLessThanOrEqual(budget);
+  });
+
+  it("asks nothing when the parts repeated no name", () => {
+    expect(planElementMergeWaves(story(), [])).toEqual([]);
   });
 
   it("asks for a board with the names the story holds", () => {

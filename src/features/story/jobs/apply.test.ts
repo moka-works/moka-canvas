@@ -10,7 +10,7 @@ import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
-import { applyJobResults } from "./apply";
+import { applyJobResults, collectElementRepeats } from "./apply";
 
 const ids = storyIds();
 
@@ -294,6 +294,112 @@ describe("writing a batch's answers into the story", () => {
     // What no group was read from is said at the moment the answer is read in:
     // it is the one loss the document cannot show by being wrong.
     expect(report.notes.join()).toContain("moods");
+  });
+
+  it("holds a later part's words for the merge and adds only its chapters", () => {
+    const report = applyJobResults(
+      record("elements", [
+        item({
+          id: "elements:2",
+          target: { kind: "elements" },
+          capability: "text",
+          text: JSON.stringify({
+            characters: [
+              { name: "林", description: "换了衣服。", chapters: [2] },
+            ],
+          }),
+        }),
+      ]),
+      { holdDescriptionKeys: new Set(["character:林"]) },
+    );
+
+    expect(report.applied).toBe(1);
+    const hero = story().elements.find((each) => each.id === ids.hero);
+    // The part's words are held for the merge; the chapter it read is added to
+    // the ones the part before it already found, which is the reader's map.
+    expect(hero?.description).toBe("四十岁上下，深色大衣，说话很慢。");
+    expect(hero?.chapterIds).toEqual([ids.chapterFirst, ids.chapterSecond]);
+  });
+
+  it("writes a merge answer over the descriptions and nothing else", () => {
+    const report = applyJobResults(
+      record("elements", [
+        item({
+          id: "elements:merge:1",
+          target: { kind: "elements" },
+          capability: "text",
+          text: JSON.stringify({
+            characters: [
+              {
+                name: "林",
+                description: "四十岁上下，灰呢大衣，说话很慢。",
+              },
+            ],
+            scenes: [],
+            props: [],
+          }),
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(1);
+    expect(report.notes).toEqual([]);
+    const hero = story().elements.find((each) => each.id === ids.hero);
+    expect(hero?.description).toBe("四十岁上下，灰呢大衣，说话很慢。");
+    expect(hero?.chapterIds).toEqual([ids.chapterFirst]);
+    expect(hero?.main.takes.map((take) => take.assetIds[0])).toEqual([
+      ids.heroMain,
+    ]);
+    expect(hero?.turnaround?.takes.map((take) => take.assetIds[0])).toEqual([
+      ids.heroSheet,
+    ]);
+  });
+
+  it("writes no step when a merge says what the cast already says", () => {
+    const report = applyJobResults(
+      record("elements", [
+        item({
+          id: "elements:merge:1",
+          target: { kind: "elements" },
+          capability: "text",
+          text: JSON.stringify({
+            characters: [
+              {
+                name: "林",
+                description: "四十岁上下，深色大衣，说话很慢。",
+              },
+            ],
+          }),
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(0);
+    expect(useHistoryStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it("leaves a merged description for a name the cast no longer holds", () => {
+    const report = applyJobResults(
+      record("elements", [
+        item({
+          id: "elements:merge:1",
+          target: { kind: "elements" },
+          capability: "text",
+          text: JSON.stringify({
+            characters: [{ name: "已改名的角色", description: "新的描述。" }],
+          }),
+        }),
+      ]),
+    );
+
+    // A name renamed or taken out while the parts were read is not written back
+    // as a new element; the room says so rather than growing the cast.
+    expect(report.applied).toBe(0);
+    expect(report.skipped).toBe(1);
+    expect(report.notes.join()).toContain("已改名的角色");
+    expect(story().elements.some((each) => each.name === "已改名的角色")).toBe(
+      false,
+    );
   });
 
   it("writes a board onto the episode its piece was for", () => {
@@ -604,6 +710,87 @@ describe("a manuscript written in parts", () => {
     expect(chapters.every((chapter) => chapter.title !== "")).toBe(true);
     expect(chapters[2].title).toBe("第四章 雨");
     expect(chapters[3].title).toBe("第五章 天亮");
+  });
+});
+
+describe("collecting the names the parts repeated", () => {
+  const part = (number: number, text: string): StoryJobRecord =>
+    record("elements", [
+      item({
+        id: `elements:${number}`,
+        target: { kind: "elements" },
+        capability: "text",
+        text,
+      }),
+    ]);
+
+  it("collects a name more than one part described, in reading order", () => {
+    // The records arrive newest first, the way the room lists them; reading
+    // order is the parts' own, since a name keeps the first words first.
+    const repeats = collectElementRepeats([
+      part(
+        2,
+        JSON.stringify({
+          characters: [
+            { name: "林", description: "后一批。" },
+            { name: "周", description: "只在第二批。" },
+          ],
+        }),
+      ),
+      part(
+        1,
+        JSON.stringify({
+          characters: [{ name: "林", description: "第一批。" }],
+          scenes: [{ name: "车厢", description: "只在第一批。" }],
+        }),
+      ),
+    ]);
+
+    expect(repeats).toEqual([
+      { kind: "character", name: "林", descriptions: ["第一批。", "后一批。"] },
+    ]);
+  });
+
+  it("leaves out a name a part said the same way again", () => {
+    const repeats = collectElementRepeats([
+      part(
+        1,
+        JSON.stringify({
+          characters: [{ name: "林", description: "同一句。" }],
+        }),
+      ),
+      part(
+        2,
+        JSON.stringify({
+          characters: [{ name: "林", description: "同一句。" }],
+        }),
+      ),
+    ]);
+
+    expect(repeats).toEqual([]);
+  });
+
+  it("does not read a merge answer as one of the parts", () => {
+    const repeats = collectElementRepeats([
+      part(
+        1,
+        JSON.stringify({
+          characters: [{ name: "林", description: "第一批。" }],
+        }),
+      ),
+      record("elements", [
+        item({
+          id: "elements:merge:1",
+          target: { kind: "elements" },
+          capability: "text",
+          text: JSON.stringify({
+            characters: [{ name: "林", description: "合并后的。" }],
+          }),
+        }),
+      ]),
+    ]);
+
+    expect(repeats).toEqual([]);
   });
 });
 

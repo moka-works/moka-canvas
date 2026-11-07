@@ -15,6 +15,7 @@ import {
   type StoryReadingPiece,
 } from "../../../shared/domain";
 import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
+import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
@@ -24,9 +25,11 @@ import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ElementCard } from "../panels/ElementCard";
 import { VoiceFields } from "../panels/VoiceFields";
-import { readElementsAnswer } from "../jobs/apply";
+import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
 import {
+  ELEMENT_MERGE_ID,
   planElementArt,
+  planElementMergeWaves,
   planElements,
   resolveVoice,
   storySplitChars,
@@ -41,6 +44,7 @@ import {
   useStoryJobStore,
   useStoryRun,
 } from "../stores/storyJobStore";
+import { useStoryStore } from "../stores/storyStore";
 
 /** The kinds of element, in the order the room shows them. */
 const KINDS: StoryElementKind[] = ["character", "scene", "prop"];
@@ -78,7 +82,18 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [totalWaves, setTotalWaves] = useState(0);
   // A batch is being handed over, whether for the first part or a later one.
   const sending = useStoryJobStore((state) => state.starting);
+  const applying = useStoryJobStore((state) => state.applying);
   const starting = useRef(false);
+  // The recognition this window is reading, the parts it has sent, and the
+  // merge that follows them.
+  const runId = useRef("");
+  const partIds = useRef<string[]>([]);
+  const finalPartId = useRef<string | null>(null);
+  const mergeAsked = useRef(false);
+  // The same as `finalPartId`, in state: whether the merge is still owed is a
+  // fact the room must be able to show before a reader walks away from it.
+  const [mergePending, setMergePending] = useState(false);
+  const setElementsBusy = useStoryStore((state) => state.setElementsBusy);
 
   const groups = KINDS.map((each) => ({
     kind: each,
@@ -129,21 +144,43 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // chapter's worth of words takes a while, and the button that asked for it
   // is where a reader looks to see that it is still going.
   const reading = kindRunning(jobs, "elements");
+  // The merge is part of the reading, but it is saying something else: the
+  // names the parts repeated are being put together rather than read again.
+  const merging = jobs.some(
+    (job) =>
+      job.kind === "elements" &&
+      (job.status === "queued" || job.status === "running") &&
+      job.items.some((item) => item.id.startsWith(ELEMENT_MERGE_ID)),
+  );
   // What the newest reading had to say about what it could not read. Shown
   // rather than only logged, because a group of an answer that was not read is
   // a loss the document shows as simply not being there.
+  const read = (item: { id: string; text?: string }) =>
+    item.text !== undefined && !item.id.startsWith(ELEMENT_MERGE_ID);
   const answerJob = jobs.find(
-    (job) =>
-      job.kind === "elements" &&
-      job.items.some((item) => item.text !== undefined),
+    (job) => job.kind === "elements" && job.items.some(read),
   );
   const warnings = (answerJob?.items ?? [])
-    .filter((item) => item.text !== undefined)
+    .filter(read)
     .flatMap((item) =>
       readElementsAnswer(item.text ?? "").warnings.map(
         (warning) => `${item.id}: ${warning}`,
       ),
     );
+
+  // Leaving the step would drop what only the step can send: the waves it has
+  // not handed over yet, and the merge owed after the last of them. Said to the
+  // room so that a reader walking away is asked first.
+  const busy = reading || waves.length > 0 || mergePending;
+  useEffect(() => {
+    setElementsBusy(busy);
+  }, [busy, setElementsBusy]);
+  useEffect(
+    () => () => {
+      setElementsBusy(false);
+    },
+    [setElementsBusy],
+  );
 
   // The parts of a long telling are read one after another, the next one
   // beginning when the one before it is over rather than when the reader
@@ -167,8 +204,19 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           part,
           total: totalWaves,
         }),
+        undefined,
+        runId.current,
       )
       .then((record) => {
+        if (record !== null) {
+          partIds.current.push(record.id);
+          // The last part is the one whose reading is followed by the merge:
+          // every name the parts before it also returned to is waiting there.
+          if (waves.length === 1) {
+            finalPartId.current = record.id;
+            setMergePending(true);
+          }
+        }
         setWaves((held) => (record === null ? [] : held.slice(1)));
       })
       .finally(() => {
@@ -176,9 +224,54 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       });
   }, [reading, waves, totalWaves, story, sending]);
 
+  // Every part is home. The names more than one part returned to were held
+  // rather than written over, so their descriptions are asked to be put
+  // together once — after the last part is written and saved, since the merge
+  // is written onto the cast that part made.
+  useEffect(() => {
+    if (starting.current || sending || reading || applying.length > 0) return;
+    if (waves.length > 0 || mergeAsked.current) return;
+    const id = finalPartId.current;
+    if (id === null) return;
+    const record = jobs.find((job) => job.id === id);
+    if (record === undefined || record.readAt === undefined) return;
+    const last = record.items.find((item) => /^elements:\d+$/.test(item.id));
+    if (
+      last === undefined ||
+      last.status !== "succeeded" ||
+      (last.text ?? "").trim() === ""
+    ) {
+      // The part that was to close the reading did not come back: there is no
+      // whole telling to merge, and the step's badge holds the asking again.
+      finalPartId.current = null;
+      setMergePending(false);
+      return;
+    }
+    const reads = partIds.current.flatMap((jobId) => {
+      const job = jobs.find((held) => held.id === jobId);
+      return job === undefined ? [] : [job];
+    });
+    const repeats = collectElementRepeats(reads);
+    mergeAsked.current = true;
+    finalPartId.current = null;
+    setMergePending(false);
+    if (repeats.length === 0) return;
+    const merges = planElementMergeWaves(story, repeats);
+    if (merges.length === 0) return;
+    void useStoryJobStore.getState().startWaves(story.id, "elements", merges);
+  }, [applying, jobs, reading, sending, story, waves]);
+
   /** Reads the telling, whole or a part at a time. */
   const begin = async () => {
+    // A reading already out is the one that will be merged: a second ask beside
+    // it would write into the same cast and be merged against half a telling.
+    if (reading) return;
     setAsking(false);
+    runId.current = newId();
+    partIds.current = [];
+    finalPartId.current = null;
+    mergeAsked.current = false;
+    setMergePending(false);
     const cut = chapterReadingWaves(
       story.chapters,
       storySplitChars(),
@@ -198,10 +291,18 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             ? { pieces: first }
             : { pieces: first, part: 1, total: cut.length },
         ),
+        undefined,
+        runId.current,
       );
     // A first part that never went out leaves nothing for the rest to be read
     // beside, so the parts that were still to come are dropped with it.
-    if (record === null) setWaves([]);
+    if (record === null) {
+      setWaves([]);
+      return;
+    }
+    // One ask is the whole telling: there are no parts for a merge to put
+    // together, and the one answer is read exactly as it always was.
+    if (cut.length > 1) partIds.current.push(record.id);
   };
 
   return (
@@ -342,11 +443,13 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
               type="button"
             >
               {reading && <span className="story-spin" />}
-              {reading
-                ? t("story:elements.reading")
-                : story.elements.length === 0
-                  ? t("story:elements.recognise")
-                  : t("story:elements.recogniseAgain")}
+              {merging
+                ? t("story:elements.merging")
+                : reading
+                  ? t("story:elements.reading")
+                  : story.elements.length === 0
+                    ? t("story:elements.recognise")
+                    : t("story:elements.recogniseAgain")}
             </button>
             <StepConfirm step="elements" story={story} />
           </div>
@@ -396,9 +499,11 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                 type="button"
               >
                 {reading && <span className="story-spin" />}
-                {reading
-                  ? t("story:elements.reading")
-                  : t("story:elements.recognise")}
+                {merging
+                  ? t("story:elements.merging")
+                  : reading
+                    ? t("story:elements.reading")
+                    : t("story:elements.recognise")}
               </button>
             </div>
           </div>

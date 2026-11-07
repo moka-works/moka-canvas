@@ -587,15 +587,22 @@ export function mergeElementDrafts(
  * whole telling is the cast the story now has, and everything else goes.
  *
  * The cast is built by name, so no name stands in it twice however many times
- * an answer — or the parts of a long telling — says it.
+ * an answer — or the parts of a long telling — says it. A later part's words
+ * about a name an earlier part already described are held rather than written:
+ * one part's description would overwrite the other's, while the parts read the
+ * same telling and their words belong together. The key is listed in
+ * `holdDescriptionKeys` when that is so; the chapters it noticed are still added
+ * to the ones on file, since those are the reader's own map of where a thing
+ * appears.
  */
 export function mergeElements(
   existing: StoryElement[],
   identified: StoryElementDraft[],
   chapters: StoryChapter[] = [],
-  options: { partial?: boolean } = {},
+  options: { partial?: boolean; holdDescriptionKeys?: Set<string> } = {},
 ): StoryElement[] {
   const partial = options.partial === true;
+  const holding = options.holdDescriptionKeys ?? new Set<string>();
   const known = new Map(
     existing.map((element) => [
       elementKey(element.kind, element.name),
@@ -621,6 +628,10 @@ export function mergeElements(
       : noticed.length > 0
         ? noticed
         : held.chapterIds;
+    if (partial && holding.has(key)) {
+      cast.set(key, { ...held, chapterIds });
+      continue;
+    }
     cast.set(key, {
       ...held,
       name: draft.name,

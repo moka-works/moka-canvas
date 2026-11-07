@@ -6,6 +6,8 @@ import { StoryTabs } from "./StoryTabs";
 interface StoryTopBarProps {
   /** Going home from the story room, which puts the project down first. */
   onHome: () => void;
+  /** Whether the room may hand over to another as it stands. */
+  onGo?: (phase: "editing" | "clip" | "assets") => boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ interface StoryTopBarProps {
  * strip is the way across the room's width, and the column beside it is where a
  * story is renamed, taken away and read for how far it has got.
  */
-export function StoryTopBar({ onHome }: StoryTopBarProps) {
+export function StoryTopBar({ onHome, onGo }: StoryTopBarProps) {
   const { t } = useTranslation();
   return (
     <PageTopBar
@@ -31,6 +33,7 @@ export function StoryTopBar({ onHome }: StoryTopBarProps) {
           {t("story:topBar.exportFilm")}
         </button>
       }
+      onGo={onGo}
       onHome={onHome}
       tabs={<StoryTabs />}
     />

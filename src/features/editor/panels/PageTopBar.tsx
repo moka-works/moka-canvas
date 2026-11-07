@@ -25,6 +25,8 @@ interface PageTopBarProps {
   current: "canvas" | "clip" | "story" | "assets";
   /** What going home costs; the page decides whether that is guarded. */
   onHome: () => void;
+  /** Whether this page may hand over to another, asked before the app moves. */
+  onGo?: (phase: "editing" | "clip" | "assets") => boolean;
   /** The middle of the bar: what the page is made of. */
   tabs?: ReactNode;
   /**
@@ -53,6 +55,7 @@ interface PageTopBarProps {
 export function PageTopBar({
   current,
   onHome,
+  onGo,
   tabs,
   exportItems,
 }: PageTopBarProps) {
@@ -87,7 +90,7 @@ export function PageTopBar({
 
   return (
     <header className="editor-topbar">
-      <HomeMenu current={current} onHome={onHome} />
+      <HomeMenu current={current} onGo={onGo} onHome={onHome} />
       <strong className="editor-project-name" title={projectName}>
         {projectName}
       </strong>

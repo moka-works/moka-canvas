@@ -1,0 +1,16 @@
+The telling is made of the things below. Its chapters were read a part at a time, so the same one may be described more than once, once for each part that returned to it. Merge what the parts said about each name into one description.
+
+{% for group in groups %}- {{ group.kind }} "{{ group.name }}"{% for description in group.descriptions %}
+  - {{ description }}{% endfor %}
+{% endfor %}
+A group is one character, scene or prop under one name. Write one description for it that keeps everything the descriptions say and reads as the one picture a drawing would have to know: for a character, only what a drawing can show — age, build, face and hair, clothes, and any mark or accessory they wear; for a scene, size, light and the state of the place; for a prop, shape, material and wear. A character's merged description is a look and nothing else: no voice, habits, manner, relationships, backstory or events. Where the descriptions disagree, keep what they agree on and say only what the telling supports. Do not invent anything, do not drop a detail they share, do not rename the thing, and do not add or leave out an entry: answer for exactly the names above, one each.
+{% if part %}This is merge {{ part }} of {{ total }}; the names not listed here are merged in another ask.{% endif %}
+Answer with a single fenced json block and nothing else:
+
+```json
+{
+  "characters": [ { "name": "…", "description": "…" } ],
+  "scenes": [ { "name": "…", "description": "…" } ],
+  "props": [ { "name": "…", "description": "…" } ]
+}
+```

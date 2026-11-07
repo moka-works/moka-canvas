@@ -115,6 +115,7 @@
     "apply": {
       "outline": "Write the chapters from the model",
       "elements": "Write the elements from the model",
+      "elementsMerge": "Merge what the parts said about the same name",
       "storyboard": "Write the board from the model",
       "elementArt": "File a drawing",
       "keyframeArt": "File a frame",
@@ -155,6 +156,7 @@
     "storyGone": "The story this batch was told for is gone",
     "unreadableAnswer": "The answer to {{at}} could not be read; it is kept for you to fix",
     "answerNotes": "{{at}} came back with something left unread: {{notes}}",
+    "mergeMissing": "These names were no longer in the cast when the merge landed, and their descriptions were left out: {{names}}",
     "failedWith": "{{failed}} of {{total}} pieces did not come back: {{reason}}",
     "stepFailedWith": "{{failed}} pieces did not come back: {{reason}}",
     "lookFailed": "Could not read the batches through: {{reason}}"
@@ -299,6 +301,10 @@
     "all": "All ({{count}})",
     "counts": "{{characters}} characters · {{scenes}} places · {{props}} props",
     "reading": "Reading the chapters…",
+    "merging": "Merging the names the parts repeated…",
+    "leaveTitle": "The elements reading is still out",
+    "leaveBody": "Leaving now drops the batches that have not been sent yet, and the merge that follows them. Batches already sent keep running and their answers still land in the story.",
+    "leaveConfirm": "Leave anyway",
     "recognise": "Find them in the chapters",
     "recogniseAgain": "Read the chapters again",
     "recogniseTitle": "Read the chapters again?",

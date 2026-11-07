@@ -647,17 +647,42 @@ describe("a telling read in parts", () => {
       [{ name: "林", description: "四十岁上下，穿深色大衣。", chapters: [2] }],
       [{ name: "末班车车厢", description: "空车厢。", chapters: [2] }],
     );
+    // The merge's own answer is ready before its ask is made, so a look that
+    // comes back between the two lands the merged words rather than an empty
+    // answer.
+    answers["elements:merge:1"] = castAnswer([
+      { name: "林", description: "四十岁上下，穿灰呢大衣，说话很慢。" },
+    ]);
     await comesBack();
 
     // What the second part found was added to the cast rather than standing in
-    // its place: the character both parts saw is one element, holding the
-    // chapters both of them read it in.
-    await waitFor(() => {
-      expect(element("林")?.description).toBe("四十岁上下，穿深色大衣。");
-    });
+    // its place: the character both parts saw is one element. Its words about
+    // that character were held for the merge — the domain and apply tests pin
+    // that down — and the chapters both parts read it in are already added up.
     expect(story().elements.filter((each) => each.name === "林")).toHaveLength(
       1,
     );
+    expect(element("林")?.chapterIds).toEqual([
+      ids.chapterFirst,
+      ids.chapterSecond,
+    ]);
+    // With every part home, the repeated name is asked to be put together once,
+    // and the ask carries both parts' words rather than only the last.
+    await waitFor(() => {
+      expect(starts).toHaveLength(3);
+    });
+    expect(starts[2]?.items[0]?.id).toBe("elements:merge:1");
+    expect(starts[2]?.items[0]?.prompt).toContain("灰呢大衣，说话很慢。");
+    expect(starts[2]?.items[0]?.prompt).toContain("四十岁上下，穿深色大衣。");
+    // A name only one part returned to is not repeated and has no merge ask.
+    expect(starts[2]?.items[0]?.prompt).not.toContain("末班车车厢");
+    // The merged words overwrite the first description, while the readings and
+    // the chapters the parts added stay where they were.
+    await waitFor(() => {
+      expect(element("林")?.description).toBe(
+        "四十岁上下，穿灰呢大衣，说话很慢。",
+      );
+    });
     expect(element("林")?.chapterIds).toEqual([
       ids.chapterFirst,
       ids.chapterSecond,
@@ -674,6 +699,33 @@ describe("a telling read in parts", () => {
         .elements.map((each) => each.name)
         .sort(),
     ).toEqual(["林", "末班车车厢", "周", "旧车票"].sort());
+    // Every part was sent and the merge is done: nothing of the reading is
+    // waiting on this step any more.
+    expect(useStoryStore.getState().elementsBusy).toBe(false);
+  });
+
+  it("asks before the step is left while the reading is still going", async () => {
+    readingInParts(30);
+    openAtElements(buildStoryMokaFile());
+    fireEvent.click(screen.getByTestId("story-elements-recognise"));
+    fireEvent.click(screen.getByTestId("recognise-elements-confirm"));
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    expect(useStoryStore.getState().elementsBusy).toBe(true);
+
+    // The second part has not been sent yet, so leaving now would drop it.
+    fireEvent.click(screen.getByTestId("story-step-idea"));
+    expect(screen.getByTestId("leave-elements")).toBeTruthy();
+    expect(useStoryStore.getState().step).toBe("elements");
+
+    fireEvent.click(screen.getByTestId("leave-elements-cancel"));
+    expect(screen.queryByTestId("leave-elements")).toBeNull();
+    expect(useStoryStore.getState().step).toBe("elements");
+
+    fireEvent.click(screen.getByTestId("story-step-idea"));
+    fireEvent.click(screen.getByTestId("leave-elements-confirm"));
+    expect(useStoryStore.getState().step).toBe("idea");
   });
 });
 
