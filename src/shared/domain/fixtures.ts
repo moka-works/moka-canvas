@@ -1,6 +1,5 @@
 import {
   CANVAS_SCHEMA_VERSION,
-  MAX_ACTS_PER_CHAPTER,
   MAX_KEYFRAMES_PER_ACT,
   MOKA_FILE_VERSION,
   REFERENCE_IMAGES_DEFAULT,
@@ -1216,20 +1215,22 @@ export function buildEmptyStory(name = "新的故事"): MokaFile {
 }
 
 /**
- * How many episodes the stress file carries.
+ * The shape the stress file carries.
  *
- * The room allows five hundred chapters, but a document that is also at the
- * act and shot ceilings at once is not a file the app promises to turn around
- * quickly: five hundred chapters of thirty full acts each is a different order
- * of magnitude. Sixty is the shape the performance budget was written against,
- * and the chapter ceiling is checked on its own where it belongs.
+ * The room allows thousands of chapters and hundreds of acts, but a document
+ * at every ceiling at once is not a file the app promises to turn around
+ * quickly: thousands of chapters of hundreds of full acts each is a different
+ * order of magnitude. Sixty episodes of thirty acts is the shape the
+ * performance budget was written against; the ceilings themselves are checked
+ * on their own where they belong.
  */
 const STRESS_CHAPTERS = 60;
+const STRESS_ACTS = 30;
 
 /**
- * A telling at the stress ceilings together: sixty episodes, thirty acts each,
- * and twelve shots in every act. Built on demand, since it is twenty-one
- * thousand shots and no test wants two of them.
+ * A telling at the stress shape: sixty episodes, thirty acts each, and twelve
+ * shots in every act. Built on demand, since it is twenty-one thousand shots
+ * and no test wants two of them.
  */
 export function buildLongStory(): MokaFile {
   const moka = buildEmptyStory("很长的一篇");
@@ -1239,7 +1240,7 @@ export function buildLongStory(): MokaFile {
     title: `第 ${c + 1} 章`,
     synopsis: "梗概",
     targetDurationMs: 60_000,
-    acts: Array.from({ length: MAX_ACTS_PER_CHAPTER }, (_, a) => ({
+    acts: Array.from({ length: STRESS_ACTS }, (_, a) => ({
       id: `act-${c}-${a}`,
       title: `第 ${a + 1} 幕`,
       summary: "内容",

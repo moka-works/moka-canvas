@@ -14,13 +14,13 @@ use super::{
 };
 
 pub const STORY_SCHEMA_VERSION: i32 = 1;
-pub const MAX_STORIES_PER_PROJECT: usize = 20;
+pub const MAX_STORIES_PER_PROJECT: usize = 1_000;
 pub const STORY_NAME_MAX: usize = 60;
 pub const STORY_IDEA_MAX: usize = 20_000;
-pub const MAX_CHAPTERS_PER_STORY: usize = 500;
-pub const MAX_ELEMENTS_PER_STORY: usize = 200;
+pub const MAX_CHAPTERS_PER_STORY: usize = 5_000;
+pub const MAX_ELEMENTS_PER_STORY: usize = 500;
 pub const MAX_TAKES_PER_SLOT: usize = 12;
-pub const MAX_ACTS_PER_CHAPTER: usize = 30;
+pub const MAX_ACTS_PER_CHAPTER: usize = 300;
 pub const MAX_KEYFRAMES_PER_ACT: usize = 12;
 /// How many of a frame's mentioned reference pictures its ask carries when the
 /// story says nothing, and the most it may be set to carry.

@@ -329,7 +329,9 @@ describe("the board", () => {
     expect(read.ok).toBe(true);
     if (read.ok) {
       expect(read.value).toHaveLength(MAX_ACTS_PER_CHAPTER);
-      expect(read.warnings.join()).toContain("only the first 30 were kept");
+      expect(read.warnings.join()).toContain(
+        `only the first ${MAX_ACTS_PER_CHAPTER} were kept`,
+      );
     }
   });
 

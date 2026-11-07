@@ -12,7 +12,8 @@ use moka_canvas::domain::story::{
     StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind, StoryElementPatch,
     StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryShotGranularity, StoryShotSize,
     StorySlot, StorySlotTarget, StoryTake, MAX_ACTS_PER_CHAPTER, MAX_CHAPTERS_PER_STORY,
-    MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
+    MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT, MAX_TAKES_PER_SLOT,
+    STORY_NAME_MAX,
 };
 use moka_canvas::domain::validate::validate_moka_file;
 use moka_canvas::domain::{
@@ -380,7 +381,7 @@ fn adds_a_story_at_the_place_it_asks_for() {
 fn refuses_a_story_past_the_limit_a_nameless_one_and_a_duplicate_id() {
     let mut full = story_document();
     full.stories = Some(
-        (0..20)
+        (0..MAX_STORIES_PER_PROJECT)
             .map(|n| create_story(&format!("故事 {n}")))
             .collect::<Vec<_>>(),
     );

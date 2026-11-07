@@ -5,6 +5,7 @@ import {
   MAX_CHAPTERS_PER_STORY,
   MAX_ELEMENTS_PER_STORY,
   MAX_KEYFRAMES_PER_ACT,
+  MAX_STORIES_PER_PROJECT,
   MAX_TAKES_PER_SLOT,
   REFERENCE_IMAGES_DEFAULT,
   REFERENCE_IMAGES_MAX,
@@ -928,7 +929,7 @@ describe("story lifecycle commands", () => {
   it("refuses a story past the limit, a name nobody could read, and a duplicate id", () => {
     const moka = buildEmptyStory();
     const full = { ...moka, stories: [] as StoryDocument[] };
-    for (let n = 0; n < 20; n += 1) {
+    for (let n = 0; n < MAX_STORIES_PER_PROJECT; n += 1) {
       full.stories = [...full.stories!, createStory(`故事 ${n}`)];
     }
     expect(

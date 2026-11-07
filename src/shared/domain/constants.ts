@@ -335,17 +335,17 @@ export const MAX_AUDIO_SPEED = 4;
 // -----------------------------------------------------------------------------
 
 export const STORY_SCHEMA_VERSION = 1;
-export const MAX_STORIES_PER_PROJECT = 20;
+export const MAX_STORIES_PER_PROJECT = 1_000;
 export const STORY_NAME_MAX = 60;
 /** The premise's own ceiling, of the same size as a node's prompt. */
 export const STORY_IDEA_MAX = 20_000;
 /** How much manuscript a story will hold, measured in characters. */
 export const STORY_SOURCE_TEXT_MAX = 2_000_000;
-export const MAX_CHAPTERS_PER_STORY = 500;
-export const MAX_ELEMENTS_PER_STORY = 200;
+export const MAX_CHAPTERS_PER_STORY = 5_000;
+export const MAX_ELEMENTS_PER_STORY = 500;
 /** How many drawings one place keeps before the oldest is let go. */
 export const MAX_TAKES_PER_SLOT = 12;
-export const MAX_ACTS_PER_CHAPTER = 30;
+export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
 /**
  * How many reference pictures one frame's ask carries when the story says
