@@ -78,6 +78,15 @@ const JOB_RECORDS: &str = "history/jobs/";
 /// only in a package asked to carry it.
 const RUN_RECORDS: &str = "history/runs/";
 
+/// Where conversations live, beside the document rather than in it.
+const CONVERSATIONS: &str = "agent/";
+
+/// What an assistant's calls wrote: change sets, audits, and idempotency keys.
+///
+/// About this machine's use of the project rather than the project itself, so
+/// like a run's record it travels only in a package asked to carry it.
+const AGENT_RECORDS: &str = "history/agent/";
+
 /// Application-level metadata documents that sit at the project root only.
 /// Matching the whole relative path keeps an asset that happens to share a
 /// name — a project may well contain its own `meta.json` — in the package.
@@ -116,6 +125,11 @@ enum Skip {
     Job,
     /// The record of a run this machine made.
     Run,
+    /// Conversations kept beside the document: words about the work, not the
+    /// work, and they start afresh wherever the work arrives.
+    Conversations,
+    /// The change sets, audits, and idempotency keys an assistant's calls wrote.
+    AgentHistory,
     /// A credential, at any depth: nothing in a project tree has a legitimate
     /// reason to carry one.
     Secret,
@@ -142,6 +156,8 @@ impl Skip {
             Self::Output => "output/**".into(),
             Self::Job => format!("{JOB_RECORDS}**"),
             Self::Run => format!("{RUN_RECORDS}**"),
+            Self::Conversations => format!("{CONVERSATIONS}**"),
+            Self::AgentHistory => format!("{AGENT_RECORDS}**"),
             Self::Secret => format!("**/{}", docs::SECRETS_DOC),
             Self::MasterKey => format!("**/{}", crypto::MASTER_KEY_FILE),
             Self::Corrupt => "**/*.corrupt.*".into(),
@@ -168,6 +184,14 @@ fn skipped(relative: &str, scope: &PackageScope) -> Option<Skip> {
     }
     if !scope.personal_history && relative.starts_with(RUN_RECORDS) {
         return Some(Skip::Run);
+    }
+    if !scope.personal_history && (relative == "agent" || relative.starts_with(CONVERSATIONS)) {
+        return Some(Skip::Conversations);
+    }
+    if !scope.personal_history
+        && (relative == "history/agent" || relative.starts_with(AGENT_RECORDS))
+    {
+        return Some(Skip::AgentHistory);
     }
     let name = relative.rsplit('/').next().unwrap_or(relative);
     if name == docs::SECRETS_DOC {
@@ -784,6 +808,30 @@ mod tests {
             ),
             Some(Skip::Job)
         );
+    }
+
+    /// What the assistant said and did here is a fact about this machine's use
+    /// of the project, like a run's record: a work package starts afresh, and
+    /// a backup is what carries the conversation and its change sets.
+    #[test]
+    fn conversations_travel_only_in_a_package_that_asked_for_its_history() {
+        for (relative, rule) in [
+            (
+                "agent/sessions/0192b7d4-0000-7000-8000-000000000002.json",
+                Skip::Conversations,
+            ),
+            (
+                "history/agent/audit/0192b7d4-0000-7000-8000-000000000003.json",
+                Skip::AgentHistory,
+            ),
+        ] {
+            assert_eq!(skipped(relative, &WORK), Some(rule));
+            assert!(ships(relative, &BACKUP), "a backup carries its own history");
+        }
+        // A folder that merely shares a name is project content.
+        for relative in ["assets/agent/notes.txt", "notes/history/agent.txt"] {
+            assert!(ships(relative, &WORK), "{relative} is project content");
+        }
     }
 
     /// The run that made one of the fixture's assets.

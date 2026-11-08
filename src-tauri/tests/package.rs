@@ -531,6 +531,73 @@ async fn a_run_record_travels_only_in_a_package_that_asked_for_it() {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// A conversation, and the change sets and audits its calls wrote, are about
+/// the person using the project rather than the work: a work package starts
+/// afresh, and a backup is what carries them intact.
+#[tokio::test]
+async fn a_conversation_travels_only_in_a_package_that_asked_for_its_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let created = create_project(&app, &temp.path().join("projects"), "Ledger").await;
+    let root = PathBuf::from(created["root"].as_str().unwrap());
+
+    let session_name = "agent/sessions/0192b7d4-2222-7000-8000-000000000001.json";
+    let audit_name = "history/agent/audit/0192b7d4-2222-7000-8000-000000000002.json";
+    for name in [session_name, audit_name] {
+        let path = root.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let bytes = serde_json::to_vec_pretty(&json!({
+            "schemaVersion": 1,
+            "session": {
+                "id": "0192b7d4-2222-7000-8000-000000000001",
+                "title": "湖边",
+                "messages": [],
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            },
+        }))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+    }
+
+    let work = temp.path().join("work.mokapkg.zip");
+    export_open_project(&app, json!({ "destination": work.to_string_lossy() })).await;
+    let entries = read_zip_entries(&work);
+    for name in [session_name, audit_name] {
+        assert!(
+            entries.iter().all(|(entry, _)| entry != name),
+            "{name} is this machine's history, not the work"
+        );
+    }
+    let manifest = manifest_of(&entries);
+    assert_eq!(manifest["personalHistory"], false);
+    let rules: Vec<&str> = manifest["skipped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row["rule"].as_str())
+        .collect();
+    assert!(rules.contains(&"agent/**"));
+    assert!(rules.contains(&"history/agent/**"));
+
+    let backup = temp.path().join("backup.mokapkg.zip");
+    export_open_project(
+        &app,
+        json!({
+            "destination": backup.to_string_lossy(),
+            "includePersonalHistory": true,
+        }),
+    )
+    .await;
+    let entries = read_zip_entries(&backup);
+    for name in [session_name, audit_name] {
+        assert!(
+            entries.iter().any(|(entry, _)| entry == name),
+            "a full backup carries {name} intact"
+        );
+    }
+}
+
 /// The run that made the fixture's asset.
 const MADE_BY_RUN: &str = "0192b7d4-2222-7000-8000-000000000002";
 
