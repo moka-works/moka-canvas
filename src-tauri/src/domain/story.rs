@@ -429,6 +429,10 @@ pub struct StoryKeyframe {
     /// The lines of this shot read aloud, each in its own speaker's voice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voices: Option<Vec<StoryVoiceTake>>,
+    /// Which form of each mentioned element this shot is drawn with, by
+    /// element id. Absent for an element means its default form.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variant_choices: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -760,6 +764,9 @@ pub struct StoryKeyframePatch {
     pub dialogue: Option<Vec<StoryDialogueLine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<i64>,
+    /// The form each mentioned element travels as; an empty map clears them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_choices: Option<BTreeMap<String, String>>,
 }
 
 /// The fields a caller may move on an assembly, for `setStoryEdit`.
@@ -2283,6 +2290,23 @@ pub fn apply_story_command(
             if let Some(dialogue) = &patch.dialogue {
                 check_dialogue(dialogue)?;
             }
+            if let Some(choices) = &patch.variant_choices {
+                for (element_id, variant_id) in choices {
+                    let element = story
+                        .elements
+                        .iter()
+                        .find(|held| &held.id == element_id)
+                        .ok_or_else(story_target_invalid)?;
+                    if !element
+                        .variants
+                        .iter()
+                        .flatten()
+                        .any(|form| &form.id == variant_id)
+                    {
+                        return Err(story_target_invalid());
+                    }
+                }
+            }
             let previous = StoryKeyframePatch {
                 title: patch.title.as_ref().map(|_| keyframe.title.clone()),
                 shot_size: patch.shot_size.map(|_| keyframe.shot_size),
@@ -2292,6 +2316,10 @@ pub fn apply_story_command(
                 content: patch.content.as_ref().map(|_| keyframe.content.clone()),
                 dialogue: patch.dialogue.as_ref().map(|_| keyframe.dialogue.clone()),
                 duration_ms: patch.duration_ms.map(|_| keyframe.duration_ms),
+                variant_choices: patch
+                    .variant_choices
+                    .as_ref()
+                    .map(|_| keyframe.variant_choices.clone()),
             };
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2329,6 +2357,9 @@ pub fn apply_story_command(
                         }
                         if let Some(duration) = patch.duration_ms {
                             frame.duration_ms = duration;
+                        }
+                        if let Some(choices) = &patch.variant_choices {
+                            frame.variant_choices = choices.clone();
                         }
                     }
                 }

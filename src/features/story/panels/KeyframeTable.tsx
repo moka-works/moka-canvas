@@ -729,7 +729,8 @@ function KeyframePromptCell({
   });
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
-  const cast = keyframeCast(story, content.value, extras);
+  const variantChoices = keyframe.variantChoices ?? {};
+  const cast = keyframeCast(story, content.value, extras, variantChoices);
   // The pictures the shot's own words name, which the assistant strip below
   // marks; the extras have a strip of their own, where they can be described.
   const mentioned = cast.carried.flatMap((reference) =>
@@ -760,6 +761,14 @@ function KeyframePromptCell({
           : extra,
       ),
     });
+  };
+
+  /** The form this shot draws one cast member in; default clears the choice. */
+  const chooseVariant = (elementId: string, variantId: string | undefined) => {
+    const next = { ...variantChoices };
+    if (variantId === undefined) delete next[elementId];
+    else next[elementId] = variantId;
+    write({ variantChoices: next });
   };
 
   // The same words the plan will send, read apart: the fixed scaffolding is
@@ -935,7 +944,9 @@ function KeyframePromptCell({
         <ElementPictureInspector
           element={inspecting}
           onClose={() => setInspectingId(null)}
+          onVariant={(variantId) => chooseVariant(inspecting.id, variantId)}
           story={story}
+          variantId={variantChoices[inspecting.id]}
         />
       )}
       {pickingExtra && (

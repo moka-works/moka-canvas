@@ -1685,6 +1685,58 @@ describe("the board commands", () => {
     ).toBe("VALIDATION_FAILED");
   });
 
+  it("records which form a shot draws each element in, and clears it on undo", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const variant = {
+      id: "variant-old",
+      name: "老年",
+      description: "二十年以后。",
+      main: emptyStorySlot(),
+    };
+    const withForm = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.hero,
+      patch: { variants: [variant] },
+    });
+    const next = expectRoundTrip(withForm, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameSecond,
+      patch: { variantChoices: { [ids.hero]: "variant-old" } },
+    });
+    const frame = storyOfFile(next).chapters[0].acts[0].keyframes[1];
+    expect(frame.variantChoices).toEqual({ [ids.hero]: "variant-old" });
+
+    const cleared = expectRoundTrip(next, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameSecond,
+      patch: { variantChoices: {} },
+    });
+    expect(
+      storyOfFile(cleared).chapters[0].acts[0].keyframes[1].variantChoices,
+    ).toBeUndefined();
+
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateStoryKeyframe",
+          storyId: ids.story,
+          chapterId: ids.chapterFirst,
+          actId: ids.act,
+          keyframeId: ids.frameSecond,
+          patch: { variantChoices: { [ids.hero]: "variant-gone" } },
+        }),
+      ),
+    ).toBe("STORY_TARGET_INVALID");
+  });
+
   it("refuses a line with no name of its own, or two sharing one", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();

@@ -98,6 +98,26 @@ async function toTheBoard(
     await expect(page.locator(".story-element")).toHaveCount(4, {
       timeout: 30_000,
     });
+
+    // A character takes a second form: the card's picker manages the forms,
+    // and a new form starts out made from the element's default form.
+    const keeper = page.getByTestId("story-element-character-Keeper");
+    await keeper
+      .getByTestId("story-element-form-Keeper")
+      .selectOption("__manage__");
+    await page.getByTestId("story-element-form-name").fill("老年");
+    await page.getByTestId("story-element-form-add").click();
+    await page.getByTestId("story-element-forms-close").click();
+    await expect(
+      keeper.getByTestId("story-element-form-Keeper").locator("option:checked"),
+    ).toHaveText("老年");
+    await expect(
+      keeper.getByTestId("story-element-reference-Keeper"),
+    ).toContainText("Keeper");
+    await expect(page.getByTestId("story-elements-counts")).toContainText(
+      "3 characters",
+    );
+
     await page.getByTestId("story-elements-draw-all").click();
     await expect(page.getByTestId("story-elements-views-all")).toBeEnabled({
       timeout: 60_000,
@@ -112,6 +132,52 @@ async function toTheBoard(
         .getByTestId("story-slot-turnaround")
         .locator("img"),
     ).toBeVisible({ timeout: 60_000 });
+
+    // A form's main drawing may be made from another element's picture, or
+    // from a file on the shelf; the one named is what the row says.
+    await keeper.getByTestId("story-element-reference-pick-Keeper").click();
+    await page
+      .getByTestId("story-reference-picker")
+      .locator(".story-pick")
+      .filter({ hasText: "Last carriage" })
+      .click();
+    await expect(
+      keeper.getByTestId("story-element-reference-Keeper"),
+    ).toContainText("Last carriage");
+    await keeper.getByTestId("story-element-reference-pick-Keeper").click();
+    await page
+      .getByTestId("story-reference-picker")
+      .locator('[data-testid^="story-reference-asset-"]')
+      .first()
+      .click();
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                elements?: {
+                  name?: string;
+                  variants?: {
+                    name?: string;
+                    reference?: { kind?: string };
+                  }[];
+                }[];
+              }[];
+            };
+          };
+          const hero = (body.moka?.stories?.[0]?.elements ?? []).find(
+            (element) => element.name === "Keeper",
+          );
+          return (
+            hero?.variants?.find((variant) => variant.name === "老年")
+              ?.reference?.kind ?? ""
+          );
+        }),
+      )
+      .toBe("asset");
+
     await page.getByTestId("story-confirm-elements").click();
     await expect(page.getByTestId("story-step-storyboard")).toBeEnabled({
       timeout: 30_000,
@@ -153,6 +219,52 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .getByTestId("story-edit-dialog")
       .getByRole("button", { name: "Cancel" })
       .click();
+    await page.getByTestId("story-inspector-close").click();
+
+    // A shot's reference can be switched to another form of the element; the
+    // choice is written on the shot, so the next frame is drawn with it.
+    await firstAct.getByTestId("story-kf-ref-0-0").click();
+    await expect(page.getByTestId("story-inspector-form")).toBeVisible();
+    await page
+      .getByTestId("story-inspector-form")
+      .selectOption({ label: "老年" });
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                elements?: {
+                  name?: string;
+                  id?: string;
+                  variants?: { id?: string; name?: string }[];
+                }[];
+                chapters?: {
+                  acts?: {
+                    keyframes?: {
+                      variantChoices?: Record<string, string>;
+                    }[];
+                  }[];
+                }[];
+              }[];
+            };
+          };
+          const story = body.moka?.stories?.[0];
+          const hero = story?.elements?.find(
+            (element) => element.name === "Keeper",
+          );
+          const frame = story?.chapters?.[0]?.acts?.[0]?.keyframes?.[0];
+          const chosen =
+            hero?.id === undefined
+              ? undefined
+              : frame?.variantChoices?.[hero.id];
+          return (
+            hero?.variants?.find((variant) => variant.id === chosen)?.name ?? ""
+          );
+        }),
+      )
+      .toBe("老年");
     await page.getByTestId("story-inspector-close").click();
 
     // A picture beside the cast, which the shot's own words do not name, is

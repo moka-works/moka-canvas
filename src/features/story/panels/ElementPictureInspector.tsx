@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
-import { currentTake, takeFile } from "../../../shared/domain";
+import { currentTake, elementForm, takeFile } from "../../../shared/domain";
 import type { StoryDocument, StoryElement } from "../../../shared/domain/types";
 import { planElementArtWaves } from "../jobs/plan";
 import { useStoryJobs, useStoryWavesAsk } from "../stores/storyJobStore";
@@ -39,11 +39,17 @@ export function ElementPictureInspector({
   story,
   element,
   view = "main",
+  variantId,
+  onVariant,
   onClose,
 }: {
   story: StoryDocument;
   element: StoryElement;
   view?: ElementView;
+  /** The form being looked at; absent means the element's default form. */
+  variantId?: string;
+  /** Switches the form this picture stands for, where the picture is a shot's. */
+  onVariant?: (variantId: string | undefined) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -52,10 +58,16 @@ export function ElementPictureInspector({
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const file = useRef<HTMLInputElement>(null);
-  const slot = view === "main" ? element.main : (element.turnaround ?? EMPTY);
+  const variant = elementForm(element, variantId);
+  const description =
+    variant === undefined ? element.description : variant.description;
+  const slot =
+    view === "main"
+      ? (variant?.main ?? element.main)
+      : (variant?.turnaround ?? element.turnaround ?? EMPTY);
   const take = currentTake(slot);
   const canGenerate =
-    view === "main" || currentTake(element.main) !== undefined;
+    view === "main" || currentTake(variant?.main ?? element.main) !== undefined;
   const busy = useMemo(
     () =>
       jobs.some(
@@ -66,10 +78,11 @@ export function ElementPictureInspector({
               (item.status === "queued" || item.status === "running") &&
               item.target.kind === "elementArt" &&
               item.target.elementId === element.id &&
-              item.target.view === view,
+              item.target.view === view &&
+              item.target.variantId === variant?.id,
           ),
       ),
-    [jobs, element.id, view],
+    [jobs, element.id, view, variant?.id],
   );
 
   useEffect(() => {
@@ -84,7 +97,13 @@ export function ElementPictureInspector({
     void run(
       story.id,
       "elementArt",
-      planElementArtWaves(story, [{ elementId: element.id, view }]),
+      planElementArtWaves(story, [
+        {
+          elementId: element.id,
+          view,
+          ...(variant === undefined ? {} : { variantId: variant.id }),
+        },
+      ]),
     );
   };
 
@@ -95,7 +114,7 @@ export function ElementPictureInspector({
     return (
       <StoryEditDialog
         onClose={() => setEditing(false)}
-        place={{ kind: "element", element, view }}
+        place={{ kind: "element", element, view, variant }}
         story={story}
       />
     );
@@ -118,10 +137,34 @@ export function ElementPictureInspector({
       >
         <header className="story-inspector-head">
           <div className="story-inspector-title">
-            <h2>{element.name}</h2>
+            <h2>
+              {variant === undefined
+                ? element.name
+                : `${element.name} · ${variant.name}`}
+            </h2>
             <span className="story-element-kind">
               {t(`story:element.${element.kind}`)}
             </span>
+            {onVariant !== undefined && (element.variants?.length ?? 0) > 0 && (
+              <select
+                aria-label={t("story:elements.form")}
+                className="story-inspector-form"
+                data-testid="story-inspector-form"
+                onChange={(event) =>
+                  onVariant(
+                    event.target.value === "" ? undefined : event.target.value,
+                  )
+                }
+                value={variant?.id ?? ""}
+              >
+                <option value="">{t("story:elements.defaultForm")}</option>
+                {(element.variants ?? []).map((held) => (
+                  <option key={held.id} value={held.id}>
+                    {held.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <button
             aria-label={t("story:panels.close")}
@@ -134,9 +177,9 @@ export function ElementPictureInspector({
           </button>
         </header>
         <p className="story-hint story-inspector-description">
-          {element.description.trim() === ""
+          {description.trim() === ""
             ? t("story:inspector.noDescription")
-            : element.description}
+            : description}
         </p>
 
         <div className="story-inspector-body">
@@ -204,7 +247,13 @@ export function ElementPictureInspector({
                   const chosen = event.target.files?.[0];
                   event.target.value = "";
                   if (chosen !== undefined) {
-                    void uploadElementPicture(story, element, view, chosen);
+                    void uploadElementPicture(
+                      story,
+                      element,
+                      view,
+                      chosen,
+                      variant?.id,
+                    );
                   }
                 }}
                 ref={file}
@@ -245,6 +294,7 @@ export function ElementPictureInspector({
                             element,
                             view,
                             held.assetIds[0] ?? "",
+                            variant?.id,
                           )
                         }
                         title={held.createdAt}
@@ -283,7 +333,7 @@ export function ElementPictureInspector({
               : "story:elements.turnaround",
           )}
           onChoose={(assetId) => {
-            keepElementPicture(story, element, view, assetId);
+            keepElementPicture(story, element, view, assetId, variant?.id);
             setPicking(false);
           }}
           onClose={() => setPicking(false)}

@@ -133,6 +133,7 @@ fn frame(index: usize) -> StoryKeyframe {
         art: empty_slot(),
         video: empty_slot(),
         voices: None,
+        variant_choices: Default::default(),
     }
 }
 
@@ -251,6 +252,7 @@ fn story_document() -> MokaFile {
         },
         video: empty_slot(),
         voices: None,
+        variant_choices: Default::default(),
     };
     let second = StoryKeyframe {
         id: FRAME_SECOND.into(),
@@ -265,6 +267,7 @@ fn story_document() -> MokaFile {
         art: empty_slot(),
         video: empty_slot(),
         voices: None,
+        variant_choices: Default::default(),
     };
 
     moka.stories = Some(vec![StoryDocument {

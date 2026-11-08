@@ -8047,6 +8047,17 @@ button > .story-spin {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
+/* The form a shot draws a reference in, chosen where the picture is looked at. */
+.story-inspector-form {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-family: inherit;
+  max-width: 180px;
+  padding: 3px 6px;
+}
+
 /* One element's reference, looked at from the board: the drawing, its takes,
    and the four doors out of it. It stands as wide as the window can spare so
    that a picture inspected for a flaw is inspected at its own size. */

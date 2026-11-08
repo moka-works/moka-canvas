@@ -49,7 +49,11 @@ import {
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
 import { chapterText } from "../readText";
-import type { StoryElement, StoryElementKind } from "../../../shared/domain";
+import type {
+  StoryElement,
+  StoryElementKind,
+  StoryElementVariant,
+} from "../../../shared/domain";
 import type {
   StoryAct,
   StoryAspect,
@@ -854,6 +858,8 @@ export function planElementArtWaves(
 export interface StoryReference {
   /** The element this picture is of, where it stands for one. */
   element?: StoryElement;
+  /** The form of that element the picture is of, where one was chosen. */
+  variant?: StoryElementVariant;
   /** How the ask names it: the element's name, or what an extra is for. */
   name: string;
   description: string;
@@ -878,6 +884,7 @@ export function keyframeCast(
   story: StoryDocument,
   content: string,
   extras: StoryExtraReference[] = [],
+  variantChoices: Record<string, string> = {},
 ): {
   /** The pictures that travel, in the order the content names them. */
   carried: StoryReference[];
@@ -897,15 +904,26 @@ export function keyframeCast(
     if (seen.has(mention.name)) continue;
     seen.add(mention.name);
     const element = byName.get(mention.name);
-    const take = element === undefined ? undefined : currentTake(element.main);
+    // The form the shot's reader chose, where it is still in the story; an
+    // element with no choice of its own travels as its default form.
+    const variant =
+      element === undefined
+        ? undefined
+        : elementForm(element, variantChoices[element.id]);
+    const take =
+      element === undefined
+        ? undefined
+        : currentTake(variant === undefined ? element.main : variant.main);
     if (element === undefined || take === undefined) {
       undrawn.push(mention.name);
       continue;
     }
     drawn.push({
       element,
+      ...(variant === undefined ? {} : { variant }),
       name: element.name,
-      description: element.description,
+      description:
+        variant === undefined ? element.description : variant.description,
       assetId: take.assetIds[0],
     });
   }
@@ -949,6 +967,7 @@ export function planKeyframeArt(
       story,
       keyframe.content,
       keyframe.extraReferences ?? [],
+      keyframe.variantChoices ?? {},
     ).carried;
     const target: StoryTarget = {
       kind: "keyframeArt",

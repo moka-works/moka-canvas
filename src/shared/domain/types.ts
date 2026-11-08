@@ -883,6 +883,13 @@ export interface StoryKeyframe {
    * what each of them is there for.
    */
   extraReferences?: StoryExtraReference[];
+  /**
+   * Which form of each cast member this shot is drawn with, by element id.
+   *
+   * Absent for an element means its default form. A form that has left the
+   * story reads as the default one, so a stale choice is harmless.
+   */
+  variantChoices?: Record<string, string>;
 }
 
 /** One picture a shot carries outside its cast, and what it is for. */
@@ -1282,6 +1289,8 @@ export interface StoryKeyframePatch {
   dialogue?: StoryDialogueLine[];
   durationMs?: number;
   extraReferences?: StoryExtraReference[];
+  /** Which form each mentioned element travels as; an empty map clears them. */
+  variantChoices?: Record<string, string>;
 }
 
 /**

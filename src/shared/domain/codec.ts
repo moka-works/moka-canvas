@@ -1495,7 +1495,23 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
   if (voices !== undefined) keyframe.voices = voices;
   const extras = decodeStoryExtraReferences(doc.extraReferences);
   if (extras !== undefined) keyframe.extraReferences = extras;
+  const choices = decodeStoryVariantChoices(doc.variantChoices);
+  if (choices !== undefined) keyframe.variantChoices = choices;
   return keyframe;
+}
+
+/** Which form each mentioned element travels as, as a document holds it. */
+function decodeStoryVariantChoices(
+  value: unknown,
+): Record<string, string> | undefined {
+  if (value === undefined || value === null) return undefined;
+  const doc = asRecord(value, "keyframes[].variantChoices");
+  const choices: Record<string, string> = {};
+  for (const [elementId, variantId] of Object.entries(doc)) {
+    if (typeof variantId === "string" && variantId !== "")
+      choices[elementId] = variantId;
+  }
+  return Object.keys(choices).length === 0 ? undefined : choices;
 }
 
 /**

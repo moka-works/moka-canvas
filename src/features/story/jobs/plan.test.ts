@@ -523,9 +523,7 @@ describe("planning the drawings", () => {
       kind: "asset",
       assetId: "asset-reference",
     };
-    const items = planElementArt(held, [
-      { elementId: ids.hero, view: "main" },
-    ]);
+    const items = planElementArt(held, [{ elementId: ids.hero, view: "main" }]);
     expect(items[0].inputs).toEqual([
       { role: "reference", assetId: "asset-reference" },
     ]);
@@ -721,6 +719,47 @@ describe("planning the drawings", () => {
       "asset-extra",
     ]);
     expect(item.prompt).toContain("Additional reference 1 — 傍晚的暖光");
+  });
+
+  it("carries the form a shot chose rather than the element's default", () => {
+    const held = story();
+    const hero = held.elements.find((element) => element.id === ids.hero)!;
+    hero.variants = [
+      {
+        id: "variant-old",
+        name: "老年",
+        description: "二十年以后，头发白了。",
+        main: {
+          takes: [
+            { assetIds: ["asset-hero-old"], createdAt: "2026-02-01T00:00:00Z" },
+          ],
+        },
+        turnaround: { takes: [] },
+      },
+    ];
+    const words = "`林`立在灯下。";
+    const cast = keyframeCast(held, words, [], {
+      [ids.hero]: "variant-old",
+    });
+    expect(cast.carried[0]?.assetId).toBe("asset-hero-old");
+    expect(cast.carried[0]?.variant?.id).toBe("variant-old");
+    expect(cast.carried[0]?.description).toContain("头发白了");
+
+    const frame = withContent(words);
+    frame.elements.find((element) => element.id === ids.hero)!.variants =
+      hero.variants;
+    const storyFrame = frame.chapters[0]!.acts[0]!.keyframes[0]!;
+    storyFrame.variantChoices = { [ids.hero]: "variant-old" };
+    const [item] = planKeyframeArt(frame, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      "asset-hero-old",
+    ]);
   });
 
   it("names a mentioned name that matches nothing as undrawn", () => {

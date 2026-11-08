@@ -2674,11 +2674,31 @@ function applyOne(
       }
       if (command.patch.dialogue !== undefined)
         checkDialogue(command.patch.dialogue);
+      if (command.patch.variantChoices !== undefined) {
+        for (const [elementId, variantId] of Object.entries(
+          command.patch.variantChoices,
+        )) {
+          const element = story.elements.find((held) => held.id === elementId);
+          if (
+            element === undefined ||
+            !(element.variants ?? []).some(
+              (variant) => variant.id === variantId,
+            )
+          )
+            throw new CommandError(
+              "STORY_TARGET_INVALID",
+              i18n.t("errors:command.storyElementNotFound"),
+            );
+        }
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
       ) as (keyof typeof command.patch)[]) {
         (previous as Record<string, unknown>)[key] = keyframe[key];
+      }
+      if (command.patch.variantChoices !== undefined) {
+        previous.variantChoices = { ...(keyframe.variantChoices ?? {}) };
       }
       const chapters = story.chapters.map((held) =>
         held.id === command.chapterId
@@ -2688,11 +2708,17 @@ function applyOne(
                 heldAct.id === command.actId
                   ? {
                       ...heldAct,
-                      keyframes: heldAct.keyframes.map((heldFrame) =>
-                        heldFrame.id === command.keyframeId
-                          ? { ...heldFrame, ...command.patch }
-                          : heldFrame,
-                      ),
+                      keyframes: heldAct.keyframes.map((heldFrame) => {
+                        if (heldFrame.id !== command.keyframeId)
+                          return heldFrame;
+                        const merged = { ...heldFrame, ...command.patch };
+                        if (
+                          command.patch.variantChoices !== undefined &&
+                          Object.keys(command.patch.variantChoices).length === 0
+                        )
+                          delete merged.variantChoices;
+                        return merged;
+                      }),
                     }
                   : heldAct,
               ),
