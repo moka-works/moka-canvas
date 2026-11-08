@@ -1,20 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
   HALO_ARC,
+  HALO_BLOOM,
   HALO_BREATH_MS,
   HALO_CORNER_RADIUS,
   HALO_GLOW,
   HALO_MAX_ARCS,
   HALO_MIN_ARCS,
   HALO_OFFSET,
-  HALO_SELECTED_OFFSET,
   HALO_QUEUED_TURN_MS,
+  HALO_SELECTED_OFFSET,
+  HALO_SHEEN,
+  HALO_SHEEN_BAND,
+  HALO_SONAR,
+  HALO_SONAR_RINGS,
+  HALO_SONAR_SPREAD,
   HALO_TURN_MS,
   haloArcs,
   haloFrame,
   haloOffset,
   haloRing,
   ringPerimeter,
+  ringPointAt,
 } from "./halo";
 
 const CARD = { width: 260, height: 140 };
@@ -223,5 +230,200 @@ describe("the wake each arc drags behind it", () => {
         bottom.tails[index].opacity,
       );
     });
+  });
+});
+
+describe("the wide aura under the light", () => {
+  const pattern = haloArcs(CARD);
+
+  it("breathes with the same clock as the arcs", () => {
+    expect(haloFrame(0, pattern, false).bloom).toBeCloseTo(
+      HALO_BLOOM.working.dim,
+    );
+    expect(haloFrame(HALO_BREATH_MS / 2, pattern, false).bloom).toBeCloseTo(
+      HALO_BLOOM.working.bright,
+    );
+  });
+
+  it("is far fainter for a card that is only waiting", () => {
+    const at = HALO_BREATH_MS / 2;
+    expect(haloFrame(at, pattern, true).bloom).toBeLessThan(
+      haloFrame(at, pattern, false).bloom,
+    );
+  });
+});
+
+describe("the point at a distance round the ring", () => {
+  const ring = { x: -4, y: -4, width: 108, height: 68, cornerRadius: 16 };
+  const top = ring.width - ring.cornerRadius * 2;
+  const side = ring.height - ring.cornerRadius * 2;
+  const quarter = (Math.PI * ring.cornerRadius) / 2;
+
+  it("starts after the top-left corner and walks the straights clockwise", () => {
+    const first = ringPointAt(ring, 0);
+    expect(first.x).toBeCloseTo(ring.x + ring.cornerRadius, 6);
+    expect(first.y).toBeCloseTo(ring.y, 6);
+    const topMiddle = ringPointAt(ring, top / 2);
+    expect(topMiddle.x).toBeCloseTo(ring.x + ring.cornerRadius + top / 2, 6);
+    expect(topMiddle.y).toBeCloseTo(ring.y, 6);
+    const rightTop = ringPointAt(ring, top + quarter);
+    expect(rightTop.x).toBeCloseTo(ring.x + ring.width, 6);
+    expect(rightTop.y).toBeCloseTo(ring.y + ring.cornerRadius, 6);
+    const rightBottom = ringPointAt(ring, top + quarter + side);
+    expect(rightBottom.x).toBeCloseTo(ring.x + ring.width, 6);
+    expect(rightBottom.y).toBeCloseTo(
+      ring.y + ring.height - ring.cornerRadius,
+      6,
+    );
+  });
+
+  it("runs round a corner at the corner's own radius", () => {
+    const point = ringPointAt(ring, top + quarter / 2);
+    const center = {
+      x: ring.x + ring.width - ring.cornerRadius,
+      y: ring.y + ring.cornerRadius,
+    };
+    expect(Math.hypot(point.x - center.x, point.y - center.y)).toBeCloseTo(
+      ring.cornerRadius,
+      6,
+    );
+    expect(point.x).toBeLessThan(ring.x + ring.width);
+    expect(point.y).toBeGreaterThan(ring.y);
+  });
+
+  it("wraps round after a lap, either direction", () => {
+    const lap = ringPerimeter(ring.width, ring.height, ring.cornerRadius);
+    const start = ringPointAt(ring, 0);
+    const afterLap = ringPointAt(ring, lap);
+    expect(afterLap.x).toBeCloseTo(start.x, 6);
+    expect(afterLap.y).toBeCloseTo(start.y, 6);
+    const before = ringPointAt(ring, -1);
+    const nearEnd = ringPointAt(ring, lap - 1);
+    expect(before.x).toBeCloseTo(nearEnd.x, 6);
+    expect(before.y).toBeCloseTo(nearEnd.y, 6);
+    const twice = ringPointAt(ring, lap * 2 + 10);
+    const ten = ringPointAt(ring, 10);
+    expect(twice.x).toBeCloseTo(ten.x, 6);
+    expect(twice.y).toBeCloseTo(ten.y, 6);
+  });
+});
+
+describe("the sonar rings the card sends out", () => {
+  const pattern = haloArcs(CARD);
+  const fresh = pattern.ring.width;
+
+  it("keeps two in flight, half a beat apart", () => {
+    const frame = haloFrame(0, pattern, false);
+    expect(frame.ripples).toHaveLength(HALO_SONAR_RINGS);
+    const [first, second] = frame.ripples;
+    expect(first.ring.width).toBeCloseTo(fresh, 6);
+    expect(second.ring.width).toBeGreaterThan(first.ring.width);
+    expect(second.opacity).toBeLessThan(first.opacity);
+  });
+
+  it("grows and fades as each ring travels, and thins as it goes", () => {
+    const early = haloFrame(HALO_SONAR.working.period * 0.1, pattern, false)
+      .ripples[0];
+    const late = haloFrame(HALO_SONAR.working.period * 0.8, pattern, false)
+      .ripples[0];
+    expect(late.ring.width).toBeGreaterThan(early.ring.width);
+    expect(late.opacity).toBeLessThan(early.opacity);
+    expect(late.width).toBeLessThan(early.width);
+  });
+
+  it("never outruns the spread it was given, and never brightens past it", () => {
+    for (let at = 0; at < HALO_SONAR.working.period; at += 37) {
+      const frame = haloFrame(at, pattern, false);
+      for (const ripple of frame.ripples) {
+        expect(ripple.opacity).toBeGreaterThanOrEqual(0);
+        expect(ripple.opacity).toBeLessThanOrEqual(HALO_SONAR.working.alpha);
+        expect(ripple.ring.width).toBeLessThanOrEqual(
+          CARD.width + 2 * (-pattern.ring.x + HALO_SONAR_SPREAD),
+        );
+      }
+    }
+  });
+
+  it("sends them more slowly and faintly for a waiting card", () => {
+    const at = HALO_SONAR.working.period * 0.25;
+    const working = haloFrame(at, pattern, false).ripples[0];
+    const waiting = haloFrame(at, pattern, true).ripples[0];
+    expect(waiting.ring.width).toBeLessThan(working.ring.width);
+    expect(waiting.opacity).toBeLessThan(working.opacity);
+  });
+});
+
+describe("the band of light crossing the card", () => {
+  const pattern = haloArcs(CARD);
+
+  it("travels the width of the card, fading out at both ends", () => {
+    const start = haloFrame(0, pattern, false).sheen;
+    const middle = haloFrame(
+      HALO_SHEEN.working.period / 2,
+      pattern,
+      false,
+    ).sheen;
+    const almost = haloFrame(
+      HALO_SHEEN.working.period * 0.99,
+      pattern,
+      false,
+    ).sheen;
+    expect(start.x).toBeCloseTo(-start.width, 6);
+    expect(start.opacity).toBeCloseTo(0, 6);
+    expect(middle.x).toBeGreaterThan(start.x);
+    expect(middle.opacity).toBeCloseTo(HALO_SHEEN.working.alpha, 6);
+    expect(almost.x).toBeGreaterThan(middle.x);
+    expect(almost.opacity).toBeLessThan(middle.opacity);
+  });
+
+  it("covers a share of the card rather than the whole of it", () => {
+    const sheen = haloFrame(0, pattern, false).sheen;
+    expect(sheen.width).toBeCloseTo(CARD.width * HALO_SHEEN_BAND, 6);
+    expect(sheen.width).toBeLessThan(CARD.width);
+  });
+
+  it("crosses more slowly and faintly when the card is only waiting", () => {
+    const at = HALO_SHEEN.working.period / 2;
+    const working = haloFrame(at, pattern, false).sheen;
+    const waiting = haloFrame(at, pattern, true).sheen;
+    expect(waiting.opacity).toBeLessThan(working.opacity);
+    expect(waiting.x).toBeLessThan(working.x);
+  });
+});
+
+describe("the bright head of each arc", () => {
+  const pattern = haloArcs(CARD);
+
+  it("puts one at the leading end of every lit stretch, on the ring", () => {
+    const frame = haloFrame(HALO_TURN_MS / 4, pattern, false);
+    const slot = pattern.dash + pattern.gap;
+    expect(frame.heads).toHaveLength(pattern.arcs);
+    frame.heads.forEach((head, index) => {
+      const expected = ringPointAt(
+        pattern.ring,
+        pattern.lap / 4 + index * slot + pattern.dash,
+      );
+      expect(head.x).toBeCloseTo(expected.x, 6);
+      expect(head.y).toBeCloseTo(expected.y, 6);
+    });
+  });
+
+  it("travels with the arcs rather than staying put", () => {
+    const first = haloFrame(0, pattern, false).heads[0];
+    const later = haloFrame(HALO_TURN_MS / 8, pattern, false).heads[0];
+    expect(later).not.toEqual(first);
+  });
+
+  it("keeps every head on the ring round the card", () => {
+    for (const at of [0, HALO_TURN_MS / 3, HALO_TURN_MS * 0.7]) {
+      for (const head of haloFrame(at, pattern, false).heads) {
+        expect(head.x).toBeGreaterThanOrEqual(pattern.ring.x);
+        expect(head.x).toBeLessThanOrEqual(pattern.ring.x + pattern.ring.width);
+        expect(head.y).toBeGreaterThanOrEqual(pattern.ring.y);
+        expect(head.y).toBeLessThanOrEqual(
+          pattern.ring.y + pattern.ring.height,
+        );
+      }
+    }
   });
 });

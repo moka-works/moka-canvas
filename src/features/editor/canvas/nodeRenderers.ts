@@ -9,8 +9,15 @@ import type { NodeRunView } from "../stores/runStore";
 import { NODE_HEADER_HEIGHT, PORT_RADIUS, canvasTheme } from "./theme";
 import { i18n } from "../../../shared/i18n";
 import {
+  HALO_BLOOM_BLUR,
+  HALO_BLOOM_STANDOFF,
+  HALO_BLOOM_STROKE,
+  HALO_CORNER_RADIUS,
   HALO_GLOW_BLUR,
   HALO_GLOW_STROKE,
+  HALO_SHEEN_BAND,
+  HALO_SONAR_RINGS,
+  HALO_SONAR_STROKE,
   HALO_STROKE,
   haloArcs,
   haloFrame,
@@ -28,12 +35,20 @@ import {
 
 /** The strokes of a running card's ring, and how they are cut. */
 export interface HaloView {
-  /** The soft light under the arcs, which is the one that breathes. */
+  /** The wide, soft aura under everything, which is what breathes loudest. */
+  bloom: Rect;
+  /** The sonar rings travelling out from the card, freshest first. */
+  ripples: Rect[];
+  /** The soft light under the arcs. */
   glow: Rect;
   /** The wakes the arcs drag round with them, far layer first. */
   tails: Rect[];
   /** The bright arcs themselves, which travel round the card. */
   arcs: Rect;
+  /** The glowing dot riding the leading end of each arc. */
+  heads: { group: Group; dots: Ellipse[] };
+  /** The band of light crossing the card, drawn over everything else. */
+  sheen: Rect;
   /** How the arcs are cut out of a ring round a card of this size. */
   pattern: HaloArcs;
   /** The size and standoff the pattern was cut for; either asks for it again. */
@@ -42,7 +57,7 @@ export interface HaloView {
   offset: number;
   /** Waiting its turn rather than being worked on: slower and fainter. */
   waiting: boolean;
-  /** The colour of the kind of node this is, which is the colour of its ring. */
+  /** The colour of the kind of node this is, which is the colour of its light. */
   color: string;
 }
 
@@ -104,6 +119,30 @@ const MARK_EDGE = 12;
 const COUNT_WIDTH = 26;
 const COUNT_HEIGHT = 14;
 const COUNT_GAP = 6;
+/** The bright dot that rides the leading end of each arc. */
+const HEAD_SIZE = 7;
+
+/**
+ * The tint laid over the card while the sweep crosses it.
+ *
+ * A soft band of the node's own colour, transparent at both edges, so it reads
+ * as light passing over the card rather than as a coloured rectangle moving
+ * across it. Its place is given in the card's own pixels, with the axis tilted
+ * so the band crosses the card diagonally.
+ */
+function sheenPaint(color: string, fromX: number, toX: number, height: number) {
+  const clear = `${color}00`;
+  return {
+    type: "linear" as const,
+    from: { x: fromX, y: -height * 0.25 },
+    to: { x: toX, y: height * 0.25 },
+    stops: [
+      { offset: 0, color: clear },
+      { offset: 0.5, color },
+      { offset: 1, color: clear },
+    ],
+  };
+}
 
 /**
  * Whether two readings of a node's run are the same reading.
@@ -629,22 +668,30 @@ function syncRunMarks(
 }
 
 /**
- * The ring of light round a card whose node is being worked on.
+ * The light round a card whose node is being worked on.
  *
- * Made the moment a run reaches the node and taken away the moment it leaves,
- * so a card nobody has asked carries nothing and one whose run has ended goes
- * quiet again. Every stroke is put under the card rather than over it: the
- * light belongs behind what it is lighting, and the card stays as readable as
- * it was.
+ * Four layers, from the outside in: a wide, soft aura that breathes; sonar
+ * rings travelling out; the comet of arcs, wakes and bright heads going round
+ * the ring; and a faint band sweeping across the card itself. Together they
+ * say "working" from across the canvas, where one thin ring was easy to miss.
+ *
+ * Made the moment a run reaches the node and taken away the moment it leaves.
+ * The rings are put under the card, where they belong; the sweep is the one
+ * layer over it, faint enough to pass over words without hiding them.
  */
 function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
   const status = visual.run?.status ?? null;
   const lit = status === "queued" || status === "running";
   if (!lit) {
     if (view.halo) {
-      view.halo.glow.remove();
-      view.halo.tails.forEach((tail) => tail.remove());
-      view.halo.arcs.remove();
+      const halo = view.halo;
+      halo.bloom.remove();
+      halo.ripples.forEach((ripple) => ripple.remove());
+      halo.glow.remove();
+      halo.tails.forEach((tail) => tail.remove());
+      halo.arcs.remove();
+      halo.heads.group.remove();
+      halo.sheen.remove();
       view.halo = null;
     }
     return;
@@ -653,8 +700,30 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
   const color = canvasTheme.kindAccent[node.kind] ?? canvasTheme.nodeMuted;
   const offset = haloOffset(visual.selected);
   if (!view.halo) {
-    const ring = haloRing(node.bounds, offset);
-    const pattern = haloArcs(node.bounds, offset);
+    const bounds = node.bounds;
+    const ring = haloRing(bounds, offset);
+    const pattern = haloArcs(bounds, offset);
+    const bloom = new Rect({
+      ...haloRing(bounds, offset + HALO_BLOOM_STANDOFF),
+      fill: "#00000000",
+      stroke: color,
+      strokeWidth: HALO_BLOOM_STROKE,
+      shadow: { x: 0, y: 0, blur: HALO_BLOOM_BLUR, color },
+      opacity: 0,
+      hittable: false,
+    });
+    const ripples = Array.from(
+      { length: HALO_SONAR_RINGS },
+      () =>
+        new Rect({
+          ...ring,
+          fill: "#00000000",
+          stroke: canvasTheme.haloCore,
+          strokeWidth: HALO_SONAR_STROKE.start,
+          opacity: 0,
+          hittable: false,
+        }),
+    );
     const glow = new Rect({
       ...ring,
       fill: "#00000000",
@@ -678,41 +747,99 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
     const arcs = new Rect({
       ...ring,
       fill: "#00000000",
-      stroke: color,
+      stroke: canvasTheme.haloCore,
       strokeWidth: HALO_STROKE,
       strokeCap: "round",
       dashPattern: [pattern.dash, pattern.gap],
       hittable: false,
     });
-    view.group.addAt(glow, 0);
-    tails.forEach((tail, index) => view.group.addAt(tail, index + 1));
-    view.group.addAt(arcs, tails.length + 1);
+    const heads = new Group({ hittable: false });
+    const sheen = new Rect({
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height,
+      cornerRadius: HALO_CORNER_RADIUS,
+      fill: sheenPaint(
+        color,
+        -bounds.width * HALO_SHEEN_BAND,
+        0,
+        bounds.height,
+      ),
+      opacity: 0,
+      hittable: false,
+    });
+
+    let at = 0;
+    view.group.addAt(bloom, at++);
+    ripples.forEach((ripple) => view.group.addAt(ripple, at++));
+    view.group.addAt(glow, at++);
+    tails.forEach((tail) => view.group.addAt(tail, at++));
+    view.group.addAt(arcs, at++);
+    view.group.addAt(heads, at++);
+    view.group.add(sheen);
+
     view.halo = {
+      bloom,
+      ripples,
       glow,
       tails,
       arcs,
+      heads: { group: heads, dots: [] },
+      sheen,
       pattern,
-      width: node.bounds.width,
-      height: node.bounds.height,
+      width: bounds.width,
+      height: bounds.height,
       offset,
       waiting,
       color,
     };
+    syncHeads(view);
   } else if (view.halo.color !== color) {
-    view.halo.color = color;
-    view.halo.glow.set({
+    const halo = view.halo;
+    halo.color = color;
+    halo.bloom.set({
+      stroke: color,
+      shadow: { x: 0, y: 0, blur: HALO_BLOOM_BLUR, color },
+    });
+    halo.glow.set({
       stroke: color,
       shadow: { x: 0, y: 0, blur: HALO_GLOW_BLUR, color },
     });
-    view.halo.tails.forEach((tail) => tail.set({ stroke: color }));
-    view.halo.arcs.set({ stroke: color });
+    halo.tails.forEach((tail) => tail.set({ stroke: color }));
+    halo.heads.dots.forEach((dot) =>
+      dot.set({ shadow: { x: 0, y: 0, blur: 10, color } }),
+    );
   }
-  if (view.halo.waiting !== waiting) view.halo.waiting = waiting;
+  const halo = view.halo;
+  if (halo && halo.waiting !== waiting) halo.waiting = waiting;
   placeHalo(view, node.bounds, offset);
 }
 
+/** Keeps one glowing dot in the head group for every arc the card carries. */
+function syncHeads(view: NodeView) {
+  const halo = view.halo;
+  if (!halo) return;
+  const wanted = halo.pattern.arcs;
+  while (halo.heads.dots.length < wanted) {
+    const dot = new Ellipse({
+      width: HEAD_SIZE,
+      height: HEAD_SIZE,
+      fill: canvasTheme.haloCore,
+      shadow: { x: 0, y: 0, blur: 10, color: halo.color },
+      opacity: 0,
+      hittable: false,
+    });
+    halo.heads.group.add(dot);
+    halo.heads.dots.push(dot);
+  }
+  while (halo.heads.dots.length > wanted) {
+    halo.heads.dots.pop()?.remove();
+  }
+}
+
 /**
- * Puts the ring round a card of this size, cutting its arcs again only where
+ * Puts the light round a card of this size, cutting its arcs again only where
  * the card itself changed size: the cut follows the distance round the ring,
  * and that distance is worth measuring once per resize rather than per frame.
  */
@@ -724,9 +851,21 @@ function placeHalo(
   const halo = view.halo;
   if (!halo) return;
   const ring = haloRing(bounds, offset);
+  halo.bloom.set(haloRing(bounds, offset + HALO_BLOOM_STANDOFF));
   halo.glow.set(ring);
   halo.tails.forEach((tail) => tail.set(ring));
   halo.arcs.set(ring);
+  halo.sheen.set({
+    x: 0,
+    y: 0,
+    width: bounds.width,
+    height: bounds.height,
+    cornerRadius: Math.min(
+      HALO_CORNER_RADIUS,
+      bounds.width / 2,
+      bounds.height / 2,
+    ),
+  });
   // Both the card's size and its standoff decide how far it is round the ring,
   // so either one changing asks for the arcs and the wakes to be cut again.
   if (
@@ -743,11 +882,12 @@ function placeHalo(
       const cut = halo.pattern.tails[index];
       tail.set({ dashPattern: [cut.dash, cut.gap] });
     });
+    syncHeads(view);
   }
 }
 
 /**
- * One frame of the ring's movement, asked for by the controller's clock.
+ * One frame of the light's movement, asked for by the controller's clock.
  *
  * Kept apart from the drawing above on purpose: everything else about a card is
  * redrawn when something about the node changes, while this is redrawn because
@@ -758,6 +898,7 @@ export function advanceHalo(view: NodeView, at: number) {
   const halo = view.halo;
   if (!halo) return;
   const frame = haloFrame(at, halo.pattern, halo.waiting);
+  halo.bloom.set({ opacity: frame.bloom });
   halo.glow.set({ opacity: frame.glow });
   halo.arcs.set({ dashOffset: frame.dashOffset, opacity: frame.arc });
   halo.tails.forEach((tail, index) => {
@@ -766,17 +907,50 @@ export function advanceHalo(view: NodeView, at: number) {
       opacity: frame.tails[index].opacity,
     });
   });
+  halo.ripples.forEach((ripple, index) => {
+    const flight = frame.ripples[index];
+    ripple.set({
+      ...flight.ring,
+      opacity: flight.opacity,
+      strokeWidth: flight.width,
+    });
+  });
+  halo.heads.dots.forEach((dot, index) => {
+    const head = frame.heads[index];
+    if (!head) return;
+    dot.set({
+      x: head.x - HEAD_SIZE / 2,
+      y: head.y - HEAD_SIZE / 2,
+      opacity: frame.arc,
+    });
+  });
+  const card = halo.pattern.card;
+  const sheen = frame.sheen;
+  halo.sheen.set({
+    fill: sheenPaint(halo.color, sheen.x, sheen.x + sheen.width, card.height),
+    opacity: sheen.opacity,
+  });
 }
 
 /**
- * The leaves a running card's ring is drawn with.
+ * The leaves a running card's light is drawn with.
  *
  * Asked for by the export, which takes a picture of the document rather than of
  * the moment: a ring that says "this is working right now" has no business
  * being baked into a file somebody keeps.
  */
-export function haloLeaves(view: NodeView): Rect[] {
-  return view.halo ? [view.halo.glow, ...view.halo.tails, view.halo.arcs] : [];
+export function haloLeaves(view: NodeView): Array<Rect | Group> {
+  const halo = view.halo;
+  if (!halo) return [];
+  return [
+    halo.bloom,
+    ...halo.ripples,
+    halo.glow,
+    ...halo.tails,
+    halo.arcs,
+    halo.heads.group,
+    halo.sheen,
+  ];
 }
 
 function applyVisual(view: NodeView, visual: NodeVisualState) {

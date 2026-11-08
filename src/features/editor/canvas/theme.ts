@@ -22,6 +22,8 @@ export interface CanvasPalette {
   portRejected: string;
   /** Node card status dot per run step status. */
   runStatus: Record<string, string>;
+  /** The hot core of a running card's light: its arcs and their heads. */
+  haloCore: string;
   marquee: string;
   marqueeFill: string;
   snapGuide: string;
@@ -71,6 +73,7 @@ export const CANVAS_THEMES: Record<CanvasThemeName, CanvasPalette> = {
       failed: "#ff8a80",
       cancelled: "#9a9aa4",
     },
+    haloCore: "#ffffff",
     marquee: "#f5f5f7",
     marqueeFill: "#ffffff14",
     snapGuide: "#f2ce7a",
@@ -118,6 +121,7 @@ export const CANVAS_THEMES: Record<CanvasThemeName, CanvasPalette> = {
       failed: "#c2554a",
       cancelled: "#71717a",
     },
+    haloCore: "#1d1d22",
     marquee: "#1d1d22",
     marqueeFill: "#1d1d2214",
     snapGuide: "#a97b1f",
