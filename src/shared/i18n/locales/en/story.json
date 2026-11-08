@@ -385,7 +385,8 @@
     "bulkClear": "Clear selection",
     "bulkDeleteTitle": "Delete {{count}} elements?",
     "bulkDeleteBody": "The {{count}} elements leave the cast. Where a board names them, the reference is left standing as a gap.",
-    "ratio": "Aspect"
+    "ratio": "Aspect",
+    "selectAll": "Select all ({{count}})"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",

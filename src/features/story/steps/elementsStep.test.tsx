@@ -959,6 +959,31 @@ describe("the model a reading is asked of", () => {
 });
 
 describe("choosing several elements", () => {
+  it("checks every element of the group being looked at", () => {
+    openAtElements(buildStoryMokaFile());
+
+    fireEvent.click(screen.getByTestId("story-elements-group-prop"));
+    fireEvent.click(screen.getByTestId("story-elements-select-all"));
+    expect(
+      (
+        within(card("旧车票", "prop")).getByTestId(
+          "story-element-select-旧车票",
+        ) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(screen.getByTestId("story-bulk").textContent).toContain("1 chosen");
+    expect(screen.getByTestId("story-elements-select-all").textContent).toBe(
+      "Clear selection",
+    );
+
+    fireEvent.click(screen.getByTestId("story-elements-select-all"));
+    expect(screen.queryByTestId("story-bulk")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-group-all"));
+    fireEvent.click(screen.getByTestId("story-elements-select-all"));
+    expect(screen.getByTestId("story-bulk").textContent).toContain("4 chosen");
+  });
+
   it("takes the chosen few out of the cast as one step", async () => {
     openAtElements(buildStoryMokaFile());
     const before = useHistoryStore.getState().undoStack.length;

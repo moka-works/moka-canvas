@@ -159,6 +159,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // a place twice pays for it twice. The button counts the same set, so its
   // number is the work of the press and follows the group chosen above it.
   const drawable = undrawn.filter((element) => !drawing(element, "main"));
+  const allPicked =
+    shown.length > 0 && shown.every((element) => picked.has(element.id));
   const viewable = viewsMissing.filter(
     (element) => !drawing(element, "turnaround"),
   );
@@ -402,6 +404,24 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             ))}
           </div>
           <div className="story-step-actions">
+            {shown.length > 0 && (
+              <button
+                className="link"
+                data-testid="story-elements-select-all"
+                onClick={() =>
+                  setPicked(
+                    allPicked
+                      ? new Set()
+                      : new Set(shown.map((element) => element.id)),
+                  )
+                }
+                type="button"
+              >
+                {allPicked
+                  ? t("story:elements.bulkClear")
+                  : t("story:elements.selectAll", { count: shown.length })}
+              </button>
+            )}
             {drawable.length > 0 && (
               <button
                 className="primary"
