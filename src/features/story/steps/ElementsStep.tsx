@@ -11,8 +11,6 @@ import { useTranslation } from "react-i18next";
 import { assetThumbUrl } from "../../../api/assets";
 
 import {
-  STORY_ELEMENT_KINDS,
-  STORY_NAME_MAX,
   chapterReadingWaves,
   currentTake,
   elementDescribed,
@@ -33,6 +31,8 @@ import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ElementCard } from "../panels/ElementCard";
+import { ElementDraftDialog } from "../panels/ElementDraftDialog";
+import { addElementToStory } from "../panels/elementDraft";
 import { liveStory } from "../panels/removeOldTake";
 import { VoiceFields } from "../panels/VoiceFields";
 import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
@@ -908,10 +908,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         />
       )}
       {adding && (
-        <AddElementDialog
+        <ElementDraftDialog
           onAdd={(draft) => {
             setAdding(false);
-            addElement(story, draft);
+            addElementToStory(story, draft);
           }}
           onCancel={() => setAdding(false)}
         />
@@ -1185,123 +1185,5 @@ function setElementsModel(
       elementId,
       patch: { imageModel: model },
     })),
-  );
-}
-
-/** An element the reader typed in themselves. */
-function addElement(
-  story: StoryDocument,
-  draft: { kind: StoryElementKind; name: string; description: string },
-): void {
-  const element: StoryElement = {
-    id: nextElementId(story),
-    kind: draft.kind,
-    name: draft.name,
-    description: draft.description,
-    chapterIds: [],
-    main: { takes: [] },
-    ...(draft.kind === "character" ? { turnaround: { takes: [] } } : {}),
-  };
-  execute(i18n.t("story:history.elements"), [
-    {
-      type: "setStoryElements",
-      storyId: story.id,
-      elements: [...story.elements, element],
-    },
-  ]);
-}
-
-/** A name for an element nobody read out of the chapters, in the room's own list. */
-function nextElementId(story: StoryDocument): string {
-  for (let at = story.elements.length + 1; ; at += 1) {
-    const id = `element-added-${at}`;
-    if (!story.elements.some((held) => held.id === id)) return id;
-  }
-}
-
-/** The form a reader adds an element with. */
-function AddElementDialog({
-  onAdd,
-  onCancel,
-}: {
-  onAdd: (draft: {
-    kind: StoryElementKind;
-    name: string;
-    description: string;
-  }) => void;
-  onCancel: () => void;
-}) {
-  const { t } = useTranslation();
-  const [kind, setKind] = useState<StoryElementKind>("character");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const ready = name.trim() !== "" && description.trim() !== "";
-
-  return (
-    <div
-      aria-label={t("story:elements.addTitle")}
-      aria-modal="true"
-      className="story-add-element"
-      data-testid="add-element"
-      role="dialog"
-    >
-      <h2>{t("story:elements.addTitle")}</h2>
-      <label className="story-field-label" htmlFor="add-element-kind">
-        {t("story:elements.kind")}
-      </label>
-      <select
-        data-testid="add-element-kind"
-        id="add-element-kind"
-        onChange={(event) => setKind(event.target.value as StoryElementKind)}
-        value={kind}
-      >
-        {STORY_ELEMENT_KINDS.map((each) => (
-          <option key={each} value={each}>
-            {t(`story:element.${each}`)}
-          </option>
-        ))}
-      </select>
-      <label className="story-field-label" htmlFor="add-element-name">
-        {t("story:elements.name")}
-      </label>
-      <input
-        data-testid="add-element-name"
-        id="add-element-name"
-        maxLength={STORY_NAME_MAX}
-        onChange={(event) => setName(event.target.value)}
-        value={name}
-      />
-      <label className="story-field-label" htmlFor="add-element-description">
-        {t("story:elements.description")}
-      </label>
-      <textarea
-        data-testid="add-element-description"
-        id="add-element-description"
-        maxLength={2000}
-        onChange={(event) => setDescription(event.target.value)}
-        rows={4}
-        value={description}
-      />
-      <div className="dialog-actions">
-        <button onClick={onCancel} type="button">
-          {t("story:panels.cancel")}
-        </button>
-        <button
-          className="primary"
-          data-testid="add-element-confirm"
-          disabled={!ready}
-          onClick={() =>
-            onAdd({
-              kind,
-              name: name.trim(),
-              description: description.trim(),
-            })
-          }
-          type="button"
-        >
-          {t("story:elements.addConfirm")}
-        </button>
-      </div>
-    </div>
   );
 }

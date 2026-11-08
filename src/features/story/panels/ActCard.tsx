@@ -15,10 +15,10 @@ import type {
   StoryActPatch,
   StoryActSound,
   StoryDocument,
-  StoryElement,
   StoryShotGranularity,
 } from "../../../shared/domain/types";
 import { assetUrl } from "../../../api/assets";
+import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -28,6 +28,7 @@ import {
   actClipPieces,
   planActMusic,
   planActVideos,
+  planElementArtWaves,
   planKeyframeArt,
   planLineVoiceAsks,
   videoCeiling,
@@ -35,11 +36,15 @@ import {
 import {
   useStoryBulkRun,
   useStoryRun,
+  useStoryWavesAsk,
   useStoryWavesRun,
   type ActRun,
 } from "../stores/storyJobStore";
 import { KeyframeTable } from "./KeyframeTable";
+import { ElementDraftDialog } from "./ElementDraftDialog";
 import { ElementPictureInspector } from "./ElementPictureInspector";
+import { elementFromDraft, type ElementDraft } from "./elementDraft";
+import { liveStory } from "./removeOldTake";
 import { RefPicker } from "./RefPicker";
 import { StoryLightbox } from "./StoryLightbox";
 import { secondsOf } from "./takes";
@@ -111,11 +116,20 @@ export function ActCard({
   const run = useStoryRun();
   const runBulk = useStoryBulkRun();
   const runWaves = useStoryWavesRun();
+  const runArt = useStoryWavesAsk();
   const moka = useProjectStore((state) => state.moka);
   const [playing, setPlaying] = useState(false);
   const [removing, setRemoving] = useState(false);
-  // The element whose picture the reader asked to look at, if any.
-  const [inspecting, setInspecting] = useState<StoryElement | null>(null);
+  // The element whose picture the reader asked to look at, if any. Held by
+  // name rather than by the object: a drawing that lands while the inspector
+  // stands is the same element with one more take.
+  const [inspectingId, setInspectingId] = useState<string | null>(null);
+  // The question a new reference picture is asked with.
+  const [addingReference, setAddingReference] = useState(false);
+  const inspecting =
+    inspectingId === null
+      ? null
+      : (story.elements.find((held) => held.id === inspectingId) ?? null);
   const [sound, setSound] = useState<StoryActSound>(act.sound);
   /** The granularity a switch is waiting on, where the act has clips to keep. */
   const [granularityTo, setGranularityTo] =
@@ -242,6 +256,51 @@ export function ActCard({
       return;
     }
     writeGranularity(next);
+  };
+
+  /**
+   * A reference drawn for this act rather than found in the cast.
+   *
+   * The element is made first, because an ask needs a place to land, and it is
+   * put into the act's own cast in the same step: a picture drawn here is one
+   * the act is meant to use. The inspector then stands over the new place, so
+   * the drawing is watched where it will be kept.
+   */
+  const addReference = (draft: ElementDraft) => {
+    const element = elementFromDraft(story, {
+      ...draft,
+      chapterIds: [chapterId],
+    });
+    const cast: StoryActPatch =
+      element.kind === "character"
+        ? { characterIds: [...act.characterIds, element.id] }
+        : element.kind === "scene"
+          ? { sceneId: element.id }
+          : { propIds: [...act.propIds, element.id] };
+    const done = execute(i18n.t("story:history.newReference"), [
+      {
+        type: "setStoryElements",
+        storyId: story.id,
+        elements: [...story.elements, element],
+      },
+      {
+        type: "updateStoryAct",
+        storyId: story.id,
+        chapterId,
+        actId: act.id,
+        patch: cast,
+      },
+    ]);
+    if (done === null) return;
+    setInspectingId(element.id);
+    // The ask is planned from the document the element was just written into.
+    const live = liveStory(story.id);
+    if (live === undefined) return;
+    void runArt(
+      story.id,
+      "elementArt",
+      planElementArtWaves(live, [{ elementId: element.id, view: "main" }]),
+    );
   };
 
   // The lines the act's button would ask for: the ones with nothing read for
@@ -408,7 +467,7 @@ export function ActCard({
           kind="character"
           label={t("story:storyboard.characters")}
           many
-          onInspect={setInspecting}
+          onInspect={(element) => setInspectingId(element.id)}
           onPick={(characterIds) => write({ characterIds })}
           pictureOf={(element) => takeFile(currentTake(element.main))}
         />
@@ -418,7 +477,7 @@ export function ActCard({
           kind="scene"
           label={t("story:storyboard.scene")}
           many={false}
-          onInspect={setInspecting}
+          onInspect={(element) => setInspectingId(element.id)}
           onPick={(ids) => write({ sceneId: ids[0] ?? null })}
           pictureOf={(element) => takeFile(currentTake(element.main))}
         />
@@ -428,10 +487,26 @@ export function ActCard({
           kind="prop"
           label={t("story:storyboard.props")}
           many
-          onInspect={setInspecting}
+          onInspect={(element) => setInspectingId(element.id)}
           onPick={(propIds) => write({ propIds })}
           pictureOf={(element) => takeFile(currentTake(element.main))}
         />
+        <button
+          className="link"
+          data-testid={`story-act-new-ref-${index}`}
+          disabled={story.elements.length >= MAX_ELEMENTS_PER_STORY}
+          onClick={() => setAddingReference(true)}
+          title={
+            story.elements.length >= MAX_ELEMENTS_PER_STORY
+              ? t("story:storyboard.elementLimit", {
+                  max: MAX_ELEMENTS_PER_STORY,
+                })
+              : t("story:storyboard.newReferenceHint")
+          }
+          type="button"
+        >
+          {t("story:storyboard.newReference")}
+        </button>
       </div>
 
       <label className="story-field-label" htmlFor={`act-summary-${index}`}>
@@ -675,10 +750,23 @@ export function ActCard({
         </span>
       </div>
 
+      {addingReference && (
+        <ElementDraftDialog
+          confirm={t("story:elements.newReferenceConfirm")}
+          note={t("story:elements.newReferenceNote")}
+          onAdd={(draft) => {
+            setAddingReference(false);
+            addReference(draft);
+          }}
+          onCancel={() => setAddingReference(false)}
+          title={t("story:elements.newReferenceTitle")}
+        />
+      )}
+
       {inspecting !== null && (
         <ElementPictureInspector
           element={inspecting}
-          onClose={() => setInspecting(null)}
+          onClose={() => setInspectingId(null)}
           story={story}
         />
       )}

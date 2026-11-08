@@ -632,7 +632,11 @@ function KeyframePromptCell({
   write: (patch: StoryKeyframePatch) => void;
 }) {
   const { t } = useTranslation();
-  const [inspecting, setInspecting] = useState<StoryElement | null>(null);
+  const [inspectingId, setInspectingId] = useState<string | null>(null);
+  const inspecting =
+    inspectingId === null
+      ? undefined
+      : story.elements.find((held) => held.id === inspectingId);
   const content = useField(keyframe.content, (value) => {
     if (value !== keyframe.content) write({ content: value });
   });
@@ -682,7 +686,7 @@ function KeyframePromptCell({
               className="story-ref-thumb"
               data-testid={`story-kf-ref-${index}-${at}`}
               key={element.id}
-              onClick={() => setInspecting(element)}
+              onClick={() => setInspectingId(element.id)}
               title={t("story:storyboard.mentionCarried", {
                 name: element.name,
               })}
@@ -702,7 +706,7 @@ function KeyframePromptCell({
               className="story-ref-thumb is-beyond"
               data-testid={`story-kf-ref-beyond-${index}-${at}`}
               key={element.id}
-              onClick={() => setInspecting(element)}
+              onClick={() => setInspectingId(element.id)}
               title={t("story:storyboard.notCarried", { name: element.name })}
               type="button"
             >
@@ -714,10 +718,10 @@ function KeyframePromptCell({
           ))}
         </div>
       )}
-      {inspecting !== null && (
+      {inspecting !== undefined && (
         <ElementPictureInspector
           element={inspecting}
-          onClose={() => setInspecting(null)}
+          onClose={() => setInspectingId(null)}
           story={story}
         />
       )}

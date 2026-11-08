@@ -500,6 +500,35 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.keyframes).toHaveLength(2);
   });
 
+  it("draws a new reference into the act's own cast", async () => {
+    openAtBoard(boarded());
+
+    fireEvent.click(screen.getByTestId("story-act-new-ref-0"));
+    fireEvent.change(screen.getByTestId("add-element-kind"), {
+      target: { value: "prop" },
+    });
+    fireEvent.change(screen.getByTestId("add-element-name"), {
+      target: { value: "旧怀表" },
+    });
+    fireEvent.change(screen.getByTestId("add-element-description"), {
+      target: { value: "一只停在十一点的旧怀表" },
+    });
+    fireEvent.click(screen.getByTestId("add-element-confirm"));
+
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("elementArt");
+    const [item] = starts[0]!.items;
+    expect(item?.target).toMatchObject({
+      kind: "elementArt",
+      view: "main",
+    });
+    const added = story().elements.find((element) => element.name === "旧怀表");
+    expect(added).toBeDefined();
+    expect(acts()[0]?.propIds).toContain(added?.id);
+    // The new place is open in front of the reader while its picture is drawn.
+    expect(screen.getByTestId("story-picture-inspector")).toBeDefined();
+  });
+
   it("draws the pictures the words of a shot name, in the order they appear", async () => {
     openAtBoard(boarded());
 
