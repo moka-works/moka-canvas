@@ -544,6 +544,47 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("{{");
   });
 
+  it("puts the lines an act says into the clip, so the mouths move with them", () => {
+    const prompt = storyActVideoPrompt({
+      aspect: "16:9",
+      style: "现代都市风",
+      title: "第 1 幕 空站台",
+      summary: "站台上的灯一盏一盏亮起来。",
+      first: "雨中的站台。",
+      last: "另一人转过身来。",
+      middle: "",
+      seconds: 5,
+      dialogue: [
+        {
+          id: "line-1",
+          speaker: "林",
+          text: "车已经停运了。",
+          tone: "平静",
+        },
+        { id: "line-2", speaker: "", text: "远处传来一声汽笛。" },
+      ],
+    });
+    expect(prompt).toContain(
+      'Said in it, in this order: 林 (平静): "车已经停运了。"; "远处传来一声汽笛。"',
+    );
+    expect(prompt).toContain("mouths move with these words");
+  });
+
+  it("says nothing about words an act does not say", () => {
+    const prompt = storyActVideoPrompt({
+      aspect: "16:9",
+      style: "现代都市风",
+      title: "第 1 幕 空站台",
+      summary: "站台上的灯一盏一盏亮起来。",
+      first: "雨中的站台。",
+      last: "另一人转过身来。",
+      middle: "",
+      seconds: 4,
+      dialogue: [{ id: "line-1", speaker: "林", text: "   " }],
+    });
+    expect(prompt).not.toContain("Said in it");
+  });
+
   it("shoots an act with nothing in the middle without saying it passes through nothing", () => {
     const prompt = storyActVideoPrompt({
       aspect: "16:9",
@@ -591,6 +632,22 @@ describe("story prompts", () => {
     expect(prompt).toContain("雨中的站台，一个人立在灯下。");
     expect(prompt).toContain("9:16");
     expect(prompt).not.toContain("{{");
+    expect(prompt).not.toContain("Said in it");
+  });
+
+  it("puts a shot's lines into its own clip, with the way they are said", () => {
+    const prompt = storyKeyframeVideoPrompt({
+      aspect: "9:16",
+      style: "现代都市风",
+      title: "#1",
+      content: "雨中的站台，一个人立在灯下。",
+      seconds: 2,
+      dialogue: [
+        { id: "line-1", speaker: "林", text: "车已经停运了。", tone: "低声" },
+      ],
+    });
+    expect(prompt).toContain('Said in it: 林 (低声): "车已经停运了。"');
+    expect(prompt).toContain("mouth moves with these words");
   });
 
   it("carries no newline of its own, in any of them", () => {

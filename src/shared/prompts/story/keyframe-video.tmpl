@@ -1,5 +1,8 @@
 Shoot this shot of a film as a clip of about {{ seconds }} seconds, a {{ aspect }} frame in the film's own look: {{ style }}.
 
 The shot, from "{{ title }}": {{ content }}
+{% if dialogue %}
+Said in it: {{ dialogue }}. The speaker's mouth moves with these words, each line landing inside the clip, and nothing is written on screen.
+{% endif %}
 
 The picture given is the frame it starts on. Keep the people and the place as it shows them: the same faces, the same clothes, the same light. No text, no lettering, no watermark.

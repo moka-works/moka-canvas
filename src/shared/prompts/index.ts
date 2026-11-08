@@ -16,7 +16,11 @@
 import { Environment } from "nunjucks";
 
 import { formatDuration, stripStoryMentions } from "../domain/story";
-import type { StoryAspect, StoryElementKind } from "../domain";
+import type {
+  StoryAspect,
+  StoryDialogueLine,
+  StoryElementKind,
+} from "../domain";
 import ask from "./assistant/ask.tmpl?raw";
 import answerSystem from "./assistant/answer-system.tmpl?raw";
 import contextBlock from "./assistant/context-block.tmpl?raw";
@@ -435,6 +439,8 @@ export function storyActVideoPrompt(
     last: string;
     middle: string;
     seconds: number;
+    /** The lines the piece mouths, in the order they are said. */
+    dialogue?: StoryDialogueLine[];
     /** How the pictures travel: frames to move between, or references. */
     mode?: "frames" | "references";
     /** Its place among the pieces, when the act is filmed in several. */
@@ -444,6 +450,7 @@ export function storyActVideoPrompt(
 ): string {
   return render(storyActVideo, {
     ...input,
+    dialogue: storySpokenLines(input.dialogue ?? []),
     references: input.mode === "references",
   });
 }
@@ -454,9 +461,38 @@ export function storyKeyframeVideoPrompt(
     title: string;
     content: string;
     seconds: number;
+    /** The lines the shot mouths, in the order they are said. */
+    dialogue?: StoryDialogueLine[];
   },
 ): string {
-  return render(storyKeyframeVideo, input);
+  return render(storyKeyframeVideo, {
+    ...input,
+    dialogue: storySpokenLines(input.dialogue ?? []),
+  });
+}
+
+/**
+ * The lines a clip mouths, as one reading of them.
+ *
+ * A line is written as its speaker says it, with the way they say it where the
+ * board gives one. A video model handed the words puts them on the speakers'
+ * lips and fits the clip to them, which is what makes the dubbing that comes
+ * afterwards line up with the mouths. An empty line is left out: there is
+ * nothing to mouth.
+ */
+function storySpokenLines(lines: StoryDialogueLine[]): string {
+  return lines
+    .filter((line) => line.text.trim() !== "")
+    .map((line) => {
+      const said = `"${line.text.trim()}"`;
+      const speaker = line.speaker.trim();
+      if (speaker === "") return said;
+      const tone = line.tone?.trim();
+      return tone === undefined || tone === ""
+        ? `${speaker}: ${said}`
+        : `${speaker} (${tone}): ${said}`;
+    })
+    .join("; ");
 }
 
 /** An act's music and sound, under the words and the pictures. */

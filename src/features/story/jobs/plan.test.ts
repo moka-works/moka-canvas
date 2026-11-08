@@ -702,6 +702,9 @@ describe("planning the clips", () => {
     expect(items[0].prompt).toContain("雨中的站台，林立在灯下。");
     expect(items[0].prompt).toContain("周转过身来。");
     expect(items[0].prompt).not.toContain("`");
+    // A line the shot says travels with the clip it is filmed as: the mouth
+    // moves with the words, and the dubbing that comes later lines up.
+    expect(items[0].prompt).toContain('林 (平静): "车已经停运了。"');
     // The pictures are references, and the prompt asks for a shot drawn from
     // them rather than one moving between frames.
     expect(items[0].prompt).toContain(
@@ -748,6 +751,8 @@ describe("planning the clips", () => {
       { role: "firstFrame", assetId: ids.frameArt },
       { role: "lastFrame", assetId: "asset-frame-second" },
     ]);
+    // A shot filmed on its own mouths its own lines.
+    expect(items[0].prompt).toContain('林 (平静): "车已经停运了。"');
   });
 
   it("ends the last shot on itself rather than on a shot that is not there", () => {
