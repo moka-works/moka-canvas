@@ -623,9 +623,20 @@ pub fn load_config_file(path: &Path, typed_by_user: bool) -> Result<AppConfig, C
     parse_config(&raw)
 }
 
-/// Loads the compiled-in YAML for the desktop app. Placeholders resolve
-/// against the platform app-data/resource directories; there is no
-/// user-editable override in this mode.
+/// The desktop app's own overrides, inside the platform application data
+/// directory. Layered over the compiled-in document a build ships with; the
+/// server's file is `config/moka.yaml`, which this one never touches.
+pub const DESKTOP_OVERRIDE_FILE: &str = "config.yaml";
+
+/// Loads the compiled-in YAML for the desktop app, then layers the
+/// `config.yaml` from the platform application data directory over it.
+///
+/// Placeholders resolve against the platform app-data/resource directories on
+/// both documents before they are merged, so an override may move something
+/// the built-in document placed. The merge runs one key at a time rather than
+/// one section at a time: a file that names a single field changes only that
+/// field, and every field it does not name keeps the value the build shipped
+/// with. A machine that has not written the file has nothing overridden.
 pub fn load_native_config(
     app_data_dir: &Path,
     resource_dir: &Path,
@@ -633,7 +644,92 @@ pub fn load_native_config(
     let raw = NATIVE_CONFIG_YAML
         .replace("${appData}", &yaml_path(app_data_dir))
         .replace("${resourceDir}", &yaml_path(resource_dir));
-    parse_config(&raw)
+    let defaults: serde_yaml::Value =
+        serde_yaml::from_str(&raw).map_err(|error| ConfigError::InvalidYaml(error.to_string()))?;
+    let path = app_data_dir.join(DESKTOP_OVERRIDE_FILE);
+    let (merged, source) = match read_override(&path, app_data_dir, resource_dir)? {
+        Some(overrides) => {
+            tracing::info!(
+                "desktop configuration overrides applied from {}",
+                path.display()
+            );
+            (merge_documents(defaults, overrides), Some(path))
+        }
+        None => (defaults, None),
+    };
+    // An error here is about what the reader wrote, so it names their file: a
+    // refusal that says only "invalid type" leaves them hunting the build's
+    // document, which they cannot see.
+    let config: AppConfig = serde_yaml::from_value(merged).map_err(|error| {
+        let message = match &source {
+            Some(path) => format!("{}: {error}", path.display()),
+            None => error.to_string(),
+        };
+        ConfigError::InvalidYaml(message)
+    })?;
+    settle(config)
+}
+
+/// Reads the desktop override, or nothing when the machine has not written one.
+///
+/// Absent means the built-in values; present but unreadable, not YAML, or not
+/// a mapping is refused, because a file somebody wrote and the app silently
+/// ignored is worse than a startup that names the file it could not read.
+fn read_override(
+    path: &Path,
+    app_data_dir: &Path,
+    resource_dir: &Path,
+) -> Result<Option<serde_yaml::Value>, ConfigError> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(ConfigError::Unreadable(format!(
+                "{}: {error}",
+                path.display()
+            )));
+        }
+    };
+    // The same placeholders the built-in document gets, so an override can say
+    // `${appData}/metadata` rather than spelling out a path per platform.
+    let raw = raw
+        .replace("${appData}", &yaml_path(app_data_dir))
+        .replace("${resourceDir}", &yaml_path(resource_dir));
+    let overrides = serde_yaml::from_str(&raw)
+        .map_err(|error| ConfigError::InvalidYaml(format!("{}: {error}", path.display())))?;
+    Ok(Some(overrides))
+}
+
+/// Overlays `over` on `base`, one key at a time.
+///
+/// A mapping is merged key by key, so naming one field of a section leaves the
+/// section's other fields alone. Anything else — a scalar, a list — replaces
+/// what was there: a list is one value a reader wrote, not a set to grow. A key
+/// written as null (or a whole file that is empty) leaves the base untouched,
+/// so a blank line and an absent line mean the same thing.
+fn merge_documents(base: serde_yaml::Value, over: serde_yaml::Value) -> serde_yaml::Value {
+    use serde_yaml::Value;
+
+    match (base, over) {
+        (base, Value::Null) => base,
+        (Value::Mapping(mut base), Value::Mapping(over)) => {
+            for (key, value) in over {
+                if value.is_null() {
+                    continue;
+                }
+                match base.remove(&key) {
+                    Some(existing) => {
+                        base.insert(key, merge_documents(existing, value));
+                    }
+                    None => {
+                        base.insert(key, value);
+                    }
+                }
+            }
+            Value::Mapping(base)
+        }
+        (_, over) => over,
+    }
 }
 
 /// Renders a path for substitution into a double-quoted YAML scalar.
@@ -674,6 +770,13 @@ fn plain_path(path: &Path) -> std::borrow::Cow<'_, Path> {
 fn parse_config(raw: &str) -> Result<AppConfig, ConfigError> {
     let config: AppConfig =
         serde_yaml::from_str(raw).map_err(|error| ConfigError::InvalidYaml(error.to_string()))?;
+    settle(config)
+}
+
+/// The one version this build reads, checked after any merge so that an
+/// override cannot smuggle in a version the rest of the document was not
+/// written for.
+fn settle(config: AppConfig) -> Result<AppConfig, ConfigError> {
     if config.version != 1 {
         return Err(ConfigError::UnsupportedVersion(config.version));
     }
@@ -817,6 +920,94 @@ mod tests {
             config.server.static_dir,
             PathBuf::from("/tmp/moka-resources/web")
         );
+    }
+
+    fn native_with_override(root: &Path, document: &str) -> Result<AppConfig, ConfigError> {
+        std::fs::write(root.join(DESKTOP_OVERRIDE_FILE), document).unwrap();
+        load_native_config(root, Path::new("/tmp/moka-resources"))
+    }
+
+    #[test]
+    fn a_desktop_override_changes_only_the_fields_it_names() {
+        let root = tempfile::tempdir().unwrap();
+        let config = native_with_override(root.path(), "generate:\n  textTimeoutSeconds: 42\n")
+            .expect("a partial override must parse");
+        assert_eq!(config.generate.text_timeout_seconds, 42);
+        assert_eq!(
+            config.generate.image_timeout_seconds, 300,
+            "a field the override did not name keeps its built-in value"
+        );
+        assert_eq!(config.generate.max_attempts, 3);
+        assert_eq!(config.server.bind, "127.0.0.1:0");
+    }
+
+    #[test]
+    fn a_desktop_override_need_not_carry_the_sections_a_server_file_must() {
+        let root = tempfile::tempdir().unwrap();
+        let config = native_with_override(root.path(), "public:\n  productName: \"Studio\"\n")
+            .expect("an override is a patch, not a whole document");
+        assert_eq!(config.public.product_name, "Studio");
+        assert_eq!(
+            config.public.max_upload_bytes, 2_147_483_648,
+            "the section's other fields keep their built-in values"
+        );
+        assert_eq!(config.projects.max_moka_file_bytes, 33_554_432);
+    }
+
+    #[test]
+    fn a_desktop_override_may_name_the_app_data_placeholder() {
+        let root = tempfile::tempdir().unwrap();
+        let config =
+            native_with_override(root.path(), "metadata:\n  dir: \"${appData}/elsewhere\"\n")
+                .expect("the placeholder resolves in an override too");
+        assert_eq!(config.metadata.dir, Some(root.path().join("elsewhere")));
+        assert_eq!(config.metadata.store, "file");
+    }
+
+    #[test]
+    fn a_blank_desktop_override_changes_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let config = native_with_override(root.path(), "# nothing yet\n")
+            .expect("an empty document is an empty patch");
+        assert_eq!(config.generate.text_timeout_seconds, 120);
+        assert_eq!(config.story.max_items_per_job, 40);
+    }
+
+    #[test]
+    fn a_null_field_in_a_desktop_override_leaves_the_built_in_value() {
+        let root = tempfile::tempdir().unwrap();
+        let config = native_with_override(root.path(), "generate:\n  textTimeoutSeconds:\n")
+            .expect("a blank value is an absent one");
+        assert_eq!(config.generate.text_timeout_seconds, 120);
+    }
+
+    #[test]
+    fn a_desktop_override_that_is_not_yaml_is_refused_naming_the_file() {
+        let root = tempfile::tempdir().unwrap();
+        let error = native_with_override(root.path(), "generate: [\n").unwrap_err();
+        assert_eq!(error.code(), "CONFIG_INVALID");
+        assert!(
+            error.to_string().contains(DESKTOP_OVERRIDE_FILE),
+            "the refusal has to name the file somebody wrote: {error}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_in_a_desktop_override_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let error = native_with_override(root.path(), "generateTimeouts: {}\n").unwrap_err();
+        assert_eq!(error.code(), "CONFIG_INVALID");
+        assert!(
+            error.to_string().contains(DESKTOP_OVERRIDE_FILE),
+            "the refusal has to name the file somebody wrote: {error}"
+        );
+    }
+
+    #[test]
+    fn a_desktop_override_cannot_change_the_configuration_version() {
+        let root = tempfile::tempdir().unwrap();
+        let error = native_with_override(root.path(), "version: 2\n").unwrap_err();
+        assert_eq!(error.code(), "CONFIG_VERSION_UNSUPPORTED");
     }
 
     #[test]

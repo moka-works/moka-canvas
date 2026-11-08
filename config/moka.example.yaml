@@ -2,6 +2,12 @@
 # reads when nothing is named with --config, and which no deployment commits.
 # Every value written here is the value a server uses with no file at all, so
 # deleting a line is the same answer as keeping it.
+#
+# The desktop app reads its own copy from the application data directory
+# (~/Library/Application Support/MokaCanvas/config.yaml on macOS,
+# %APPDATA%\MokaCanvas\config.yaml on Windows) and layers it over the built-in
+# values one field at a time: only the keys written there change, and every
+# key it leaves out keeps the value the build shipped with.
 version: 1
 server:
   bind: "127.0.0.1:3000"

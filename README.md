@@ -72,6 +72,8 @@
 - **应用状态**（模型配置、API 密钥、偏好设置、最近项目列表）保存在系统的应用数据目录（macOS 为 `~/Library/Application Support/MokaCanvas/`，Windows 为 `%APPDATA%\MokaCanvas\`），不随项目走；密钥加密保存，只写不回显；
 - 没有账号、没有云同步、不上传遥测；联网请求只有你配置的模型端点，以及桌面版每天一次的应用更新检查（网页版没有更新入口）。
 
+桌面版的运行参数也可以调整：在应用数据目录放一个 `config.yaml`（如 macOS 的 `~/Library/Application Support/MokaCanvas/config.yaml`），按 [`config/moka.example.yaml`](config/moka.example.yaml) 的键名只写出要改的字段即可。写出的字段覆盖内置默认值，没写出的字段——以及没有这个文件时——保持内置默认值；文件格式有误会直接指出该文件并拒绝启动。
+
 视频导出与自动字幕需要机器上装有 ffmpeg 5.0 及以上（一个开源的视频处理工具，需要带 libass 支持的完整版本，安装方法见[构建指南](BUILD.md)）；导演台把调度参考转成 MP4 时也用它，没有它则保留 WebM 并明确提示。除此之外，其余功能一切照常。
 
 ## 构建与打包

@@ -72,6 +72,8 @@ The projects menu in the top-left corner switches between the four modules at an
 - **Application state** (model configurations, API keys, preferences, the recent-projects list) lives in the system's application-data directory — `~/Library/Application Support/MokaCanvas/` on macOS, `%APPDATA%\MokaCanvas\` on Windows — and does not travel with a project; keys are stored encrypted, written but never read back;
 - No account, no cloud sync, and no telemetry: the only network requests are the ones to the model endpoints you configured, plus one daily update check in the desktop app (the web build has no update entry).
 
+The desktop app's runtime parameters can be adjusted too: put a `config.yaml` in the application-data directory (for example `~/Library/Application Support/MokaCanvas/config.yaml` on macOS) and write only the fields to change, using the keys documented in [`config/moka.example.yaml`](config/moka.example.yaml). Fields you write override the built-in values; fields you leave out — and every field, when the file is absent — keep the built-in defaults. A malformed file is named and refuses startup rather than being ignored.
+
 Video export and auto subtitles need ffmpeg 5.0 or newer on the machine (an open-source video tool; you need a full build with libass support, and how to install one is in the [build guide](BUILD_EN.md)). The director desk also uses the same ffmpeg to turn a blocking reference into MP4; without it the WebM recording is kept and said so. Everything else carries on as usual.
 
 ## Building and packaging
