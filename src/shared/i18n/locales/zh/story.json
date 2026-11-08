@@ -293,7 +293,12 @@
     "removeKept": "文件仍被别处使用，只从故事里移走了",
     "removeUnsettled": "改动尚未保存，文件暂留在素材库",
     "removeGone": "这张已经不在列表里了",
-    "removeFailed": "文件没能删除：{{reason}}"
+    "removeFailed": "文件没能删除：{{reason}}",
+    "fromLibrary": "从素材库",
+    "fromFile": "从本地文件",
+    "library": "{{label}} — 从素材库挑选",
+    "libraryEmpty": "项目里还没有图片",
+    "fileFailed": "文件没能加入素材库"
   },
   "elements": {
     "lead": "这段讲述由什么构成：它跟着的角色、它发生在的场景、它用得上的物品，一条一张卡",

@@ -293,7 +293,12 @@
     "removeKept": "The file is still used elsewhere, so it stays on the shelf",
     "removeUnsettled": "The change has not been saved yet, so the file stays on the shelf",
     "removeGone": "That drawing is no longer in the list",
-    "removeFailed": "The file could not be removed: {{reason}}"
+    "removeFailed": "The file could not be removed: {{reason}}",
+    "fromLibrary": "From assets",
+    "fromFile": "From this computer",
+    "library": "{{label}} — choose from assets",
+    "libraryEmpty": "The project holds no pictures yet",
+    "fileFailed": "The file could not be added"
   },
   "elements": {
     "lead": "What the telling is made of, one card each — the characters it follows, the places it happens in, and the things that matter to it",

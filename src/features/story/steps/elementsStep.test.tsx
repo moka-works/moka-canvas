@@ -131,6 +131,25 @@ function serving(): void {
         return json(held);
       }
       if (
+        method === "POST" &&
+        url.endsWith("/api/v1/projects/current/assets")
+      ) {
+        const now = "2026-01-06T00:00:00Z";
+        return json({
+          entry: {
+            id: "asset-picked",
+            name: "picked.png",
+            path: "assets/images/picked-00000000.png",
+            mime: "image/png",
+            bytes: 3,
+            createdAt: now,
+            updatedAt: now,
+          },
+          revision: useProjectStore.getState().moka?.metadata.revision ?? 1,
+          updatedAt: now,
+        });
+      }
+      if (
         method === "DELETE" &&
         url.includes("/api/v1/projects/current/assets/")
       ) {
@@ -1125,6 +1144,56 @@ describe("the pictures of an element", () => {
     expect(shown?.getAttribute("src")).toBe(
       `/api/v1/projects/current/assets/asset-ticket-main?w=480&project=${goldenNodeIds().project}`,
     );
+  });
+
+  it("keeps a picture the project already holds, without asking a model", () => {
+    openAtElements(buildStoryMokaFile());
+    const before = useHistoryStore.getState().undoStack.length;
+
+    fireEvent.click(
+      within(card("旧车票", "prop")).getByTestId("story-slot-main-library"),
+    );
+    const library = screen.getByTestId("story-library");
+    expect(within(library).getByText("hero-main")).toBeTruthy();
+    fireEvent.click(
+      within(library).getByTestId(`story-library-${ids.heroMain}`),
+    );
+
+    expect(slotOf("旧车票", "main")?.takes[0]?.assetIds).toEqual([
+      ids.heroMain,
+    ]);
+    expect(screen.queryByTestId("story-library")).toBeNull();
+    expect(starts).toEqual([]);
+    expect(useHistoryStore.getState().undoStack).toHaveLength(before + 1);
+  });
+
+  it("files a picture from this computer on the shelf and keeps it", async () => {
+    openAtElements(buildStoryMokaFile());
+
+    fireEvent.change(
+      within(card("旧车票", "prop")).getByTestId(
+        "story-slot-main-upload-input",
+      ),
+      {
+        target: {
+          files: [new File(["png"], "picked.png", { type: "image/png" })],
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(slotOf("旧车票", "main")?.takes[0]?.assetIds).toEqual([
+        "asset-picked",
+      ]);
+    });
+    // The file is the project's before the place names it: the shelf holds
+    // it, and the next element may keep the same file.
+    expect(
+      useProjectStore
+        .getState()
+        .moka?.resources.images.some((entry) => entry.id === "asset-picked"),
+    ).toBe(true);
+    expect(starts).toEqual([]);
   });
 
   it("gives each kind its own frame, and a thing the one its card names", async () => {

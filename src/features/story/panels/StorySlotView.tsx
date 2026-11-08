@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
@@ -10,6 +10,66 @@ import { StoryPicks } from "./StoryPicks";
 /** How wide a place's picture is asked for: a card's column at most, and
     enlarged — where the file itself is shown — in the lightbox. */
 const SLOT_THUMB_WIDTH = 480;
+
+/**
+ * The two ways a place may be given a picture that is not drawn for it: the
+ * project's own shelf, or a file on this computer that is filed there first.
+ * Neither is a generation, so neither is behind the drawing button.
+ */
+function SlotSources({
+  onPickFromLibrary,
+  onUpload,
+  testId,
+}: {
+  onPickFromLibrary?: () => void;
+  onUpload?: (file: File) => void;
+  testId?: string;
+}) {
+  const { t } = useTranslation();
+  const file = useRef<HTMLInputElement>(null);
+  if (onPickFromLibrary === undefined && onUpload === undefined) return null;
+
+  return (
+    <>
+      {onPickFromLibrary !== undefined && (
+        <button
+          className="link"
+          data-testid={testId === undefined ? undefined : `${testId}-library`}
+          onClick={onPickFromLibrary}
+          type="button"
+        >
+          {t("story:panels.fromLibrary")}
+        </button>
+      )}
+      {onUpload !== undefined && (
+        <>
+          <button
+            className="link"
+            data-testid={testId === undefined ? undefined : `${testId}-upload`}
+            onClick={() => file.current?.click()}
+            type="button"
+          >
+            {t("story:panels.fromFile")}
+          </button>
+          <input
+            accept="image/*"
+            data-testid={
+              testId === undefined ? undefined : `${testId}-upload-input`
+            }
+            hidden
+            onChange={(event) => {
+              const chosen = event.target.files?.[0];
+              event.target.value = "";
+              if (chosen !== undefined) onUpload(chosen);
+            }}
+            ref={file}
+            type="file"
+          />
+        </>
+      )}
+    </>
+  );
+}
 
 /**
  * One place a drawing lives: a character's face, a character's four views, a
@@ -34,6 +94,8 @@ export function StorySlotView({
   onRemove,
   note,
   actions,
+  onPickFromLibrary,
+  onUpload,
   testId,
 }: {
   slot: StorySlot;
@@ -51,6 +113,10 @@ export function StorySlotView({
   note?: string;
   /** The card's own controls, in the row under the picture. */
   actions?: ReactNode;
+  /** Opens the project's own pictures, to keep one here. */
+  onPickFromLibrary?: () => void;
+  /** Files a picture from this computer on the shelf and keeps it here. */
+  onUpload?: (file: File) => void;
   testId?: string;
 }) {
   const { t } = useTranslation();
@@ -92,6 +158,11 @@ export function StorySlotView({
               >
                 {t("story:panels.generate", { label })}
               </button>
+              <SlotSources
+                onPickFromLibrary={onPickFromLibrary}
+                onUpload={onUpload}
+                testId={testId}
+              />
             </>
           )}
         </div>
@@ -147,6 +218,11 @@ export function StorySlotView({
               {t("story:panels.pick")}
             </button>
           )}
+          <SlotSources
+            onPickFromLibrary={onPickFromLibrary}
+            onUpload={onUpload}
+            testId={testId}
+          />
           {actions}
           {note !== undefined && <span className="story-hint">{note}</span>}
         </div>
