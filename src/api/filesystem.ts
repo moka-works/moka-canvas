@@ -78,4 +78,14 @@ export const filesystemApi = {
       body: { path },
     });
   },
+
+  /**
+   * Opens this machine's Moka data folder — where the logs, metadata, models
+   * and node extensions live — in the platform's own file manager.
+   */
+  openDataDirectory(): Promise<void> {
+    return http.request<void>("/api/v1/filesystem/data-directory", {
+      method: "POST",
+    });
+  },
 };

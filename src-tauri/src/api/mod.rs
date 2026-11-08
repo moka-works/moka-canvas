@@ -514,11 +514,12 @@ fn ui_router() -> axum::Router<ApiState> {
 /// desktop asks the operating system instead, and a listing nobody there needs
 /// is a way of reading this machine's directories that would otherwise not
 /// exist. A write and a reveal are the other halves of the same question in
-/// both runtimes; `api::filesystem` keeps the rules for all three.
+/// both runtimes, and so is opening the app's own data folder;
+/// `api::filesystem` keeps the rules for all of them.
 ///
-/// The body ceiling is a picture's or a subtitle's worth — a listing and a
-/// reveal carry no body at all — and it replaces the server router's upload
-/// ceiling for these routes rather than adding to it.
+/// The body ceiling is a picture's or a subtitle's worth — a listing, a reveal
+/// and opening the data folder carry no body at all — and it replaces the
+/// server router's upload ceiling for these routes rather than adding to it.
 fn filesystem_router() -> axum::Router<ApiState> {
     use axum::extract::DefaultBodyLimit;
     use axum::routing::{get, post, put};
@@ -529,5 +530,9 @@ fn filesystem_router() -> axum::Router<ApiState> {
         .route("/api/v1/filesystem", get(routes::browse_filesystem))
         .route("/api/v1/filesystem/file", put(routes::write_file))
         .route("/api/v1/filesystem/reveal", post(routes::reveal_path))
+        .route(
+            "/api/v1/filesystem/data-directory",
+            post(routes::open_data_directory),
+        )
         .route_layer(DefaultBodyLimit::max(MAX_WRITE_BODY_BYTES))
 }

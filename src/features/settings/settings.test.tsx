@@ -140,6 +140,12 @@ let view: ModelsView;
 let calls: Call[];
 /** Lets a test make the next write fail the way the server would. */
 let refuseNextWrite: { status: number; code: string; message: string } | null;
+/** Lets a test make opening the data folder fail the way the server would. */
+let refuseOpenDataFolder: {
+  status: number;
+  code: string;
+  message: string;
+} | null;
 
 function model(
   id: string,
@@ -273,6 +279,15 @@ function route(url: string, method: string, body: unknown): Response {
     return json({ protocols: REGISTRY });
   }
 
+  if (path === "/api/v1/filesystem/data-directory" && method === "POST") {
+    if (refuseOpenDataFolder) {
+      const refusal = refuseOpenDataFolder;
+      refuseOpenDataFolder = null;
+      return problem(refusal.status, refusal.code, refusal.message);
+    }
+    return new Response(null, { status: 204 });
+  }
+
   if (path === "/api/v1/models" && method === "PUT") {
     if (refuseNextWrite) {
       const refusal = refuseNextWrite;
@@ -389,6 +404,7 @@ beforeEach(() => {
   view = fixture();
   calls = [];
   refuseNextWrite = null;
+  refuseOpenDataFolder = null;
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
@@ -1278,6 +1294,37 @@ describe("model settings", () => {
     // Where the file tier's master key sits is a deployment matter, so the
     // settings page leaves it to the docs.
     expect(screen.queryByTestId("secret-storage-note")).toBeNull();
+  });
+
+  it("opens the folder the logs sit in on request", async () => {
+    await openSettings("System");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open data folder" }),
+    );
+
+    await waitFor(() =>
+      expect(writesTo("/api/v1/filesystem/data-directory")).toHaveLength(1),
+    );
+  });
+
+  it("says why the data folder could not be opened", async () => {
+    refuseOpenDataFolder = {
+      status: 502,
+      code: "REVEAL_FAILED",
+      message: "Could not open the file manager: no file manager was found",
+    };
+    await openSettings("System");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open data folder" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Could not open the file manager: no file manager was found",
+      ),
+    ).toBeTruthy();
   });
 
   it("moves the master key to another tier only when explicitly asked", async () => {

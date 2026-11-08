@@ -214,6 +214,33 @@ pub async fn reveal_path(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Opens the folder this run keeps its own things in — the logs, the metadata,
+/// the downloaded models and the node extensions — in the platform's own file
+/// manager.
+///
+/// It takes no path: the folder is the one this process resolved for itself,
+/// which is exactly where a reader looking for the logs will find them. Both
+/// runtimes ask for the same thing here, so the button beside the keys behaves
+/// alike in a window and in a browser.
+pub async fn open_data_directory() -> Result<StatusCode, Problem> {
+    let root = crate::metadata::paths::platform_default().map_err(|error| {
+        Problem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            error.to_string(),
+        )
+    })?;
+    tokio::fs::create_dir_all(&root).await.map_err(|error| {
+        Problem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            format!("Could not reach {}: {error}", root.display()),
+        )
+    })?;
+    open_directory(&root)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Whether a folder can take a project as it stands.
 ///
 /// A folder that is not there yet counts, and so does one holding nothing but
@@ -726,6 +753,22 @@ fn reveal_in_folder(path: &std::path::Path) -> Result<(), Problem> {
 fn reveal_in_folder(path: &std::path::Path) -> Result<(), Problem> {
     let parent = path.parent().unwrap_or(path);
     spawn_reveal("xdg-open", &[parent.as_os_str()])
+}
+
+/// Opens a directory itself, rather than selecting something inside it.
+#[cfg(target_os = "macos")]
+fn open_directory(directory: &std::path::Path) -> Result<(), Problem> {
+    spawn_reveal("open", &[directory.as_os_str()])
+}
+
+#[cfg(target_os = "windows")]
+fn open_directory(directory: &std::path::Path) -> Result<(), Problem> {
+    spawn_reveal("explorer", &[directory.as_os_str()])
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_directory(directory: &std::path::Path) -> Result<(), Problem> {
+    spawn_reveal("xdg-open", &[directory.as_os_str()])
 }
 
 #[cfg(any(unix, target_os = "windows"))]

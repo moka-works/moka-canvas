@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { SecretStorageChoice } from "../../api";
+import { filesystemApi, type SecretStorageChoice } from "../../api";
 import { CAPABILITY_LABELS } from "../../shared/domain";
 import { useLocale, type LocaleMode } from "../../shared/i18n";
+import { useAppStore } from "../editor/stores/appStore";
 import { UpdateSection } from "../update/UpdateSection";
 import { useModelStore } from "./modelStore";
 import { SecretStorageNote } from "./SecretStorageNote";
@@ -104,6 +105,17 @@ export function SystemTab() {
     void useModelStore.getState().setKey(id, null);
   };
 
+  const openDataFolder = () => {
+    void filesystemApi.openDataDirectory().catch((problem: unknown) => {
+      useAppStore
+        .getState()
+        .pushToast(
+          "error",
+          problem instanceof Error ? problem.message : String(problem),
+        );
+    });
+  };
+
   return (
     <div className="settings-section">
       <UpdateSection />
@@ -146,6 +158,9 @@ export function SystemTab() {
               : t("settings:system.manageKeysCount", {
                   count: storedKeys.length,
                 })}
+        </button>
+        <button onClick={openDataFolder} type="button">
+          {t("settings:system.openDataFolder")}
         </button>
       </div>
       {managing &&

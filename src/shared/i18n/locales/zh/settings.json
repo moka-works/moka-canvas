@@ -114,6 +114,7 @@
     "hideKeys": "隐藏已存储的密钥",
     "manageKeys": "管理密钥",
     "manageKeysCount": "管理密钥（{{count}}）",
+    "openDataFolder": "打开数据目录",
     "noneStored": "尚未存储任何 API 密钥",
     "categoryDefault": " · 分类默认",
     "rotated": " · 于 {{date}} 轮换"

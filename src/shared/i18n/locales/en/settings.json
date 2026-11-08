@@ -114,6 +114,7 @@
     "hideKeys": "Hide stored keys",
     "manageKeys": "Manage keys",
     "manageKeysCount": "Manage keys ({{count}})",
+    "openDataFolder": "Open data folder",
     "noneStored": "No API keys are stored",
     "categoryDefault": " · category default",
     "rotated": " · rotated {{date}}"
