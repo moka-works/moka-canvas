@@ -524,6 +524,24 @@ describe("writing an episode's board", () => {
     ]);
   });
 
+  it("marks a clip made before its frame changed, and keeps it playable", () => {
+    const moka = boarded();
+    const frame = moka.stories![0].chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.art = {
+      takes: [
+        {
+          assetIds: ["asset-frame-new"],
+          createdAt: "2027-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    openAtBoard(moka);
+
+    expect(screen.getByTestId("story-act-video-stale-0")).toBeDefined();
+    // The older clip is marked, not taken away.
+    expect(screen.getByTestId("story-act-video-0")).toBeDefined();
+  });
+
   it("draws a new reference into the act's own cast", async () => {
     openAtBoard(boarded());
 

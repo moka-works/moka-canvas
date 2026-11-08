@@ -57,6 +57,7 @@ import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
+import { shotClipStale } from "./staleClips";
 import { staleReferences } from "./stalePictures";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { filePictureFromComputer } from "./elementPictures";
@@ -287,6 +288,7 @@ function KeyframeRow({
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
+  const clipStale = shotClipStale(keyframe);
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
 
@@ -557,6 +559,15 @@ function KeyframeRow({
                     ? t("story:panels.drawing")
                     : t("story:voice.again")}
                 </button>
+                {clipStale && (
+                  <span
+                    className="story-clip-stale"
+                    data-testid={`story-kf-video-stale-${index}`}
+                    title={t("story:storyboard.clipStaleHint")}
+                  >
+                    {t("story:storyboard.clipStale")}
+                  </span>
+                )}
               </span>
             )}
           </td>

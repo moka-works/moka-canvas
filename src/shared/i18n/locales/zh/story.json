@@ -559,6 +559,8 @@
     "staleRefHint": "{{names}} 的参考图在这一格画好之后换过；可以按新参考重画",
     "redrawStale": "按新参考重画（{{count}}）",
     "redrawStaleHint": "只重画参考图换过的镜头；旧图仍留在每一格的版本里",
+    "clipStale": "成片较旧",
+    "clipStaleHint": "镜头图片在成片之后改过；可以重拍，旧片仍可播放",
     "filmAct": "生成这一段视频",
     "playClip": "播放这一段",
     "missingRef": "{{names}} 还没有图，这一格不会带上",

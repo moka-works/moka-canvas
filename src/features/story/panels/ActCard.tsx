@@ -46,6 +46,7 @@ import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
 import { liveStory } from "./removeOldTake";
 import { RefPicker } from "./RefPicker";
+import { actClipStale } from "./staleClips";
 import { staleFrames } from "./stalePictures";
 import { StoryLightbox } from "./StoryLightbox";
 import { secondsOf } from "./takes";
@@ -138,6 +139,7 @@ export function ActCard({
   const granularity = actGranularity(act, story.shotGranularity);
   const perShot = granularity === "keyframe";
   const clip = currentTake(act.video);
+  const clipStale = actClipStale(act);
   const voice = act.voice === undefined ? undefined : currentTake(act.voice);
   const music = act.music === undefined ? undefined : currentTake(act.music);
 
@@ -683,6 +685,15 @@ export function ActCard({
               >
                 {videoBusy ? t("story:panels.drawing") : t("story:voice.again")}
               </button>
+            )}
+            {clipStale && (
+              <span
+                className="story-clip-stale"
+                data-testid={`story-act-video-stale-${index}`}
+                title={t("story:storyboard.clipStaleHint")}
+              >
+                {t("story:storyboard.clipStale")}
+              </span>
             )}
           </span>
         )}

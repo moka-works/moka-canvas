@@ -8680,6 +8680,18 @@ button > .story-spin {
   padding: 1px 6px;
 }
 
+/* The same mark for a clip: the film is older than the pictures it was made
+   from, and is kept playable all the same. */
+.story-clip-stale {
+  background: color-mix(in srgb, var(--coral) 16%, transparent);
+  border: 1px solid var(--coral);
+  border-radius: 999px;
+  color: var(--coral);
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
 .story-kf-seconds {
   min-width: 72px;
   width: 92px;

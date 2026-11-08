@@ -559,6 +559,8 @@
     "staleRefHint": "{{names}} was redrawn after this frame; you can draw it again from the new reference",
     "redrawStale": "Redraw with new references ({{count}})",
     "redrawStaleHint": "Only the frames whose references changed; the old pictures stay among their versions",
+    "clipStale": "Clip out of date",
+    "clipStaleHint": "The frame changed after this clip was made; you can film it again, and the old clip still plays",
     "filmAct": "Film this act",
     "playClip": "Play this clip",
     "missingRef": "{{names}} have no picture yet, so they travel with no reference",
