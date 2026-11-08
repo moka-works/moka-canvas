@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -75,6 +75,11 @@ const FIRST_PAGES: Record<ElementKindTab, number> = {
 };
 
 const EMPTY = { takes: [] };
+
+/** Whether an item of an elements batch is one whose answer the step reads. */
+function answerItem(item: { id: string; text?: string }): boolean {
+  return item.text !== undefined && !item.id.startsWith(ELEMENT_MERGE_ID);
+}
 
 /**
  * The third step: who and what the telling is made of.
@@ -218,18 +223,23 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // What the newest reading had to say about what it could not read. Shown
   // rather than only logged, because a group of an answer that was not read is
   // a loss the document shows as simply not being there.
-  const read = (item: { id: string; text?: string }) =>
-    item.text !== undefined && !item.id.startsWith(ELEMENT_MERGE_ID);
   const answerJob = jobs.find(
-    (job) => job.kind === "elements" && job.items.some(read),
+    (job) => job.kind === "elements" && job.items.some(answerItem),
   );
-  const warnings = (answerJob?.items ?? [])
-    .filter(read)
-    .flatMap((item) =>
-      readElementsAnswer(item.text ?? "").warnings.map(
-        (warning) => `${item.id}: ${warning}`,
-      ),
-    );
+  // Read once per answer rather than once per render: the batch's record keeps
+  // its identity between polls, while a page turned, a card checked or a dialog
+  // opened renders the step without any new answer to read.
+  const warnings = useMemo(
+    () =>
+      (answerJob?.items ?? [])
+        .filter(answerItem)
+        .flatMap((item) =>
+          readElementsAnswer(item.text ?? "").warnings.map(
+            (warning) => `${item.id}: ${warning}`,
+          ),
+        ),
+    [answerJob],
+  );
 
   // Leaving the step would drop what only the step can send: the waves it has
   // not handed over yet, and the merge owed after the last of them. Said to the

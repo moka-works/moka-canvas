@@ -253,10 +253,18 @@ export const useStoryStore = create<StoryState>()((set, get) => {
   };
 });
 
-/** The story the room is open on, or null when it is open on none. */
+/**
+ * The story the room is open on, or null when it is open on none.
+ *
+ * Read by its own identity rather than the project's: a save that moves the
+ * revision, or a file filed on the shelf, leaves the story object as it was,
+ * and a step that follows only its own telling is not drawn again for them.
+ */
 export function useActiveStory(): StoryDocument | null {
   const id = useStoryStore((state) => state.storyId);
-  const moka = useProjectStore((state) => state.moka);
-  if (id === null) return null;
-  return (moka?.stories ?? []).find((story) => story.id === id) ?? null;
+  return useProjectStore((state) =>
+    id === null
+      ? null
+      : ((state.moka?.stories ?? []).find((story) => story.id === id) ?? null),
+  );
 }

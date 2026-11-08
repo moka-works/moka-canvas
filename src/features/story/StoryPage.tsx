@@ -30,11 +30,14 @@ import { useActiveStory, useStoryStore } from "./stores/storyStore";
  */
 export function StoryPage() {
   const { t } = useTranslation();
-  const moka = useProjectStore((state) => state.moka);
+  // The page is drawn from the stories alone: a save landing, a shelf entry
+  // filed, a revision moved — none of it changes a telling, and subscribing to
+  // the whole document would re-render every card for each of them.
+  const stories = useProjectStore((state) => state.moka?.stories);
   const story = useActiveStory();
   const leftWidth = usePanelWidths((state) => state.left);
   const leftFolded = usePanelFolds((state) => state.left);
-  const projectId = moka?.metadata.id ?? null;
+  const projectId = useProjectStore((state) => state.moka?.metadata.id ?? null);
 
   // Entering the room is a seam in the history: what is undone here is not
   // undone on a canvas, and a board's undos stop at the door.
@@ -46,10 +49,11 @@ export function StoryPage() {
 
   // A story the document no longer holds — deleted here, or by an undo of the
   // command that made it — is not what the room can be looking at; the store
-  // takes up the place the stories that are left leave open.
+  // takes up the place the stories that are left leave open. Only the list is
+  // watched: a save or a shelf entry does not move a story.
   useEffect(() => {
-    useStoryStore.getState().adopt(moka);
-  }, [moka]);
+    useStoryStore.getState().adopt(useProjectStore.getState().moka);
+  }, [stories]);
 
   /**
    * The batches out for the story being looked at.

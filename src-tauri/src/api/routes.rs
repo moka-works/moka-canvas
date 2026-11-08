@@ -863,6 +863,10 @@ pub struct AssetStreamQuery {
     pub w: Option<u32>,
 }
 
+/// How a drawing is cached: its key is the picture's own digest, so the bytes
+/// behind a URL cannot change, while the file itself may be replaced.
+const DRAWN_CACHE_CONTROL: &str = "private, max-age=31536000, immutable";
+
 pub async fn stream_asset(
     session: ProjectSession,
     Path(id): Path<String>,
@@ -880,6 +884,7 @@ pub async fn stream_asset(
             let root = session.0.project_root().await?;
             let entry = asset.entry.clone();
             let source = asset.path.clone();
+            let original = source.clone();
             let drawn = tokio::task::spawn_blocking(move || {
                 crate::assets::thumbs::thumb_for(&root, &entry, &source, width)
             })
@@ -908,11 +913,10 @@ pub async fn stream_asset(
                     .as_deref()
                     .unwrap_or("application/octet-stream")
             };
-            return Response::builder()
+            let mut response = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_LENGTH, bytes.len().to_string())
                 .header(header::CONTENT_TYPE, mime)
-                .header(header::CACHE_CONTROL, "no-store")
                 .body(Body::from(bytes))
                 .map_err(|error| {
                     Problem::new(
@@ -920,7 +924,18 @@ pub async fn stream_asset(
                         "INTERNAL",
                         error.to_string(),
                     )
-                });
+                })?;
+            // A drawing is keyed by the digest of the picture it was made from,
+            // so its bytes are the same for as long as the URL is; a fallback
+            // to the file itself is not, since a file may be replaced under the
+            // name the entry keeps.
+            if drawn != original {
+                response.headers_mut().insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static(DRAWN_CACHE_CONTROL),
+                );
+            }
+            return Ok(response);
         }
     }
 

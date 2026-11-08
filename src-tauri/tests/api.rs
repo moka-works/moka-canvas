@@ -808,6 +808,12 @@ async fn a_picture_is_served_small_from_the_project_s_own_cache() {
         small.headers().get(header::CONTENT_TYPE).unwrap(),
         "image/jpeg"
     );
+    // A drawing is keyed by the picture's digest, so a browser may keep it: a
+    // list that turns back to a page paints it again without asking the server.
+    assert_eq!(
+        small.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, max-age=31536000, immutable"
+    );
     let drawn = to_bytes(small.into_body(), usize::MAX).await.unwrap();
     let picture = image::load_from_memory(&drawn).unwrap();
     assert_eq!((picture.width(), picture.height()), (32, 32));
