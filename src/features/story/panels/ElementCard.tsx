@@ -401,18 +401,20 @@ export const ElementCard = memo(function ElementCard({
         data-testid={`story-element-reference-${element.name}`}
       >
         <span className="story-hint">{t("story:elements.reference")}</span>
-        {referenceAsset === undefined || referenceName === undefined ? (
+        {activeReference === undefined || referenceName === undefined ? (
           <span className="story-hint">
             {t("story:elements.referenceNone")}
           </span>
         ) : (
           <span className="story-reference-current">
-            <img
-              alt={referenceName}
-              decoding="async"
-              loading="lazy"
-              src={assetThumbUrl(referenceAsset, 96)}
-            />
+            {referenceAsset !== undefined && (
+              <img
+                alt={referenceName}
+                decoding="async"
+                loading="lazy"
+                src={assetThumbUrl(referenceAsset, 96)}
+              />
+            )}
             <span>{referenceName}</span>
           </span>
         )}
