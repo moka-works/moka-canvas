@@ -49,6 +49,8 @@ export function ElementCard({
   element,
   busyMain,
   busyTurnaround,
+  selected,
+  onSelect,
 }: {
   story: StoryDocument;
   element: StoryElement;
@@ -56,6 +58,9 @@ export function ElementCard({
   busyMain: boolean;
   /** Whether this element's four views are being drawn just now. */
   busyTurnaround: boolean;
+  /** Whether the card is among those a bulk action is about. */
+  selected: boolean;
+  onSelect: (selected: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
@@ -132,6 +137,14 @@ export function ElementCard({
       </div>
 
       <div className="story-element-head">
+        <input
+          aria-label={t("story:elements.select", { name: element.name })}
+          checked={selected}
+          className="story-element-select"
+          data-testid={`story-element-select-${element.name}`}
+          onChange={(event) => onSelect(event.target.checked)}
+          type="checkbox"
+        />
         <span className="story-element-kind">
           {t(`story:element.${element.kind}`)}
         </span>

@@ -7274,6 +7274,34 @@ body.is-dragging-split {
   gap: 8px;
 }
 
+.story-element-select {
+  accent-color: var(--primary);
+  flex: none;
+}
+
+/* The bar a checked card brings up: what to do with the chosen few. */
+
+.story-bulk {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.story-bulk select {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
 .story-element-kind {
   background: var(--canvas);
   border: 1px solid var(--stroke);

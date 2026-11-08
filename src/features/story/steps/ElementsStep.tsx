@@ -18,11 +18,13 @@ import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
+import { modelOptionsFor, useModelStore } from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ElementCard } from "../panels/ElementCard";
+import { liveStory } from "../panels/removeOldTake";
 import { VoiceFields } from "../panels/VoiceFields";
 import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
 import {
@@ -47,6 +49,9 @@ import { useStoryStore } from "../stores/storyStore";
 
 /** The kinds of element, in the order the room shows them. */
 const KINDS: StoryElementKind[] = ["character", "scene", "prop"];
+
+/** The sub-menu's way of saying "draw these with the room's own model". */
+const BULK_DEFAULT_MODEL = "__default__";
 
 /**
  * How many cards one look builds at once.
@@ -85,6 +90,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [kind, setKind] = useState<StoryElementKind | "all">("all");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The cards a bulk action is about, chosen one checkbox at a time.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
+  const [removingPicked, setRemovingPicked] = useState(false);
   const [pages, setPages] = useState(1);
   const [waves, setWaves] = useState<StoryReadingPiece[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
@@ -102,6 +111,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // fact the room must be able to show before a reader walks away from it.
   const [mergePending, setMergePending] = useState(false);
   const setElementsBusy = useStoryStore((state) => state.setElementsBusy);
+  const imageOptions = modelOptionsFor(
+    useModelStore((state) => state.view),
+    "image",
+  );
 
   const groups = KINDS.map((each) => ({
     kind: each,
@@ -119,6 +132,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const chooseKind = (next: StoryElementKind | "all") => {
     setKind(next);
     setPages(1);
+    setPicked(new Set());
+    setBulkAction("");
   };
   /** Whether one of a card's own pictures is being made just now. */
   const drawing = (
@@ -463,6 +478,66 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           </div>
         </div>
 
+        {picked.size > 0 && (
+          <div className="story-bulk" data-testid="story-bulk">
+            <span className="story-hint">
+              {t("story:elements.picked", { count: picked.size })}
+            </span>
+            <select
+              data-testid="story-bulk-action"
+              onChange={(event) => {
+                const action = event.target.value as "" | "delete" | "model";
+                setBulkAction(action);
+                if (action === "delete") setRemovingPicked(true);
+              }}
+              value={bulkAction}
+            >
+              <option value="">{t("story:elements.bulkAction")}</option>
+              <option value="delete">{t("story:elements.bulkDelete")}</option>
+              <option value="model">{t("story:elements.bulkModel")}</option>
+            </select>
+            {bulkAction === "model" && (
+              <select
+                data-testid="story-bulk-model"
+                onChange={(event) => {
+                  if (event.target.value === "") return;
+                  setElementsModel(
+                    story,
+                    picked,
+                    event.target.value === BULK_DEFAULT_MODEL
+                      ? null
+                      : event.target.value,
+                  );
+                  setPicked(new Set());
+                  setBulkAction("");
+                }}
+                value=""
+              >
+                <option value="">{t("story:elements.bulkModelPick")}</option>
+                <option value={BULK_DEFAULT_MODEL}>
+                  {t("story:elements.imageModelNone")}
+                </option>
+                {imageOptions.map((option) => (
+                  <option key={option.reference} value={option.reference}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              className="link"
+              data-testid="story-bulk-clear"
+              onClick={() => {
+                setPicked(new Set());
+                setBulkAction("");
+              }}
+              type="button"
+            >
+              {t("story:elements.bulkClear")}
+            </button>
+          </div>
+        )}
+
         <div className="story-step-actions">
           <span className="story-hint" data-testid="story-elements-counts">
             {t("story:elements.counts", {
@@ -524,6 +599,15 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   busyTurnaround={drawing(element, "turnaround")}
                   element={element}
                   key={element.id}
+                  onSelect={(selected) =>
+                    setPicked((held) => {
+                      const next = new Set(held);
+                      if (selected) next.add(element.id);
+                      else next.delete(element.id);
+                      return next;
+                    })
+                  }
+                  selected={picked.has(element.id)}
                   story={story}
                 />
               ))}
@@ -564,6 +648,25 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           onConfirm={() => void begin()}
           testId="recognise-elements"
           title={t("story:elements.recogniseTitle")}
+        />
+      )}
+      {removingPicked && (
+        <ConfirmDialog
+          body={t("story:elements.bulkDeleteBody", { count: picked.size })}
+          confirm={t("story:elements.removeConfirm")}
+          note={t("story:elements.removeNote")}
+          onCancel={() => {
+            setRemovingPicked(false);
+            setBulkAction("");
+          }}
+          onConfirm={() => {
+            setRemovingPicked(false);
+            removeElements(story, picked);
+            setPicked(new Set());
+            setBulkAction("");
+          }}
+          testId="remove-elements"
+          title={t("story:elements.bulkDeleteTitle", { count: picked.size })}
         />
       )}
       {adding && (
@@ -627,6 +730,35 @@ function VoiceSummary({ story }: { story: StoryDocument }) {
         })}
       </button>
     </p>
+  );
+}
+
+/** The elements chosen by checkbox, taken out as one step of the history. */
+function removeElements(story: StoryDocument, ids: Set<string>): void {
+  const live = liveStory(story.id) ?? story;
+  execute(i18n.t("story:history.removeElement"), [
+    {
+      type: "setStoryElements",
+      storyId: story.id,
+      elements: live.elements.filter((element) => !ids.has(element.id)),
+    },
+  ]);
+}
+
+/** The picture model of the chosen elements, set, or cleared to the room's. */
+function setElementsModel(
+  story: StoryDocument,
+  ids: Set<string>,
+  model: string | null,
+): void {
+  execute(
+    i18n.t("story:history.elements"),
+    [...ids].map((elementId) => ({
+      type: "updateStoryElement" as const,
+      storyId: story.id,
+      elementId,
+      patch: { imageModel: model },
+    })),
   );
 }
 

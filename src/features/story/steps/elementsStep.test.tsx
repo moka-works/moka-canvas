@@ -894,6 +894,96 @@ describe("the model a reading is asked of", () => {
       expect(element("旧车票")?.imageModel).toBeUndefined();
     });
   });
+
+  it("changes the picture model of every chosen element at once", async () => {
+    const view = useModelStore.getState().view!;
+    const painter = (id: string, displayName: string) => ({
+      id,
+      category: "image" as const,
+      protocol: "openaiImage",
+      url: "https://api.example.com/v1/images/generations",
+      model: `${id}-1`,
+      displayName,
+      enabled: true,
+      apiKey: { set: true, masked: "sk-…abcd" },
+    });
+    useModelStore.setState({
+      view: {
+        ...view,
+        models: [
+          ...view.models,
+          painter("paint-1", "Paint One"),
+          painter("paint-2", "Paint Two"),
+        ],
+        defaults: { ...view.defaults, image: "paint-1" },
+      },
+    });
+    openAtElements(buildStoryMokaFile());
+    const before = useHistoryStore.getState().undoStack.length;
+
+    fireEvent.click(
+      within(card("旧车票", "prop")).getByTestId("story-element-select-旧车票"),
+    );
+    fireEvent.click(
+      within(card("林", "character")).getByTestId("story-element-select-林"),
+    );
+    fireEvent.change(screen.getByTestId("story-bulk-action"), {
+      target: { value: "model" },
+    });
+    const models = screen.getByTestId("story-bulk-model");
+    expect(
+      within(models)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "Choose a model…",
+      "The room's picture model",
+      "Paint One",
+      "Paint Two",
+    ]);
+    fireEvent.change(models, { target: { value: "paint-2" } });
+
+    await waitFor(() => {
+      expect(element("旧车票")?.imageModel).toBe("paint-2");
+      expect(element("林")?.imageModel).toBe("paint-2");
+    });
+    expect(element("周")?.imageModel).toBeUndefined();
+    expect(useHistoryStore.getState().undoStack).toHaveLength(before + 1);
+
+    act(() => {
+      undo();
+    });
+    expect(element("旧车票")?.imageModel).toBeUndefined();
+    expect(element("林")?.imageModel).toBeUndefined();
+  });
+});
+
+describe("choosing several elements", () => {
+  it("takes the chosen few out of the cast as one step", async () => {
+    openAtElements(buildStoryMokaFile());
+    const before = useHistoryStore.getState().undoStack.length;
+
+    fireEvent.click(
+      within(card("旧车票", "prop")).getByTestId("story-element-select-旧车票"),
+    );
+    fireEvent.click(
+      within(card("末班车车厢", "scene")).getByTestId(
+        "story-element-select-末班车车厢",
+      ),
+    );
+    expect(screen.getByTestId("story-bulk").textContent).toContain("2 chosen");
+
+    fireEvent.change(screen.getByTestId("story-bulk-action"), {
+      target: { value: "delete" },
+    });
+    fireEvent.click(screen.getByTestId("remove-elements-confirm"));
+
+    await waitFor(() => {
+      expect(story().elements.map((held) => held.name)).toEqual(["林", "周"]);
+    });
+    expect(useHistoryStore.getState().undoStack).toHaveLength(before + 1);
+    expect(screen.queryByTestId("story-bulk")).toBeNull();
+  });
 });
 
 describe("a description the reader rewrites", () => {

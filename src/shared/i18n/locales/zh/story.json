@@ -375,7 +375,16 @@
     "advanced": "高级",
     "moreChapters": "还有 {{count}} 章",
     "imageModel": "图片模型",
-    "imageModelNone": "跟随本页的图片模型"
+    "imageModelNone": "跟随本页的图片模型",
+    "select": "选择 {{name}}",
+    "picked": "已选 {{count}} 个",
+    "bulkAction": "批量操作…",
+    "bulkDelete": "删除所选",
+    "bulkModel": "更换图片模型",
+    "bulkModelPick": "选择模型…",
+    "bulkClear": "取消选择",
+    "bulkDeleteTitle": "删除 {{count}} 个元素？",
+    "bulkDeleteBody": "这 {{count}} 个元素会离开卡司；分镜里引用到的地方会留下空位。"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",

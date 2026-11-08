@@ -375,7 +375,16 @@
     "advanced": "Advanced",
     "moreChapters": "{{count}} more chapters",
     "imageModel": "Picture model",
-    "imageModelNone": "The room's picture model"
+    "imageModelNone": "The room's picture model",
+    "select": "Choose {{name}}",
+    "picked": "{{count}} chosen",
+    "bulkAction": "Bulk action…",
+    "bulkDelete": "Delete chosen",
+    "bulkModel": "Change picture model",
+    "bulkModelPick": "Choose a model…",
+    "bulkClear": "Clear selection",
+    "bulkDeleteTitle": "Delete {{count}} elements?",
+    "bulkDeleteBody": "The {{count}} elements leave the cast. Where a board names them, the reference is left standing as a gap."
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",
