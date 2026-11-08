@@ -1,8 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { assetThumbUrl } from "../../../api/assets";
 import type { StoryElement, StoryElementKind } from "../../../shared/domain";
 import { currentTake } from "../../../shared/domain";
+
+/** How wide a chip's little picture is asked for: it is drawn 20 px square. */
+const AVATAR_THUMB_WIDTH = 64;
+
+/** The little picture a reference is recognised by, or the empty it has not. */
+function RefAvatar({ assetId }: { assetId?: string }) {
+  if (assetId === undefined) {
+    return <span className="story-ref-avatar is-empty" aria-hidden="true" />;
+  }
+  return (
+    <img
+      alt=""
+      className="story-ref-avatar"
+      decoding="async"
+      loading="lazy"
+      src={assetThumbUrl(assetId, AVATAR_THUMB_WIDTH)}
+    />
+  );
+}
 
 /**
  * Who and what an act is made of, as a row of names with a menu to change them.
@@ -21,6 +41,8 @@ export function RefPicker({
   many,
   disabled,
   onPick,
+  pictureOf,
+  onInspect,
 }: {
   label: string;
   kind: StoryElementKind;
@@ -31,6 +53,10 @@ export function RefPicker({
   many: boolean;
   disabled?: boolean;
   onPick: (ids: string[]) => void;
+  /** The drawing an element is recognised by, where one is shown beside it. */
+  pictureOf?: (element: StoryElement) => string | undefined;
+  /** Opens one of the listed elements, for its picture and its card. */
+  onInspect?: (element: StoryElement) => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -72,7 +98,22 @@ export function RefPicker({
           if (element === undefined) return null;
           return (
             <span className="story-ref is-on" key={id}>
-              {element.name}
+              {onInspect === undefined ? (
+                element.name
+              ) : (
+                <button
+                  className="story-ref-view"
+                  data-testid={`story-ref-view-${element.name}`}
+                  onClick={() => onInspect(element)}
+                  title={t("story:storyboard.inspectRef", {
+                    name: element.name,
+                  })}
+                  type="button"
+                >
+                  <RefAvatar assetId={pictureOf?.(element)} />
+                  <span>{element.name}</span>
+                </button>
+              )}
               {!disabled && (
                 <button
                   aria-label={t("story:storyboard.refOff", {
@@ -147,7 +188,10 @@ export function RefPicker({
               role="menuitemcheckbox"
               type="button"
             >
-              {element.name}
+              <span className="story-ref-choice-name">
+                <RefAvatar assetId={pictureOf?.(element)} />
+                {element.name}
+              </span>
               <span className="story-hint">
                 {currentTake(element.main) === undefined
                   ? t("story:storyboard.refNoArt")

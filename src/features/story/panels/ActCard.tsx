@@ -6,6 +6,7 @@ import {
   actGranularity,
   actPlannedMs,
   currentTake,
+  takeFile,
   type StoryGuess,
   voiceHoldsLine,
 } from "../../../shared/domain";
@@ -14,6 +15,7 @@ import type {
   StoryActPatch,
   StoryActSound,
   StoryDocument,
+  StoryElement,
   StoryShotGranularity,
 } from "../../../shared/domain/types";
 import { assetUrl } from "../../../api/assets";
@@ -37,6 +39,7 @@ import {
   type ActRun,
 } from "../stores/storyJobStore";
 import { KeyframeTable } from "./KeyframeTable";
+import { ElementPictureInspector } from "./ElementPictureInspector";
 import { RefPicker } from "./RefPicker";
 import { StoryLightbox } from "./StoryLightbox";
 import { secondsOf } from "./takes";
@@ -111,6 +114,8 @@ export function ActCard({
   const moka = useProjectStore((state) => state.moka);
   const [playing, setPlaying] = useState(false);
   const [removing, setRemoving] = useState(false);
+  // The element whose picture the reader asked to look at, if any.
+  const [inspecting, setInspecting] = useState<StoryElement | null>(null);
   const [sound, setSound] = useState<StoryActSound>(act.sound);
   /** The granularity a switch is waiting on, where the act has clips to keep. */
   const [granularityTo, setGranularityTo] =
@@ -403,7 +408,9 @@ export function ActCard({
           kind="character"
           label={t("story:storyboard.characters")}
           many
+          onInspect={setInspecting}
           onPick={(characterIds) => write({ characterIds })}
+          pictureOf={(element) => takeFile(currentTake(element.main))}
         />
         <RefPicker
           chosen={act.sceneId === undefined ? [] : [act.sceneId]}
@@ -411,7 +418,9 @@ export function ActCard({
           kind="scene"
           label={t("story:storyboard.scene")}
           many={false}
+          onInspect={setInspecting}
           onPick={(ids) => write({ sceneId: ids[0] ?? null })}
+          pictureOf={(element) => takeFile(currentTake(element.main))}
         />
         <RefPicker
           chosen={act.propIds}
@@ -419,7 +428,9 @@ export function ActCard({
           kind="prop"
           label={t("story:storyboard.props")}
           many
+          onInspect={setInspecting}
           onPick={(propIds) => write({ propIds })}
+          pictureOf={(element) => takeFile(currentTake(element.main))}
         />
       </div>
 
@@ -663,6 +674,14 @@ export function ActCard({
           )}
         </span>
       </div>
+
+      {inspecting !== null && (
+        <ElementPictureInspector
+          element={inspecting}
+          onClose={() => setInspecting(null)}
+          story={story}
+        />
+      )}
 
       {playing && clip !== undefined && (
         <StoryLightbox

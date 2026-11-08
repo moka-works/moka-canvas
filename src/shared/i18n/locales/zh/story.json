@@ -301,6 +301,15 @@
     "libraryEmpty": "项目里还没有图片",
     "fileFailed": "文件没能加入素材库"
   },
+  "inspector": {
+    "label": "「{{name}}」的参考图",
+    "noArt": "还没有参考图",
+    "noDescription": "还没有描述",
+    "versions": "版本",
+    "current": "当前",
+    "openCard": "打开元素卡片",
+    "emptyHint": "可以生成一张，也可以从素材库或本机文件里换一张"
+  },
   "elements": {
     "lead": "这段讲述由什么构成：它跟着的角色、它发生在的场景、它用得上的物品，一条一张卡",
     "group": "元素种类",
@@ -435,6 +444,7 @@
     "mentionUndrawn": "{{name}} 还没有图，只按文字来画",
     "mentionUnknown": "没有叫 {{name}} 的剧情元素，只按文字来写",
     "enlargeRef": "查看 {{name}} 大图",
+    "inspectRef": "查看并替换「{{name}}」的参考图",
     "chapterAt": "第 {{number}} 集 {{title}}",
     "target": "目标时长 {{duration}}",
     "settled": "已完成 {{done}}/{{total}} 幕",

@@ -19,6 +19,7 @@ import {
   slotWithoutTake,
   slotWithCurrent,
   storyMentions,
+  takeFile,
   voiceTakeOf,
   type StoryGuess,
 } from "../../../shared/domain";
@@ -56,12 +57,14 @@ import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
-import { StoryLightbox } from "./StoryLightbox";
+import { ElementPictureInspector } from "./ElementPictureInspector";
+import { filePictureFromComputer } from "./elementPictures";
+import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
 
 /** How wide the little references beside a frame's ask are asked for: they are
-    drawn 44 px square, and the lightbox shows the file itself. */
+    drawn 44 px square, and the inspector shows the file itself. */
 const REF_THUMB_WIDTH = 128;
 import { moved, writeKeyframes } from "./writeBoard";
 
@@ -277,6 +280,7 @@ function KeyframeRow({
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
+  const [picking, setPicking] = useState(false);
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
@@ -291,6 +295,16 @@ function KeyframeRow({
       { chapterId, actId: act.id, keyframeId: keyframe.id },
     ]);
     if (item !== undefined) void run(story.id, "keyframeArt", [item]);
+  };
+
+  // A frame may be taken from the shelf or from this computer as well as
+  // drawn: a shot's picture is a place like any other, and the board is where
+  // the reader notices the one they already have.
+  const upload = async (file: File) => {
+    const assetId = await filePictureFromComputer(file);
+    if (assetId !== undefined) {
+      keepFrame(story, chapterId, act, keyframe, assetId);
+    }
   };
 
   const film = () => {
@@ -466,11 +480,13 @@ function KeyframeRow({
               keepFrame(story, chapterId, act, keyframe, assetId)
             }
             onGenerate={draw}
+            onPickFromLibrary={() => setPicking(true)}
             onRemove={(assetId) =>
               removeOldTake(assetId, () =>
                 dropFrame(story, chapterId, act, keyframe, assetId),
               )
             }
+            onUpload={(file) => void upload(file)}
             ratio={frameRatio(story)}
             slot={keyframe.art}
             testId={`story-kf-slot-${index}`}
@@ -574,6 +590,17 @@ function KeyframeRow({
           </td>
         </tr>
       )}
+      {picking && (
+        <StoryLibraryPicker
+          current={takeFile(currentTake(keyframe.art))}
+          label={t("story:storyboard.frame")}
+          onChoose={(assetId) => {
+            keepFrame(story, chapterId, act, keyframe, assetId);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
     </>
   );
 }
@@ -605,10 +632,7 @@ function KeyframePromptCell({
   write: (patch: StoryKeyframePatch) => void;
 }) {
   const { t } = useTranslation();
-  const [zoomed, setZoomed] = useState<{
-    assetIds: string[];
-    label: string;
-  } | null>(null);
+  const [inspecting, setInspecting] = useState<StoryElement | null>(null);
   const content = useField(keyframe.content, (value) => {
     if (value !== keyframe.content) write({ content: value });
   });
@@ -652,15 +676,13 @@ function KeyframePromptCell({
         <div className="story-ref-strip" data-testid={`story-kf-refs-${index}`}>
           {cast.carried.map(({ element, assetId }, at) => (
             <button
-              aria-label={t("story:storyboard.enlargeRef", {
+              aria-label={t("story:storyboard.inspectRef", {
                 name: element.name,
               })}
               className="story-ref-thumb"
               data-testid={`story-kf-ref-${index}-${at}`}
               key={element.id}
-              onClick={() =>
-                setZoomed({ assetIds: [assetId], label: element.name })
-              }
+              onClick={() => setInspecting(element)}
               title={t("story:storyboard.mentionCarried", {
                 name: element.name,
               })}
@@ -674,15 +696,13 @@ function KeyframePromptCell({
           ))}
           {cast.beyond.map(({ element, assetId }, at) => (
             <button
-              aria-label={t("story:storyboard.notCarried", {
+              aria-label={t("story:storyboard.inspectRef", {
                 name: element.name,
               })}
               className="story-ref-thumb is-beyond"
               data-testid={`story-kf-ref-beyond-${index}-${at}`}
               key={element.id}
-              onClick={() =>
-                setZoomed({ assetIds: [assetId], label: element.name })
-              }
+              onClick={() => setInspecting(element)}
               title={t("story:storyboard.notCarried", { name: element.name })}
               type="button"
             >
@@ -694,11 +714,11 @@ function KeyframePromptCell({
           ))}
         </div>
       )}
-      {zoomed !== null && (
-        <StoryLightbox
-          assetIds={zoomed.assetIds}
-          label={zoomed.label}
-          onClose={() => setZoomed(null)}
+      {inspecting !== null && (
+        <ElementPictureInspector
+          element={inspecting}
+          onClose={() => setInspecting(null)}
+          story={story}
         />
       )}
     </>

@@ -36,6 +36,14 @@ interface StoryState {
   /** Whether the question a new story is opened under is standing. */
   newStoryOpen: boolean;
   /**
+   * The element the elements step is to bring into view, once it is standing.
+   *
+   * A picture looked at from the board is edited on the card it belongs to, and
+   * the reader should land on that card rather than on the first page of the
+   * cast. Read and cleared by the step itself.
+   */
+  focusElementId: string | null;
+  /**
    * Whether the elements step still has reading of its own left to send.
    *
    * The step owns the waves it has not handed over yet and the merge that
@@ -49,6 +57,8 @@ interface StoryState {
   adopt: (moka: MokaFile | null) => void;
   select: (storyId: string | null) => void;
   goStep: (step: StoryStep) => void;
+  /** Opens the elements step on one of its cards, or clears the place. */
+  focusElement: (elementId: string | null) => void;
   /** Whether leaving the elements step now would drop work. */
   setElementsBusy: (busy: boolean) => void;
   /** Goes where the standing question asked, without asking again. */
@@ -120,7 +130,11 @@ export const useStoryStore = create<StoryState>()((set, get) => {
    * they said — the second look is not a second question.
    */
   const goToStep = (step: StoryStep) => {
-    set({ step, pendingLeave: null });
+    set({
+      step,
+      pendingLeave: null,
+      ...(step === "elements" ? {} : { focusElementId: null }),
+    });
     rememberPlace(useProjectStore.getState().moka?.metadata.id ?? null, {
       storyId: get().storyId,
       step,
@@ -140,6 +154,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
       openChapterId: story?.chapters[0]?.id ?? null,
       expanded: [],
       pendingLeave: null,
+      focusElementId: null,
     });
     rememberPlace(moka?.metadata.id ?? null, { storyId, step });
   };
@@ -151,6 +166,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
     expanded: [],
     newStoryOpen: false,
     elementsBusy: false,
+    focusElementId: null,
     pendingLeave: null,
 
     adopt(moka) {
@@ -175,7 +191,12 @@ export const useStoryStore = create<StoryState>()((set, get) => {
         true
           ? held.openChapterId
           : null;
-      set({ storyId, step, openChapterId });
+      set({
+        storyId,
+        step,
+        openChapterId,
+        ...(held.storyId === storyId ? {} : { focusElementId: null }),
+      });
       rememberPlace(projectId, { storyId, step });
     },
 
@@ -204,6 +225,14 @@ export const useStoryStore = create<StoryState>()((set, get) => {
         return;
       }
       goToStep(step);
+    },
+
+    focusElement(elementId) {
+      // Going to the elements step is not leaving it: only what the step is
+      // holding back from a departure stands in the way of one, and this is
+      // the opposite direction.
+      if (get().step !== "elements") goToStep("elements");
+      set({ focusElementId: elementId });
     },
 
     setElementsBusy(busy) {
@@ -247,6 +276,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
         expanded: [],
         newStoryOpen: false,
         elementsBusy: false,
+        focusElementId: null,
         pendingLeave: null,
       });
     },

@@ -301,6 +301,15 @@
     "libraryEmpty": "The project holds no pictures yet",
     "fileFailed": "The file could not be added"
   },
+  "inspector": {
+    "label": "{{name}}'s reference",
+    "noArt": "No reference picture yet",
+    "noDescription": "No description yet",
+    "versions": "Versions",
+    "current": "Current",
+    "openCard": "Open the element card",
+    "emptyHint": "Draw one, or bring one in from the shelf or this computer"
+  },
   "elements": {
     "lead": "What the telling is made of, one card each — the characters it follows, the places it happens in, and the things that matter to it",
     "group": "Kinds of element",
@@ -435,6 +444,7 @@
     "mentionUndrawn": "{{name}} has no picture yet — the words stand in",
     "mentionUnknown": "No element is called {{name}} — the words stand in",
     "enlargeRef": "Enlarge {{name}}",
+    "inspectRef": "View and replace {{name}}'s reference",
     "chapterAt": "Episode {{number}} · {{title}}",
     "target": "Target {{duration}}",
     "settled": "{{done}}/{{total}} acts finished",

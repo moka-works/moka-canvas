@@ -7436,6 +7436,14 @@ body.is-dragging-split {
   border-left-color: var(--success);
 }
 
+/* The card a jump from another step landed on, marked for a moment rather than
+   for good: what a reader needs is to see where they were put. */
+.story-element.is-focused {
+  border-left-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 45%, transparent);
+  transition: box-shadow 160ms ease-out;
+}
+
 .story-element-pictures {
   display: grid;
   gap: 10px;
@@ -7887,6 +7895,134 @@ button > .story-spin {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
+/* One element's reference, looked at from the board: the drawing, its takes,
+   and the four doors out of it. It stands as wide as the window can spare so
+   that a picture inspected for a flaw is inspected at its own size. */
+.story-inspector {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 12px;
+  max-height: 88vh;
+  max-width: min(1100px, 94vw);
+  overflow-y: auto;
+  padding: 16px;
+  width: 100%;
+}
+
+.story-inspector-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.story-inspector-title {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.story-inspector-title h2 {
+  font-size: 16px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-inspector-description {
+  margin: 0;
+}
+
+.story-inspector-body {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.story-inspector-stage {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  justify-content: center;
+  min-height: 240px;
+  overflow: hidden;
+  position: relative;
+}
+
+.story-inspector-stage img {
+  display: block;
+  max-height: 60vh;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.story-inspector-empty {
+  border: none;
+  padding: 48px 16px;
+  width: 100%;
+}
+
+.story-inspector-side {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+}
+
+.story-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.story-inspector-versions {
+  display: grid;
+  gap: 8px;
+}
+
+.story-version-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+}
+
+.story-version {
+  background: var(--canvas);
+  border: 2px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  font-size: 11px;
+  gap: 4px;
+  padding: 4px;
+}
+
+.story-version img {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-sm);
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.story-version.is-current {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+@media (max-width: 720px) {
+  .story-inspector-body {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* One drawing, and the ✕ that throws it away: two buttons beside each other
    rather than inside each other, which is why the tile has a wrapper at all. */
 .story-pick-tile {
@@ -8192,7 +8328,45 @@ button > .story-spin {
   display: inline-flex;
   font-size: 12px;
   gap: 4px;
-  padding: 3px 6px 3px 10px;
+  padding: 3px 6px 3px 5px;
+}
+
+/* The chip's own little picture: a reference is recognised by its drawing
+   before its name is read, so the drawing stands where the chip begins. */
+.story-ref-view {
+  align-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 6px;
+  padding: 0;
+}
+
+.story-ref-view:hover {
+  color: var(--primary);
+}
+
+.story-ref-avatar {
+  border-radius: 999px;
+  display: block;
+  flex: none;
+  height: 20px;
+  object-fit: cover;
+  width: 20px;
+}
+
+.story-ref-avatar.is-empty {
+  background: var(--surface);
+  border: 1px dashed var(--stroke);
+}
+
+.story-ref-choice-name {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .story-ref.is-gone {

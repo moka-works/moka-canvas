@@ -154,6 +154,9 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [adding, setAdding] = useState(false);
   // The cards a bulk action is about, chosen one checkbox at a time.
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // The card a jump from another step asked to be brought into view.
+  const [focused, setFocused] = useState<string | null>(null);
+  const focusElementId = useStoryStore((state) => state.focusElementId);
   const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
   const [removingPicked, setRemovingPicked] = useState(false);
   // The page each kind was last standing on, so going back to a kind goes
@@ -200,6 +203,45 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const page = Math.min(pageOf[kind], pageCount);
   const first = (page - 1) * perPage;
   const visible = shown.slice(first, first + perPage);
+
+  // A picture looked at from the board, or a card opened from a reference row,
+  // lands on its own card rather than on the first page of the cast: the kind
+  // is widened to the whole cast, the page that holds it is turned to, and the
+  // card is marked so that the reader sees where they were put.
+  useEffect(() => {
+    if (focusElementId === null) return;
+    const index = story.elements.findIndex(
+      (element) => element.id === focusElementId,
+    );
+    useStoryStore.getState().focusElement(null);
+    if (index === -1) return;
+    setKind("all");
+    setSorting(false);
+    setPicked(new Set());
+    setBulkAction("");
+    setPageOf((held) => ({
+      ...held,
+      all: Math.floor(index / perPage) + 1,
+    }));
+    setFocused(focusElementId);
+  }, [focusElementId, perPage, story.elements]);
+
+  // The card is drawn on the page the effect above turned to, so the scroll
+  // waits for that paint: what a jump promises is the card in the middle of
+  // the window rather than the page it stands on.
+  useEffect(() => {
+    if (focused === null) return;
+    const frame = requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-element-id="${focused}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const timer = setTimeout(() => setFocused(null), 2600);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [focused]);
 
   /** Turns to a page of the kind being looked at, kept for that kind. */
   const goToPage = (wanted: number) => {
@@ -771,6 +813,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   busyMain={drawing(element, "main")}
                   busyTurnaround={drawing(element, "turnaround")}
                   element={element}
+                  focused={focused === element.id}
                   key={element.id}
                   onSelect={select}
                   selected={picked.has(element.id)}

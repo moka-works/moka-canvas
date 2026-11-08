@@ -1,9 +1,6 @@
 import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorText } from "../../../api/client";
-import { assetsApi } from "../../../api/assets";
-
 import {
   ASPECT_LABELS,
   STORY_ASPECTS,
@@ -11,9 +8,7 @@ import {
   currentTake,
   elementOf,
   slotWithoutTake,
-  slotWithCurrent,
   voiceNamed,
-  withTake,
 } from "../../../shared/domain";
 import type {
   StoryAspect,
@@ -25,13 +20,17 @@ import type {
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { useAppStore } from "../../editor/stores/appStore";
-import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { planElementArtWaves, resolveVoice } from "../jobs/plan";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { elementRatio } from "./ratios";
+import {
+  chooseElementTake,
+  keepElementPicture,
+  uploadElementPicture,
+  writeElementSlot,
+} from "./elementPictures";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
@@ -61,6 +60,7 @@ export const ElementCard = memo(function ElementCard({
   busyTurnaround,
   selected,
   onSelect,
+  focused,
 }: {
   story: StoryDocument;
   element: StoryElement;
@@ -71,6 +71,8 @@ export const ElementCard = memo(function ElementCard({
   /** Whether the card is among those a bulk action is about. */
   selected: boolean;
   onSelect: (elementId: string, selected: boolean) => void;
+  /** Whether a jump from another step asked for this card to be in view. */
+  focused?: boolean;
 }) {
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
@@ -102,46 +104,10 @@ export const ElementCard = memo(function ElementCard({
     );
   };
 
-  /**
-   * A picture from this computer, filed on the shelf and kept here.
-   *
-   * The file is the project's before the place can name it, so what is
-   * waiting to be saved goes first: a command pointing at a file the server
-   * has not been told about yet is a command it refuses.
-   */
-  const upload = async (view: "main" | "turnaround", file: File) => {
-    try {
-      await useProjectStore.getState().flush();
-      const after = useProjectStore.getState();
-      if (after.pending.length > 0 || after.saveStatus === "conflicted") {
-        const blocked = saveTrouble();
-        useAppStore
-          .getState()
-          .pushToast("error", blocked.message, undefined, blocked.detail);
-        return;
-      }
-      const filed = await assetsApi.upload(file, { categoryHint: "images" });
-      useProjectStore.getState().integrateAssetEntry(filed.entry, {
-        revision: filed.revision,
-        updatedAt: filed.updatedAt,
-      });
-      keep(story, element, view, filed.entry.id);
-    } catch (problem) {
-      const trouble = errorText(problem);
-      useAppStore
-        .getState()
-        .pushToast(
-          "error",
-          t("story:panels.fileFailed"),
-          undefined,
-          trouble.detail ?? trouble.message,
-        );
-    }
-  };
-
   return (
     <li
-      className="story-element"
+      className={`story-element${focused === true ? " is-focused" : ""}`}
+      data-element-id={element.id}
       data-testid={`story-element-${element.kind}-${element.name}`}
     >
       <div className="story-element-pictures">
@@ -149,10 +115,14 @@ export const ElementCard = memo(function ElementCard({
           busy={busyMain}
           canGenerate
           label={t("story:elements.main")}
-          onChoose={(assetId) => choose(story, element, "main", assetId)}
+          onChoose={(assetId) =>
+            chooseElementTake(story, element, "main", assetId)
+          }
           onGenerate={() => generate("main")}
           onPickFromLibrary={() => setPicking("main")}
-          onUpload={(file) => void upload("main", file)}
+          onUpload={(file) =>
+            void uploadElementPicture(story, element, "main", file)
+          }
           onRemove={(assetId) =>
             removeOldTake(assetId, () =>
               dropTake(story, element.id, "main", assetId),
@@ -172,11 +142,13 @@ export const ElementCard = memo(function ElementCard({
             label={t("story:elements.turnaround")}
             note={t("story:elements.turnaroundFour")}
             onChoose={(assetId) =>
-              choose(story, element, "turnaround", assetId)
+              chooseElementTake(story, element, "turnaround", assetId)
             }
             onGenerate={() => generate("turnaround")}
             onPickFromLibrary={() => setPicking("turnaround")}
-            onUpload={(file) => void upload("turnaround", file)}
+            onUpload={(file) =>
+              void uploadElementPicture(story, element, "turnaround", file)
+            }
             onRemove={(assetId) =>
               removeOldTake(assetId, () =>
                 dropTake(story, element.id, "turnaround", assetId),
@@ -333,7 +305,7 @@ export const ElementCard = memo(function ElementCard({
               : "story:elements.turnaround",
           )}
           onChoose={(assetId) => {
-            keep(story, element, picking, assetId);
+            keepElementPicture(story, element, picking, assetId);
             setPicking(null);
           }}
           onClose={() => setPicking(null)}
@@ -462,61 +434,6 @@ function write(
   ]);
 }
 
-/** One of an element's two pictures, whole, as the reader leaves it. */
-function writeSlot(
-  story: StoryDocument,
-  element: StoryElement,
-  view: "main" | "turnaround",
-  slot: StorySlot,
-) {
-  return execute(i18n.t("story:history.elements"), [
-    {
-      type: "setStorySlot",
-      storyId: story.id,
-      target: { kind: "element", elementId: element.id, view },
-      slot,
-    },
-  ]);
-}
-
-/** Keeps the take a reader picked, and lets the older ones go on being there. */
-function choose(
-  story: StoryDocument,
-  element: StoryElement,
-  view: "main" | "turnaround",
-  assetId: string,
-): void {
-  const slot = view === "main" ? element.main : element.turnaround;
-  if (slot === undefined) return;
-  writeSlot(story, element, view, slotWithCurrent(slot, assetId));
-}
-
-/**
- * A picture from the shelf, kept as the place's newest take.
- *
- * The file may be one the place has never held — a drawing from another
- * telling, or one brought in from this computer — so this keeps a take for it
- * rather than walking a list of takes it is already among.
- */
-function keep(
-  story: StoryDocument,
-  element: StoryElement,
-  view: "main" | "turnaround",
-  assetId: string,
-): void {
-  const slot = view === "main" ? element.main : element.turnaround;
-  if (slot === undefined) return;
-  writeSlot(
-    story,
-    element,
-    view,
-    withTake(slot, {
-      assetIds: [assetId],
-      createdAt: new Date().toISOString(),
-    }),
-  );
-}
-
 /**
  * One of an element's drawings dropped from its place, as the live document
  * holds that place: a slot is written whole, so a slot read off the card's
@@ -536,9 +453,7 @@ function dropTake(
     return "gone";
   const without = slotWithoutTake(slot, assetId);
   if (without === slot) return "gone";
-  return writeSlot(live, element, view, without) === null
-    ? "refused"
-    : "dropped";
+  return writeElementSlot(live, element, view, without) ? "dropped" : "refused";
 }
 
 /** Takes an element out of the story, leaving the pictures it was drawn in. */

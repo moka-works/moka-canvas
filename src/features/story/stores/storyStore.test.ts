@@ -60,6 +60,20 @@ describe("where the room is standing", () => {
     expect(store().step).toBe("storyboard");
   });
 
+  it("opens the elements step on the card a picture was looked at from", () => {
+    store().adopt(buildStoryMokaFile());
+    store().goStep("storyboard");
+    expect(store().step).toBe("storyboard");
+
+    store().focusElement(storyIds().hero);
+    expect(store().step).toBe("elements");
+    expect(store().focusElementId).toBe(storyIds().hero);
+
+    // Stepping away from the elements clears the place a jump left behind.
+    store().goStep("storyboard");
+    expect(store().focusElementId).toBeNull();
+  });
+
   it("stands on no story at all when the project tells none", () => {
     const moka = buildStoryMokaFile();
     store().adopt({ ...moka, stories: [] });
