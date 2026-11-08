@@ -171,6 +171,7 @@ fn element(id: &str, kind: StoryElementKind) -> StoryElement {
             None
         },
         variants: None,
+        reference: None,
         voice: None,
         image_model: None,
         ratio: None,
@@ -336,6 +337,7 @@ fn story_document() -> MokaFile {
                     takes: vec![take(HERO_SHEET)],
                 }),
                 variants: None,
+                reference: None,
                 voice: None,
                 image_model: None,
                 ratio: None,

@@ -347,6 +347,8 @@ export function storyElementMainPrompt(
     kind: StoryElementKind;
     name: string;
     description: string;
+    /** Whether a reference picture travels with the ask. */
+    hasReference?: boolean;
   },
 ): string {
   return render(storyElementMain, input);

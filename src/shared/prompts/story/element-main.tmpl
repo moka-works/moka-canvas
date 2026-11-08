@@ -1,3 +1,5 @@
-Draw one {{ kind }} of a film: {{ name }} — {{ description }}
+Draw one {{ kind }} of a film: {{ name }} — {{ description }}{% if hasReference %}
+
+The attached picture is the reference: keep the same identity, proportions and distinguishing details, while drawing the form the description gives.{% endif %}
 
 A single {{ aspect }} frame in the film's own look: {{ style }}. {% if kind == "character" %}Show them whole from head to foot, facing the camera, in the clothes and the light the description gives them, standing alone on a plain white background with no room and no scenery behind them — nothing in the frame but the white and the one figure.{% elif kind == "prop" %}Show it whole and unmistakable, in the state the description gives it, alone on a plain white background with no room and no scenery behind it — nothing in the frame but the white and the one thing.{% else %}Show it whole and unmistakable, in the light and the state the description gives it.{% endif %} No text, no lettering, no watermark, no frame around the picture.

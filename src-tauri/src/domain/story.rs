@@ -478,6 +478,21 @@ pub struct StoryChapter {
     pub acts: Vec<StoryAct>,
 }
 
+/// A picture an element's main drawing is made from: another element's form,
+/// or a file on the shelf.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StoryPictureReference {
+    #[serde(rename_all = "camelCase")]
+    Element {
+        element_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variant_id: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Asset { asset_id: AssetId },
+}
+
 /// One form an element takes: the same character at another age, the same
 /// place at another hour.
 ///
@@ -501,6 +516,9 @@ pub struct StoryElementVariant {
     /// The frame this form is drawn in, for a prop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ratio: Option<StoryAspect>,
+    /// The picture this form's main drawing is made from, where one is named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<StoryPictureReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -518,6 +536,10 @@ pub struct StoryElement {
     /// The other forms this element takes, in the order the card offers them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variants: Option<Vec<StoryElementVariant>>,
+    /// The picture the default form's main drawing is made from, where one is
+    /// named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<StoryPictureReference>,
     /// The voice this character speaks in, when the reader has given it one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<StoryVoiceProfile>,
@@ -683,6 +705,13 @@ pub struct StoryElementPatch {
     /// The element's forms, whole; an empty list takes every one of them away.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variants: Option<Vec<StoryElementVariant>>,
+    /// The default form's picture reference; a null takes it away.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub reference: Option<Option<StoryPictureReference>>,
 }
 
 /// The fields a caller may move on an act, for `updateStoryAct`.
@@ -816,6 +845,24 @@ impl StoryDocument {
                 }
             }
         }
+        let reference_assets: Vec<AssetId> = self
+            .elements
+            .iter()
+            .flat_map(|element| {
+                element.reference.iter().chain(
+                    element
+                        .variants
+                        .iter()
+                        .flatten()
+                        .filter_map(|form| form.reference.as_ref()),
+                )
+            })
+            .filter_map(|reference| match reference {
+                StoryPictureReference::Asset { asset_id } => Some(asset_id.clone()),
+                StoryPictureReference::Element { .. } => None,
+            })
+            .collect();
+        found.extend(reference_assets);
         found
     }
 
@@ -1373,6 +1420,45 @@ fn check_story_brief(brief: &StoryBrief) -> Result<(), CommandError> {
     Ok(())
 }
 
+/// A picture an element's drawing is made from, and whether the story holds it.
+fn check_picture_reference(
+    story: &StoryDocument,
+    reference: &StoryPictureReference,
+) -> Result<(), CommandError> {
+    match reference {
+        StoryPictureReference::Asset { asset_id } => {
+            if asset_id.trim().is_empty() {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "The reference picture names no file",
+                ));
+            }
+            Ok(())
+        }
+        StoryPictureReference::Element {
+            element_id,
+            variant_id,
+        } => {
+            let element = story
+                .elements
+                .iter()
+                .find(|element| &element.id == element_id)
+                .ok_or_else(story_target_invalid)?;
+            if let Some(variant_id) = variant_id {
+                if !element
+                    .variants
+                    .iter()
+                    .flatten()
+                    .any(|form| &form.id == variant_id)
+                {
+                    return Err(story_target_invalid());
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 /// A story's own guardrails, read before anything of it is written down.
 fn check_story(story: &StoryDocument) -> Result<(), CommandError> {
     check_story_name(&story.name)?;
@@ -1401,7 +1487,13 @@ fn check_story(story: &StoryDocument) -> Result<(), CommandError> {
     }
     for element in &story.elements {
         let mut seen: Vec<&str> = Vec::new();
+        if let Some(reference) = &element.reference {
+            check_picture_reference(story, reference)?;
+        }
         for form in element.variants.iter().flatten() {
+            if let Some(reference) = &form.reference {
+                check_picture_reference(story, reference)?;
+            }
             let name = form.name.trim();
             if form.id.trim().is_empty()
                 || seen.contains(&form.id.as_str())
@@ -1816,6 +1908,10 @@ pub fn apply_story_command(
                         // Forms are the reader's work: a re-listing that says
                         // nothing of them leaves them where they were.
                         variants: element.variants.clone().or_else(|| before.variants.clone()),
+                        reference: element
+                            .reference
+                            .clone()
+                            .or_else(|| before.reference.clone()),
                         voice: element.voice.clone().or_else(|| before.voice.clone()),
                         image_model: element
                             .image_model
@@ -1921,6 +2017,9 @@ pub fn apply_story_command(
                     }
                 }
             }
+            if let Some(Some(reference)) = &patch.reference {
+                check_picture_reference(story, reference)?;
+            }
             let previous = StoryElementPatch {
                 name: patch.name.as_ref().map(|_| element.name.clone()),
                 kind: patch.kind.map(|_| element.kind),
@@ -1947,6 +2046,7 @@ pub fn apply_story_command(
                     .variants
                     .as_ref()
                     .map(|_| element.variants.clone().unwrap_or_default()),
+                reference: patch.reference.as_ref().map(|_| element.reference.clone()),
             };
             let mut next = story.clone();
             for held in next.elements.iter_mut() {
@@ -1983,6 +2083,9 @@ pub fn apply_story_command(
                     } else {
                         Some(variants.clone())
                     };
+                }
+                if let Some(reference) = &patch.reference {
+                    held.reference = reference.clone();
                 }
             }
             check_story(&next)?;

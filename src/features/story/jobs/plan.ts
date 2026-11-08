@@ -40,6 +40,7 @@ import {
   formDescription,
   formName,
   keyframeAt,
+  pictureReferenceAsset,
   storyMentions,
   stripStoryMentions,
   takeFile,
@@ -106,6 +107,9 @@ export function jobKey(target: StoryTarget): string {
         kind: "element",
         elementId: target.elementId,
         view: target.view,
+        ...(target.variantId === undefined
+          ? {}
+          : { variantId: target.variantId }),
       });
     case "keyframeArt":
       return targetKey({
@@ -742,6 +746,13 @@ export function planElementArt(
     const size = imageSizeForAspect(
       view === "turnaround" ? "1:1" : formAspect(story, element, form),
     );
+    // A drawing may be made from another element's picture or one on the
+    // shelf; a form made from its element starts out pointing at the default
+    // form, which is what keeps the two the same person.
+    const reference = pictureReferenceAsset(
+      story,
+      form?.reference ?? element.reference,
+    );
     return [
       {
         id: jobKey(target),
@@ -759,15 +770,20 @@ export function planElementArt(
                 kind: element.kind,
                 name: formName(element, form),
                 description: formDescription(element, form),
+                hasReference: reference !== undefined,
               }),
-        // A main picture is drawn from its description alone: handing the
-        // previous one over would ask for the drawing that is being replaced.
-        // A turn-around is the other way round — four views of the character
-        // who was already drawn, from the picture that drew them.
+        // A main picture is drawn from its description, and from the
+        // reference its card names where one is named. A turn-around is drawn
+        // from the picture of that same form, which is the drawing it shows
+        // four views of.
         inputs:
-          view === "turnaround" && main !== undefined
-            ? [{ role: "reference", assetId: main.assetIds[0] }]
-            : [],
+          view === "turnaround"
+            ? main === undefined
+              ? []
+              : [{ role: "reference", assetId: main.assetIds[0] }]
+            : reference === undefined
+              ? []
+              : [{ role: "reference", assetId: reference }],
         params: { size },
       },
     ];

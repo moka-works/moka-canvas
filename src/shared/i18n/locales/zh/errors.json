@@ -118,7 +118,8 @@
     "directorSceneInvalid": "导演台场景在 {{path}} 处无效：{{reason}}",
     "directorSceneTooLarge": "导演台场景“{{title}}”为 {{bytes}} 字节；上限为 {{limit}}",
     "storyElementModelInvalid": "元素的图片模型名称不合法",
-    "storyElementVariantsInvalid": "元素的形态必须有唯一且合法的 id"
+    "storyElementVariantsInvalid": "元素的形态必须有唯一且合法的 id",
+    "storyElementReferenceInvalid": "参考图不是故事能引用的文件"
   },
   "timeline": {
     "clipAssetMissing": "片段引用的资源不在项目中",

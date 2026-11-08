@@ -980,6 +980,19 @@ export interface StoryVoiceProfile {
 }
 
 /**
+ * A picture an element's main drawing is made from: another element's form, or
+ * a file on the shelf.
+ */
+export type StoryPictureReference =
+  | {
+      kind: "element";
+      elementId: string;
+      /** The element's form; absent means its default form. */
+      variantId?: string;
+    }
+  | { kind: "asset"; assetId: AssetId };
+
+/**
  * One form an element takes: the same character earlier or later in life, the
  * same place at another hour.
  *
@@ -999,6 +1012,8 @@ export interface StoryElementVariant {
   imageModel?: string;
   /** The frame this form is drawn in, for a prop. */
   ratio?: StoryAspect;
+  /** The picture this form's main drawing is made from, where one is named. */
+  reference?: StoryPictureReference;
 }
 
 /** Something the story is made of: a character, a place, a thing. */
@@ -1012,6 +1027,11 @@ export interface StoryElement {
   main: StorySlot;
   /** The full-length turn-around view, which only a character is drawn with. */
   turnaround?: StorySlot;
+  /**
+   * The picture the default form's main drawing is made from, where one is
+   * named.
+   */
+  reference?: StoryPictureReference;
   /**
    * The other forms this element takes, in the order the card offers them.
    *
@@ -1229,6 +1249,8 @@ export interface StoryElementPatch {
   ratio?: StoryAspect | null;
   /** The element's forms, whole; an empty list takes every one of them away. */
   variants?: StoryElementVariant[];
+  /** The default form's picture reference; a null takes it away. */
+  reference?: StoryPictureReference | null;
 }
 
 /**

@@ -31,6 +31,7 @@ import type {
   StoryElementKind,
   StoryElementVariant,
   StoryKeyframe,
+  StoryPictureReference,
   StorySlot,
   StorySlotTarget,
   StoryShotSize,
@@ -254,6 +255,21 @@ export function formDrawn(
   const turnaround = form === undefined ? element.turnaround : form.turnaround;
   if (main.takes.length === 0) return false;
   return element.kind !== "character" || (turnaround?.takes.length ?? 0) > 0;
+}
+
+/** The picture a reference names, as the file an ask can carry. */
+export function pictureReferenceAsset(
+  story: StoryDocument,
+  reference: StoryPictureReference | undefined,
+): string | undefined {
+  if (reference === undefined) return undefined;
+  if (reference.kind === "asset") return reference.assetId;
+  const element = elementOf(story, reference.elementId);
+  if (element === undefined) return undefined;
+  const form = elementForm(element, reference.variantId);
+  if (reference.variantId !== undefined && form === undefined) return undefined;
+  return currentTake(form === undefined ? element.main : form.main)
+    ?.assetIds[0];
 }
 
 /** Whether an element is finished: described, and every form of it drawn. */

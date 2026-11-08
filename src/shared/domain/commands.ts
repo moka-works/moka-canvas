@@ -2350,6 +2350,10 @@ function applyOne(
           ...(element.variants === undefined && before.variants !== undefined
             ? { variants: before.variants }
             : {}),
+          // The reference a drawing is made from is the reader's answer too.
+          ...(element.reference === undefined && before.reference !== undefined
+            ? { reference: before.reference }
+            : {}),
         };
       });
       const next: StoryDocument = { ...story, elements };
@@ -2455,8 +2459,15 @@ function applyOne(
               "VALIDATION_FAILED",
               i18n.t("errors:command.storyAspectUnknown"),
             );
+          if (form.reference !== undefined)
+            checkPictureReference(story, form.reference);
         }
       }
+      if (
+        command.patch.reference !== undefined &&
+        command.patch.reference !== null
+      )
+        checkPictureReference(story, command.patch.reference);
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
@@ -2497,6 +2508,9 @@ function applyOne(
           if (command.patch.ratio === null) delete merged.ratio;
           else if (command.patch.ratio !== undefined)
             merged.ratio = command.patch.ratio;
+          if (command.patch.reference === null) delete merged.reference;
+          else if (command.patch.reference !== undefined)
+            merged.reference = command.patch.reference;
           if (Array.isArray(command.patch.variants)) {
             if (command.patch.variants.length === 0) delete merged.variants;
             else merged.variants = command.patch.variants;
@@ -3340,6 +3354,39 @@ function checkDialogue(lines: StoryKeyframe["dialogue"]) {
         i18n.t("errors:command.storyDialogueTooLong"),
       );
   }
+}
+
+/** A picture an element's drawing is made from, and whether the story holds it. */
+function checkPictureReference(
+  story: StoryDocument,
+  reference: NonNullable<StoryElement["reference"]>,
+): void {
+  if (reference.kind === "asset") {
+    if (reference.assetId.trim() === "")
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:command.storyElementReferenceInvalid"),
+      );
+    return;
+  }
+  const target = story.elements.find(
+    (element) => element.id === reference.elementId,
+  );
+  if (target === undefined)
+    throw new CommandError(
+      "STORY_TARGET_INVALID",
+      i18n.t("errors:command.storyElementNotFound"),
+    );
+  if (
+    reference.variantId !== undefined &&
+    !(target.variants ?? []).some(
+      (variant) => variant.id === reference.variantId,
+    )
+  )
+    throw new CommandError(
+      "STORY_TARGET_INVALID",
+      i18n.t("errors:command.storyElementNotFound"),
+    );
 }
 
 /** A story's own guardrails, read before anything of it is written down. */

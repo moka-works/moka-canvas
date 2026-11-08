@@ -800,6 +800,9 @@ export function createElementVariant(
       ? { imageModel: element.imageModel }
       : {}),
     ...(element.ratio !== undefined ? { ratio: element.ratio } : {}),
+    // A new form is the same element changed, so its first drawing is made
+    // from the element's default form until the reader names another.
+    reference: { kind: "element", elementId: element.id },
   };
 }
 

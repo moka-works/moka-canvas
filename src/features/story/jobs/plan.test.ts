@@ -517,6 +517,45 @@ describe("planning the drawings", () => {
     expect(prop[0].params).toEqual({ size: "1024x1024" });
   });
 
+  it("draws a main picture from the reference its card names", () => {
+    const held = story();
+    held.elements.find((element) => element.id === ids.hero)!.reference = {
+      kind: "asset",
+      assetId: "asset-reference",
+    };
+    const items = planElementArt(held, [
+      { elementId: ids.hero, view: "main" },
+    ]);
+    expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: "asset-reference" },
+    ]);
+    expect(items[0].prompt).toContain("attached picture");
+  });
+
+  it("draws a form from its own words and its element's default form", () => {
+    const held = story();
+    const hero = held.elements.find((element) => element.id === ids.hero)!;
+    hero.variants = [
+      {
+        id: "variant-old",
+        name: "老年",
+        description: "二十年以后，头发白了。",
+        main: { takes: [] },
+        turnaround: { takes: [] },
+        reference: { kind: "element", elementId: ids.hero },
+      },
+    ];
+    const items = planElementArt(held, [
+      { elementId: ids.hero, view: "main", variantId: "variant-old" },
+    ]);
+    expect(items[0].id).toBe(`element:main:${ids.hero}:variant-old`);
+    expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: ids.heroMain },
+    ]);
+    expect(items[0].prompt).toContain("老年");
+    expect(items[0].prompt).toContain("头发白了");
+  });
+
   it("draws a thing in the frame its card names", () => {
     const held = story();
     held.elements.find((element) => element.id === ids.prop)!.ratio = "9:16";

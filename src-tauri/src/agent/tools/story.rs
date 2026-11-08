@@ -727,6 +727,7 @@ fn element_from(value: &Value, existing: Option<&StoryElement>) -> Result<StoryE
         main: empty_slot(),
         turnaround: None,
         variants: None,
+        reference: None,
         voice: None,
         image_model: None,
         ratio: None,

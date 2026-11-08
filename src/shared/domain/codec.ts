@@ -56,6 +56,7 @@ import type {
   StoryEdit,
   StoryElement,
   StoryElementVariant,
+  StoryPictureReference,
   StoryKeyframe,
   StorySlot,
   StoryTake,
@@ -1626,7 +1627,34 @@ function decodeStoryElement(value: unknown): StoryElement {
   }
   const variants = decodeStoryElementVariants(doc.variants);
   if (variants !== undefined) element.variants = variants;
+  const reference = decodePictureReference(doc.reference);
+  if (reference !== undefined) element.reference = reference;
   return element;
+}
+
+/** The picture one form is drawn from, as a document carries it. */
+function decodePictureReference(
+  value: unknown,
+): StoryPictureReference | undefined {
+  if (value === undefined || value === null) return undefined;
+  const doc = asRecord(value, "elements[].reference");
+  const kind = optionalString(doc.kind);
+  if (kind === "element") {
+    const elementId = optionalString(doc.elementId);
+    if (elementId === undefined || elementId === "") return undefined;
+    const variantId = optionalString(doc.variantId);
+    return {
+      kind: "element",
+      elementId,
+      ...(variantId !== undefined && variantId !== "" ? { variantId } : {}),
+    };
+  }
+  if (kind === "asset") {
+    const assetId = optionalString(doc.assetId);
+    if (assetId === undefined || assetId === "") return undefined;
+    return { kind: "asset", assetId };
+  }
+  return undefined;
 }
 
 /**
@@ -1658,6 +1686,8 @@ function decodeStoryElementVariants(
     if (ratio !== undefined && STORY_ASPECTS.includes(ratio as StoryAspect)) {
       form.ratio = ratio as StoryAspect;
     }
+    const reference = decodePictureReference(doc.reference);
+    if (reference !== undefined) form.reference = reference;
     return [form];
   });
   return forms.length === 0 ? undefined : forms;

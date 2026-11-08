@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { assetThumbUrl } from "../../../api/assets";
 import {
   ASPECT_LABELS,
   STORY_ASPECTS,
@@ -8,6 +9,7 @@ import {
   currentTake,
   elementForm,
   elementOf,
+  pictureReferenceAsset,
   slotWithoutTake,
   targetKey,
   voiceNamed,
@@ -18,6 +20,7 @@ import type {
   StoryDocument,
   StoryElement,
   StoryElementPatch,
+  StoryPictureReference,
   StorySlot,
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
@@ -25,6 +28,7 @@ import { execute } from "../../editor/commands/execute";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { planElementArtWaves, resolveVoice } from "../jobs/plan";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
+import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { elementRatio } from "./ratios";
 import {
@@ -38,6 +42,7 @@ import { StoryEditDialog } from "./StoryEditDialog";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
 import { ElementVariantDialog } from "./ElementVariantDialog";
+import { ElementReferencePicker } from "./ElementReferencePicker";
 import { useField } from "./useField";
 import { VoiceFields } from "./VoiceFields";
 
@@ -92,7 +97,10 @@ export const ElementCard = memo(function ElementCard({
   const [picking, setPicking] = useState<"main" | "turnaround" | null>(null);
   // The place whose picture is being changed rather than drawn again.
   const [editing, setEditing] = useState<"main" | "turnaround" | null>(null);
+  // The dialog that names the picture this form's drawing is made from.
+  const [pickingReference, setPickingReference] = useState(false);
   const run = useStoryWavesAsk();
+  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
   const variants = element.variants ?? [];
   const variant = elementForm(element, formId ?? undefined);
   const mainSlot = variant === undefined ? element.main : variant.main;
@@ -103,6 +111,23 @@ export const ElementCard = memo(function ElementCard({
   const activeRatio = variant === undefined ? element.ratio : variant.ratio;
   const activeDescription =
     variant === undefined ? element.description : variant.description;
+  const activeReference =
+    variant === undefined ? element.reference : variant.reference;
+  const referenceAsset = pictureReferenceAsset(story, activeReference);
+  const referenceName =
+    activeReference === undefined
+      ? undefined
+      : activeReference.kind === "asset"
+        ? (images.find((entry) => entry.id === activeReference.assetId)?.name ??
+          t("story:elements.referenceAsset"))
+        : (() => {
+            const held = elementOf(story, activeReference.elementId);
+            if (held === undefined) return t("story:elements.referenceGone");
+            const form = elementForm(held, activeReference.variantId);
+            return form === undefined
+              ? held.name
+              : `${held.name} · ${form.name}`;
+          })();
   const main = currentTake(mainSlot);
   const character = element.kind === "character";
   const description = useField(activeDescription, (value) => {
@@ -129,6 +154,7 @@ export const ElementCard = memo(function ElementCard({
     description?: string;
     imageModel?: string | null;
     ratio?: StoryAspect | null;
+    reference?: StoryPictureReference | null;
   }) => {
     if (variant === undefined) {
       write(story, element, patch);
@@ -153,6 +179,12 @@ export const ElementCard = memo(function ElementCard({
               ...(patch.ratio !== undefined
                 ? {
                     ratio: patch.ratio === null ? undefined : patch.ratio,
+                  }
+                : {}),
+              ...(patch.reference !== undefined
+                ? {
+                    reference:
+                      patch.reference === null ? undefined : patch.reference,
                   }
                 : {}),
             }
@@ -364,6 +396,46 @@ export const ElementCard = memo(function ElementCard({
         )}
       </div>
 
+      <div
+        className="story-element-reference"
+        data-testid={`story-element-reference-${element.name}`}
+      >
+        <span className="story-hint">{t("story:elements.reference")}</span>
+        {referenceAsset === undefined || referenceName === undefined ? (
+          <span className="story-hint">
+            {t("story:elements.referenceNone")}
+          </span>
+        ) : (
+          <span className="story-reference-current">
+            <img
+              alt={referenceName}
+              decoding="async"
+              loading="lazy"
+              src={assetThumbUrl(referenceAsset, 96)}
+            />
+            <span>{referenceName}</span>
+          </span>
+        )}
+        <button
+          className="link"
+          data-testid={`story-element-reference-pick-${element.name}`}
+          onClick={() => setPickingReference(true)}
+          type="button"
+        >
+          {t("story:elements.referenceChoose")}
+        </button>
+        {activeReference !== undefined && (
+          <button
+            className="link"
+            data-testid={`story-element-reference-clear-${element.name}`}
+            onClick={() => writeForm({ reference: null })}
+            type="button"
+          >
+            {t("story:elements.referenceClear")}
+          </button>
+        )}
+      </div>
+
       <textarea
         aria-label={t("story:elements.description")}
         className="story-element-description"
@@ -449,6 +521,19 @@ export const ElementCard = memo(function ElementCard({
           onClose={() => setManaging(false)}
           onSelect={setFormId}
           onWrite={(next) => writeVariants(story, element, next)}
+        />
+      )}
+
+      {pickingReference && (
+        <ElementReferencePicker
+          current={activeReference}
+          element={element}
+          onChoose={(reference) => {
+            writeForm({ reference });
+            setPickingReference(false);
+          }}
+          onClose={() => setPickingReference(false)}
+          story={story}
         />
       )}
 
