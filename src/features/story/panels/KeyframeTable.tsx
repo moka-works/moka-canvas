@@ -137,12 +137,8 @@ export function KeyframeTable({
         <thead>
           <tr>
             <th className="story-col-index">#</th>
-            <th>{t("story:storyboard.shotSize")}</th>
-            <th>{t("story:storyboard.cameraMove")}</th>
-            <th>{t("story:storyboard.angle")}</th>
+            <th>{t("story:storyboard.attributes")}</th>
             <th>{t("story:storyboard.content")}</th>
-            <th>{t("story:storyboard.dialogue")}</th>
-            <th>{t("story:storyboard.duration")}</th>
             <th>{t("story:storyboard.frame")}</th>
             {perShot && <th>{t("story:storyboard.clip")}</th>}
             <th>{t("story:storyboard.rowActions")}</th>
@@ -173,7 +169,7 @@ export function KeyframeTable({
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={perShot ? 10 : 9}>
+            <td colSpan={perShot ? 6 : 5}>
               <button
                 className="link"
                 data-testid="story-kf-add"
@@ -374,58 +370,131 @@ function KeyframeRow({
           </button>
           <span className="story-kf-number">{at}</span>
         </td>
-        <Cell guessed={given("shotSize")} index={index} testId="size">
-          <select
-            aria-label={cell(t("story:storyboard.shotSize"))}
-            data-testid={`story-kf-size-${index}`}
-            onChange={(event) =>
-              write({
-                shotSize: event.target.value as StoryKeyframe["shotSize"],
-              })
-            }
-            value={keyframe.shotSize}
-          >
-            {STORY_SHOT_SIZES.map((each) => (
-              <option key={each} value={each}>
-                {t(SHOT_SIZE_LABELS[each])}
-              </option>
-            ))}
-          </select>
-        </Cell>
-        <Cell guessed={given("cameraMove")} index={index} testId="move">
-          <select
-            aria-label={cell(t("story:storyboard.cameraMove"))}
-            data-testid={`story-kf-move-${index}`}
-            onChange={(event) =>
-              write({
-                cameraMove: event.target.value as StoryKeyframe["cameraMove"],
-              })
-            }
-            value={keyframe.cameraMove}
-          >
-            {STORY_CAMERA_MOVES.map((each) => (
-              <option key={each} value={each}>
-                {t(CAMERA_MOVE_LABELS[each])}
-              </option>
-            ))}
-          </select>
-        </Cell>
-        <Cell guessed={given("angle")} index={index} testId="angle">
-          <select
-            aria-label={cell(t("story:storyboard.angle"))}
-            data-testid={`story-kf-angle-${index}`}
-            onChange={(event) =>
-              write({ angle: event.target.value as StoryKeyframe["angle"] })
-            }
-            value={keyframe.angle}
-          >
-            {STORY_CAMERA_ANGLES.map((each) => (
-              <option key={each} value={each}>
-                {t(CAMERA_ANGLE_LABELS[each])}
-              </option>
-            ))}
-          </select>
-        </Cell>
+        <td className="story-col-attributes">
+          <div className="story-kf-attributes">
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.shotSize")}
+            </span>
+            <span className="story-kf-attr-control">
+              <select
+                aria-label={cell(t("story:storyboard.shotSize"))}
+                data-testid={`story-kf-size-${index}`}
+                onChange={(event) =>
+                  write({
+                    shotSize: event.target.value as StoryKeyframe["shotSize"],
+                  })
+                }
+                value={keyframe.shotSize}
+              >
+                {STORY_SHOT_SIZES.map((each) => (
+                  <option key={each} value={each}>
+                    {t(SHOT_SIZE_LABELS[each])}
+                  </option>
+                ))}
+              </select>
+              <GuessMark
+                guessed={given("shotSize")}
+                index={index}
+                testId="size"
+              />
+            </span>
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.cameraMove")}
+            </span>
+            <span className="story-kf-attr-control">
+              <select
+                aria-label={cell(t("story:storyboard.cameraMove"))}
+                data-testid={`story-kf-move-${index}`}
+                onChange={(event) =>
+                  write({
+                    cameraMove: event.target
+                      .value as StoryKeyframe["cameraMove"],
+                  })
+                }
+                value={keyframe.cameraMove}
+              >
+                {STORY_CAMERA_MOVES.map((each) => (
+                  <option key={each} value={each}>
+                    {t(CAMERA_MOVE_LABELS[each])}
+                  </option>
+                ))}
+              </select>
+              <GuessMark
+                guessed={given("cameraMove")}
+                index={index}
+                testId="move"
+              />
+            </span>
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.angle")}
+            </span>
+            <span className="story-kf-attr-control">
+              <select
+                aria-label={cell(t("story:storyboard.angle"))}
+                data-testid={`story-kf-angle-${index}`}
+                onChange={(event) =>
+                  write({
+                    angle: event.target.value as StoryKeyframe["angle"],
+                  })
+                }
+                value={keyframe.angle}
+              >
+                {STORY_CAMERA_ANGLES.map((each) => (
+                  <option key={each} value={each}>
+                    {t(CAMERA_ANGLE_LABELS[each])}
+                  </option>
+                ))}
+              </select>
+              <GuessMark
+                guessed={given("angle")}
+                index={index}
+                testId="angle"
+              />
+            </span>
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.dialogue")}
+            </span>
+            <span className="story-kf-attr-control">
+              <button
+                aria-expanded={dialogueOpen}
+                aria-label={cell(t("story:storyboard.dialogue"))}
+                className="story-dialogue-toggle"
+                data-testid={`story-kf-dialogue-${index}`}
+                onClick={onDialogue}
+                type="button"
+              >
+                {keyframe.dialogue.length === 0
+                  ? t("story:storyboard.noLines")
+                  : t("story:storyboard.lines", {
+                      count: keyframe.dialogue.length,
+                    })}
+              </button>
+            </span>
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.duration")}
+            </span>
+            <span className="story-kf-attr-control">
+              <input
+                aria-label={cell(t("story:storyboard.duration"))}
+                className="story-kf-seconds"
+                data-testid={`story-kf-seconds-${index}`}
+                max={SHOT_MAX_S}
+                min={SHOT_MIN_S}
+                onChange={(event) => {
+                  const seconds = Number(event.target.value);
+                  if (!Number.isFinite(seconds)) return;
+                  const ms = Math.round(
+                    Math.min(SHOT_MAX_S, Math.max(SHOT_MIN_S, seconds)) * 1000,
+                  );
+                  write({ durationMs: ms });
+                }}
+                step={0.1}
+                type="number"
+                value={Math.round((keyframe.durationMs / 1000) * 10) / 10}
+              />
+            </span>
+          </div>
+        </td>
         <td className="story-col-content">
           <KeyframePromptCell
             act={act}
@@ -434,42 +503,6 @@ function KeyframeRow({
             keyframe={keyframe}
             story={story}
             write={write}
-          />
-        </td>
-        <td>
-          <button
-            aria-expanded={dialogueOpen}
-            aria-label={cell(t("story:storyboard.dialogue"))}
-            className="story-dialogue-toggle"
-            data-testid={`story-kf-dialogue-${index}`}
-            onClick={onDialogue}
-            type="button"
-          >
-            {keyframe.dialogue.length === 0
-              ? t("story:storyboard.noLines")
-              : t("story:storyboard.lines", {
-                  count: keyframe.dialogue.length,
-                })}
-          </button>
-        </td>
-        <td>
-          <input
-            aria-label={cell(t("story:storyboard.duration"))}
-            className="story-kf-seconds"
-            data-testid={`story-kf-seconds-${index}`}
-            max={SHOT_MAX_S}
-            min={SHOT_MIN_S}
-            onChange={(event) => {
-              const seconds = Number(event.target.value);
-              if (!Number.isFinite(seconds)) return;
-              const ms = Math.round(
-                Math.min(SHOT_MAX_S, Math.max(SHOT_MIN_S, seconds)) * 1000,
-              );
-              write({ durationMs: ms });
-            }}
-            step={0.1}
-            type="number"
-            value={Math.round((keyframe.durationMs / 1000) * 10) / 10}
           />
         </td>
         <td className="story-col-frame">
@@ -615,7 +648,7 @@ function KeyframeRow({
       </tr>
       {dialogueOpen && (
         <tr className="story-dialogue-row">
-          <td colSpan={perShot ? 10 : 9}>
+          <td colSpan={perShot ? 6 : 5}>
             <DialogueEditor
               act={act}
               busyLines={busyLines}
@@ -1011,38 +1044,32 @@ function mentionKinds(
 }
 
 /**
- * One cell of the table, with the mark that says the parser chose its value.
+ * The mark that says the parser chose a value rather than read it.
  *
  * A shot framed as something nobody offered is a shot whose framing is the
  * parser's word rather than the telling's, and the reader can only see that if
  * the cell says so — the answer's own words are in the mark's title.
  */
-function Cell({
-  children,
+function GuessMark({
   guessed,
   index,
   testId,
 }: {
-  children: React.ReactNode;
   guessed: StoryGuess | undefined;
   index: number;
   testId: string;
 }) {
   const { t } = useTranslation();
+  if (guessed === undefined) return null;
   return (
-    <td>
-      {children}
-      {guessed !== undefined && (
-        <span
-          aria-label={t("story:storyboard.guessed", { from: guessed.from })}
-          className="story-guessed"
-          data-testid={`story-guessed-${testId}-${index}`}
-          title={t("story:storyboard.guessed", { from: guessed.from })}
-        >
-          ●
-        </span>
-      )}
-    </td>
+    <span
+      aria-label={t("story:storyboard.guessed", { from: guessed.from })}
+      className="story-guessed"
+      data-testid={`story-guessed-${testId}-${index}`}
+      title={t("story:storyboard.guessed", { from: guessed.from })}
+    >
+      ●
+    </span>
   );
 }
 

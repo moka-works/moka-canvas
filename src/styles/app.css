@@ -8566,6 +8566,51 @@ button > .story-spin {
 }
 
 /*
+  Framing, movement, angle, lines, and length stand in one column, one over
+  another: each is a short word or number, and stacked they take a fraction of
+  the width five separate columns needed while the tall cells beside them keep
+  the row's height.
+*/
+
+.story-kf-attributes {
+  align-items: center;
+  display: grid;
+  gap: 5px 6px;
+  grid-template-columns: max-content max-content;
+}
+
+.story-kf-attr-label {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.story-kf-attr-control {
+  align-items: center;
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+}
+
+.story-kf-attr-control > select,
+.story-kf-attr-control > input {
+  flex: 1 1 auto;
+  min-width: 84px;
+  width: auto;
+}
+
+.story-kf-attr-control > .story-kf-seconds {
+  min-width: 72px;
+}
+
+.story-kf-attr-control > .story-dialogue-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
   The prompt a frame is asked with, exactly as it is sent: the template's own
   sentences greyed and read-only, the shot's words edited in place between
   them, and the pictures those words call in under them.

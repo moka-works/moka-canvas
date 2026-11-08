@@ -533,6 +533,7 @@
     "shotSize": "Framing",
     "cameraMove": "Movement",
     "angle": "Angle",
+    "attributes": "Attributes",
     "filmRole": "Shoot role",
     "filmRoleHint": "How this frame is used when the act is shot: a first frame opens a piece of its own, a first-and-last frame pairs with the next, and references are shot as one piece together",
     "filmRoleSettled": "Used as the closing frame of the piece before it, so it does not open one of its own",

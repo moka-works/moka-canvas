@@ -533,6 +533,7 @@
     "shotSize": "景别",
     "cameraMove": "运镜",
     "angle": "角度",
+    "attributes": "属性",
     "filmRole": "拍摄角色",
     "filmRoleHint": "这张图拍摄时的用法：首帧单独成一段，首尾帧与下一张组成一段，参考与相邻的参考图合成一段",
     "filmRoleSettled": "已被上一张作为尾帧使用，本幕收尾不再单独成段",

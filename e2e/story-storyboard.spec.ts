@@ -193,7 +193,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       firstAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
 
-    // A drawn frame's own size must not push the framing columns aside: with
+    // A drawn frame's own size must not push the attribute column aside: with
     // the picture in place the selects still hold their words whole, and the
     // frame itself stays a peek rather than widening the row.
     expect(await widthOf("story-kf-size-0")).toBeGreaterThan(80);
