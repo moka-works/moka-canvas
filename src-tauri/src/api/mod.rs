@@ -282,6 +282,13 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/projects/current/assets/transcode",
             post(routes::transcode_asset),
         )
+        // One end of a clip as a picture: what a story bridge between two acts
+        // is filmed from when the reader asks for the clips rather than the
+        // shots beside it.
+        .route(
+            "/api/v1/projects/current/assets/frame",
+            post(routes::extract_asset_frame),
+        )
         // A node's own work goes on the shelf through a route of its own: the
         // words are read out of the document here rather than sent up again.
         .route(

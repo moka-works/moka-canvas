@@ -116,7 +116,7 @@ export function actHasShots(act: StoryAct): boolean {
 }
 
 /** One end of a transition: the picture and the shot's words. */
-export interface StoryTransitionFrame {
+export interface StoryTransitionEnd {
   assetId: AssetId;
   content: string;
 }
@@ -133,7 +133,7 @@ export interface StoryTransitionFrame {
 export function transitionFrames(
   chapter: StoryChapter,
   at: number,
-): { from?: StoryTransitionFrame; to?: StoryTransitionFrame } {
+): { from?: StoryTransitionEnd; to?: StoryTransitionEnd } {
   const before = chapter.acts[at - 1];
   const after = chapter.acts[at + 1];
   const endOf = (act: StoryAct | undefined, tail: boolean) => {
@@ -148,6 +148,60 @@ export function transitionFrames(
     return { assetId, content: frame.content };
   };
   return { from: endOf(before, true), to: endOf(after, false) };
+}
+
+/** One neighbouring clip's end, where a bridge's picture is cut out of it. */
+export interface StoryNeighbourVideo {
+  assetId: AssetId;
+  /** The words of the shot the clip ends or begins on. */
+  content: string;
+}
+
+/**
+ * The clips a bridge stands between: the last clip of the act before it and the
+ * first clip of the act after it.
+ *
+ * An act filmed a shot at a time holds one clip per frame, so its end is the
+ * last of those clips on one side and the first on the other; an act filmed
+ * whole holds one, or several pieces in play order. A neighbour that is itself
+ * a bridge has no clip of its own to take a picture from.
+ */
+export function neighbourVideos(
+  story: StoryDocument,
+  chapter: StoryChapter,
+  at: number,
+): { from?: StoryNeighbourVideo; to?: StoryNeighbourVideo } {
+  const endOf = (
+    act: StoryAct | undefined,
+    edge: "start" | "end",
+  ): StoryNeighbourVideo | undefined => {
+    if (act === undefined || act.transition !== undefined) return undefined;
+    const perShot = actGranularity(act, story.shotGranularity) === "keyframe";
+    if (perShot) {
+      const frames =
+        edge === "end" ? [...act.keyframes].reverse() : act.keyframes;
+      for (const frame of frames) {
+        const take = currentTake(frame.video);
+        const assetId =
+          edge === "end" ? take?.assetIds.at(-1) : take?.assetIds[0];
+        if (assetId !== undefined) return { assetId, content: frame.content };
+      }
+      return undefined;
+    }
+    const take = currentTake(act.video);
+    const assetId = edge === "end" ? take?.assetIds.at(-1) : take?.assetIds[0];
+    if (assetId === undefined) return undefined;
+    const frames =
+      edge === "end" ? [...act.keyframes].reverse() : act.keyframes;
+    const content =
+      frames.find((frame) => frame.content.trim() !== "")?.content ??
+      act.summary;
+    return { assetId, content };
+  };
+  return {
+    from: endOf(chapter.acts[at - 1], "end"),
+    to: endOf(chapter.acts[at + 1], "start"),
+  };
 }
 
 /**

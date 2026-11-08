@@ -40,6 +40,7 @@ import {
   formDescription,
   formName,
   keyframeAt,
+  neighbourVideos,
   pictureReferenceAsset,
   storyMentions,
   stripStoryMentions,
@@ -1067,30 +1068,60 @@ export function planActVideos(
     const target: StoryTarget = { kind: "actVideo", chapterId, actId };
     const base = jobKey(target);
     // A bridge is filmed between the frames its neighbours end and begin on,
-    // rather than between pictures of its own: it has none.
+    // rather than between pictures of its own: it has none. Where the reader
+    // asked for the neighbours' clips rather than their shots, the frames cut
+    // out of those clips travel instead — and only while the cache still names
+    // the clips standing beside the bridge now.
     if (act.transition !== undefined) {
-      const ends = transitionFrames(chapter, chapter.acts.indexOf(act));
-      if (ends.from === undefined || ends.to === undefined) return [];
+      const at = chapter.acts.indexOf(act);
       const seconds = clampSeconds(act.transition.durationMs, ceiling);
-      return [
-        {
-          id: base,
-          target,
-          capability: "video" as const,
-          prompt: storyTransitionVideoPrompt({
-            ...look,
-            from: stripStoryMentions(ends.from.content),
-            to: stripStoryMentions(ends.to.content),
-            move: act.transition.prompt,
-            seconds,
-          }),
-          inputs: [
-            { role: "firstFrame" as const, assetId: ends.from.assetId },
-            { role: "lastFrame" as const, assetId: ends.to.assetId },
-          ],
-          params: videoParams(story.brief.aspect, seconds, "auto"),
-        },
-      ];
+      const ask = (
+        from: { assetId: string; content: string },
+        to: { assetId: string; content: string },
+      ): StoryJobItemDraft => ({
+        id: base,
+        target,
+        capability: "video" as const,
+        prompt: storyTransitionVideoPrompt({
+          ...look,
+          from: stripStoryMentions(from.content),
+          to: stripStoryMentions(to.content),
+          move: act.transition?.prompt ?? "",
+          seconds,
+        }),
+        inputs: [
+          { role: "firstFrame" as const, assetId: from.assetId },
+          { role: "lastFrame" as const, assetId: to.assetId },
+        ],
+        params: videoParams(story.brief.aspect, seconds, "auto"),
+      });
+      if (act.transition.frameSource === "video") {
+        const videos = neighbourVideos(story, chapter, at);
+        const cached = act.transition.cached;
+        if (
+          videos.from === undefined ||
+          videos.to === undefined ||
+          cached?.from === undefined ||
+          cached.to === undefined
+        ) {
+          return [];
+        }
+        if (
+          cached.from.videoAssetId !== videos.from.assetId ||
+          cached.to.videoAssetId !== videos.to.assetId
+        ) {
+          return [];
+        }
+        return [
+          ask(
+            { assetId: cached.from.assetId, content: videos.from.content },
+            { assetId: cached.to.assetId, content: videos.to.content },
+          ),
+        ];
+      }
+      const ends = transitionFrames(chapter, at);
+      if (ends.from === undefined || ends.to === undefined) return [];
+      return [ask(ends.from, ends.to)];
     }
     if (act.keyframes.length === 0) return [];
     const pieces = actClipPieces(act, ceiling);

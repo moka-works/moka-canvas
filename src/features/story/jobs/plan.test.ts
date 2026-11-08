@@ -1145,6 +1145,137 @@ describe("planning the clips", () => {
     expect(items[0].params?.mode).toBe("reference");
     expect(items[0].prompt).toContain("It covers:");
   });
+
+  it("bridges two acts from their frames, or from the ends of their clips", () => {
+    const base = drawnStory();
+    const chapter = base.chapters[0];
+    const before = chapter.acts[0];
+    const after = {
+      ...before,
+      id: "act-after",
+      title: "After",
+      video: {
+        takes: [
+          { assetIds: ["clip-after"], createdAt: "2026-01-01T00:00:00Z" },
+        ],
+      },
+      keyframes: [
+        {
+          ...before.keyframes[0],
+          id: "frame-after",
+          art: {
+            takes: [
+              {
+                assetIds: ["art-after"],
+                createdAt: "2026-01-01T00:00:00Z",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const bridge = {
+      ...before,
+      id: "bridge",
+      title: "Bridge",
+      keyframes: [],
+      video: { takes: [] },
+      transition: { prompt: "Through the dark", durationMs: 4_000 },
+    };
+    const board: StoryDocument = {
+      ...base,
+      chapters: [
+        {
+          ...chapter,
+          acts: [
+            {
+              ...before,
+              video: {
+                takes: [
+                  {
+                    assetIds: ["clip-before-a", "clip-before-b"],
+                    createdAt: "2026-01-01T00:00:00Z",
+                  },
+                ],
+              },
+            },
+            bridge,
+            after,
+          ],
+        },
+      ],
+    };
+
+    // By default the ends are the neighbouring shots' own frames.
+    const [frameAsk] = planActVideos(board, chapter.id, [bridge.id]);
+    expect(frameAsk.inputs).toEqual([
+      { role: "firstFrame", assetId: "asset-frame-second" },
+      { role: "lastFrame", assetId: "art-after" },
+    ]);
+    expect(frameAsk.params?.seconds).toBe(4);
+
+    // Asked for the clips, the cached pictures travel while they still name
+    // the clips standing beside the bridge: the clip before is filmed in
+    // pieces, so its end is the last piece's.
+    const videoBoard: StoryDocument = {
+      ...board,
+      chapters: [
+        {
+          ...board.chapters[0],
+          acts: board.chapters[0].acts.map((act) =>
+            act.id !== bridge.id
+              ? act
+              : {
+                  ...act,
+                  transition: {
+                    ...act.transition!,
+                    frameSource: "video" as const,
+                    cached: {
+                      from: {
+                        assetId: "frame-from",
+                        videoAssetId: "clip-before-b",
+                      },
+                      to: { assetId: "frame-to", videoAssetId: "clip-after" },
+                    },
+                  },
+                },
+          ),
+        },
+      ],
+    };
+    const [clipAsk] = planActVideos(videoBoard, chapter.id, [bridge.id]);
+    expect(clipAsk.inputs).toEqual([
+      { role: "firstFrame", assetId: "frame-from" },
+      { role: "lastFrame", assetId: "frame-to" },
+    ]);
+
+    // A neighbour refilmed leaves the cached pictures behind: the bridge is not
+    // filmed from frames that belong to a clip no longer beside it.
+    const refilmed: StoryDocument = {
+      ...videoBoard,
+      chapters: [
+        {
+          ...videoBoard.chapters[0],
+          acts: videoBoard.chapters[0].acts.map((act) =>
+            act.id !== before.id
+              ? act
+              : {
+                  ...act,
+                  video: {
+                    takes: [
+                      {
+                        assetIds: ["clip-refilmed"],
+                        createdAt: "2026-01-01T00:00:00Z",
+                      },
+                    ],
+                  },
+                },
+          ),
+        },
+      ],
+    };
+    expect(planActVideos(refilmed, chapter.id, [bridge.id])).toEqual([]);
+  });
 });
 
 describe("asking again for what did not come back", () => {

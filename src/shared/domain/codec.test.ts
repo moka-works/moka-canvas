@@ -75,11 +75,24 @@ describe("moka codec", () => {
   it("carries a bridge between two acts, and reads one written before bridges", () => {
     const moka = buildStoryMokaFile();
     const act = moka.stories![0]!.chapters[0]!.acts[0]!;
-    act.transition = { prompt: "Fade through the dark", durationMs: 4_000 };
+    act.transition = {
+      prompt: "Fade through the dark",
+      durationMs: 4_000,
+      frameSource: "video",
+      cached: {
+        from: { assetId: "frame-a", videoAssetId: "clip-a" },
+        to: { assetId: "frame-b", videoAssetId: "clip-b" },
+      },
+    };
     const back = decodeMokaFile(encodeMokaFile(moka));
     expect(back.stories![0]!.chapters[0]!.acts[0]!.transition).toEqual({
       prompt: "Fade through the dark",
       durationMs: 4_000,
+      frameSource: "video",
+      cached: {
+        from: { assetId: "frame-a", videoAssetId: "clip-a" },
+        to: { assetId: "frame-b", videoAssetId: "clip-b" },
+      },
     });
 
     // A document written before bridges existed holds ordinary acts only.

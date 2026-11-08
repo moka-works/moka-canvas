@@ -26,6 +26,7 @@ import {
   STORY_FILM_ROLES,
   STORY_SHOT_GRANULARITIES,
   STORY_SHOT_SIZES,
+  STORY_TRANSITION_SOURCES,
 } from "./types";
 import { reconcilePorts } from "./factories";
 import { newId } from "./ids";
@@ -61,6 +62,7 @@ import type {
   StoryKeyframe,
   StorySlot,
   StoryTake,
+  StoryTransitionFrame,
   StoryVoiceProfile,
   StoryVoiceTake,
   TextClipStyle,
@@ -511,6 +513,31 @@ function encodeStoryAct(act: StoryAct): Record<string, unknown> {
     doc.transition = {
       prompt: act.transition.prompt,
       durationMs: asLong(act.transition.durationMs),
+      ...(act.transition.frameSource === undefined
+        ? {}
+        : { frameSource: act.transition.frameSource }),
+      ...(act.transition.cached === undefined
+        ? {}
+        : {
+            cached: {
+              ...(act.transition.cached.from === undefined
+                ? {}
+                : {
+                    from: {
+                      assetId: act.transition.cached.from.assetId,
+                      videoAssetId: act.transition.cached.from.videoAssetId,
+                    },
+                  }),
+              ...(act.transition.cached.to === undefined
+                ? {}
+                : {
+                    to: {
+                      assetId: act.transition.cached.to.assetId,
+                      videoAssetId: act.transition.cached.to.videoAssetId,
+                    },
+                  }),
+            },
+          }),
     };
   }
   return doc;
@@ -1631,10 +1658,44 @@ function decodeStoryAct(value: unknown): StoryAct {
   if (doc.music !== undefined) act.music = decodeStorySlot(doc.music);
   if (doc.transition !== undefined) {
     const transition = asRecord(doc.transition, "acts[].transition");
+    const frame = (value: unknown): StoryTransitionFrame | undefined => {
+      if (value === undefined) return undefined;
+      const held = asRecord(value, "acts[].transition.cached");
+      return {
+        assetId: asString(held.assetId, "acts[].transition.cached[].assetId"),
+        videoAssetId: asString(
+          held.videoAssetId,
+          "acts[].transition.cached[].videoAssetId",
+        ),
+      };
+    };
+    const cached =
+      transition.cached === undefined
+        ? undefined
+        : asRecord(transition.cached, "acts[].transition.cached");
     act.transition = {
       prompt: optionalString(transition.prompt) ?? "",
       durationMs:
         decodeLongField(transition.durationMs) ?? DEFAULT_STORY_TRANSITION_MS,
+      ...(transition.frameSource === undefined
+        ? {}
+        : {
+            frameSource: fallbackOneOf(
+              STORY_TRANSITION_SOURCES,
+              transition.frameSource,
+              "keyframes",
+            ),
+          }),
+      ...(cached === undefined
+        ? {}
+        : {
+            cached: {
+              ...(cached.from === undefined
+                ? {}
+                : { from: frame(cached.from) }),
+              ...(cached.to === undefined ? {} : { to: frame(cached.to) }),
+            },
+          }),
     };
   }
   return act;

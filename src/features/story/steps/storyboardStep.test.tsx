@@ -38,6 +38,8 @@ const T0 = "2026-01-01T00:00:00.000Z";
 
 /** What the room handed the server, in the order it handed it over. */
 let starts: Array<{ kind: StoryJobKind; items: StoryJobItemDraft[] }> = [];
+/** The end of each clip the room asked the server to cut a frame out of. */
+let frameCalls: Array<{ assetId: string; edge: string }> = [];
 /** The batches the server is holding, newest first. */
 let held: StoryJobRecord[] = [];
 /** What each piece of the next batch is answered with, by the piece's id. */
@@ -101,6 +103,29 @@ function serving(): void {
           return json(home);
         }
         return json(held);
+      }
+      if (url.includes("/assets/frame")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          assetId: string;
+          edge: string;
+        };
+        frameCalls.push({ assetId: body.assetId, edge: body.edge });
+        const id = body.edge === "last" ? "frame-from" : "frame-to";
+        return json(
+          {
+            entry: {
+              id,
+              name: `${body.assetId}-${body.edge}-frame.png`,
+              path: `assets/images/${id}.png`,
+              mime: "image/png",
+              createdAt: T0,
+              updatedAt: T0,
+            },
+            revision: frameCalls.length,
+            updatedAt: T0,
+          },
+          201,
+        );
       }
       if (url.includes("/assets/")) {
         return Promise.resolve(new Response(""));
@@ -282,6 +307,24 @@ function withTwoDrawnActs(): MokaFile {
     takes: [{ assetIds: ["asset-second-act-frame"], createdAt: T0 }],
   };
   chapter.acts.push(second);
+  return moka;
+}
+
+/** Two acts, each already filmed, with nothing bridged between them yet. */
+function withTwoFilmedActs(): MokaFile {
+  const moka = withTwoDrawnActs();
+  const [first, second] = moka.stories![0].chapters[0]!.acts;
+  first!.video = {
+    takes: [
+      {
+        assetIds: ["asset-first-clip-one", "asset-first-clip-two"],
+        createdAt: T0,
+      },
+    ],
+  };
+  second!.video = {
+    takes: [{ assetIds: ["asset-second-clip"], createdAt: T0 }],
+  };
   return moka;
 }
 
@@ -471,6 +514,7 @@ function filmingWithCeiling(maxSeconds: number): void {
 
 beforeEach(() => {
   starts = [];
+  frameCalls = [];
   held = [];
   answers = {};
   landed = {};
@@ -1546,6 +1590,51 @@ describe("writing an episode's board", () => {
       undo();
     });
     expect(acts()).toHaveLength(2);
+  });
+
+  it("cuts the bridge's ends out of the neighbouring clips when asked", async () => {
+    openAtBoard(withTwoFilmedActs());
+    fireEvent.click(screen.getByTestId("story-act-transition-1"));
+    await waitFor(() => expect(acts()).toHaveLength(3));
+
+    fireEvent.click(screen.getByTestId("story-transition-source-video-1"));
+    // The clip before the bridge is filmed in two pieces, so its tail is the
+    // end of the second piece; the clip after begins at its first.
+    await waitFor(() => expect(frameCalls).toHaveLength(2));
+    expect(frameCalls).toEqual([
+      { assetId: "asset-first-clip-two", edge: "last" },
+      { assetId: "asset-second-clip", edge: "first" },
+    ]);
+    await waitFor(() =>
+      expect(acts()[1]?.transition?.cached).toEqual({
+        from: { assetId: "frame-from", videoAssetId: "asset-first-clip-two" },
+        to: { assetId: "frame-to", videoAssetId: "asset-second-clip" },
+      }),
+    );
+    expect(acts()[1]?.transition?.frameSource).toBe("video");
+
+    // The ends shown are the pictures cut out of the clips rather than the
+    // board's own frames.
+    expect(
+      screen
+        .getByTestId("story-transition-from-1")
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toContain("frame-from");
+    expect(
+      screen
+        .getByTestId("story-transition-to-1")
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toContain("frame-to");
+
+    fireEvent.click(screen.getByTestId("story-transition-video-go-1"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    const [item] = starts[0]!.items;
+    expect(item?.inputs?.map((input) => [input.role, input.assetId])).toEqual([
+      ["firstFrame", "frame-from"],
+      ["lastFrame", "frame-to"],
+    ]);
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

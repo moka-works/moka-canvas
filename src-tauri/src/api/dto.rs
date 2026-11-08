@@ -265,6 +265,22 @@ pub struct AssetChangeResponse {
     pub updated_at: String,
 }
 
+/// One end of a clip, as a frame a bridge can be filmed from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FrameEdge {
+    First,
+    Last,
+}
+
+/// Which clip a frame is cut out of, and which end of it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractFrameRequest {
+    pub asset_id: String,
+    pub edge: FrameEdge,
+}
+
 /// What a reader says about an asset, put right on its own.
 ///
 /// A part left out of the body is a part nobody spoke about, so it stands as it

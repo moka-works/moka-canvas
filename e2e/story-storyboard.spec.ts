@@ -30,7 +30,11 @@ async function persistedBoard(page: Page): Promise<{
   contents: string[];
   drawn: number;
   clips: number;
-  bridges: Array<{ prompt?: string; durationMs?: number }>;
+  bridges: Array<{
+    prompt?: string;
+    durationMs?: number;
+    frameSource?: string;
+  }>;
 }> {
   return page.evaluate(async () => {
     const response = await fetch("/api/v1/projects/current");
@@ -40,7 +44,11 @@ async function persistedBoard(page: Page): Promise<{
           chapters?: {
             acts?: {
               title?: string;
-              transition?: { prompt?: string; durationMs?: number };
+              transition?: {
+                prompt?: string;
+                durationMs?: number;
+                frameSource?: string;
+              };
               keyframes?: { content?: string; art?: { takes?: unknown[] } }[];
               video?: { takes?: unknown[] };
             }[];
@@ -552,6 +560,18 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
       transition.getByTestId("story-transition-missing-1"),
     ).toContainText("ending frame");
 
+    // The ends may come from the neighbouring clips instead, and this telling
+    // has filmed none: the card says which end it is short of rather than
+    // offering a bridge it cannot take.
+    await transition.getByTestId("story-transition-source-video-1").click();
+    await expect(
+      transition.getByTestId("story-transition-missing-1"),
+    ).toContainText("no clip");
+    await expect(
+      transition.getByTestId("story-transition-video-go-1"),
+    ).toBeDisabled();
+    await transition.getByTestId("story-transition-source-keyframes-1").click();
+
     await transition
       .getByTestId("story-transition-prompt-1")
       .fill("Fade through the dark");
@@ -560,7 +580,13 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
     await transition.getByTestId("story-transition-seconds-1").press("Tab");
     await expect
       .poll(async () => (await persistedBoard(page)).bridges)
-      .toEqual([{ prompt: "Fade through the dark", durationMs: 4_000 }]);
+      .toEqual([
+        {
+          prompt: "Fade through the dark",
+          durationMs: 4_000,
+          frameSource: "keyframes",
+        },
+      ]);
 
     // Taken away again, the two acts close up.
     await transition.getByTestId("story-transition-remove-1").click();

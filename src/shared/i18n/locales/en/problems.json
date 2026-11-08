@@ -93,5 +93,6 @@
   "storyJobNotFound": "That story job has been forgotten",
   "storyJobNotCancellable": "That story job has already ended",
   "storyJobBusy": "A story job of this kind is already running",
-  "storyJobItemLimit": "One job asks for too many places at once"
+  "storyJobItemLimit": "One job asks for too many places at once",
+  "storyTransitionFramesFailed": "Could not cut frames out of the neighbouring clips"
 }

@@ -9206,6 +9206,18 @@ button > .story-spin {
   font-weight: 500;
 }
 
+.story-transition-source {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.story-transition-source .story-choice {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 .story-transition-ends {
   display: flex;
   flex-wrap: wrap;

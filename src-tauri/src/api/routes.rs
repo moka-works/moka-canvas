@@ -1,12 +1,13 @@
 use super::dto::{
     ApplyCommandsRequest, AssetChangeResponse, AssetShelfRequest, CapabilitiesResponse,
-    ClipExportRequest, CreateProjectRequest, DefaultsPatch, ExportRequest, FileNodeRequest,
-    FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
-    FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
-    ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
-    PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, RevealRequest,
-    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
-    StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
+    ClipExportRequest, CreateProjectRequest, DefaultsPatch, ExportRequest, ExtractFrameRequest,
+    FileNodeRequest, FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
+    FilesystemWriteResponse, FrameEdge, GenerateResponse, GenerationPreviewRequest,
+    GenerationPreviewResponse, ImportProjectRequest, ModelKeyRequest, OpenProjectRequest,
+    OpenProjectResponse, PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse,
+    RevealRequest, RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest,
+    SelfCheckResponse, StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery,
+    UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState, ProjectSession};
@@ -15,7 +16,8 @@ use crate::clip::locate::ClipCapabilities;
 use crate::clip::plan::build_plan;
 use crate::config::RuntimeMode;
 use crate::domain::{
-    now_iso, DocumentCommand, ResourceRegistry, RunRecord, RunStatus, ValidationIssue,
+    now_iso, AssetProvenance, DocumentCommand, ResourceRegistry, RunRecord, RunStatus,
+    ValidationIssue,
 };
 use crate::generate::models::ModelsView;
 use crate::generate::{
@@ -619,6 +621,174 @@ pub async fn transcode_asset(
         })
         .await?;
     cleanup(&[&upload.tmp_path]);
+    Ok((
+        StatusCode::CREATED,
+        Json(AssetChangeResponse {
+            entry: change.entry,
+            revision: change.revision,
+            updated_at: change.updated_at,
+        }),
+    ))
+}
+
+/// Cuts the first or last frame out of a clip and files it as a picture.
+///
+/// A bridge between two story acts is filmed between the frames the acts meet
+/// at. Those are the neighbouring shots' drawings, or — where the reader asked
+/// for them — the actual ends of the neighbours' clips, which only the
+/// machine's renderer can pull out of a video. The picture is filed like any
+/// other, so the video ask that follows can name it.
+pub async fn extract_asset_frame(
+    State(state): State<ApiState>,
+    session: ProjectSession,
+    Json(request): Json<ExtractFrameRequest>,
+) -> Result<(StatusCode, Json<AssetChangeResponse>), Problem> {
+    let file = session.0.asset_file(&request.asset_id, None).await?;
+    let mime = file.entry.mime.clone().unwrap_or_default();
+    if !mime.starts_with("video/") {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "ASSET_INVALID",
+            format!(
+                "The frame cutter only takes video; \"{}\" is {}",
+                file.entry.name, mime
+            ),
+        ));
+    }
+    let Some(program) = state.clip_program() else {
+        return Err(Problem::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "FFMPEG_UNAVAILABLE",
+            crate::clip::locate::UNAVAILABLE_REASON,
+        ));
+    };
+    let root = session.0.project_root().await?;
+    let output = crate::assets::new_tmp_path(&root).map_err(problem_from_io)?;
+    let cleanup = || {
+        let _ = std::fs::remove_file(&output);
+    };
+
+    let mut command = tokio::process::Command::new(&program);
+    command
+        .arg("-y")
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error");
+    if request.edge == FrameEdge::Last {
+        // The end of a clip is reached from a little before it: seeking to the
+        // exact duration lands past the last frame in most muxers. A clip whose
+        // length was never measured is told to read from its tail instead.
+        match file
+            .entry
+            .probe
+            .as_ref()
+            .and_then(|probe| probe.duration_ms)
+            .filter(|ms| *ms > 150)
+        {
+            Some(ms) => {
+                command
+                    .arg("-ss")
+                    .arg(format!("{:.3}", (ms - 100) as f64 / 1000.0));
+            }
+            None => {
+                command.arg("-sseof").arg("-0.15");
+            }
+        }
+    }
+    command
+        .arg("-i")
+        .arg(&file.path)
+        .arg("-frames:v")
+        .arg("1")
+        .arg("-c:v")
+        .arg("png")
+        .arg("-f")
+        .arg("image2")
+        .arg("-update")
+        .arg("1")
+        .arg(&output)
+        .kill_on_drop(true);
+    let completed = tokio::time::timeout(Duration::from_secs(30), command.output()).await;
+    let result = match completed {
+        Err(_) => {
+            cleanup();
+            return Err(Problem::new(
+                StatusCode::GATEWAY_TIMEOUT,
+                "STORY_TRANSITION_FRAMES_FAILED",
+                "ffmpeg did not cut a frame out of the clip within 30 seconds",
+            ));
+        }
+        Ok(Err(error)) => {
+            cleanup();
+            return Err(Problem::new(
+                StatusCode::BAD_GATEWAY,
+                "STORY_TRANSITION_FRAMES_FAILED",
+                format!("ffmpeg could not be run: {error}"),
+            ));
+        }
+        Ok(Ok(output)) => output,
+    };
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let tail: String = stderr
+            .chars()
+            .rev()
+            .take(2_000)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        cleanup();
+        return Err(Problem::new(
+            StatusCode::BAD_GATEWAY,
+            "STORY_TRANSITION_FRAMES_FAILED",
+            format!("ffmpeg exited with {}: {tail}", result.status),
+        ));
+    }
+    let written = tokio::fs::metadata(&output)
+        .await
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    if written == 0 {
+        cleanup();
+        return Err(Problem::new(
+            StatusCode::BAD_GATEWAY,
+            "STORY_TRANSITION_FRAMES_FAILED",
+            format!(
+                "ffmpeg finished without writing a frame out of \"{}\"",
+                file.entry.name
+            ),
+        ));
+    }
+
+    let stem = FsPath::new(&file.entry.name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("clip");
+    let edge = match request.edge {
+        FrameEdge::First => "first",
+        FrameEdge::Last => "last",
+    };
+    let change = session
+        .0
+        .add_asset(StagedAsset {
+            name: format!("{stem}-{edge}-frame.png"),
+            tmp_path: output,
+            declared_mime: Some("image/png".to_string()),
+            category_hint: Some("images".to_string()),
+            provenance: Some(AssetProvenance {
+                run_id: None,
+                canvas_id: None,
+                operation_node_id: None,
+                assistant_session_id: None,
+                story_job_id: None,
+                story_id: None,
+                input_asset_ids: Some(vec![file.entry.id.clone()]),
+                parameter_snapshot: Some(serde_json::json!({ "frame": edge })),
+                created_at: now_iso(),
+            }),
+        })
+        .await?;
     Ok((
         StatusCode::CREATED,
         Json(AssetChangeResponse {

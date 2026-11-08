@@ -1817,6 +1817,100 @@ fn machine_ffmpeg() -> Option<PathBuf> {
     None
 }
 
+/// One end of a clip is cut out and filed as a picture of its own.
+#[tokio::test]
+async fn a_frame_is_cut_out_of_a_clip_and_filed_as_a_picture() {
+    let Some(program) = machine_ffmpeg() else {
+        eprintln!("skipped: this machine has no ffmpeg");
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let mut config = parse_test_config(home.path());
+    config.clip.ffmpeg_path = Some(program);
+    let app = moka_canvas::server::router(open_state(config));
+    create_project(&app, &home.path().join("project"), "Frames").await;
+
+    let video = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/tiny.mp4"));
+    let response = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("clip.mp4", video),
+            &[],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let uploaded = body_json(response).await;
+    let clip = uploaded["entry"]["id"].as_str().expect("an asset id");
+
+    let response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/current/assets/frame",
+            json!({ "assetId": clip, "edge": "last" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = body_json(response).await;
+    assert_eq!(body["entry"]["mime"], "image/png");
+    assert_eq!(body["entry"]["name"], "clip-last-frame.png");
+
+    // The filed picture is readable from the asset route, not merely described.
+    let frame = body["entry"]["id"].as_str().expect("a frame id");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{frame}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+/// A machine without the renderer says so when a frame is asked for.
+#[tokio::test]
+async fn a_frame_without_ffmpeg_names_the_missing_renderer() {
+    let home = tempfile::tempdir().unwrap();
+    let mut config = parse_test_config(home.path());
+    config.clip.ffmpeg_path = Some(home.path().join("nowhere").join("ffmpeg"));
+    let app = moka_canvas::server::router(open_state(config));
+    create_project(&app, &home.path().join("project"), "No Frames").await;
+
+    let video = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/tiny.mp4"));
+    let response = app
+        .clone()
+        .oneshot(multipart_request(
+            "/api/v1/projects/current/assets",
+            ("clip.mp4", video),
+            &[],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let uploaded = body_json(response).await;
+    let clip = uploaded["entry"]["id"].as_str().expect("an asset id");
+
+    let response = app
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/current/assets/frame",
+            json!({ "assetId": clip, "edge": "first" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(response).await;
+    assert_eq!(body["code"], "FFMPEG_UNAVAILABLE");
+    assert!(body["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("ffmpeg was not found")));
+}
+
 /// A blocking recording is turned into an MP4 that lands on the shelf.
 #[tokio::test]
 async fn a_video_is_transcoded_into_the_shelf() {

@@ -86,6 +86,26 @@ export const assetsApi = {
   },
 
   /**
+   * Cuts one frame out of a clip and files it as a picture.
+   *
+   * The first or the last frame of the clip travels as a picture of its own,
+   * which is what a bridge between two acts is filmed between. A machine
+   * without ffmpeg answers with FFMPEG_UNAVAILABLE and its own reason, which
+   * the caller shows rather than pretending the clip had no frames.
+   */
+  extractFrame(
+    id: AssetId,
+    edge: "first" | "last",
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AssetChange> {
+    return http.request<AssetChange>("/api/v1/projects/current/assets/frame", {
+      method: "POST",
+      body: { assetId: id, edge },
+      signal: options.signal,
+    });
+  },
+
+  /**
    * Writes down what a reader says about an asset. Only the parts given are
    * touched, and the file underneath is left as it was — saying a picture is a
    * keeper costs nothing of the picture's.
