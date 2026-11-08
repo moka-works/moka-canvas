@@ -52,7 +52,7 @@ export function DirectorTemplateDialog({
         </div>
         <div className="dialog-actions">
           <button className="button" onClick={onClose} type="button">
-            {t("editor:actions.cancel")}
+            {t("editor:action.cancel")}
           </button>
         </div>
       </div>
