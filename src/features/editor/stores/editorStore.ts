@@ -125,15 +125,17 @@ export interface PictureToolAsk {
  * What the asset picker was opened for.
  *
  * A dialog that only picks files would not know what picking them means: the
- * same shelf file becomes a node of its own, or something one node is given,
- * or a clip landing on the cut — three asks, and the dialog's own footer says
- * what the answer will come to. Where it is meant to become a node, the world
- * point the ask was made at travels with it, so the nodes land where the
- * reader was looking rather than at the middle of the view.
+ * same shelf file becomes a node of its own, something one node is given, the
+ * picture one node already holds, or a clip landing on the cut — four asks, and
+ * the dialog's own footer says what the answer will come to. Where it is meant
+ * to become a node, the world point the ask was made at travels with it, so the
+ * nodes land where the reader was looking rather than at the middle of the
+ * view.
  */
 export type AssetPickerState =
   | { mode: "nodes"; at: Point | null }
   | { mode: "reference"; nodeId: NodeId }
+  | { mode: "replace"; nodeId: NodeId }
   | { mode: "place" };
 
 interface EditorState {

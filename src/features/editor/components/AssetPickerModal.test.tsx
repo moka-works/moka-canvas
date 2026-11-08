@@ -168,6 +168,38 @@ describe("the asset picker", () => {
     expect(generationOf(ids.text)?.prompt).toBe("Adapt this.");
   });
 
+  it("replaces a picture node's own asset instead of adding a node", async () => {
+    const ids = goldenNodeIds();
+    const moka = openProject(buildShelfMokaFile());
+    const secondId = withSecondImage(moka);
+    const before = nodesOnMain().length;
+    useEditorStore
+      .getState()
+      .openAssetPicker({ mode: "replace", nodeId: ids.image });
+    render(<AssetPickerModal />);
+
+    // A picture node holds a picture, so the words on the shelf are not offered
+    // as something it could be swapped for.
+    expect(screen.queryByText("opening-lines.md")).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`asset-pick-${secondId}`));
+    expect(screen.getByTestId("asset-pick-count").textContent).toBe(
+      "Will replace this node's asset",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+
+    await waitFor(() => {
+      expect(useEditorStore.getState().assetPicker).toBeNull();
+    });
+    // Nothing new arrived: the node's own picture changed in place.
+    expect(nodesOnMain()).toHaveLength(before);
+    const node = nodesOnMain().find((entry) => entry.id === ids.image);
+    expect((node?.data as { assetId?: string }).assetId).toBe(secondId);
+    expect(useEditorStore.getState().announcement).toBe(
+      "Replaced Reference image with lantern.png",
+    );
+  });
+
   it("reads a text file's opening on its row and the whole of it on a hover", async () => {
     const moka = openProject(buildShelfMokaFile());
     moka.resources.texts.push({

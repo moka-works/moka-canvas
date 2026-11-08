@@ -264,6 +264,7 @@
   "picker": {
     "insertTitle": "Insert from the shelf",
     "addTitle": "Add from the shelf",
+    "replaceTitle": "Replace from the shelf",
     "placeTitle": "Add to the cut",
     "close": "Close the picker",
     "nothingChosen": "Nothing is chosen yet",
@@ -271,6 +272,7 @@
     "insertCountMany": "Will be inserted as {{count}} nodes",
     "addCountOne": "Will be added as 1 reference",
     "addCountMany": "Will be added as {{count}} references",
+    "replaceCount": "Will replace this node's asset",
     "placeCountOne": "Will be added as 1 clip, from the playhead",
     "placeCountMany": "Will be added as {{count}} clips, one after another from the playhead",
     "searchShelf": "Search the shelf",

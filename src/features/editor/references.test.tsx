@@ -24,6 +24,7 @@ import {
 } from "../../shared/domain";
 import { ReferenceBar } from "./components/ReferenceBar";
 import { ASSET_DRAG_MIME } from "./interactions/actions";
+import { useEditorStore } from "./stores/editorStore";
 
 const T = "2026-01-01T00:00:00.000Z";
 
@@ -202,6 +203,7 @@ beforeEach(() => {
   for (const spy of [cut, find, move, point, tookAsset, tookFiles]) {
     spy.mockClear();
   }
+  useEditorStore.setState({ assetPicker: null });
 });
 
 afterEach(cleanup);
@@ -427,5 +429,29 @@ describe("an asset left on the bar", () => {
     expect(tookAsset).toHaveBeenCalledWith(PICTURE.id);
     expect(tookFiles).toHaveBeenCalledWith([FILE]);
     expect(under).not.toHaveBeenCalled();
+  });
+});
+
+describe("choosing a file off the shelf", () => {
+  it("offers a picture node's own picture to be swapped", () => {
+    render(<Bar />);
+    fireEvent.click(
+      within(bar()).getByRole("button", { name: "From assets…" }),
+    );
+    expect(useEditorStore.getState().assetPicker).toEqual({
+      mode: "replace",
+      nodeId: TARGET.id,
+    });
+  });
+
+  it("adds to what a card that is not a picture is given", () => {
+    render(<Bar node={FILM} />);
+    fireEvent.click(
+      within(bar()).getByRole("button", { name: "From assets…" }),
+    );
+    expect(useEditorStore.getState().assetPicker).toEqual({
+      mode: "reference",
+      nodeId: FILM.id,
+    });
   });
 });

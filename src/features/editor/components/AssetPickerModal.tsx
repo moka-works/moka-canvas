@@ -4,11 +4,16 @@ import { assetUrl } from "../../../api";
 import {
   ASSET_KIND_LABELS,
   PROJECT_ASSET_CATEGORIES,
+  findNode,
   type AssetId,
   type AssetKind,
   type ResourceEntry,
 } from "../../../shared/domain";
-import { addAssetNodes, attachAssetsToNode } from "../interactions/actions";
+import {
+  addAssetNodes,
+  attachAssetsToNode,
+  replaceNodeWithAsset,
+} from "../interactions/actions";
 import { addAssetsAtPlayhead } from "../../clip/interactions/clipActions";
 import { useClampedMenuPosition } from "../panels/useClampedMenuPosition";
 import {
@@ -188,6 +193,7 @@ export function AssetPickerModal() {
   const { t } = useTranslation();
   const ask = useEditorStore((state) => state.assetPicker);
   const moka = useProjectStore((state) => state.moka);
+  const activeCanvasId = useProjectStore((state) => state.activeCanvasId);
   const [filter, setFilter] = useState<ShelfFilter>(OPEN_SHELF_FILTER);
   const [chosen, setChosen] = useState<AssetId[]>([]);
   const [busy, setBusy] = useState(false);
@@ -209,21 +215,48 @@ export function AssetPickerModal() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [ask]);
 
-  const entries = useMemo(
-    () => (moka ? filterShelf(moka.resources, filter) : []),
-    [moka, filter],
-  );
+  // Where the ask is to swap the picture a node already holds, only files that
+  // node can hold are offered: a picture filed under another kind would leave
+  // the node holding something it is not.
+  const replaceKind: AssetKind | null = useMemo(() => {
+    if (!ask || ask.mode !== "replace" || !moka) return null;
+    const canvas =
+      moka.canvas.find((entry) => entry.id === activeCanvasId) ??
+      moka.canvas[0];
+    const node = canvas ? findNode(canvas, ask.nodeId) : undefined;
+    switch (node?.kind) {
+      case "image":
+      case "audio":
+      case "video":
+      case "text":
+        return node.kind;
+      default:
+        return null;
+    }
+  }, [ask, moka, activeCanvasId]);
+  const entries = useMemo(() => {
+    if (!moka) return [];
+    const shown = filterShelf(moka.resources, filter);
+    return replaceKind
+      ? shown.filter((entry) => kindOf(entry) === replaceKind)
+      : shown;
+  }, [moka, filter, replaceKind]);
   const words = useMemo(() => (moka ? shelfTags(moka.resources) : []), [moka]);
 
   if (!ask) return null;
 
   const close = () => useEditorStore.getState().closeAssetPicker();
+  // One picture takes a node's place, so a swap offers one answer at a time:
+  // ticking another file moves the tick rather than adding to it.
   const toggle = (assetId: AssetId) =>
-    setChosen((seen) =>
-      seen.includes(assetId)
+    setChosen((seen) => {
+      if (ask.mode === "replace") {
+        return seen.includes(assetId) ? [] : [assetId];
+      }
+      return seen.includes(assetId)
         ? seen.filter((id) => id !== assetId)
-        : [...seen, assetId],
-    );
+        : [...seen, assetId];
+    });
   const take = async () => {
     setBusy(true);
     try {
@@ -231,6 +264,9 @@ export function AssetPickerModal() {
         await addAssetNodes(chosen, ask.at ?? undefined);
       } else if (ask.mode === "reference") {
         await attachAssetsToNode(ask.nodeId, chosen);
+      } else if (ask.mode === "replace") {
+        const [first] = chosen;
+        if (first) await replaceNodeWithAsset(ask.nodeId, first);
       } else {
         // Placing lands clips on the open cut, one after another from the
         // playhead; the room says what it did, so the dialog just closes.
@@ -259,18 +295,22 @@ export function AssetPickerModal() {
                 : "editor:picker.addCountMany",
               { count: chosen.length },
             )
-          : t(
-              chosen.length === 1
-                ? "editor:picker.placeCountOne"
-                : "editor:picker.placeCountMany",
-              { count: chosen.length },
-            );
+          : ask.mode === "replace"
+            ? t("editor:picker.replaceCount")
+            : t(
+                chosen.length === 1
+                  ? "editor:picker.placeCountOne"
+                  : "editor:picker.placeCountMany",
+                { count: chosen.length },
+              );
   const title =
     ask.mode === "nodes"
       ? t("editor:picker.insertTitle")
       : ask.mode === "reference"
         ? t("editor:picker.addTitle")
-        : t("editor:picker.placeTitle");
+        : ask.mode === "replace"
+          ? t("editor:picker.replaceTitle")
+          : t("editor:picker.placeTitle");
 
   return (
     <div className="dialog-backdrop" onClick={close} role="presentation">
@@ -424,7 +464,9 @@ export function AssetPickerModal() {
                 ? t("editor:action.insert")
                 : ask.mode === "reference"
                   ? t("editor:action.add")
-                  : t("editor:action.place")}
+                  : ask.mode === "replace"
+                    ? t("editor:action.replace")
+                    : t("editor:action.place")}
           </button>
         </footer>
       </div>
