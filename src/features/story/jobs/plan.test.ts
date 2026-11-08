@@ -635,9 +635,7 @@ describe("planning the drawings", () => {
       ids.heroMain,
       ids.partnerMain,
     ]);
-    expect(cast.beyond.map(({ element }) => element.name)).toEqual([
-      "末班车车厢",
-    ]);
+    expect(cast.beyond.map(({ name }) => name)).toEqual(["末班车车厢"]);
     expect(cast.undrawn).toEqual([]);
 
     const [item] = planKeyframeArt(limited, [
@@ -652,6 +650,38 @@ describe("planning the drawings", () => {
       ids.partnerMain,
     ]);
     expect(item.prompt).not.toContain("末班车车厢 —");
+  });
+
+  it("carries a shot's extra references after the ones its words name", () => {
+    const extras = [{ assetId: "asset-extra", note: "傍晚的暖光" }];
+    const cast = keyframeCast(story(), "`林`看着站台。", extras);
+    expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
+      ids.heroMain,
+      "asset-extra",
+    ]);
+    expect(cast.carried[1]?.description).toBe("傍晚的暖光");
+
+    // The story's limit is one budget for both: the mention goes first and
+    // the extra is left beside it rather than silently sent instead.
+    const limited = { ...story(), maxReferenceImages: 1 };
+    const held = keyframeCast(limited, "`林`看着站台。", extras);
+    expect(held.carried.map(({ assetId }) => assetId)).toEqual([ids.heroMain]);
+    expect(held.beyond.map(({ assetId }) => assetId)).toEqual(["asset-extra"]);
+
+    const withExtra = withContent("`林`看着站台。");
+    withExtra.chapters[0]!.acts[0]!.keyframes[0]!.extraReferences = extras;
+    const [item] = planKeyframeArt(withExtra, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.heroMain,
+      "asset-extra",
+    ]);
+    expect(item.prompt).toContain("Additional reference 1 — 傍晚的暖光");
   });
 
   it("names a mentioned name that matches nothing as undrawn", () => {

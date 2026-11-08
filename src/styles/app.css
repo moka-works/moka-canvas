@@ -8654,6 +8654,71 @@ button > .story-spin {
   opacity: 0.45;
 }
 
+/* The pictures a shot carries beside its cast: a little of the picture, what
+   it is there for, and the way to take it off. A reference past the story's
+   limit stays on the row, dimmed, because it is still the reader's. */
+.story-extra-refs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.story-extra-ref {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+}
+
+.story-extra-ref.is-beyond {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.story-extra-thumb {
+  background: none;
+  border: none;
+  cursor: zoom-in;
+  line-height: 0;
+  padding: 0;
+}
+
+.story-extra-thumb img {
+  border-radius: 4px;
+  display: block;
+  height: 36px;
+  object-fit: cover;
+  width: 36px;
+}
+
+.story-extra-note {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 4px;
+  width: 96px;
+}
+
+.story-extra-note:focus {
+  background: var(--surface);
+  border-color: var(--primary);
+  outline: none;
+}
+
+.story-extra-add {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
 /*
   The frame column: a bound on the picture, because a drawn frame's own size
   would otherwise widen the table and squeeze the framing selects beside it.

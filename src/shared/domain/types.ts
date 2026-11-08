@@ -874,6 +874,22 @@ export interface StoryKeyframe {
    * orphan, which the assembly no longer lays down.
    */
   voices?: StoryVoiceTake[];
+  /**
+   * Pictures that ride with this shot's ask without naming an element.
+   *
+   * A reference is a file already on the shelf and, optionally, a line saying
+   * what it is for. They are not part of the cast: they are pictures the
+   * reader wants this one shot drawn with, and the note is how the ask says
+   * what each of them is there for.
+   */
+  extraReferences?: StoryExtraReference[];
+}
+
+/** One picture a shot carries outside its cast, and what it is for. */
+export interface StoryExtraReference {
+  assetId: AssetId;
+  /** What the picture is for, as the ask reads it. */
+  note?: string;
 }
 
 /** What an act sounds like. */
@@ -1206,6 +1222,7 @@ export interface StoryKeyframePatch {
   content?: string;
   dialogue?: StoryDialogueLine[];
   durationMs?: number;
+  extraReferences?: StoryExtraReference[];
 }
 
 /**

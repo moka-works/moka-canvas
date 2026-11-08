@@ -276,6 +276,25 @@ describe("moka codec", () => {
     ).toBe("reference");
   });
 
+  it("keeps a shot's extra references and their notes", () => {
+    const story = buildStoryMokaFile();
+    story.stories![0].chapters[0].acts[0].keyframes[0].extraReferences = [
+      { assetId: "asset-extra-1", note: "傍晚的暖光" },
+      { assetId: "asset-extra-2" },
+    ];
+    const read = decodeMokaFile(encodeMokaFile(story));
+    expect(
+      read.stories![0].chapters[0].acts[0].keyframes[0].extraReferences,
+    ).toEqual([
+      { assetId: "asset-extra-1", note: "傍晚的暖光" },
+      { assetId: "asset-extra-2" },
+    ]);
+    // A shot with none keeps the absence, so older documents read as they did.
+    expect(
+      "extraReferences" in read.stories![0].chapters[0].acts[0].keyframes[1],
+    ).toBe(false);
+  });
+
   it("reads a story's reference limit whole, and one beyond the bound as the bound", () => {
     const story = buildStoryMokaFile();
     story.stories![0].maxReferenceImages = 7;

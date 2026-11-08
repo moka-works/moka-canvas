@@ -542,6 +542,23 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-act-video-0")).toBeDefined();
   });
 
+  it("carries a picture beside the cast that the shot's words do not name", async () => {
+    openAtBoard(boarded());
+    const image = useProjectStore.getState().moka?.resources.images[0];
+    expect(image).toBeDefined();
+
+    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-extra-library-0"));
+    fireEvent.click(screen.getByTestId(`story-library-${image!.id}`));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("story-kf-extra-0-0")).toBeDefined(),
+    );
+    expect(acts()[0]?.keyframes[0]?.extraReferences).toEqual([
+      { assetId: image!.id },
+    ]);
+  });
+
   it("draws a new reference into the act's own cast", async () => {
     openAtBoard(boarded());
 

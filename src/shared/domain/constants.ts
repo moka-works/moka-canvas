@@ -347,6 +347,12 @@ export const MAX_ELEMENTS_PER_STORY = 500;
 export const MAX_TAKES_PER_SLOT = 12;
 export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
+
+/** How many pictures a shot may carry outside its cast. */
+export const MAX_EXTRA_REFERENCES_PER_SHOT = 4;
+
+/** The longest line a shot's extra reference may be described with. */
+export const EXTRA_REFERENCE_NOTE_MAX = 120;
 /**
  * How many reference pictures one frame's ask carries when the story says
  * nothing: the bound the shape that draws with references is happiest with.

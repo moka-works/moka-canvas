@@ -48,6 +48,7 @@ import type {
   ResultSlot,
   StoryAct,
   StoryAspect,
+  StoryExtraReference,
   StoryBrief,
   StoryChapter,
   StoryDialogueLine,
@@ -461,6 +462,17 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
       text: take.text,
       voice: take.voice,
       slot: encodeStorySlot(take.slot),
+    }));
+  }
+  if (
+    keyframe.extraReferences !== undefined &&
+    keyframe.extraReferences.length > 0
+  ) {
+    doc.extraReferences = keyframe.extraReferences.map((extra) => ({
+      assetId: extra.assetId,
+      ...(extra.note !== undefined && extra.note !== ""
+        ? { note: extra.note }
+        : {}),
     }));
   }
   return doc;
@@ -1479,7 +1491,37 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
   }
   const voices = decodeStoryVoices(doc.voices);
   if (voices !== undefined) keyframe.voices = voices;
+  const extras = decodeStoryExtraReferences(doc.extraReferences);
+  if (extras !== undefined) keyframe.extraReferences = extras;
   return keyframe;
+}
+
+/**
+ * The pictures a shot carries outside its cast, as a document holds them.
+ *
+ * An entry with no file is not a reference: it could never travel with an ask,
+ * and reading it back as one would put a nameless place in the prompt. A list
+ * that comes back empty is the absence it was.
+ */
+function decodeStoryExtraReferences(
+  value: unknown,
+): StoryExtraReference[] | undefined {
+  if (value === undefined) return undefined;
+  const held = asArray(value, "keyframes[].extraReferences").flatMap(
+    (entry) => {
+      const doc = asRecord(entry, "keyframes[].extraReferences[]");
+      const assetId = optionalString(doc.assetId);
+      if (assetId === undefined || assetId === "") return [];
+      const note = optionalString(doc.note);
+      return [
+        {
+          assetId,
+          ...(note !== undefined && note !== "" ? { note } : {}),
+        },
+      ];
+    },
+  );
+  return held.length === 0 ? undefined : held;
 }
 
 /**

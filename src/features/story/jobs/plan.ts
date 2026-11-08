@@ -52,6 +52,7 @@ import type {
   StoryChapter,
   StoryDialogueLine,
   StoryDocument,
+  StoryExtraReference,
   StoryFilmRole,
   StoryKeyframe,
   StoryVoiceProfile,
@@ -810,10 +811,13 @@ export function planElementArtWaves(
   );
 }
 
-/** One of a frame's mentioned pictures: the element it names, and the drawing
- * that travels with the ask. */
+/** One of a frame's carried pictures: what the ask calls it, and the file. */
 export interface StoryReference {
-  element: StoryElement;
+  /** The element this picture is of, where it stands for one. */
+  element?: StoryElement;
+  /** How the ask names it: the element's name, or what an extra is for. */
+  name: string;
+  description: string;
   assetId: string;
 }
 
@@ -834,6 +838,7 @@ export interface StoryReference {
 export function keyframeCast(
   story: StoryDocument,
   content: string,
+  extras: StoryExtraReference[] = [],
 ): {
   /** The pictures that travel, in the order the content names them. */
   carried: StoryReference[];
@@ -858,12 +863,29 @@ export function keyframeCast(
       undrawn.push(mention.name);
       continue;
     }
-    drawn.push({ element, assetId: take.assetIds[0] });
+    drawn.push({
+      element,
+      name: element.name,
+      description: element.description,
+      assetId: take.assetIds[0],
+    });
   }
+  // The pictures the shot carries beside its cast come after the ones its own
+  // words name: a mention is what the shot is about, and an extra is what the
+  // reader wants beside it.
+  const carried = extras.map((extra, at) => ({
+    name: `Additional reference ${at + 1}`,
+    description:
+      (extra.note ?? "").trim() === ""
+        ? "An extra picture this shot should take into account."
+        : (extra.note ?? "").trim(),
+    assetId: extra.assetId,
+  }));
+  const all = [...drawn, ...carried];
   const limit = story.maxReferenceImages;
   return {
-    carried: drawn.slice(0, limit),
-    beyond: drawn.slice(limit),
+    carried: all.slice(0, limit),
+    beyond: all.slice(limit),
     undrawn,
   };
 }
@@ -884,7 +906,11 @@ export function planKeyframeArt(
         : act.keyframes.find((held) => held.id === keyframeId);
     if (chapter === undefined || act === undefined || keyframe === undefined)
       return [];
-    const cast = keyframeCast(story, keyframe.content).carried;
+    const cast = keyframeCast(
+      story,
+      keyframe.content,
+      keyframe.extraReferences ?? [],
+    ).carried;
     const target: StoryTarget = {
       kind: "keyframeArt",
       chapterId,
@@ -906,9 +932,9 @@ export function planKeyframeArt(
             cameraMove: keyframe.cameraMove,
             angle: keyframe.angle,
           },
-          cast: cast.map(({ element }) => ({
-            name: element.name,
-            description: element.description,
+          cast: cast.map(({ name, description }) => ({
+            name,
+            description,
           })),
         }),
         inputs: cast.map(({ assetId }) => ({

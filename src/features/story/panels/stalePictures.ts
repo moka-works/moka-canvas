@@ -31,13 +31,18 @@ export function staleReferences(
 ): StoryElement[] {
   const frame = currentTake(keyframe.art);
   if (frame === undefined) return [];
-  return keyframeCast(story, keyframe.content).carried.flatMap(
-    ({ element }) => {
-      const reference = currentTake(element.main);
-      if (reference === undefined) return [];
-      return reference.createdAt > frame.createdAt ? [element] : [];
-    },
-  );
+  return keyframeCast(
+    story,
+    keyframe.content,
+    keyframe.extraReferences ?? [],
+  ).carried.flatMap((reference) => {
+    // An extra reference is a file, not a take: it has no newer version to be
+    // stale against.
+    if (reference.element === undefined) return [];
+    const held = currentTake(reference.element.main);
+    if (held === undefined) return [];
+    return held.createdAt > frame.createdAt ? [reference.element] : [];
+  });
 }
 
 /** The same, for every shot of a board that can be redrawn right now. */
