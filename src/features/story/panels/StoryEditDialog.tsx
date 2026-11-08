@@ -106,9 +106,12 @@ export function StoryEditDialog({
   const chosen = view?.models.find((each) => each.id === model);
   const features =
     chosen === undefined ? {} : protocolFeatures(protocols, chosen.protocol);
-  const loading = protocols === null;
-  const canInput = features.imageInput === true;
-  const canMask = canInput && features.mask === true;
+  // A registry still being read, or one that could not be, says nothing about
+  // what a model takes. An edit is still worth offering there — most image
+  // protocols take a picture — but the marker is not guessed at.
+  const unknown = protocols === null;
+  const canInput = unknown || features.imageInput === true;
+  const canMask = !unknown && canInput && features.mask === true;
   const painting = mode === "mask" && canMask;
   // One picture, fitted into the dialog; the mask is written at the picture's
   // own size so that what is filed is the shape of the thing it covers.
@@ -211,15 +214,13 @@ export function StoryEditDialog({
   };
 
   const marked = marks.some(drawn);
-  const refusal = loading
-    ? t("story:edit.loadingModels")
-    : !canInput
-      ? t("story:edit.noInput")
-      : painting && !marked
-        ? t("story:edit.maskPrompt")
-        : words.trim() === ""
-          ? t("story:edit.sayWhatChanges")
-          : null;
+  const refusal = !canInput
+    ? t("story:edit.noInput")
+    : painting && !marked
+      ? t("story:edit.maskPrompt")
+      : words.trim() === ""
+        ? t("story:edit.sayWhatChanges")
+        : null;
 
   const submit = async () => {
     if (busy || refusal !== null || source === undefined) return;
@@ -367,8 +368,8 @@ export function StoryEditDialog({
             className={canInput ? "dialog-note" : "dialog-error"}
             data-testid="story-edit-capability"
           >
-            {loading
-              ? t("story:edit.loadingModels")
+            {unknown
+              ? t("story:edit.capabilitiesUnknown")
               : canInput
                 ? t("story:edit.modelReady")
                 : t("story:edit.noInput")}
@@ -523,9 +524,7 @@ export function StoryEditDialog({
         </label>
 
         {failed !== null && <p className="dialog-error">{failed}</p>}
-        {refusal !== null && refusal !== t("story:edit.loadingModels") && (
-          <p className="dialog-error">{refusal}</p>
-        )}
+        {refusal !== null && <p className="dialog-error">{refusal}</p>}
 
         <div className="dialog-actions">
           <button disabled={busy} onClick={onClose} type="button">

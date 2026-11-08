@@ -317,7 +317,7 @@
     "note": "编辑的是当前版本；结果会作为新版本加入，旧版本仍可找回",
     "model": "编辑用的模型",
     "pickModel": "选一个支持编辑的模型",
-    "loadingModels": "正在读取这台机器上模型的能力…",
+    "capabilitiesUnknown": "还没读到模型能力；仍可以试整图修改，局部重绘暂不可用",
     "modelReady": "这个模型接受图片输入",
     "noInput": "这个模型不接受图片输入，换一个支持编辑的模型",
     "unsupportedModel": "{{model}}（不支持编辑）",

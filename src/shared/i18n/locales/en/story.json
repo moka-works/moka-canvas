@@ -317,7 +317,7 @@
     "note": "Edits the current version; the result joins as a new version and the old one stays",
     "model": "Model for the edit",
     "pickModel": "Choose a model that can edit",
-    "loadingModels": "Reading what this machine's models can do…",
+    "capabilitiesUnknown": "The model's capabilities are not known yet; a whole-picture edit can still be tried, and repainting a region cannot",
     "modelReady": "This model takes a picture as input",
     "noInput": "This model takes no picture input; choose one that supports editing",
     "unsupportedModel": "{{model}} (cannot edit)",
