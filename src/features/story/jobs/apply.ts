@@ -174,6 +174,9 @@ function slotTargetOf(item: StoryJobItem): StorySlotTarget | undefined {
         kind: "element",
         elementId: item.target.elementId,
         view: item.target.view,
+        ...(item.target.variantId === undefined
+          ? {}
+          : { variantId: item.target.variantId }),
       };
     case "keyframeArt":
       return {

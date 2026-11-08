@@ -34,8 +34,11 @@ import {
   actPlannedMs,
   chunkWaves,
   currentTake,
-  elementAspect,
+  elementForm,
   elementOf,
+  formAspect,
+  formDescription,
+  formName,
   keyframeAt,
   storyMentions,
   stripStoryMentions,
@@ -714,19 +717,30 @@ export function planStoryboard(
  */
 export function planElementArt(
   story: StoryDocument,
-  targets: Array<{ elementId: string; view: "main" | "turnaround" }>,
+  targets: Array<{
+    elementId: string;
+    view: "main" | "turnaround";
+    variantId?: string;
+  }>,
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
-  return targets.flatMap(({ elementId, view }) => {
+  return targets.flatMap(({ elementId, view, variantId }) => {
     const element = elementOf(story, elementId);
     if (element === undefined) return [];
-    const main = currentTake(element.main);
+    const form = elementForm(element, variantId);
+    if (variantId !== undefined && form === undefined) return [];
+    const main = currentTake(form === undefined ? element.main : form.main);
     if (view === "turnaround" && main === undefined) return [];
-    const target: StoryTarget = { kind: "elementArt", elementId, view };
+    const target: StoryTarget = {
+      kind: "elementArt",
+      elementId,
+      view,
+      ...(variantId === undefined ? {} : { variantId }),
+    };
     // A turn-around is one sheet of four views and stays square; every other
     // picture is drawn in the frame its kind is drawn in.
     const size = imageSizeForAspect(
-      view === "turnaround" ? "1:1" : elementAspect(story, element),
+      view === "turnaround" ? "1:1" : formAspect(story, element, form),
     );
     return [
       {
@@ -737,14 +751,14 @@ export function planElementArt(
           view === "turnaround"
             ? storyElementTurnaroundPrompt({
                 ...look,
-                name: element.name,
-                description: element.description,
+                name: formName(element, form),
+                description: formDescription(element, form),
               })
             : storyElementMainPrompt({
                 ...look,
                 kind: element.kind,
-                name: element.name,
-                description: element.description,
+                name: formName(element, form),
+                description: formDescription(element, form),
               }),
         // A main picture is drawn from its description alone: handing the
         // previous one over would ask for the drawing that is being replaced.
@@ -768,11 +782,16 @@ export interface ElementArtWave {
 }
 
 /**
- * The picture model an element is drawn by: the one the reader named for it,
- * and otherwise the one the room is set to draw its pictures with.
+ * The picture model an element's form is drawn by: the one the form or the
+ * reader named for it, and otherwise the one the room is set to draw its
+ * pictures with.
  */
-export function elementArtModel(element: StoryElement): string | null {
-  const own = (element.imageModel ?? "").trim();
+export function elementArtModel(
+  element: StoryElement,
+  variantId?: string,
+): string | null {
+  const form = elementForm(element, variantId);
+  const own = (form?.imageModel ?? element.imageModel ?? "").trim();
   return own === "" ? storyAskModel("elementArt") : own;
 }
 
@@ -785,7 +804,11 @@ export function elementArtModel(element: StoryElement): string | null {
  */
 export function planElementArtWaves(
   story: StoryDocument,
-  targets: Array<{ elementId: string; view: "main" | "turnaround" }>,
+  targets: Array<{
+    elementId: string;
+    view: "main" | "turnaround";
+    variantId?: string;
+  }>,
 ): ElementArtWave[] {
   const groups = new Map<
     string,
@@ -797,7 +820,7 @@ export function planElementArtWaves(
     seen.add(item.id);
     const element = elementOf(story, item.target.elementId);
     if (element === undefined) continue;
-    const model = elementArtModel(element);
+    const model = elementArtModel(element, item.target.variantId);
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
     group.items.push(item);

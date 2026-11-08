@@ -35,7 +35,13 @@ export type StoryTarget =
   | { kind: "outline" }
   | { kind: "elements" }
   | { kind: "storyboard"; chapterId: string }
-  | { kind: "elementArt"; elementId: string; view: StoryArtView }
+  | {
+      kind: "elementArt";
+      elementId: string;
+      view: StoryArtView;
+      /** The form the drawing is for; absent means the default form. */
+      variantId?: string;
+    }
   | {
       kind: "keyframeArt";
       chapterId: string;

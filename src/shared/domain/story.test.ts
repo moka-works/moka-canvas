@@ -210,6 +210,42 @@ describe("storyProgress", () => {
     expect(storyProgress(story).elements.state).toBe("ready");
   });
 
+  it("counts every form of an element and waits for each to be drawn", () => {
+    const story = createStory("新的故事", { idea: "一句话" });
+    story.elements = [
+      {
+        ...element(ids.hero, "character"),
+        name: "林",
+        description: "四十岁上下。",
+        main: { takes: [take(ids.heroMain)] },
+        turnaround: { takes: [take(ids.heroSheet)] },
+        variants: [
+          {
+            id: "variant-old",
+            name: "老年",
+            description: "二十年以后。",
+            main: { takes: [] },
+            turnaround: { takes: [] },
+          },
+        ],
+      },
+    ];
+    expect(storyProgress(story).elements).toMatchObject({
+      done: 1,
+      total: 2,
+    });
+    expect(stepGaps(story, "elements")).toEqual([
+      { kind: "elementsUndrawn", names: ["林 · 老年"] },
+    ]);
+
+    const form = story.elements[0].variants![0];
+    form.main = { takes: [take(ids.partnerMain)] };
+    expect(storyProgress(story).elements.done).toBe(1);
+    form.turnaround = { takes: [take(ids.partnerMain)] };
+    expect(storyProgress(story).elements.state).toBe("ready");
+    expect(stepGaps(story, "elements")).toEqual([]);
+  });
+
   it("counts an act as finished only when it is boarded, drawn and filmed", () => {
     const story = createStory("新的故事", { idea: "一句话" });
     const act = createActFor(ids.chapterFirst);
@@ -1399,6 +1435,105 @@ describe("the elements commands", () => {
     )!;
     expect(hero.description).toBe("换了件衣服。");
     expect(hero.name).toBe("林");
+  });
+
+  it("writes an element's forms whole, clears them with an empty list, and undoes it", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const night = {
+      id: "variant-night",
+      name: "夜晚",
+      description: "同样的车厢，灯都灭了。",
+      main: emptyStorySlot(),
+    };
+    const next = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.scene,
+      patch: { variants: [night] },
+    });
+    expect(
+      storyOfFile(next).elements.find((e) => e.id === ids.scene)?.variants,
+    ).toEqual([night]);
+
+    const cleared = expectRoundTrip(next, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.scene,
+      patch: { variants: [] },
+    });
+    expect(
+      storyOfFile(cleared).elements.find((e) => e.id === ids.scene)?.variants,
+    ).toBeUndefined();
+  });
+
+  it("keeps an element's forms when a re-listing says nothing of them", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const night = {
+      id: "variant-night",
+      name: "夜晚",
+      description: "同样的车厢，灯都灭了。",
+      main: emptyStorySlot(),
+    };
+    const set = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.scene,
+      patch: { variants: [night] },
+    });
+    const scene = storyOfFile(set).elements.find((e) => e.id === ids.scene)!;
+    const relisted = expectRoundTrip(set, {
+      type: "setStoryElements",
+      storyId: ids.story,
+      elements: [
+        { ...scene, description: "重写的车厢。", variants: undefined },
+      ],
+    });
+    const held = storyOfFile(relisted).elements.find(
+      (e) => e.id === ids.scene,
+    )!;
+    expect(held.description).toBe("重写的车厢。");
+    expect(held.variants).toEqual([night]);
+  });
+
+  it("files a picture into one form's own slot and leaves the others alone", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const night = {
+      id: "variant-night",
+      name: "夜晚",
+      description: "同样的车厢，灯都灭了。",
+      main: emptyStorySlot(),
+    };
+    const set = expectRoundTrip(moka, {
+      type: "updateStoryElement",
+      storyId: ids.story,
+      elementId: ids.scene,
+      patch: { variants: [night] },
+    });
+    const next = expectRoundTrip(set, {
+      type: "setStorySlot",
+      storyId: ids.story,
+      target: {
+        kind: "element",
+        elementId: ids.scene,
+        view: "main",
+        variantId: "variant-night",
+      },
+      slot: {
+        takes: [
+          { assetIds: [ids.sceneMain], createdAt: "2026-01-01T00:00:00Z" },
+        ],
+      },
+    });
+    const scene = storyOfFile(next).elements.find((e) => e.id === ids.scene)!;
+    expect(scene.variants?.[0]?.main.takes).toHaveLength(1);
+    expect(scene.main.takes).toHaveLength(1);
+    expect(scene.main.takes[0]?.assetIds).toEqual([ids.sceneMain]);
+    expect(scene.variants?.[0]?.main.takes[0]?.assetIds).toEqual([
+      ids.sceneMain,
+    ]);
   });
 
   it("names the chapters an element was seen in, and refuses one the story has not", () => {

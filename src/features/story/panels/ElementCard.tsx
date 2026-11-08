@@ -6,8 +6,10 @@ import {
   STORY_ASPECTS,
   STORY_NAME_MAX,
   currentTake,
+  elementForm,
   elementOf,
   slotWithoutTake,
+  targetKey,
   voiceNamed,
 } from "../../../shared/domain";
 import type {
@@ -35,6 +37,7 @@ import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { StoryEditDialog } from "./StoryEditDialog";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
+import { ElementVariantDialog } from "./ElementVariantDialog";
 import { useField } from "./useField";
 import { VoiceFields } from "./VoiceFields";
 
@@ -43,6 +46,9 @@ const EMPTY_SLOT: StorySlot = { takes: [] };
 
 /** How many chapters a card lists before the rest are left to the menu. */
 const CHAPTER_CHIPS = 3;
+
+/** The form picker's item that opens the dialog rather than choosing a form. */
+const MANAGE_FORMS = "__manage__";
 
 /**
  * One character, a place or a thing, as the room holds it.
@@ -57,18 +63,15 @@ const CHAPTER_CHIPS = 3;
 export const ElementCard = memo(function ElementCard({
   story,
   element,
-  busyMain,
-  busyTurnaround,
+  busyTargets,
   selected,
   onSelect,
   focused,
 }: {
   story: StoryDocument;
   element: StoryElement;
-  /** Whether this element's own picture is being drawn just now. */
-  busyMain: boolean;
-  /** Whether this element's four views are being drawn just now. */
-  busyTurnaround: boolean;
+  /** The places the story's batches are making just now, by target key. */
+  busyTargets: Set<string>;
   /** Whether the card is among those a bulk action is about. */
   selected: boolean;
   onSelect: (elementId: string, selected: boolean) => void;
@@ -78,6 +81,10 @@ export const ElementCard = memo(function ElementCard({
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  // The form the card is showing: the element's own, or one of its variants.
+  const [formId, setFormId] = useState<string | null>(null);
+  // The dialog that adds forms, orders them, and takes them away.
+  const [managing, setManaging] = useState(false);
   // The voice is a card's least used form, and every one of them is a model
   // picker and a recording row: it is kept folded until the reader opens it.
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -86,24 +93,85 @@ export const ElementCard = memo(function ElementCard({
   // The place whose picture is being changed rather than drawn again.
   const [editing, setEditing] = useState<"main" | "turnaround" | null>(null);
   const run = useStoryWavesAsk();
-  const main = currentTake(element.main);
+  const variants = element.variants ?? [];
+  const variant = elementForm(element, formId ?? undefined);
+  const mainSlot = variant === undefined ? element.main : variant.main;
+  const turnaroundSlot =
+    variant === undefined ? element.turnaround : variant.turnaround;
+  const activeModel =
+    variant === undefined ? element.imageModel : variant.imageModel;
+  const activeRatio = variant === undefined ? element.ratio : variant.ratio;
+  const activeDescription =
+    variant === undefined ? element.description : variant.description;
+  const main = currentTake(mainSlot);
   const character = element.kind === "character";
-  const description = useField(element.description, (value) => {
-    if (value !== element.description)
-      write(story, element, { description: value });
+  const description = useField(activeDescription, (value) => {
+    if (value !== activeDescription) writeForm({ description: value });
   });
   const named = useField(element.name, (value) => {
     const name = value.trim();
     // A name nobody could read is not a name: the element keeps the one it had.
     if (name !== "" && name !== element.name) write(story, element, { name });
   });
-  const ratio = elementRatio(story, element);
+  const ratio = elementRatio(story, element, variant);
+  const formTarget = (view: "main" | "turnaround") =>
+    targetKey({
+      kind: "element",
+      elementId: element.id,
+      view,
+      ...(variant === undefined ? {} : { variantId: variant.id }),
+    });
+  const busyMain = busyTargets.has(formTarget("main"));
+  const busyTurnaround = busyTargets.has(formTarget("turnaround"));
+
+  /** Writes the form's own words or settings: the default form's, or a variant's. */
+  const writeForm = (patch: {
+    description?: string;
+    imageModel?: string | null;
+    ratio?: StoryAspect | null;
+  }) => {
+    if (variant === undefined) {
+      write(story, element, patch);
+      return;
+    }
+    writeVariants(
+      story,
+      element,
+      variants.map((held) =>
+        held.id === variant.id
+          ? {
+              ...held,
+              ...(patch.description !== undefined
+                ? { description: patch.description }
+                : {}),
+              ...(patch.imageModel !== undefined
+                ? {
+                    imageModel:
+                      patch.imageModel === null ? undefined : patch.imageModel,
+                  }
+                : {}),
+              ...(patch.ratio !== undefined
+                ? {
+                    ratio: patch.ratio === null ? undefined : patch.ratio,
+                  }
+                : {}),
+            }
+          : held,
+      ),
+    );
+  };
 
   const generate = (view: "main" | "turnaround") => {
     void run(
       story.id,
       "elementArt",
-      planElementArtWaves(story, [{ elementId: element.id, view }]),
+      planElementArtWaves(story, [
+        {
+          elementId: element.id,
+          view,
+          ...(variant === undefined ? {} : { variantId: variant.id }),
+        },
+      ]),
     );
   };
 
@@ -113,77 +181,6 @@ export const ElementCard = memo(function ElementCard({
       data-element-id={element.id}
       data-testid={`story-element-${element.kind}-${element.name}`}
     >
-      <div className="story-element-pictures">
-        <StorySlotView
-          actions={
-            <button
-              className="link"
-              data-testid="story-slot-edit-main"
-              onClick={() => setEditing("main")}
-              type="button"
-            >
-              {t("story:panels.edit")}
-            </button>
-          }
-          busy={busyMain}
-          canGenerate
-          label={t("story:elements.main")}
-          onChoose={(assetId) =>
-            chooseElementTake(story, element, "main", assetId)
-          }
-          onGenerate={() => generate("main")}
-          onPickFromLibrary={() => setPicking("main")}
-          onUpload={(file) =>
-            void uploadElementPicture(story, element, "main", file)
-          }
-          onRemove={(assetId) =>
-            removeOldTake(assetId, () =>
-              dropTake(story, element.id, "main", assetId),
-            )
-          }
-          ratio={ratio}
-          slot={element.main}
-          testId="story-slot-main"
-        />
-        {character && (
-          <StorySlotView
-            actions={
-              <button
-                className="link"
-                data-testid="story-slot-edit-turnaround"
-                onClick={() => setEditing("turnaround")}
-                type="button"
-              >
-                {t("story:panels.edit")}
-              </button>
-            }
-            busy={busyTurnaround}
-            canGenerate={main !== undefined}
-            disabledReason={
-              main === undefined ? t("story:elements.needMainFirst") : undefined
-            }
-            label={t("story:elements.turnaround")}
-            note={t("story:elements.turnaroundFour")}
-            onChoose={(assetId) =>
-              chooseElementTake(story, element, "turnaround", assetId)
-            }
-            onGenerate={() => generate("turnaround")}
-            onPickFromLibrary={() => setPicking("turnaround")}
-            onUpload={(file) =>
-              void uploadElementPicture(story, element, "turnaround", file)
-            }
-            onRemove={(assetId) =>
-              removeOldTake(assetId, () =>
-                dropTake(story, element.id, "turnaround", assetId),
-              )
-            }
-            ratio="1 / 1"
-            slot={element.turnaround ?? EMPTY_SLOT}
-            testId="story-slot-turnaround"
-          />
-        )}
-      </div>
-
       <div className="story-element-head">
         <input
           aria-label={t("story:elements.select", { name: element.name })}
@@ -210,6 +207,112 @@ export const ElementCard = memo(function ElementCard({
           }}
           value={named.value}
         />
+        <select
+          aria-label={t("story:elements.form")}
+          className="story-element-form"
+          data-testid={`story-element-form-${element.name}`}
+          onChange={(event) => {
+            if (event.target.value === MANAGE_FORMS) {
+              setManaging(true);
+              return;
+            }
+            setFormId(event.target.value === "" ? null : event.target.value);
+          }}
+          value={variant?.id ?? ""}
+        >
+          <option value="">{t("story:elements.defaultForm")}</option>
+          {variants.map((held) => (
+            <option key={held.id} value={held.id}>
+              {held.name}
+            </option>
+          ))}
+          <option value={MANAGE_FORMS}>
+            {t("story:elements.manageForms")}
+          </option>
+        </select>
+      </div>
+
+      <div className="story-element-pictures">
+        <StorySlotView
+          actions={
+            <button
+              className="link"
+              data-testid="story-slot-edit-main"
+              onClick={() => setEditing("main")}
+              type="button"
+            >
+              {t("story:panels.edit")}
+            </button>
+          }
+          busy={busyMain}
+          canGenerate
+          label={t("story:elements.main")}
+          onChoose={(assetId) =>
+            chooseElementTake(story, element, "main", assetId, variant?.id)
+          }
+          onGenerate={() => generate("main")}
+          onPickFromLibrary={() => setPicking("main")}
+          onUpload={(file) =>
+            void uploadElementPicture(story, element, "main", file, variant?.id)
+          }
+          onRemove={(assetId) =>
+            removeOldTake(assetId, () =>
+              dropTake(story, element.id, "main", assetId, variant?.id),
+            )
+          }
+          ratio={ratio}
+          slot={mainSlot}
+          testId="story-slot-main"
+        />
+        {character && (
+          <StorySlotView
+            actions={
+              <button
+                className="link"
+                data-testid="story-slot-edit-turnaround"
+                onClick={() => setEditing("turnaround")}
+                type="button"
+              >
+                {t("story:panels.edit")}
+              </button>
+            }
+            busy={busyTurnaround}
+            canGenerate={main !== undefined}
+            disabledReason={
+              main === undefined ? t("story:elements.needMainFirst") : undefined
+            }
+            label={t("story:elements.turnaround")}
+            note={t("story:elements.turnaroundFour")}
+            onChoose={(assetId) =>
+              chooseElementTake(
+                story,
+                element,
+                "turnaround",
+                assetId,
+                variant?.id,
+              )
+            }
+            onGenerate={() => generate("turnaround")}
+            onPickFromLibrary={() => setPicking("turnaround")}
+            onUpload={(file) =>
+              void uploadElementPicture(
+                story,
+                element,
+                "turnaround",
+                file,
+                variant?.id,
+              )
+            }
+            onRemove={(assetId) =>
+              removeOldTake(assetId, () =>
+                dropTake(story, element.id, "turnaround", assetId, variant?.id),
+              )
+            }
+            ratio="1 / 1"
+            slot={turnaroundSlot ?? EMPTY_SLOT}
+            testId="story-slot-turnaround"
+          />
+        )}
       </div>
 
       <ChapterLine
@@ -230,10 +333,8 @@ export const ElementCard = memo(function ElementCard({
             capability="image"
             label={t("story:elements.imageModel")}
             noneLabel={t("story:elements.imageModelNone")}
-            onChange={(reference) =>
-              write(story, element, { imageModel: reference })
-            }
-            value={element.imageModel ?? null}
+            onChange={(reference) => writeForm({ imageModel: reference })}
+            value={activeModel ?? null}
           />
         </div>
         {element.kind === "prop" && (
@@ -244,14 +345,14 @@ export const ElementCard = memo(function ElementCard({
             <span>{t("story:elements.ratio")}</span>
             <select
               onChange={(event) =>
-                write(story, element, {
+                writeForm({
                   ratio:
                     event.target.value === "1:1"
                       ? null
                       : (event.target.value as StoryAspect),
                 })
               }
-              value={element.ratio ?? "1:1"}
+              value={activeRatio ?? "1:1"}
             >
               {STORY_ASPECTS.map((aspect) => (
                 <option key={aspect} value={aspect}>
@@ -274,7 +375,7 @@ export const ElementCard = memo(function ElementCard({
         value={description.value}
       />
 
-      {character && (
+      {character && variant === undefined && (
         <div className="story-element-advanced">
           <button
             aria-expanded={advancedOpen}
@@ -317,9 +418,7 @@ export const ElementCard = memo(function ElementCard({
         <StoryLibraryPicker
           current={
             currentTake(
-              picking === "main"
-                ? element.main
-                : (element.turnaround ?? EMPTY_SLOT),
+              picking === "main" ? mainSlot : (turnaroundSlot ?? EMPTY_SLOT),
             )?.assetIds[0]
           }
           label={t(
@@ -328,7 +427,7 @@ export const ElementCard = memo(function ElementCard({
               : "story:elements.turnaround",
           )}
           onChoose={(assetId) => {
-            keepElementPicture(story, element, picking, assetId);
+            keepElementPicture(story, element, picking, assetId, variant?.id);
             setPicking(null);
           }}
           onClose={() => setPicking(null)}
@@ -338,8 +437,18 @@ export const ElementCard = memo(function ElementCard({
       {editing !== null && (
         <StoryEditDialog
           onClose={() => setEditing(null)}
-          place={{ kind: "element", element, view: editing }}
+          place={{ kind: "element", element, view: editing, variant }}
           story={story}
+        />
+      )}
+
+      {managing && (
+        <ElementVariantDialog
+          activeId={variant?.id}
+          element={element}
+          onClose={() => setManaging(false)}
+          onSelect={setFormId}
+          onWrite={(next) => writeVariants(story, element, next)}
         />
       )}
 
@@ -466,6 +575,28 @@ function write(
 }
 
 /**
+ * One element's forms, whole, as one step of the history.
+ *
+ * Written whole rather than one form at a time: adding, removing and arranging
+ * are one act of the reader's, and the undo of any of them is the list as it
+ * stood before the press.
+ */
+function writeVariants(
+  story: StoryDocument,
+  element: StoryElement,
+  variants: StoryElement["variants"],
+): void {
+  execute(i18n.t("story:history.elements"), [
+    {
+      type: "updateStoryElement",
+      storyId: story.id,
+      elementId: element.id,
+      patch: { variants: variants ?? [] },
+    },
+  ]);
+}
+
+/**
  * One of an element's drawings dropped from its place, as the live document
  * holds that place: a slot is written whole, so a slot read off the card's
  * render would put back whatever a job landed while the picks dialog stood
@@ -476,15 +607,33 @@ function dropTake(
   elementId: string,
   view: "main" | "turnaround",
   assetId: string,
+  variantId?: string,
 ): TakeDrop {
   const live = liveStory(story.id);
   const element = live === undefined ? undefined : elementOf(live, elementId);
-  const slot = view === "main" ? element?.main : element?.turnaround;
+  const form =
+    element === undefined || variantId === undefined
+      ? undefined
+      : elementForm(element, variantId);
+  const slot =
+    element === undefined
+      ? undefined
+      : variantId !== undefined
+        ? form === undefined
+          ? undefined
+          : view === "main"
+            ? form.main
+            : form.turnaround
+        : view === "main"
+          ? element.main
+          : element.turnaround;
   if (live === undefined || element === undefined || slot === undefined)
     return "gone";
   const without = slotWithoutTake(slot, assetId);
   if (without === slot) return "gone";
-  return writeElementSlot(live, element, view, without) ? "dropped" : "refused";
+  return writeElementSlot(live, element, view, without, variantId)
+    ? "dropped"
+    : "refused";
 }
 
 /** Takes an element out of the story, leaving the pictures it was drawn in. */

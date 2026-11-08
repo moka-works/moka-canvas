@@ -42,7 +42,11 @@ function defaultEditModel(
   view: ReturnType<typeof useModelStore.getState>["view"],
 ): string | null {
   if (place.kind === "element") {
-    const own = (place.element.imageModel ?? "").trim();
+    const own = (
+      place.variant?.imageModel ??
+      place.element.imageModel ??
+      ""
+    ).trim();
     if (own !== "") return own;
   }
   const asked = storyAskModel(
@@ -80,7 +84,11 @@ export function StoryEditDialog({
   const loadProtocols = useModelStore((state) => state.loadProtocols);
   const source = editSource(place);
   const label =
-    place.kind === "element" ? place.element.name : t("story:storyboard.frame");
+    place.kind === "element"
+      ? place.variant === undefined
+        ? place.element.name
+        : `${place.element.name} · ${place.variant.name}`
+      : t("story:storyboard.frame");
   const [model, setModel] = useState<string | null>(() =>
     defaultEditModel(place, view),
   );

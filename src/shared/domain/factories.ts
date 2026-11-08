@@ -46,6 +46,7 @@ import type {
   StoryDocument,
   StoryElement,
   StoryElementKind,
+  StoryElementVariant,
   StoryKeyframe,
   StorySlot,
   StoryShotSize,
@@ -781,6 +782,24 @@ export function createElement(
     chapterIds,
     main: emptyStorySlot(),
     ...(kind === "character" ? { turnaround: emptyStorySlot() } : {}),
+  };
+}
+
+/** One more form of an element: its words and model, freshly copied. */
+export function createElementVariant(
+  element: StoryElement,
+  name: string,
+): StoryElementVariant {
+  return {
+    id: newId(),
+    name,
+    description: element.description,
+    main: emptyStorySlot(),
+    ...(element.kind === "character" ? { turnaround: emptyStorySlot() } : {}),
+    ...(element.imageModel !== undefined
+      ? { imageModel: element.imageModel }
+      : {}),
+    ...(element.ratio !== undefined ? { ratio: element.ratio } : {}),
   };
 }
 

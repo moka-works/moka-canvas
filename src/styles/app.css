@@ -7543,6 +7543,94 @@ body.is-dragging-split {
   outline: none;
 }
 
+/* The form a card is showing, a third of the name row at most. */
+.story-element-form {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  flex: 0 1 33%;
+  font-family: inherit;
+  min-width: 96px;
+  padding: 4px 6px;
+}
+
+.story-element-form:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* The forms one element takes, arranged rather than switched through. */
+.story-variants {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 12px;
+  max-height: 86vh;
+  max-width: min(520px, 92vw);
+  overflow-y: auto;
+  padding: 16px;
+  width: 100%;
+}
+
+.story-variants h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.story-variant-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.story-variant-row {
+  align-items: center;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 6px 10px;
+}
+
+.story-variant-row.is-default {
+  background: var(--canvas);
+}
+
+.story-variant-name {
+  color: var(--ink);
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-variant-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.story-variant-add {
+  align-items: end;
+  display: flex;
+  gap: 8px;
+}
+
+.story-variant-add .dialog-field {
+  flex: 1;
+}
+
+.story-variant-note {
+  margin: 0;
+}
+
 .story-element-chapters {
   align-items: center;
   display: flex;

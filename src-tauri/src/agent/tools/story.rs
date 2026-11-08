@@ -726,6 +726,7 @@ fn element_from(value: &Value, existing: Option<&StoryElement>) -> Result<StoryE
         chapter_ids: Vec::new(),
         main: empty_slot(),
         turnaround: None,
+        variants: None,
         voice: None,
         image_model: None,
         ratio: None,
@@ -818,15 +819,32 @@ fn update_element(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolE
 
 fn slot_of<'a>(story: &'a StoryDocument, target: &StorySlotTarget) -> Option<&'a StorySlot> {
     match target {
-        StorySlotTarget::Element { element_id, view } => story
+        StorySlotTarget::Element {
+            element_id,
+            view,
+            variant_id,
+        } => story
             .elements
             .iter()
             .find(|element| element.id == *element_id)
-            .map(|element| match view {
-                crate::domain::story::StoryElementView::Main => &element.main,
-                crate::domain::story::StoryElementView::Turnaround => {
-                    element.turnaround.as_ref().unwrap_or(&element.main)
-                }
+            .and_then(|element| match variant_id {
+                Some(variant_id) => element
+                    .variants
+                    .iter()
+                    .flatten()
+                    .find(|form| form.id == *variant_id)
+                    .map(|form| match view {
+                        crate::domain::story::StoryElementView::Main => &form.main,
+                        crate::domain::story::StoryElementView::Turnaround => {
+                            form.turnaround.as_ref().unwrap_or(&form.main)
+                        }
+                    }),
+                None => Some(match view {
+                    crate::domain::story::StoryElementView::Main => &element.main,
+                    crate::domain::story::StoryElementView::Turnaround => {
+                        element.turnaround.as_ref().unwrap_or(&element.main)
+                    }
+                }),
             }),
         StorySlotTarget::Keyframe {
             chapter_id,

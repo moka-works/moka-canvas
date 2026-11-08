@@ -29,6 +29,7 @@ import type {
   StoryDocument,
   StoryElement,
   StoryElementKind,
+  StoryElementVariant,
   StoryKeyframe,
   StorySlot,
   StorySlotTarget,
@@ -189,15 +190,73 @@ export function elementAspect(
   }
 }
 
+/** The frame one form of an element is drawn in. */
+export function formAspect(
+  story: StoryDocument,
+  element: StoryElement,
+  form: StoryElementVariant | undefined,
+): StoryAspect {
+  if (element.kind !== "prop") return elementAspect(story, element);
+  return form?.ratio ?? element.ratio ?? "1:1";
+}
+
 /** Whether a character has both drawings a character is drawn with. */
 export function elementDrawn(element: StoryElement): boolean {
-  if (element.main.takes.length === 0) return false;
-  return (
-    element.kind !== "character" || (element.turnaround?.takes.length ?? 0) > 0
+  return elementForms(element).every((form) => formDrawn(element, form));
+}
+
+/** The form an element's card is showing: its own, or one of its variants. */
+export function elementForm(
+  element: StoryElement,
+  variantId?: string,
+): StoryElementVariant | undefined {
+  if (variantId === undefined) return undefined;
+  return (element.variants ?? []).find((variant) => variant.id === variantId);
+}
+
+/** Every form an element takes, its default form first. */
+export function elementForms(
+  element: StoryElement,
+): Array<StoryElementVariant | undefined> {
+  return [undefined, ...(element.variants ?? [])];
+}
+
+/** How many forms a cast holds, which is what the page counts. */
+export function elementCount(elements: StoryElement[]): number {
+  return elements.reduce(
+    (sum, element) => sum + 1 + (element.variants?.length ?? 0),
+    0,
   );
 }
 
-/** Whether an element is finished: described, and drawn. */
+/** The words one form is drawn from. */
+export function formDescription(
+  element: StoryElement,
+  form: StoryElementVariant | undefined,
+): string {
+  return form === undefined ? element.description : form.description;
+}
+
+/** The name a form is shown under: the element's, and the form's beside it. */
+export function formName(
+  element: StoryElement,
+  form: StoryElementVariant | undefined,
+): string {
+  return form === undefined ? element.name : `${element.name} · ${form.name}`;
+}
+
+/** Whether one form of an element has the drawings it is drawn with. */
+export function formDrawn(
+  element: StoryElement,
+  form: StoryElementVariant | undefined,
+): boolean {
+  const main = form === undefined ? element.main : form.main;
+  const turnaround = form === undefined ? element.turnaround : form.turnaround;
+  if (main.takes.length === 0) return false;
+  return element.kind !== "character" || (turnaround?.takes.length ?? 0) > 0;
+}
+
+/** Whether an element is finished: described, and every form of it drawn. */
 export function elementComplete(element: StoryElement): boolean {
   return elementDescribed(element) && elementDrawn(element);
 }
@@ -230,9 +289,21 @@ export function storyProgress(
     chapters.length > 0 && writtenChapters === chapters.length;
 
   const elements = story.elements;
-  const completeElements = elements.filter(elementComplete).length;
+  // Every form counts: a character drawn in two ages is two drawings before
+  // the step is done, and the page's own count says so.
+  const elementTotal = elementCount(elements);
+  const completeElements = elements.reduce(
+    (sum, element) =>
+      sum +
+      elementForms(element).filter((form) =>
+        form === undefined
+          ? elementDescribed(element) && formDrawn(element, undefined)
+          : formDrawn(element, form),
+      ).length,
+    0,
+  );
   const everyElementComplete =
-    elements.length > 0 && completeElements === elements.length;
+    elementTotal > 0 && completeElements === elementTotal;
 
   const completeActs = acts.filter((act) =>
     actComplete(act, actGranularity(act, granularity)),
@@ -264,7 +335,7 @@ export function storyProgress(
         settled("elements"),
       ),
       done: completeElements,
-      total: elements.length,
+      total: elementTotal,
     },
     storyboard: {
       step: "storyboard",
@@ -351,13 +422,18 @@ export function stepGaps(
           names: undescribed.map((element) => element.name),
         });
       }
-      const undrawn = story.elements.filter(
-        (element) => elementDescribed(element) && !elementDrawn(element),
+      const undrawn = story.elements.flatMap((element) =>
+        elementForms(element)
+          .filter((form) =>
+            form === undefined ? elementDescribed(element) : true,
+          )
+          .filter((form) => !formDrawn(element, form))
+          .map((form) => formName(element, form)),
       );
       if (undrawn.length > 0) {
         gaps.push({
           kind: "elementsUndrawn",
-          names: undrawn.map((element) => element.name),
+          names: undrawn,
         });
       }
       return gaps;
@@ -1095,8 +1171,10 @@ export function stripStoryMentions(content: string): string {
 
 export function targetKey(target: StorySlotTarget): string {
   switch (target.kind) {
-    case "element":
-      return `element:${target.view}:${target.elementId}`;
+    case "element": {
+      const form = target.variantId === undefined ? "" : `:${target.variantId}`;
+      return `element:${target.view}:${target.elementId}${form}`;
+    }
     case "keyframe":
       return `keyframe:${target.chapterId}:${target.actId}:${target.keyframeId}`;
     case "actVideo":
@@ -1149,6 +1227,11 @@ export function slotAt(
     case "element": {
       const element = elementOf(story, target.elementId);
       if (element === undefined) return undefined;
+      if (target.variantId !== undefined) {
+        const form = elementForm(element, target.variantId);
+        if (form === undefined) return undefined;
+        return target.view === "main" ? form.main : form.turnaround;
+      }
       return target.view === "main" ? element.main : element.turnaround;
     }
     case "keyframe":

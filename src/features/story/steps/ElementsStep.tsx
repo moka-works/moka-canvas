@@ -13,12 +13,15 @@ import { assetThumbUrl } from "../../../api/assets";
 import {
   chapterReadingWaves,
   currentTake,
+  elementCount,
   elementDescribed,
+  elementForms,
   targetKey,
   voiceNamed,
   type StoryDocument,
   type StoryElement,
   type StoryElementKind,
+  type StoryElementVariant,
   type StoryReadingPiece,
 } from "../../../shared/domain";
 import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
@@ -299,14 +302,6 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     }
     return keys;
   }, [jobs]);
-  /** Whether one of a card's own pictures is being made just now. */
-  const drawing = (
-    element: StoryElement,
-    view: "main" | "turnaround",
-  ): boolean =>
-    busyTargets.has(
-      targetKey({ kind: "element", elementId: element.id, view }),
-    );
   /** Checks a card for a bulk action, whatever page either of them is on. */
   const select = useCallback((elementId: string, selected: boolean) => {
     setPicked((held) => {
@@ -316,24 +311,48 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       return next;
     });
   }, []);
-  const undrawn = shown.filter(
-    (element) => currentTake(element.main) === undefined,
+  /** Whether one form of a card's picture is being made just now. */
+  const drawing = (
+    element: StoryElement,
+    view: "main" | "turnaround",
+    variant?: StoryElementVariant,
+  ): boolean =>
+    busyTargets.has(
+      targetKey({
+        kind: "element",
+        elementId: element.id,
+        view,
+        ...(variant === undefined ? {} : { variantId: variant.id }),
+      }),
+    );
+  /** Every form of the cards on this page, its default form first. */
+  const forms = shown.flatMap((element) =>
+    elementForms(element).map((form) => ({ element, form })),
   );
-  const viewsMissing = shown.filter(
-    (element) =>
+  const mainSlot = (element: StoryElement, form?: StoryElementVariant) =>
+    form === undefined ? element.main : form.main;
+  const turnaroundSlot = (element: StoryElement, form?: StoryElementVariant) =>
+    form === undefined ? element.turnaround : form.turnaround;
+  const undrawn = forms.filter(
+    ({ element, form }) => currentTake(mainSlot(element, form)) === undefined,
+  );
+  const viewsMissing = forms.filter(
+    ({ element, form }) =>
       element.kind === "character" &&
-      currentTake(element.main) !== undefined &&
-      currentTake(element.turnaround ?? EMPTY) === undefined,
+      currentTake(mainSlot(element, form)) !== undefined &&
+      currentTake(turnaroundSlot(element, form) ?? EMPTY) === undefined,
   );
   // What a bulk button hands over: the places of the kind being looked at
   // still missing that picture and not already being drawn, since asking for
   // a place twice pays for it twice. The button counts the same set, so its
   // number is the work of the press and follows the group chosen above it.
-  const drawable = undrawn.filter((element) => !drawing(element, "main"));
+  const drawable = undrawn.filter(
+    ({ element, form }) => !drawing(element, "main", form),
+  );
   const allPicked =
     shown.length > 0 && shown.every((element) => picked.has(element.id));
   const viewable = viewsMissing.filter(
-    (element) => !drawing(element, "turnaround"),
+    ({ element, form }) => !drawing(element, "turnaround", form),
   );
   const spoken = story.elements.some(elementDescribed);
   // The reading itself, rather than one of the drawings that follow it: a
@@ -561,7 +580,9 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
               role="tab"
               type="button"
             >
-              {t("story:elements.all", { count: story.elements.length })}
+              {t("story:elements.all", {
+                count: elementCount(story.elements),
+              })}
             </button>
             {groups.map((group) => (
               <button
@@ -574,7 +595,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                 type="button"
               >
                 {t(`story:elements.group_${group.kind}`, {
-                  count: group.elements.length,
+                  count: elementCount(group.elements),
                 })}
               </button>
             ))}
@@ -620,9 +641,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                     "elementArt",
                     planElementArtWaves(
                       story,
-                      drawable.map((element) => ({
+                      drawable.map(({ element, form }) => ({
                         elementId: element.id,
                         view: "main" as const,
+                        ...(form === undefined ? {} : { variantId: form.id }),
                       })),
                     ),
                   )
@@ -641,9 +663,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                     "elementArt",
                     planElementArtWaves(
                       story,
-                      viewable.map((element) => ({
+                      viewable.map(({ element, form }) => ({
                         elementId: element.id,
                         view: "turnaround" as const,
+                        ...(form === undefined ? {} : { variantId: form.id }),
                       })),
                     ),
                   )
@@ -656,7 +679,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             <button
               className="link"
               data-testid="story-elements-add"
-              disabled={story.elements.length >= MAX_ELEMENTS_PER_STORY}
+              disabled={elementCount(story.elements) >= MAX_ELEMENTS_PER_STORY}
               onClick={() => setAdding(true)}
               type="button"
             >
@@ -749,9 +772,9 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         <div className="story-step-actions">
           <span className="story-hint" data-testid="story-elements-counts">
             {t("story:elements.counts", {
-              characters: groups[0]?.elements.length ?? 0,
-              scenes: groups[1]?.elements.length ?? 0,
-              props: groups[2]?.elements.length ?? 0,
+              characters: elementCount(groups[0]?.elements ?? []),
+              scenes: elementCount(groups[1]?.elements ?? []),
+              props: elementCount(groups[2]?.elements ?? []),
             })}
           </span>
           {totalWaves > 1 && (running !== null || waves.length > 0) && (
@@ -810,8 +833,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             <ul className="story-elements">
               {visible.map((element) => (
                 <ElementCard
-                  busyMain={drawing(element, "main")}
-                  busyTurnaround={drawing(element, "turnaround")}
+                  busyTargets={busyTargets}
                   element={element}
                   focused={focused === element.id}
                   key={element.id}

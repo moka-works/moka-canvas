@@ -19,6 +19,7 @@ import type {
   StoryAct,
   StoryDocument,
   StoryElement,
+  StoryElementVariant,
   StoryKeyframe,
 } from "../../../shared/domain/types";
 import type { ElementView } from "../panels/elementPictures";
@@ -26,7 +27,13 @@ import { imageSizeForAspect, jobKey } from "./plan";
 
 /** The place an edited picture belongs to. */
 export type EditPlace =
-  | { kind: "element"; element: StoryElement; view: ElementView }
+  | {
+      kind: "element";
+      element: StoryElement;
+      /** The form being edited; absent means the default form. */
+      variant?: StoryElementVariant;
+      view: ElementView;
+    }
   | {
       kind: "keyframe";
       chapterId: string;
@@ -49,6 +56,7 @@ export function editTarget(place: EditPlace): StoryTarget {
       kind: "elementArt",
       elementId: place.element.id,
       view: place.view,
+      ...(place.variant === undefined ? {} : { variantId: place.variant.id }),
     };
   }
   return {
@@ -64,8 +72,8 @@ export function editSource(place: EditPlace): string | undefined {
   const slot =
     place.kind === "element"
       ? place.view === "main"
-        ? place.element.main
-        : place.element.turnaround
+        ? (place.variant?.main ?? place.element.main)
+        : (place.variant?.turnaround ?? place.element.turnaround)
       : place.keyframe.art;
   return currentTake(slot ?? { takes: [] })?.assetIds[0];
 }
@@ -87,7 +95,7 @@ function editPrompt(
   const lines =
     place.kind === "element"
       ? [
-          `Edit the reference picture of the ${ELEMENT_NOUN[place.element.kind]} "${place.element.name}" from the attached picture. Keep everything else unchanged — the same face, hair, clothes, body and look; change only what the instruction says.`,
+          `Edit the reference picture of the ${ELEMENT_NOUN[place.element.kind]} "${place.variant === undefined ? place.element.name : `${place.element.name} (${place.variant.name})`}" from the attached picture. Keep everything else unchanged — the same face, hair, clothes, body and look; change only what the instruction says.`,
           look,
         ]
       : [

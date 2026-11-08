@@ -1,5 +1,9 @@
-import { elementAspect } from "../../../shared/domain/story";
-import type { StoryDocument, StoryElement } from "../../../shared/domain/types";
+import { formAspect } from "../../../shared/domain/story";
+import type {
+  StoryDocument,
+  StoryElement,
+  StoryElementVariant,
+} from "../../../shared/domain/types";
 
 /** Every frame of a story has the shape the story is told in. */
 const RATIOS: Record<string, string> = {
@@ -19,6 +23,7 @@ export function frameRatio(story: StoryDocument): string {
 export function elementRatio(
   story: StoryDocument,
   element: StoryElement,
+  form?: StoryElementVariant,
 ): string {
-  return RATIOS[elementAspect(story, element)] ?? "1 / 1";
+  return RATIOS[formAspect(story, element, form)] ?? "1 / 1";
 }

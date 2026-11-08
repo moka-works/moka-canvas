@@ -478,6 +478,31 @@ pub struct StoryChapter {
     pub acts: Vec<StoryAct>,
 }
 
+/// One form an element takes: the same character at another age, the same
+/// place at another hour.
+///
+/// A form is an element of its own in what a drawing is made from — its words,
+/// its pictures, its model — but belongs to the card it was made under, and
+/// shares that card's name, chapters and voice. The element's own fields are
+/// its default form; a form here is one of the others.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryElementVariant {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub main: StorySlot,
+    /// The four views, which only a character's form is drawn with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turnaround: Option<StorySlot>,
+    /// The picture model this form is drawn by, where it names its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
+    /// The frame this form is drawn in, for a prop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<StoryAspect>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryElement {
@@ -490,6 +515,9 @@ pub struct StoryElement {
     pub main: StorySlot,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turnaround: Option<StorySlot>,
+    /// The other forms this element takes, in the order the card offers them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<StoryElementVariant>>,
     /// The voice this character speaks in, when the reader has given it one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<StoryVoiceProfile>,
@@ -580,6 +608,9 @@ pub enum StorySlotTarget {
     Element {
         element_id: String,
         view: StoryElementView,
+        /// The form a picture belongs to; absent means the default form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variant_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Keyframe {
@@ -649,6 +680,9 @@ pub struct StoryElementPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub ratio: Option<Option<StoryAspect>>,
+    /// The element's forms, whole; an empty list takes every one of them away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<StoryElementVariant>>,
 }
 
 /// The fields a caller may move on an act, for `updateStoryAct`.
@@ -757,6 +791,12 @@ impl StoryDocument {
             if let Some(turnaround) = &element.turnaround {
                 slot(turnaround);
             }
+            for form in element.variants.iter().flatten() {
+                slot(&form.main);
+                if let Some(turnaround) = &form.turnaround {
+                    slot(turnaround);
+                }
+            }
         }
         for chapter in &self.chapters {
             for act in &chapter.acts {
@@ -797,16 +837,32 @@ impl StoryDocument {
     /// and the undo of that write has nothing to put back.
     fn slot(&self, target: &StorySlotTarget) -> Result<StorySlot, CommandError> {
         match target {
-            StorySlotTarget::Element { element_id, view } => {
+            StorySlotTarget::Element {
+                element_id,
+                view,
+                variant_id,
+            } => {
                 let element = self
                     .elements
                     .iter()
                     .find(|element| &element.id == element_id)
                     .ok_or_else(story_target_invalid)?;
+                let (main, turnaround) = match variant_id {
+                    Some(variant_id) => {
+                        let form = element
+                            .variants
+                            .iter()
+                            .flatten()
+                            .find(|form| &form.id == variant_id)
+                            .ok_or_else(story_target_invalid)?;
+                        (&form.main, form.turnaround.as_ref())
+                    }
+                    None => (&element.main, element.turnaround.as_ref()),
+                };
                 match view {
-                    StoryElementView::Main => Ok(element.main.clone()),
+                    StoryElementView::Main => Ok(main.clone()),
                     StoryElementView::Turnaround => {
-                        element.turnaround.clone().ok_or_else(story_target_invalid)
+                        turnaround.cloned().ok_or_else(story_target_invalid)
                     }
                 }
             }
@@ -901,9 +957,27 @@ impl StoryDocument {
     ) -> StoryDocument {
         let mut next = self.clone();
         match target {
-            StorySlotTarget::Element { element_id, view } => {
+            StorySlotTarget::Element {
+                element_id,
+                view,
+                variant_id,
+            } => {
                 for element in next.elements.iter_mut() {
                     if &element.id != element_id {
+                        continue;
+                    }
+                    if let Some(variant_id) = variant_id {
+                        for form in element.variants.iter_mut().flatten() {
+                            if &form.id != variant_id {
+                                continue;
+                            }
+                            match view {
+                                StoryElementView::Main => form.main = slot.clone(),
+                                StoryElementView::Turnaround => {
+                                    form.turnaround = Some(slot.clone())
+                                }
+                            }
+                        }
                         continue;
                     }
                     match view {
@@ -1155,7 +1229,12 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
     if story.chapters.len() > MAX_CHAPTERS_PER_STORY {
         issues.push(issue("STORY_CHAPTER_LIMIT", "Chapter limit reached".into()));
     }
-    if story.elements.len() > MAX_ELEMENTS_PER_STORY {
+    let element_forms: usize = story
+        .elements
+        .iter()
+        .map(|element| 1 + element.variants.iter().flatten().count())
+        .sum();
+    if element_forms > MAX_ELEMENTS_PER_STORY {
         issues.push(issue("STORY_ELEMENT_LIMIT", "Element limit reached".into()));
     }
     if story.max_reference_images > REFERENCE_IMAGES_MAX {
@@ -1173,6 +1252,12 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
         slots.push(&element.main);
         if let Some(turnaround) = &element.turnaround {
             slots.push(turnaround);
+        }
+        for form in element.variants.iter().flatten() {
+            slots.push(&form.main);
+            if let Some(turnaround) = &form.turnaround {
+                slots.push(turnaround);
+            }
         }
     }
     for chapter in &story.chapters {
@@ -1303,11 +1388,39 @@ fn check_story(story: &StoryDocument) -> Result<(), CommandError> {
             "Chapter limit reached",
         ));
     }
-    if story.elements.len() > MAX_ELEMENTS_PER_STORY {
+    let element_forms: usize = story
+        .elements
+        .iter()
+        .map(|element| 1 + element.variants.iter().flatten().count())
+        .sum();
+    if element_forms > MAX_ELEMENTS_PER_STORY {
         return Err(CommandError::new(
             "STORY_ELEMENT_LIMIT",
             "Element limit reached",
         ));
+    }
+    for element in &story.elements {
+        let mut seen: Vec<&str> = Vec::new();
+        for form in element.variants.iter().flatten() {
+            let name = form.name.trim();
+            if form.id.trim().is_empty()
+                || seen.contains(&form.id.as_str())
+                || name.is_empty()
+                || name.chars().count() > STORY_NAME_MAX
+            {
+                return Err(CommandError::new(
+                    "STORY_NAME_INVALID",
+                    "An element's form has no usable name or id",
+                ));
+            }
+            seen.push(form.id.as_str());
+            if form.description.chars().count() > STORY_IDEA_MAX {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "A form's description is too long",
+                ));
+            }
+        }
     }
     if story.max_reference_images > REFERENCE_IMAGES_MAX {
         return Err(CommandError::new(
@@ -1700,6 +1813,9 @@ pub fn apply_story_command(
                     Some(before) => StoryElement {
                         main: before.main.clone(),
                         turnaround: before.turnaround.clone(),
+                        // Forms are the reader's work: a re-listing that says
+                        // nothing of them leaves them where they were.
+                        variants: element.variants.clone().or_else(|| before.variants.clone()),
                         voice: element.voice.clone().or_else(|| before.voice.clone()),
                         image_model: element
                             .image_model
@@ -1773,6 +1889,38 @@ pub fn apply_story_command(
                     ));
                 }
             }
+            if let Some(variants) = &patch.variants {
+                let mut seen: Vec<&str> = Vec::new();
+                for form in variants {
+                    let name = form.name.trim();
+                    if form.id.trim().is_empty()
+                        || seen.contains(&form.id.as_str())
+                        || name.is_empty()
+                        || name.chars().count() > STORY_NAME_MAX
+                    {
+                        return Err(CommandError::new(
+                            "STORY_NAME_INVALID",
+                            "An element's form has no usable name or id",
+                        ));
+                    }
+                    seen.push(form.id.as_str());
+                    if form.description.chars().count() > STORY_IDEA_MAX {
+                        return Err(CommandError::new(
+                            "VALIDATION_FAILED",
+                            "A form's description is too long",
+                        ));
+                    }
+                    if let Some(model) = &form.image_model {
+                        let model = model.trim();
+                        if model.is_empty() || model.chars().count() > MODEL_REFERENCE_MAX {
+                            return Err(CommandError::new(
+                                "VALIDATION_FAILED",
+                                "A form's picture model is not a model name",
+                            ));
+                        }
+                    }
+                }
+            }
             let previous = StoryElementPatch {
                 name: patch.name.as_ref().map(|_| element.name.clone()),
                 kind: patch.kind.map(|_| element.kind),
@@ -1793,6 +1941,12 @@ pub fn apply_story_command(
                     .as_ref()
                     .map(|_| element.image_model.clone()),
                 ratio: patch.ratio.as_ref().map(|_| element.ratio),
+                // Forms are written back whole; an element that held none is
+                // undone by the empty list rather than by a null.
+                variants: patch
+                    .variants
+                    .as_ref()
+                    .map(|_| element.variants.clone().unwrap_or_default()),
             };
             let mut next = story.clone();
             for held in next.elements.iter_mut() {
@@ -1823,7 +1977,15 @@ pub fn apply_story_command(
                 if let Some(ratio) = &patch.ratio {
                     held.ratio = *ratio;
                 }
+                if let Some(variants) = &patch.variants {
+                    held.variants = if variants.is_empty() {
+                        None
+                    } else {
+                        Some(variants.clone())
+                    };
+                }
             }
+            check_story(&next)?;
             Ok((
                 replace_story(moka, next),
                 vec![DocumentCommand::UpdateStoryElement {

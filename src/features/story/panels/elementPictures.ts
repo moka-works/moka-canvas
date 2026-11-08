@@ -26,7 +26,15 @@ export type ElementView = "main" | "turnaround";
 function slotOf(
   element: StoryElement,
   view: ElementView,
+  variantId?: string,
 ): StorySlot | undefined {
+  if (variantId !== undefined) {
+    const form = (element.variants ?? []).find(
+      (variant) => variant.id === variantId,
+    );
+    if (form === undefined) return undefined;
+    return view === "main" ? form.main : form.turnaround;
+  }
   return view === "main" ? element.main : element.turnaround;
 }
 
@@ -36,13 +44,19 @@ export function writeElementSlot(
   element: StoryElement,
   view: ElementView,
   slot: StorySlot,
+  variantId?: string,
 ): boolean {
   return (
     execute(i18n.t("story:history.elements"), [
       {
         type: "setStorySlot",
         storyId: story.id,
-        target: { kind: "element", elementId: element.id, view },
+        target: {
+          kind: "element",
+          elementId: element.id,
+          view,
+          ...(variantId === undefined ? {} : { variantId }),
+        },
         slot,
       },
     ]) !== null
@@ -55,10 +69,17 @@ export function chooseElementTake(
   element: StoryElement,
   view: ElementView,
   assetId: string,
+  variantId?: string,
 ): void {
-  const slot = slotOf(element, view);
+  const slot = slotOf(element, view, variantId);
   if (slot === undefined) return;
-  writeElementSlot(story, element, view, slotWithCurrent(slot, assetId));
+  writeElementSlot(
+    story,
+    element,
+    view,
+    slotWithCurrent(slot, assetId),
+    variantId,
+  );
 }
 
 /**
@@ -73,8 +94,9 @@ export function keepElementPicture(
   element: StoryElement,
   view: ElementView,
   assetId: string,
+  variantId?: string,
 ): void {
-  const slot = slotOf(element, view);
+  const slot = slotOf(element, view, variantId);
   if (slot === undefined) return;
   writeElementSlot(
     story,
@@ -84,6 +106,7 @@ export function keepElementPicture(
       assetIds: [assetId],
       createdAt: new Date().toISOString(),
     }),
+    variantId,
   );
 }
 
@@ -141,9 +164,10 @@ export async function uploadElementPicture(
   element: StoryElement,
   view: ElementView,
   file: File,
+  variantId?: string,
 ): Promise<boolean> {
   const assetId = await filePictureFromComputer(file);
   if (assetId === undefined) return false;
-  keepElementPicture(story, element, view, assetId);
+  keepElementPicture(story, element, view, assetId, variantId);
   return true;
 }

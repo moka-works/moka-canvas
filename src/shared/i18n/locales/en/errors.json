@@ -117,7 +117,8 @@
     "directorSceneLimit": "The project holds more director scenes than the {{count}} allowed",
     "directorSceneInvalid": "The director scene is invalid at {{path}}: {{reason}}",
     "directorSceneTooLarge": "Director scene \"{{title}}\" is {{bytes}} bytes; the limit is {{limit}}",
-    "storyElementModelInvalid": "The element's picture model is not a model name"
+    "storyElementModelInvalid": "The element's picture model is not a model name",
+    "storyElementVariantsInvalid": "An element's forms are not named by plain, unique ids"
   },
   "timeline": {
     "clipAssetMissing": "Clip's asset is not in the project",

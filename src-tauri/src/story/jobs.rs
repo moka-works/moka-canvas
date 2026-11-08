@@ -346,6 +346,9 @@ pub enum StoryTarget {
     ElementArt {
         element_id: String,
         view: StoryArtView,
+        /// The form the drawing is for; absent means the default form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variant_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     KeyframeArt {

@@ -2307,7 +2307,11 @@ function applyOne(
 
     case "setStoryElements": {
       const story = storyOf(moka, command.storyId);
-      if (command.elements.length > MAX_ELEMENTS_PER_STORY)
+      const forms = command.elements.reduce(
+        (sum, element) => sum + 1 + (element.variants?.length ?? 0),
+        0,
+      );
+      if (forms > MAX_ELEMENTS_PER_STORY)
         throw new CommandError(
           "STORY_ELEMENT_LIMIT",
           i18n.t("errors:command.storyElementLimit"),
@@ -2340,6 +2344,11 @@ function applyOne(
           // A prop's frame is the reader's answer as well.
           ...(element.ratio === undefined && before.ratio !== undefined
             ? { ratio: before.ratio }
+            : {}),
+          // Forms are the reader's work too: a re-listing that says nothing
+          // of them leaves them, pictures and all, where they were.
+          ...(element.variants === undefined && before.variants !== undefined
+            ? { variants: before.variants }
             : {}),
         };
       });
@@ -2410,6 +2419,44 @@ function applyOne(
             i18n.t("errors:command.storyElementModelInvalid"),
           );
       }
+      if (command.patch.variants !== undefined) {
+        if (!Array.isArray(command.patch.variants))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyElementVariantsInvalid"),
+          );
+        const seen = new Set<string>();
+        for (const form of command.patch.variants) {
+          if (form.id.trim() === "" || seen.has(form.id))
+            throw new CommandError(
+              "VALIDATION_FAILED",
+              i18n.t("errors:command.storyElementVariantsInvalid"),
+            );
+          seen.add(form.id);
+          const name = form.name.trim();
+          if (name === "" || name.length > STORY_NAME_MAX)
+            throw new CommandError(
+              "STORY_NAME_INVALID",
+              i18n.t("errors:command.storyNameEmpty"),
+            );
+          if (form.description.length > STORY_IDEA_MAX)
+            throw new CommandError(
+              "VALIDATION_FAILED",
+              i18n.t("errors:command.storyDescriptionTooLong"),
+            );
+          const model = (form.imageModel ?? "").trim();
+          if (model !== "" && model.length > VOICE_MODEL_MAX)
+            throw new CommandError(
+              "VALIDATION_FAILED",
+              i18n.t("errors:command.storyElementModelInvalid"),
+            );
+          if (form.ratio !== undefined && !STORY_ASPECTS.includes(form.ratio))
+            throw new CommandError(
+              "VALIDATION_FAILED",
+              i18n.t("errors:command.storyAspectUnknown"),
+            );
+        }
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
@@ -2418,6 +2465,11 @@ function applyOne(
         // explicit clearing, so that undoing the first voice left on a
         // character takes it off again rather than leaving it standing.
         (previous as Record<string, unknown>)[key] = element[key] ?? null;
+      }
+      // Forms are written back whole, and an element that held none is undone
+      // by the empty list rather than by a null the patch cannot spell.
+      if (command.patch.variants !== undefined) {
+        previous.variants = element.variants ?? [];
       }
       const next: StoryDocument = {
         ...story,
@@ -2445,9 +2497,14 @@ function applyOne(
           if (command.patch.ratio === null) delete merged.ratio;
           else if (command.patch.ratio !== undefined)
             merged.ratio = command.patch.ratio;
+          if (Array.isArray(command.patch.variants)) {
+            if (command.patch.variants.length === 0) delete merged.variants;
+            else merged.variants = command.patch.variants;
+          }
           return merged;
         }),
       };
+      checkStory(next);
       return {
         next: replaceStory(moka, next),
         inverse: [
@@ -2895,6 +2952,23 @@ function slotOf(story: StoryDocument, target: StorySlotTarget): StorySlot {
           "STORY_TARGET_INVALID",
           i18n.t("errors:command.storyElementNotFound"),
         );
+      if (target.variantId !== undefined) {
+        const form = (element.variants ?? []).find(
+          (variant) => variant.id === target.variantId,
+        );
+        if (!form)
+          throw new CommandError(
+            "STORY_TARGET_INVALID",
+            i18n.t("errors:command.storyElementNotFound"),
+          );
+        if (target.view === "main") return form.main;
+        if (!form.turnaround)
+          throw new CommandError(
+            "STORY_TARGET_INVALID",
+            i18n.t("errors:command.storyElementNotFound"),
+          );
+        return form.turnaround;
+      }
       if (target.view === "main") return element.main;
       if (!element.turnaround)
         throw new CommandError(
@@ -2954,6 +3028,17 @@ function withSlot(
         ...story,
         elements: story.elements.map((element) => {
           if (element.id !== target.elementId) return element;
+          if (target.variantId !== undefined) {
+            return {
+              ...element,
+              variants: (element.variants ?? []).map((variant) => {
+                if (variant.id !== target.variantId) return variant;
+                return target.view === "main"
+                  ? { ...variant, main: slot }
+                  : { ...variant, turnaround: slot };
+              }),
+            };
+          }
           return target.view === "main"
             ? { ...element, main: slot }
             : { ...element, turnaround: slot };
@@ -3270,7 +3355,11 @@ function checkStory(story: StoryDocument) {
       "STORY_CHAPTER_LIMIT",
       i18n.t("errors:command.storyChapterLimit"),
     );
-  if (story.elements.length > MAX_ELEMENTS_PER_STORY)
+  const forms = story.elements.reduce(
+    (sum, element) => sum + 1 + (element.variants?.length ?? 0),
+    0,
+  );
+  if (forms > MAX_ELEMENTS_PER_STORY)
     throw new CommandError(
       "STORY_ELEMENT_LIMIT",
       i18n.t("errors:command.storyElementLimit"),

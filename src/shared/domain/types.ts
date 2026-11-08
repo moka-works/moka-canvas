@@ -979,6 +979,28 @@ export interface StoryVoiceProfile {
   referenceAssetId?: AssetId;
 }
 
+/**
+ * One form an element takes: the same character earlier or later in life, the
+ * same place at another hour.
+ *
+ * A form is an element of its own in everything that matters to a drawing —
+ * its words, its pictures, the model that paints it — but belongs to the card
+ * it was made under, and shares that card's name and chapters. The element's
+ * own fields are its default form; a form here is one of the others.
+ */
+export interface StoryElementVariant {
+  id: string;
+  name: string;
+  description: string;
+  main: StorySlot;
+  /** The four views, which only a character's form is drawn with. */
+  turnaround?: StorySlot;
+  /** The model this form is drawn by, where it names its own. */
+  imageModel?: string;
+  /** The frame this form is drawn in, for a prop. */
+  ratio?: StoryAspect;
+}
+
 /** Something the story is made of: a character, a place, a thing. */
 export interface StoryElement {
   id: string;
@@ -990,6 +1012,13 @@ export interface StoryElement {
   main: StorySlot;
   /** The full-length turn-around view, which only a character is drawn with. */
   turnaround?: StorySlot;
+  /**
+   * The other forms this element takes, in the order the card offers them.
+   *
+   * Left off rather than left empty on an element that takes one form only,
+   * which is every element written before forms existed.
+   */
+  variants?: StoryElementVariant[];
   /** The voice this one speaks in; only a character is read aloud. */
   voice?: StoryVoiceProfile;
   /**
@@ -1075,7 +1104,13 @@ export interface StoryDocument {
  * asks for a drawing at a place, a command files the answer there.
  */
 export type StorySlotTarget =
-  | { kind: "element"; elementId: string; view: "main" | "turnaround" }
+  | {
+      kind: "element";
+      elementId: string;
+      view: "main" | "turnaround";
+      /** The form a picture belongs to; absent means the default form. */
+      variantId?: string;
+    }
   | {
       kind: "keyframe";
       chapterId: string;
@@ -1192,6 +1227,8 @@ export interface StoryElementPatch {
   imageModel?: string | null;
   /** The frame a prop is drawn in; a null keeps it square. */
   ratio?: StoryAspect | null;
+  /** The element's forms, whole; an empty list takes every one of them away. */
+  variants?: StoryElementVariant[];
 }
 
 /**

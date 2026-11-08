@@ -170,6 +170,7 @@ fn element(id: &str, kind: StoryElementKind) -> StoryElement {
         } else {
             None
         },
+        variants: None,
         voice: None,
         image_model: None,
         ratio: None,
@@ -334,6 +335,7 @@ fn story_document() -> MokaFile {
                 turnaround: Some(StorySlot {
                     takes: vec![take(HERO_SHEET)],
                 }),
+                variants: None,
                 voice: None,
                 image_model: None,
                 ratio: None,
@@ -1369,6 +1371,7 @@ fn trims_a_slot_to_what_a_place_keeps_oldest_first_and_drops_two_of_one_drawing(
             target: StorySlotTarget::Element {
                 element_id: PROP.into(),
                 view: StoryElementView::Main,
+                variant_id: None,
             },
             slot: StorySlot { takes },
             read: None,
@@ -1395,6 +1398,7 @@ fn refuses_a_place_the_story_no_longer_holds() {
                 target: StorySlotTarget::Element {
                     element_id: "gone".into(),
                     view: StoryElementView::Main,
+                    variant_id: None,
                 },
                 slot: empty_slot(),
                 read: None,
@@ -1410,6 +1414,7 @@ fn refuses_a_place_the_story_no_longer_holds() {
                 target: StorySlotTarget::Element {
                     element_id: SCENE.into(),
                     view: StoryElementView::Turnaround,
+                    variant_id: None,
                 },
                 slot: empty_slot(),
                 read: None,

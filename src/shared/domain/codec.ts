@@ -55,6 +55,7 @@ import type {
   StoryDocument,
   StoryEdit,
   StoryElement,
+  StoryElementVariant,
   StoryKeyframe,
   StorySlot,
   StoryTake,
@@ -1623,7 +1624,43 @@ function decodeStoryElement(value: unknown): StoryElement {
   if (ratio !== undefined && STORY_ASPECTS.includes(ratio as StoryAspect)) {
     element.ratio = ratio as StoryAspect;
   }
+  const variants = decodeStoryElementVariants(doc.variants);
+  if (variants !== undefined) element.variants = variants;
   return element;
+}
+
+/**
+ * The forms an element takes, as a document carries them.
+ *
+ * A form with no id or no name could never be switched to or drawn, so it is
+ * not read back as one; a list that comes back empty is the absence it was.
+ */
+function decodeStoryElementVariants(
+  value: unknown,
+): StoryElementVariant[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const forms = asArray(value, "elements[].variants").flatMap((entry) => {
+    const doc = asRecord(entry, "elements[].variants[]");
+    const id = optionalString(doc.id);
+    const name = optionalString(doc.name);
+    if (id === undefined || id === "" || name === undefined) return [];
+    const form: StoryElementVariant = {
+      id,
+      name,
+      description: optionalString(doc.description) ?? "",
+      main: decodeStorySlot(doc.main ?? { takes: [] }),
+    };
+    if (doc.turnaround !== undefined)
+      form.turnaround = decodeStorySlot(doc.turnaround);
+    const imageModel = optionalString(doc.imageModel);
+    if (imageModel !== undefined) form.imageModel = imageModel;
+    const ratio = optionalString(doc.ratio);
+    if (ratio !== undefined && STORY_ASPECTS.includes(ratio as StoryAspect)) {
+      form.ratio = ratio as StoryAspect;
+    }
+    return [form];
+  });
+  return forms.length === 0 ? undefined : forms;
 }
 
 /**
