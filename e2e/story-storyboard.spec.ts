@@ -374,6 +374,14 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       firstAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
 
+    // The frame is shown whole inside its cell rather than cropped to the
+    // telling's shape: a picture is drawn at the nearest size the model offers,
+    // and a preview holding only part of it sends the reader to the lightbox to
+    // see what was drawn.
+    await expect(
+      firstAct.getByTestId("story-kf-slot-0").locator("img"),
+    ).toHaveCSS("object-fit", "contain");
+
     // A drawn frame's own size must not push the attribute column aside: with
     // the picture in place the selects still hold their words whole, and the
     // frame itself stays a peek rather than widening the row.

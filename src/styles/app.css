@@ -7404,7 +7404,7 @@ body.is-dragging-split {
 .story-sort-thumb img {
   display: block;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 
@@ -7531,7 +7531,7 @@ body.is-dragging-split {
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   height: 34px;
-  object-fit: cover;
+  object-fit: contain;
   width: 34px;
 }
 
@@ -7973,10 +7973,14 @@ button > .story-spin {
   width: 100%;
 }
 
+/* A drawing is shown whole and scaled down inside its place rather than
+   cropped to it: it is made at the nearest size the model offers, which is not
+   the telling's exact shape, and a preview holding only part of it would send
+   the reader to the lightbox to see what was drawn. */
 .story-slot-picture img {
   display: block;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 
@@ -8198,7 +8202,7 @@ button > .story-spin {
   aspect-ratio: 1 / 1;
   border-radius: var(--radius-sm);
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 
@@ -8241,7 +8245,7 @@ button > .story-spin {
   aspect-ratio: 1 / 1;
   border-radius: var(--radius-sm);
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 
@@ -8948,7 +8952,7 @@ button > .story-spin {
 .story-ref-thumb img {
   display: block;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 
@@ -8994,7 +8998,7 @@ button > .story-spin {
   border-radius: 4px;
   display: block;
   height: 36px;
-  object-fit: cover;
+  object-fit: contain;
   width: 36px;
 }
 
@@ -9263,7 +9267,7 @@ button > .story-spin {
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   height: 64px;
-  object-fit: cover;
+  object-fit: contain;
   width: 96px;
 }
 
