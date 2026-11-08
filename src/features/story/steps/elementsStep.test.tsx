@@ -892,6 +892,31 @@ describe("a description the reader rewrites", () => {
 
     expect(element("旧车票")?.chapterIds).toEqual([ids.chapterFirst]);
   });
+
+  it("names the chapters an element stands in, three at a time", () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0]!;
+    story.chapters = [
+      ...story.chapters,
+      ...["chapter-extra-1", "chapter-extra-2"].map((id, at) => ({
+        id,
+        title: `Extra ${at + 1}`,
+        synopsis: "",
+        targetDurationMs: 0,
+        acts: [],
+      })),
+    ];
+    story.elements.find((held) => held.name === "旧车票")!.chapterIds =
+      story.chapters.map((chapter) => chapter.id);
+    openAtElements(moka);
+
+    const held = screen.getByTestId("story-element-prop-旧车票");
+    expect(within(held).getAllByText(/^Chapter \d+$/)).toHaveLength(3);
+    expect(
+      within(held).getByTestId("story-element-chapters-more-旧车票")
+        .textContent,
+    ).toBe("…");
+  });
 });
 
 describe("the pictures of an element", () => {

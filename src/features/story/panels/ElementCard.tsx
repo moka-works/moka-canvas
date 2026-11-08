@@ -30,6 +30,9 @@ import { VoiceFields } from "./VoiceFields";
 /** A place with nothing in it, for a slot a character has not been given yet. */
 const EMPTY_SLOT: StorySlot = { takes: [] };
 
+/** How many chapters a card lists before the rest are left to the menu. */
+const CHAPTER_CHIPS = 3;
+
 /**
  * One character, a place or a thing, as the room holds it.
  *
@@ -239,18 +242,34 @@ function ChapterLine({
   onPick: (chapterIds: string[]) => void;
 }) {
   const { t } = useTranslation();
+  // The chapters are listed in telling order, three at a time: the button
+  // beside them opens the whole list, so a card in a long telling stays short.
+  const standing = chapters.flatMap((chapter, index) =>
+    chosen.includes(chapter.id) ? [{ chapter, number: index + 1 }] : [],
+  );
   return (
     <div className="story-element-chapters">
-      {chosen.length === 0 ? (
+      {standing.length === 0 ? (
         <span className="story-hint">{t("story:elements.anyChapter")}</span>
       ) : (
-        chapters.map((chapter, index) =>
-          chosen.includes(chapter.id) ? (
+        <>
+          {standing.slice(0, CHAPTER_CHIPS).map(({ chapter, number }) => (
             <span className="story-chip" key={chapter.id}>
-              {t("story:elements.chapter", { number: index + 1 })}
+              {t("story:elements.chapter", { number })}
             </span>
-          ) : null,
-        )
+          ))}
+          {standing.length > CHAPTER_CHIPS && (
+            <span
+              className="story-chip"
+              data-testid={`story-element-chapters-more-${name}`}
+              title={t("story:elements.moreChapters", {
+                count: standing.length - CHAPTER_CHIPS,
+              })}
+            >
+              …
+            </span>
+          )}
+        </>
       )}
       <button
         className="link"

@@ -372,7 +372,8 @@
     "voiceLines": "这个角色在故事里说 {{count}} 句",
     "voiceNoLines": "还没有台词",
     "voiceNamed": "{{named}}/{{total}} 个角色定了声音",
-    "advanced": "高级"
+    "advanced": "高级",
+    "moreChapters": "还有 {{count}} 章"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",
