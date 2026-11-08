@@ -278,10 +278,58 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .click();
     await expect(firstAct.getByTestId("story-kf-extra-0-0")).toBeVisible();
 
+    // A picture beside the cast may also come from the story's own elements,
+    // and the words may name it from an @ the same way they name the cast.
+    await firstAct.getByTestId("story-kf-extra-add-0").click();
+    await firstAct.getByTestId("story-kf-extra-element-0").click();
+    await page
+      .getByTestId("story-element-picker")
+      .locator(".story-pick")
+      .filter({ hasText: "Last carriage" })
+      .click();
+    await expect(firstAct.getByTestId("story-kf-extra-0-1")).toBeVisible();
+
+    const words = firstAct.getByTestId("story-kf-content-0");
+    await words.click();
+    await words.press("End");
+    await words.pressSequentially(" @Last");
+    await expect(page.getByTestId("story-kf-content-0-offer")).toBeVisible();
+    await page
+      .getByTestId("story-kf-content-0-offer")
+      .getByRole("option", { name: "Last carriage" })
+      .click();
+    await expect(words.locator("[data-mention-name]").last()).toHaveText(
+      "Last carriage",
+    );
+    await words.blur();
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: {
+                  acts?: { keyframes?: { content?: string }[] }[];
+                }[];
+              }[];
+            };
+          };
+          return (
+            body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.keyframes?.[0]
+              ?.content ?? ""
+          );
+        }),
+      )
+      .toContain("`Last carriage`");
+
     // The cell shows the ask as it will be sent: the name the words mention
     // stands as a chip, and the picture it calls in stands under them.
     await expect(
-      firstAct.getByTestId("story-kf-content-0").locator("[data-mention-name]"),
+      firstAct
+        .getByTestId("story-kf-content-0")
+        .locator("[data-mention-name]")
+        .first(),
     ).toHaveText("Keeper");
     await expect(firstAct.getByTestId("story-kf-ref-0-0")).toBeVisible();
 

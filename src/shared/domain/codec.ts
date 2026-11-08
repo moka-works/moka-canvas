@@ -1521,22 +1521,43 @@ function decodeStoryVariantChoices(
  * and reading it back as one would put a nameless place in the prompt. A list
  * that comes back empty is the absence it was.
  */
+/**
+ * The pictures a shot carries outside its cast, as a document holds them.
+ *
+ * An entry that names neither a file nor an element is not a reference: it
+ * could never travel with an ask, and reading it back as one would put a
+ * nameless place in the prompt. A list that comes back empty is the absence
+ * it was.
+ */
 function decodeStoryExtraReferences(
   value: unknown,
 ): StoryExtraReference[] | undefined {
   if (value === undefined) return undefined;
   const held = asArray(value, "keyframes[].extraReferences").flatMap(
-    (entry) => {
+    (entry): StoryExtraReference[] => {
       const doc = asRecord(entry, "keyframes[].extraReferences[]");
       const assetId = optionalString(doc.assetId);
-      if (assetId === undefined || assetId === "") return [];
+      const elementId = optionalString(doc.elementId);
+      const name = optionalString(doc.name);
       const note = optionalString(doc.note);
-      return [
-        {
-          assetId,
-          ...(note !== undefined && note !== "" ? { note } : {}),
-        },
-      ];
+      const common = {
+        ...(name !== undefined && name !== "" ? { name } : {}),
+        ...(note !== undefined && note !== "" ? { note } : {}),
+      };
+      if (elementId !== undefined && elementId !== "") {
+        const variantId = optionalString(doc.variantId);
+        return [
+          {
+            elementId,
+            ...(variantId !== undefined && variantId !== ""
+              ? { variantId }
+              : {}),
+            ...common,
+          },
+        ];
+      }
+      if (assetId === undefined || assetId === "") return [];
+      return [{ assetId, ...common }];
     },
   );
   return held.length === 0 ? undefined : held;

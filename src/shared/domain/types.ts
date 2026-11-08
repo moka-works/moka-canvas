@@ -894,7 +894,14 @@ export interface StoryKeyframe {
 
 /** One picture a shot carries outside its cast, and what it is for. */
 export interface StoryExtraReference {
-  assetId: AssetId;
+  /** The file that travels, where the reference is a file on the shelf. */
+  assetId?: AssetId;
+  /** The element whose current drawing travels, where it is not a file. */
+  elementId?: string;
+  /** The element's form; absent means its default form. */
+  variantId?: string;
+  /** The name the words and the prompt use for it. */
+  name?: string;
   /** What the picture is for, as the ask reads it. */
   note?: string;
 }

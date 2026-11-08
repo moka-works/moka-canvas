@@ -309,6 +309,19 @@ function openAtBoard(moka: MokaFile, chapter = 0): void {
   act(() => useStoryStore.getState().goStep("storyboard"));
 }
 
+/** Puts words in a field and the caret after them, as typing would leave it. */
+function typeAtEnd(field: HTMLElement, text: string): void {
+  field.focus();
+  field.textContent = text;
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(field);
+  range.collapse(false);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  fireEvent.input(field);
+}
+
 function story() {
   const heldStory = useProjectStore.getState().moka?.stories?.[0];
   if (heldStory === undefined) throw new Error("a story is open");
@@ -555,7 +568,7 @@ describe("writing an episode's board", () => {
       expect(screen.getByTestId("story-kf-extra-0-0")).toBeDefined(),
     );
     expect(acts()[0]?.keyframes[0]?.extraReferences).toEqual([
-      { assetId: image!.id },
+      { assetId: image!.id, name: image!.name },
     ]);
   });
 
@@ -625,6 +638,59 @@ describe("writing an episode's board", () => {
     expect(within(thumbs).getAllByRole("button")).toHaveLength(1);
     expect(thumbs.querySelector("img")?.getAttribute("src")).toContain(
       ids.heroMain,
+    );
+  });
+
+  it("offers the cast and the extras after an @ and writes the choice as a mention", async () => {
+    const moka = boarded();
+    moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.extraReferences = [
+      { elementId: ids.scene, name: "车厢背面" },
+    ];
+    openAtBoard(moka);
+    const field = screen.getByTestId("story-kf-content-0");
+    typeAtEnd(field, "看@车厢");
+    const offer = await screen.findByTestId("story-kf-content-0-offer");
+    expect(
+      within(offer)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toContain("车厢背面");
+    fireEvent.click(within(offer).getByRole("option", { name: "车厢背面" }));
+    await waitFor(() =>
+      expect(field.querySelector("[data-mention-name]")?.textContent).toBe(
+        "车厢背面",
+      ),
+    );
+    fireEvent.blur(field);
+    await waitFor(() =>
+      expect(story().chapters[0]!.acts[0]!.keyframes[0]!.content).toBe(
+        "看`车厢背面` ",
+      ),
+    );
+  });
+
+  it("switches the shot's form when the @ names one of an element's forms", async () => {
+    const moka = boarded();
+    const hero = moka.stories![0]!.elements.find(
+      (element) => element.id === ids.hero,
+    )!;
+    hero.variants = [
+      {
+        id: "variant-old",
+        name: "老年",
+        description: "二十年以后。",
+        main: { takes: [] },
+      },
+    ];
+    openAtBoard(moka);
+    const field = screen.getByTestId("story-kf-content-0");
+    typeAtEnd(field, "@林");
+    const offer = await screen.findByTestId("story-kf-content-0-offer");
+    fireEvent.click(within(offer).getByRole("option", { name: "林 · 老年" }));
+    await waitFor(() =>
+      expect(
+        story().chapters[0]!.acts[0]!.keyframes[0]!.variantChoices,
+      ).toEqual({ [ids.hero]: "variant-old" }),
     );
   });
 

@@ -860,6 +860,8 @@ export interface StoryReference {
   element?: StoryElement;
   /** The form of that element the picture is of, where one was chosen. */
   variant?: StoryElementVariant;
+  /** Whether the picture came from the shot's extras rather than a mention. */
+  fromExtra?: boolean;
   /** How the ask names it: the element's name, or what an extra is for. */
   name: string;
   description: string;
@@ -930,15 +932,45 @@ export function keyframeCast(
   // The pictures the shot carries beside its cast come after the ones its own
   // words name: a mention is what the shot is about, and an extra is what the
   // reader wants beside it.
-  const carried = extras.map((extra, at) => ({
-    name: `Additional reference ${at + 1}`,
-    description:
-      (extra.note ?? "").trim() === ""
-        ? "An extra picture this shot should take into account."
-        : (extra.note ?? "").trim(),
-    assetId: extra.assetId,
-  }));
-  const all = [...drawn, ...carried];
+  const carried: StoryReference[] = extras.flatMap((extra, at) => {
+    if (extra.elementId !== undefined) {
+      const element = elementOf(story, extra.elementId);
+      if (element === undefined) return [];
+      const variant = elementForm(element, extra.variantId);
+      if (extra.variantId !== undefined && variant === undefined) return [];
+      const take = currentTake(
+        variant === undefined ? element.main : variant.main,
+      );
+      if (take === undefined) return [];
+      return [
+        {
+          element,
+          ...(variant === undefined ? {} : { variant }),
+          fromExtra: true,
+          name: extra.name ?? formName(element, variant),
+          description: extra.note ?? formDescription(element, variant),
+          assetId: take.assetIds[0],
+        },
+      ];
+    }
+    if (extra.assetId === undefined) return [];
+    return [
+      {
+        name: extra.name ?? `Additional reference ${at + 1}`,
+        description:
+          extra.note === undefined || extra.note.trim() === ""
+            ? "An extra picture this shot should take into account."
+            : extra.note.trim(),
+        assetId: extra.assetId,
+      },
+    ];
+  });
+  const seenAssets = new Set<string>();
+  const all = [...drawn, ...carried].filter((reference) => {
+    if (seenAssets.has(reference.assetId)) return false;
+    seenAssets.add(reference.assetId);
+    return true;
+  });
   const limit = story.maxReferenceImages;
   return {
     carried: all.slice(0, limit),

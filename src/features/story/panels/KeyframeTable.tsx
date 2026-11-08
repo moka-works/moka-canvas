@@ -14,6 +14,9 @@ import {
   actGranularity,
   createKeyframe,
   currentTake,
+  elementForm,
+  elementOf,
+  formName,
   keyframeAt,
   newId,
   slotWithoutTake,
@@ -28,6 +31,7 @@ import type {
   StoryDialogueLine,
   StoryDocument,
   StoryElement,
+  StoryExtraReference,
   StoryFilmRole,
   MokaFile,
   StoryKeyframe,
@@ -59,6 +63,7 @@ import { planLineVoiceAsks } from "../jobs/plan";
 import { useStoryRun, useStoryWavesRun } from "../stores/storyJobStore";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
+import { storyMentionOptions } from "./storyMentions";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { shotClipStale } from "./staleClips";
@@ -66,6 +71,7 @@ import { staleReferences } from "./stalePictures";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { filePictureFromComputer } from "./elementPictures";
 import { StoryEditDialog } from "./StoryEditDialog";
+import { StoryElementPicker } from "./StoryElementPicker";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StoryLightbox } from "./StoryLightbox";
 import { StorySlotView } from "./StorySlotView";
@@ -717,8 +723,10 @@ function KeyframePromptCell({
   const [inspectingId, setInspectingId] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState<string | null>(null);
   const [pickingExtra, setPickingExtra] = useState(false);
+  const [pickingElement, setPickingElement] = useState(false);
   const [addingExtra, setAddingExtra] = useState(false);
   const extraFile = useRef<HTMLInputElement>(null);
+  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
   const inspecting =
     inspectingId === null
       ? undefined
@@ -731,35 +739,52 @@ function KeyframePromptCell({
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
   const cast = keyframeCast(story, content.value, extras, variantChoices);
+  const mentionOptions = storyMentionOptions(story, extras);
   // The pictures the shot's own words name, which the assistant strip below
   // marks; the extras have a strip of their own, where they can be described.
   const mentioned = cast.carried.flatMap((reference) =>
-    reference.element === undefined ? [] : [reference],
+    reference.element === undefined || reference.fromExtra === true
+      ? []
+      : [reference],
   );
   const mentionedBeyond = cast.beyond.flatMap((reference) =>
-    reference.element === undefined ? [] : [reference],
+    reference.element === undefined || reference.fromExtra === true
+      ? []
+      : [reference],
   );
   const travelling = new Set(
     cast.carried.map((reference) => reference.assetId),
   );
 
   /** Adds a picture beside the cast, once and within the limit. */
-  const addExtra = (assetId: string) => {
-    if (extras.some((extra) => extra.assetId === assetId)) return;
+  const addExtra = (extra: StoryExtraReference) => {
+    if (
+      extra.assetId !== undefined &&
+      extras.some((held) => held.assetId === extra.assetId)
+    )
+      return;
+    if (
+      extra.elementId !== undefined &&
+      extras.some(
+        (held) =>
+          held.elementId === extra.elementId &&
+          held.variantId === extra.variantId,
+      )
+    )
+      return;
     if (extras.length >= MAX_EXTRA_REFERENCES_PER_SHOT) return;
-    write({ extraReferences: [...extras, { assetId }] });
+    write({ extraReferences: [...extras, extra] });
   };
 
   /** Rewrites one extra's note, or clears it where nothing was written. */
   const writeNote = (at: number, note: string) => {
     write({
-      extraReferences: extras.map((extra, index) =>
-        index === at
-          ? note.trim() === ""
-            ? { assetId: extra.assetId }
-            : { assetId: extra.assetId, note }
-          : extra,
-      ),
+      extraReferences: extras.map((extra, index) => {
+        if (index !== at) return extra;
+        const rest = { ...extra };
+        delete rest.note;
+        return note.trim() === "" ? rest : { ...extra, note };
+      }),
     });
   };
 
@@ -797,6 +822,11 @@ function KeyframePromptCell({
         <KeyframeContentField
           kinds={mentionKinds(story, cast, content.value)}
           label={t("story:storyboard.content")}
+          mentionOptions={mentionOptions}
+          onChooseMention={(option) => {
+            if (option.elementId !== undefined)
+              chooseVariant(option.elementId, option.variantId);
+          }}
           onChange={content.set}
           onCommit={content.commit}
           testId={`story-kf-content-${index}`}
@@ -864,19 +894,19 @@ function KeyframePromptCell({
         <span className="story-hint">{t("story:storyboard.extraRefs")}</span>
         {extras.map((extra, at) => (
           <ExtraReferenceTile
-            assetId={extra.assetId}
-            carried={travelling.has(extra.assetId)}
-            index={index}
-            key={`${extra.assetId}-${at}`}
             at={at}
-            note={extra.note ?? ""}
+            extra={extra}
+            index={index}
+            key={`${extra.assetId ?? extra.elementId}:${extra.variantId ?? ""}-${at}`}
             onNote={(note) => writeNote(at, note)}
-            onOpen={() => setZoomed(extra.assetId)}
+            onOpen={(assetId) => setZoomed(assetId)}
             onRemove={() =>
               write({
                 extraReferences: extras.filter((_held, index) => index !== at),
               })
             }
+            story={story}
+            travelling={travelling}
           />
         ))}
         {extras.length < MAX_EXTRA_REFERENCES_PER_SHOT ? (
@@ -910,6 +940,17 @@ function KeyframePromptCell({
                 >
                   {t("story:panels.fromFile")}
                 </button>
+                <button
+                  className="link"
+                  data-testid={`story-kf-extra-element-${index}`}
+                  onClick={() => {
+                    setAddingExtra(false);
+                    setPickingElement(true);
+                  }}
+                  type="button"
+                >
+                  {t("story:storyboard.fromElements")}
+                </button>
                 <input
                   accept="image/*"
                   hidden
@@ -918,7 +959,8 @@ function KeyframePromptCell({
                     event.target.value = "";
                     if (chosen === undefined) return;
                     const assetId = await filePictureFromComputer(chosen);
-                    if (assetId !== undefined) addExtra(assetId);
+                    if (assetId !== undefined)
+                      addExtra({ assetId, name: chosen.name });
                   }}
                   ref={extraFile}
                   type="file"
@@ -954,10 +996,28 @@ function KeyframePromptCell({
           current={undefined}
           label={t("story:storyboard.extraRef")}
           onChoose={(assetId) => {
-            addExtra(assetId);
+            const entry = images.find((held) => held.id === assetId);
+            addExtra({
+              assetId,
+              ...(entry === undefined ? {} : { name: entry.name }),
+            });
             setPickingExtra(false);
           }}
           onClose={() => setPickingExtra(false)}
+        />
+      )}
+      {pickingElement && (
+        <StoryElementPicker
+          onChoose={(elementId, variantId, name) => {
+            addExtra({
+              elementId,
+              ...(variantId === undefined ? {} : { variantId }),
+              name,
+            });
+            setPickingElement(false);
+          }}
+          onClose={() => setPickingElement(false)}
+          story={story}
         />
       )}
       {zoomed !== null && (
@@ -973,27 +1033,44 @@ function KeyframePromptCell({
 
 /** One extra reference: its picture, its note, and the way to take it off. */
 function ExtraReferenceTile({
-  assetId,
-  note,
-  carried,
+  extra,
+  story,
+  travelling,
   index,
   at,
   onNote,
   onRemove,
   onOpen,
 }: {
-  assetId: string;
-  note: string;
-  /** Whether the picture is among the ones this ask actually sends. */
-  carried: boolean;
+  extra: StoryExtraReference;
+  story: StoryDocument;
+  /** The pictures this ask actually sends, so an over-limit one can say so. */
+  travelling: Set<string>;
   index: number;
   at: number;
   onNote: (note: string) => void;
   onRemove: () => void;
-  onOpen: () => void;
+  onOpen: (assetId: string) => void;
 }) {
   const { t } = useTranslation();
-  const field = useField(note, onNote);
+  const field = useField(extra.note ?? "", onNote);
+  const element =
+    extra.elementId === undefined
+      ? undefined
+      : elementOf(story, extra.elementId);
+  const form =
+    element === undefined ? undefined : elementForm(element, extra.variantId);
+  const assetId =
+    extra.assetId ??
+    (element === undefined
+      ? undefined
+      : currentTake(form?.main ?? element.main)?.assetIds[0]);
+  const label =
+    extra.name ??
+    (element === undefined
+      ? t("story:storyboard.extraRef")
+      : formName(element, form));
+  const carried = assetId !== undefined && travelling.has(assetId);
   return (
     <span
       className={`story-extra-ref${carried ? "" : " is-beyond"}`}
@@ -1002,7 +1079,10 @@ function ExtraReferenceTile({
       <button
         aria-label={t("story:storyboard.extraRef")}
         className="story-extra-thumb"
-        onClick={onOpen}
+        disabled={assetId === undefined}
+        onClick={() => {
+          if (assetId !== undefined) onOpen(assetId);
+        }}
         title={
           carried
             ? t("story:storyboard.extraCarried")
@@ -1010,7 +1090,11 @@ function ExtraReferenceTile({
         }
         type="button"
       >
-        <img alt="" src={assetThumbUrl(assetId, REF_THUMB_WIDTH)} />
+        {assetId === undefined ? (
+          <span className="story-extra-missing">{label}</span>
+        ) : (
+          <img alt={label} src={assetThumbUrl(assetId, REF_THUMB_WIDTH)} />
+        )}
       </button>
       <input
         aria-label={t("story:storyboard.extraNote")}

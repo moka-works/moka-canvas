@@ -689,6 +689,39 @@ describe("planning the drawings", () => {
     expect(item.prompt).not.toContain("末班车车厢 —");
   });
 
+  it("carries a story element extra from the drawing it keeps now", () => {
+    const held = story();
+    const scene = held.elements.find((element) => element.id === ids.scene)!;
+    scene.variants = [
+      {
+        id: "variant-night",
+        name: "夜晚",
+        description: "灯都灭了。",
+        main: {
+          takes: [
+            {
+              assetIds: ["asset-scene-night"],
+              createdAt: "2026-02-01T00:00:00Z",
+            },
+          ],
+        },
+      },
+    ];
+    const extras = [
+      {
+        elementId: ids.scene,
+        variantId: "variant-night",
+        name: "车厢背面",
+      },
+    ];
+    const cast = keyframeCast(held, "雨下个不停。", extras);
+    expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
+      "asset-scene-night",
+    ]);
+    expect(cast.carried[0]?.name).toBe("车厢背面");
+    expect(cast.carried[0]?.variant?.id).toBe("variant-night");
+  });
+
   it("carries a shot's extra references after the ones its words name", () => {
     const extras = [{ assetId: "asset-extra", note: "傍晚的暖光" }];
     const cast = keyframeCast(story(), "`林`看着站台。", extras);

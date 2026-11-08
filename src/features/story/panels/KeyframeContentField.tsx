@@ -1,8 +1,14 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "../../../shared/i18n";
 import { storyMentions } from "../../../shared/domain";
+import {
+  insertStoryMention,
+  narrowStoryMentions,
+  storyMentionBeingTyped,
+  type StoryMentionOption,
+} from "./storyMentions";
 
 /** What a chip is found by, and the name it stands for. */
 const CHIP_SELECTOR = "[data-mention-name]";
@@ -212,6 +218,8 @@ export function KeyframeContentField({
   kinds,
   label,
   testId,
+  mentionOptions,
+  onChooseMention,
   onChange,
   onCommit,
 }: {
@@ -220,15 +228,25 @@ export function KeyframeContentField({
   kinds: Record<string, MentionKind>;
   label: string;
   testId?: string;
+  /** The names an @ offers: the cast's forms, then the shot's extras. */
+  mentionOptions: StoryMentionOption[];
+  /** A cast form was chosen, which is the form this shot now draws it in. */
+  onChooseMention?: (option: StoryMentionOption) => void;
   onChange: (next: string) => void;
   onCommit: () => void;
 }) {
   const { t } = useTranslation();
   const areaRef = useRef<HTMLDivElement>(null);
   const drawn = useRef<string | null>(null);
+  const [offer, setOffer] = useState<{ start: number; query: string } | null>(
+    null,
+  );
+  const [active, setActive] = useState(0);
   // What the handlers read without being rebuilt on every keystroke.
-  const held = useRef({ value, kinds, t });
-  held.current = { value, kinds, t };
+  const held = useRef({ value, kinds, t, mentionOptions });
+  held.current = { value, kinds, t, mentionOptions };
+  const rows = narrowStoryMentions(mentionOptions, offer?.query ?? "");
+  const chosen = rows.length === 0 ? 0 : active % rows.length;
 
   const titleOf = (name: string, kind: MentionKind): string => {
     switch (kind) {
@@ -261,6 +279,18 @@ export function KeyframeContentField({
   });
 
   /** Reads the field after an edit of its own and says what changed. */
+  const retake = (words: string) => {
+    const area = areaRef.current;
+    if (!area) return;
+    const next = storyMentionBeingTyped(
+      words,
+      caretOffset(area) ?? words.length,
+    );
+    setOffer(next);
+    if (next?.query !== offer?.query) setActive(0);
+  };
+
+  /** Reads the field after an edit of its own and says what changed. */
   const sync = () => {
     const area = areaRef.current;
     if (!area) return;
@@ -268,6 +298,7 @@ export function KeyframeContentField({
     const next = serialize(area);
     drawn.current = signatureOf(next, now.kinds);
     if (next !== now.value) onChange(next);
+    retake(next);
   };
 
   /**
@@ -290,9 +321,58 @@ export function KeyframeContentField({
     }
     drawn.current = signatureOf(next, now.kinds);
     if (next !== now.value) onChange(next);
+    retake(next);
+  };
+
+  /** Takes one offered name up, written as the mention the words already use. */
+  const choose = (option: StoryMentionOption) => {
+    if (offer === null) return;
+    const area = areaRef.current;
+    const at = area ? (caretOffset(area) ?? value.length) : value.length;
+    const inserted = insertStoryMention(
+      held.current.value,
+      offer.start,
+      at,
+      option.name,
+    );
+    setOffer(null);
+    setActive(0);
+    drawn.current = signatureOf(inserted.value, held.current.kinds);
+    onChange(inserted.value);
+    onChooseMention?.(option);
+    if (area) {
+      renderValue(area, inserted.value, held.current.kinds, titleOf);
+      area.focus();
+      placeCaret(area, inserted.caret);
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (offer !== null) {
+      const step = (move: number) => {
+        event.preventDefault();
+        const count = Math.max(1, rows.length);
+        setActive((index) => (((index + move) % count) + count) % count);
+      };
+      if (event.key === "ArrowDown") return step(1);
+      if (event.key === "ArrowUp") return step(-1);
+      if (
+        (event.key === "Enter" || event.key === "Tab") &&
+        !event.nativeEvent.isComposing
+      ) {
+        const row = rows[chosen];
+        if (row !== undefined) {
+          event.preventDefault();
+          choose(row);
+          return;
+        }
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOffer(null);
+        return;
+      }
+    }
     // Backspace behind a chip takes the whole of it. One character at a time
     // is not a thing a chip can lose, but a field left to the browser could
     // ask for the key twice, and a reader should not have to press twice for
@@ -338,19 +418,64 @@ export function KeyframeContentField({
   };
 
   return (
-    <div
-      aria-label={label}
-      aria-multiline="true"
-      className="story-prompt-field"
-      contentEditable
-      data-testid={testId}
-      onBlur={() => onCommit()}
-      onInput={emit}
-      onKeyDown={onKeyDown}
-      onPaste={onPaste}
-      ref={areaRef}
-      role="textbox"
-      suppressContentEditableWarning
-    />
+    <div className="story-prompt-field-wrap">
+      <div
+        aria-activedescendant={
+          offer !== null && rows[chosen]
+            ? `${testId}-offer-${chosen}`
+            : undefined
+        }
+        aria-expanded={offer !== null}
+        aria-label={label}
+        aria-multiline="true"
+        className="story-prompt-field"
+        contentEditable
+        data-testid={testId}
+        onBlur={() => {
+          setOffer(null);
+          onCommit();
+        }}
+        onClick={(event) => retake(serialize(event.currentTarget))}
+        onInput={emit}
+        onKeyDown={onKeyDown}
+        onKeyUp={(event) => retake(serialize(event.currentTarget))}
+        onPaste={onPaste}
+        ref={areaRef}
+        role="textbox"
+        suppressContentEditableWarning
+      />
+      {offer !== null && rows.length > 0 && (
+        <div
+          className="story-mention-offer"
+          data-testid={testId === undefined ? undefined : `${testId}-offer`}
+          role="listbox"
+        >
+          {rows.map((option, at) => (
+            <div key={option.key}>
+              {option.group !== rows[at - 1]?.group && (
+                <p className="story-mention-offer-label">
+                  {t(
+                    option.group === "cast"
+                      ? "story:storyboard.mentionCast"
+                      : "story:storyboard.mentionExtras",
+                  )}
+                </p>
+              )}
+              <button
+                aria-selected={at === chosen}
+                className={at === chosen ? "is-active" : ""}
+                id={testId === undefined ? undefined : `${testId}-offer-${at}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(option)}
+                role="option"
+                type="button"
+              >
+                {option.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
