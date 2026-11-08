@@ -373,7 +373,9 @@
     "voiceNoLines": "No lines yet",
     "voiceNamed": "{{named}}/{{total}} characters have a voice",
     "advanced": "Advanced",
-    "moreChapters": "{{count}} more chapters"
+    "moreChapters": "{{count}} more chapters",
+    "imageModel": "Picture model",
+    "imageModelNone": "The room's picture model"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",

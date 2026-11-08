@@ -537,6 +537,7 @@ function encodeStoryElement(element: StoryElement): Record<string, unknown> {
     doc.turnaround = encodeStorySlot(element.turnaround);
   if (element.voice !== undefined)
     doc.voice = encodeStoryVoiceProfile(element.voice);
+  if (element.imageModel !== undefined) doc.imageModel = element.imageModel;
   return doc;
 }
 
@@ -1562,6 +1563,8 @@ function decodeStoryElement(value: unknown): StoryElement {
     element.turnaround = decodeStorySlot(doc.turnaround);
   if (doc.voice !== undefined)
     element.voice = decodeStoryVoiceProfile(doc.voice, "elements[].voice");
+  const imageModel = optionalString(doc.imageModel);
+  if (imageModel !== undefined) element.imageModel = imageModel;
   return element;
 }
 

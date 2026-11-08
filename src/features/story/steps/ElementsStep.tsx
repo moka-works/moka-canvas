@@ -27,7 +27,7 @@ import { VoiceFields } from "../panels/VoiceFields";
 import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
 import {
   ELEMENT_MERGE_ID,
-  planElementArt,
+  planElementArtWaves,
   planElementMergeWaves,
   planElements,
   resolveVoice,
@@ -39,8 +39,8 @@ import {
   kindRunning,
   targetRunning,
   useRunningJob,
-  useStoryBulkRun,
   useStoryJobs,
+  useStoryWavesAsk,
   useStoryJobStore,
 } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
@@ -81,7 +81,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const jobs = useStoryJobs(story.id);
   const running = useRunningJob(story.id);
   const failure = useStoryJobStore((state) => state.error);
-  const run = useStoryBulkRun();
+  const run = useStoryWavesAsk();
   const [kind, setKind] = useState<StoryElementKind | "all">("all");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -395,7 +395,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   void run(
                     story.id,
                     "elementArt",
-                    planElementArt(
+                    planElementArtWaves(
                       story,
                       drawable.map((element) => ({
                         elementId: element.id,
@@ -416,7 +416,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   void run(
                     story.id,
                     "elementArt",
-                    planElementArt(
+                    planElementArtWaves(
                       story,
                       viewable.map((element) => ({
                         elementId: element.id,

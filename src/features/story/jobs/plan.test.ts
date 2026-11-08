@@ -20,6 +20,7 @@ import {
   planActVoice,
   planChapterRewrite,
   planElementArt,
+  planElementArtWaves,
   planElementMergeWaves,
   planElements,
   planKeyframeArt,
@@ -472,6 +473,25 @@ describe("planning the words", () => {
 });
 
 describe("planning the drawings", () => {
+  it("gathers the drawings by the picture model each card names", () => {
+    const held = story();
+    held.elements.find((element) => element.id === ids.hero)!.imageModel =
+      "paint-2";
+
+    const waves = planElementArtWaves(held, [
+      { elementId: ids.hero, view: "main" },
+      { elementId: ids.prop, view: "main" },
+    ]);
+
+    expect(waves.map((wave) => wave.model)).toEqual(["paint-2", null]);
+    expect(waves[0]?.items.map((item) => item.id)).toEqual([
+      `element:main:${ids.hero}`,
+    ]);
+    expect(waves[1]?.items.map((item) => item.id)).toEqual([
+      `element:main:${ids.prop}`,
+    ]);
+  });
+
   it("asks for a character's main picture in the frame of the film", () => {
     const items = planElementArt(story(), [
       { elementId: ids.hero, view: "main" },

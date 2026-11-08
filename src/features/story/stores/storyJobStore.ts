@@ -48,6 +48,7 @@ import {
   itemsForTargets,
   jobKey,
   planChapterRewrite,
+  planElementArtWaves,
 } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { storyParallel } from "./storyBatch";
@@ -482,6 +483,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             { ...record, items: fresh },
             { holdDescriptionKeys: heldDescriptionKeys(get().jobs, record) },
           );
+
           if (report.refused === true) {
             // The document would not take it, so it is not in: nothing of the
             // answer is written down about it and the next look asks again. The
@@ -856,6 +858,22 @@ export async function retryFailed(
   // A place's ask is one piece per name however many of the old batch's pieces
   // failed: an act filmed in pieces that lost two of them is asked for again as
   // the act, and not as the same piece twice.
+  // An element's drawings are asked of the model its card names, so a batch
+  // that lost several of them is handed over as one ask per model rather than
+  // all of them to the room's own.
+  if (job.kind === "elementArt") {
+    const targets = failed.flatMap((item) =>
+      item.target.kind === "elementArt" ? [item.target] : [],
+    );
+    const waves = planElementArtWaves(story, targets);
+    for (const wave of waves) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "elementArt", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
   const planned = failed.flatMap((item) => againFor(story, item));
   const items = [...new Map(planned.map((item) => [item.id, item])).values()];
   if (items.length === 0) return;
@@ -917,11 +935,45 @@ export async function redoGeneratedChapter(
   await useStoryJobStore.getState().start(story.id, "outline", [item]);
 }
 
+/**
+ * The same, for asks that are several models' work but do not wait on each
+ * other: one model's drawings are its own batch, and the next model's need not
+ * sit idle until the first has finished painting.
+ */
+export function useStoryWavesAsk(): (
+  storyId: string,
+  kind: StoryJobKind,
+  waves: Array<{ model: string | null; items: StoryJobItemDraft[] }>,
+) => Promise<void> {
+  const start = useStoryJobStore((state) => state.start);
+  return async (storyId, kind, waves) => {
+    const promised = waves.filter((wave) => wave.items.length > 0);
+    if (promised.length === 0) {
+      toast("info", i18n.t("story:jobs.nothingToAsk"));
+      return;
+    }
+    for (const wave of promised) {
+      const record = await start(storyId, kind, wave.items, wave.model);
+      if (record === null) return;
+    }
+  };
+}
+
 /** Makes one place again, from the story as it stands now. */
 export async function redoTarget(
   story: StoryDocument,
   target: StoryJobRecord["items"][number]["target"],
 ): Promise<void> {
+  if (target.kind === "elementArt") {
+    const waves = planElementArtWaves(story, [target]);
+    for (const wave of waves) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "elementArt", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
   const items = itemsForTargets(story, [target]);
   if (items.length === 0) return;
   await useStoryJobStore

@@ -373,7 +373,9 @@
     "voiceNoLines": "还没有台词",
     "voiceNamed": "{{named}}/{{total}} 个角色定了声音",
     "advanced": "高级",
-    "moreChapters": "还有 {{count}} 章"
+    "moreChapters": "还有 {{count}} 章",
+    "imageModel": "图片模型",
+    "imageModelNone": "跟随本页的图片模型"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",

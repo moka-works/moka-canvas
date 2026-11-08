@@ -754,6 +754,57 @@ export function planElementArt(
   });
 }
 
+/** One element's pictures, as the asks their own models make of them. */
+export interface ElementArtWave {
+  /** The picture model this wave is asked of; null is the deployment's. */
+  model: string | null;
+  items: StoryJobItemDraft[];
+}
+
+/**
+ * The picture model an element is drawn by: the one the reader named for it,
+ * and otherwise the one the room is set to draw its pictures with.
+ */
+export function elementArtModel(element: StoryElement): string | null {
+  const own = (element.imageModel ?? "").trim();
+  return own === "" ? storyAskModel("image") : own;
+}
+
+/**
+ * An element's drawings, gathered by the model that will draw them.
+ *
+ * A batch is asked of one model, so a cast whose cards name models of their
+ * own is handed over as several asks rather than quietly drawn by one model.
+ * Each ask is cut to what a batch may carry, as a whole cast's drawings are.
+ */
+export function planElementArtWaves(
+  story: StoryDocument,
+  targets: Array<{ elementId: string; view: "main" | "turnaround" }>,
+): ElementArtWave[] {
+  const groups = new Map<
+    string,
+    { model: string | null; items: StoryJobItemDraft[] }
+  >();
+  const seen = new Set<string>();
+  for (const item of planElementArt(story, targets)) {
+    if (item.target.kind !== "elementArt" || seen.has(item.id)) continue;
+    seen.add(item.id);
+    const element = elementOf(story, item.target.elementId);
+    if (element === undefined) continue;
+    const model = elementArtModel(element);
+    const key = model ?? "";
+    const group = groups.get(key) ?? { model, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap(({ model, items }) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model,
+      items: wave,
+    })),
+  );
+}
+
 /** One of a frame's mentioned pictures: the element it names, and the drawing
  * that travels with the ask. */
 export interface StoryReference {

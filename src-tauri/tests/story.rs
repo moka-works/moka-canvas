@@ -170,6 +170,7 @@ fn element(id: &str, kind: StoryElementKind) -> StoryElement {
             None
         },
         voice: None,
+        image_model: None,
     }
 }
 
@@ -331,6 +332,7 @@ fn story_document() -> MokaFile {
                     takes: vec![take(HERO_SHEET)],
                 }),
                 voice: None,
+                image_model: None,
             },
             element(PARTNER, StoryElementKind::Character),
             element(SCENE, StoryElementKind::Scene),

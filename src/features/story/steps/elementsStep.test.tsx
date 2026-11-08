@@ -840,6 +840,60 @@ describe("the model a reading is asked of", () => {
     // against the model rather than opening the whole cast at once.
     expect(starts[0]?.parallel).toBe(2);
   });
+
+  it("draws an element with the picture model its card names", async () => {
+    const view = useModelStore.getState().view!;
+    const painter = (id: string, displayName: string) => ({
+      id,
+      category: "image" as const,
+      protocol: "openaiImage",
+      url: "https://api.example.com/v1/images/generations",
+      model: `${id}-1`,
+      displayName,
+      enabled: true,
+      apiKey: { set: true, masked: "sk-…abcd" },
+    });
+    useModelStore.setState({
+      view: {
+        ...view,
+        models: [
+          ...view.models,
+          painter("paint-1", "Paint One"),
+          painter("paint-2", "Paint Two"),
+        ],
+        defaults: { ...view.defaults, image: "paint-1" },
+      },
+    });
+    openAtElements(buildStoryMokaFile());
+
+    const picker = within(
+      screen.getByTestId("story-element-model-旧车票"),
+    ).getByRole("combobox");
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["The room's picture model", "Paint One", "Paint Two"]);
+    fireEvent.change(picker, { target: { value: "paint-2" } });
+    await waitFor(() => {
+      expect(element("旧车票")?.imageModel).toBe("paint-2");
+    });
+
+    fireEvent.click(
+      within(card("旧车票", "prop")).getByTestId("story-slot-main-generate"),
+    );
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    expect(starts[0]?.model).toBe("paint-2");
+
+    // The card's own model is one of the reader's answers, and putting it
+    // back to the room's own takes it off the element again.
+    fireEvent.change(picker, { target: { value: "" } });
+    await waitFor(() => {
+      expect(element("旧车票")?.imageModel).toBeUndefined();
+    });
+  });
 });
 
 describe("a description the reader rewrites", () => {

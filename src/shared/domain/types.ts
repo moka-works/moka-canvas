@@ -967,6 +967,11 @@ export interface StoryElement {
   turnaround?: StorySlot;
   /** The voice this one speaks in; only a character is read aloud. */
   voice?: StoryVoiceProfile;
+  /**
+   * The picture model this element is drawn by, where the reader has named one
+   * of its own rather than leaving the room's model to draw it.
+   */
+  imageModel?: string;
 }
 
 export const STORY_SHOT_GRANULARITIES = ["act", "keyframe"] as const;
@@ -1152,6 +1157,8 @@ export interface StoryElementPatch {
   chapterIds?: string[];
   /** The voice it speaks in, whole; a null takes it away. */
   voice?: StoryVoiceProfile | null;
+  /** The picture model drawn of it; a null hands it back to the room's own. */
+  imageModel?: string | null;
 }
 
 /**

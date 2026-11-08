@@ -30,6 +30,8 @@ pub const MAX_DIALOGUE_LINES_PER_KEYFRAME: usize = 12;
 pub const MAX_DIALOGUE_LINE_LENGTH: usize = 500;
 /// What a voice named in a story may be called, and what it may say of itself.
 pub const VOICE_MODEL_MAX: usize = 120;
+/// The longest model reference an element may name for its own drawings.
+pub const MODEL_REFERENCE_MAX: usize = 120;
 pub const VOICE_NAME_MAX: usize = 120;
 pub const VOICE_INSTRUCTIONS_MAX: usize = 500;
 /// The pace and pitch a character may claim, the bounds the preferences hold to.
@@ -487,6 +489,10 @@ pub struct StoryElement {
     /// The voice this character speaks in, when the reader has given it one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<StoryVoiceProfile>,
+    /// The picture model this element is drawn by, where the reader has named
+    /// one of its own rather than leaving the room's model to draw it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
 }
 
 /// One clip this story's assembly laid down.
@@ -623,6 +629,12 @@ pub struct StoryElementPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub voice: Option<Option<StoryVoiceProfile>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub image_model: Option<Option<String>>,
 }
 
 /// The fields a caller may move on an act, for `updateStoryAct`.
@@ -1642,6 +1654,10 @@ pub fn apply_story_command(
                         main: before.main.clone(),
                         turnaround: before.turnaround.clone(),
                         voice: element.voice.clone().or_else(|| before.voice.clone()),
+                        image_model: element
+                            .image_model
+                            .clone()
+                            .or_else(|| before.image_model.clone()),
                         ..element.clone()
                     },
                     None => element.clone(),
@@ -1700,6 +1716,15 @@ pub fn apply_story_command(
             if let Some(Some(voice)) = &patch.voice {
                 check_voice(voice)?;
             }
+            if let Some(Some(model)) = &patch.image_model {
+                let model = model.trim();
+                if model.is_empty() || model.chars().count() > MODEL_REFERENCE_MAX {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The element's picture model is not a model name",
+                    ));
+                }
+            }
             let previous = StoryElementPatch {
                 name: patch.name.as_ref().map(|_| element.name.clone()),
                 kind: patch.kind.map(|_| element.kind),
@@ -1715,6 +1740,10 @@ pub fn apply_story_command(
                 // explicit clearing, so that undoing the first voice left on a
                 // character takes it off again rather than leaving it standing.
                 voice: patch.voice.as_ref().map(|_| element.voice.clone()),
+                image_model: patch
+                    .image_model
+                    .as_ref()
+                    .map(|_| element.image_model.clone()),
             };
             let mut next = story.clone();
             for held in next.elements.iter_mut() {
@@ -1735,6 +1764,12 @@ pub fn apply_story_command(
                 }
                 if let Some(voice) = &patch.voice {
                     held.voice = voice.clone();
+                }
+                if let Some(image_model) = &patch.image_model {
+                    held.image_model = image_model
+                        .as_ref()
+                        .map(|model| model.trim().to_string())
+                        .filter(|model| !model.is_empty());
                 }
             }
             Ok((

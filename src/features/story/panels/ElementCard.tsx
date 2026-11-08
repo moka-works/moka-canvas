@@ -18,8 +18,9 @@ import type {
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { planElementArt, resolveVoice } from "../jobs/plan";
-import { useStoryRun } from "../stores/storyJobStore";
+import { ModelPicker } from "../../settings/ModelPicker";
+import { planElementArtWaves, resolveVoice } from "../jobs/plan";
+import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
@@ -62,7 +63,7 @@ export function ElementCard({
   // The voice is a card's least used form, and every one of them is a model
   // picker and a recording row: it is kept folded until the reader opens it.
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const run = useStoryRun();
+  const run = useStoryWavesAsk();
   const main = currentTake(element.main);
   const character = element.kind === "character";
   const description = useField(element.description, (value) => {
@@ -77,9 +78,11 @@ export function ElementCard({
   const ratio = frameRatio(story);
 
   const generate = (view: "main" | "turnaround") => {
-    const [item] = planElementArt(story, [{ elementId: element.id, view }]);
-    if (item === undefined) return;
-    void run(story.id, "elementArt", [item]);
+    void run(
+      story.id,
+      "elementArt",
+      planElementArtWaves(story, [{ elementId: element.id, view }]),
+    );
   };
 
   return (
@@ -156,6 +159,21 @@ export function ElementCard({
         open={chaptersOpen}
         setOpen={setChaptersOpen}
       />
+
+      <div
+        className="story-element-model"
+        data-testid={`story-element-model-${element.name}`}
+      >
+        <ModelPicker
+          capability="image"
+          label={t("story:elements.imageModel")}
+          noneLabel={t("story:elements.imageModelNone")}
+          onChange={(reference) =>
+            write(story, element, { imageModel: reference })
+          }
+          value={element.imageModel ?? null}
+        />
+      </div>
 
       <textarea
         aria-label={t("story:elements.description")}

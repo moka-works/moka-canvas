@@ -2289,6 +2289,12 @@ function applyOne(
           ...(element.voice === undefined && before.voice !== undefined
             ? { voice: before.voice }
             : {}),
+          // The picture model is the reader's answer too, kept where a new
+          // listing of the cast does not say otherwise.
+          ...(element.imageModel === undefined &&
+          before.imageModel !== undefined
+            ? { imageModel: before.imageModel }
+            : {}),
         };
       });
       const next: StoryDocument = { ...story, elements };
@@ -2347,6 +2353,17 @@ function applyOne(
       }
       if (command.patch.voice !== undefined && command.patch.voice !== null)
         checkVoiceProfile(command.patch.voice);
+      if (
+        command.patch.imageModel !== undefined &&
+        command.patch.imageModel !== null
+      ) {
+        const model = command.patch.imageModel.trim();
+        if (model === "" || model.length > VOICE_MODEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyElementModelInvalid"),
+          );
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
@@ -2376,6 +2393,9 @@ function applyOne(
           if (command.patch.voice === null) delete merged.voice;
           else if (command.patch.voice !== undefined)
             merged.voice = command.patch.voice;
+          if (command.patch.imageModel === null) delete merged.imageModel;
+          else if (command.patch.imageModel !== undefined)
+            merged.imageModel = command.patch.imageModel;
           return merged;
         }),
       };
