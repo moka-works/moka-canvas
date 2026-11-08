@@ -133,7 +133,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const undrawn = shown.filter(
     (element) => currentTake(element.main) === undefined,
   );
-  const viewsMissing = story.elements.filter(
+  const viewsMissing = shown.filter(
     (element) =>
       element.kind === "character" &&
       currentTake(element.main) !== undefined &&

@@ -1597,6 +1597,24 @@ describe("the voice of a character", () => {
 });
 
 describe("the bulk asks of a group", () => {
+  it("offers four views only while characters are among the cards shown", () => {
+    openAtElements(buildStoryMokaFile());
+
+    fireEvent.click(screen.getByTestId("story-elements-group-scene"));
+    expect(screen.queryByTestId("story-elements-views-all")).toBeNull();
+    fireEvent.click(screen.getByTestId("story-elements-group-prop"));
+    expect(screen.queryByTestId("story-elements-views-all")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-group-character"));
+    expect(screen.getByTestId("story-elements-views-all").textContent).toBe(
+      "Four views for every character (1)",
+    );
+    fireEvent.click(screen.getByTestId("story-elements-group-all"));
+    expect(screen.getByTestId("story-elements-views-all").textContent).toBe(
+      "Four views for every character (1)",
+    );
+  });
+
   it("counts and draws only the group being looked at", async () => {
     const moka = buildStoryMokaFile();
     // The place has lost its picture, so its group and the whole cast each
