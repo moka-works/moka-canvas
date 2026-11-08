@@ -734,6 +734,43 @@ describe("a batch coming back", () => {
     apply.mockRestore();
   });
 
+  it("writes a written answer in without reading the project back", async () => {
+    const reload = vi.spyOn(useProjectStore.getState(), "reload");
+    const apply = vi
+      .spyOn(useProjectStore.getState(), "applyLocal")
+      .mockReturnValue([]);
+    const held = job({ kind: "elements", status: "succeeded" });
+    const written: StoryJobRecord = {
+      ...held,
+      items: [
+        {
+          id: "elements:1",
+          target: { kind: "elements" },
+          capability: "text",
+          prompt: "the chapters",
+          inputs: [],
+          params: {},
+          status: "succeeded",
+          text: JSON.stringify({
+            characters: [
+              { name: "林", description: "灰呢大衣。", chapters: [1] },
+            ],
+          }),
+        },
+      ],
+    };
+    serving({ "/api/v1/projects/current/story/jobs/job-1": written });
+
+    await useStoryJobStore.getState().adopt("job-1");
+
+    // Words name no new file and moved nothing on the server: they are written
+    // onto the document the reader holds rather than one read back whole.
+    expect(reload).not.toHaveBeenCalled();
+    expect(apply).toHaveBeenCalledTimes(1);
+    reload.mockRestore();
+    apply.mockRestore();
+  });
+
   it("does not read an answer in twice", async () => {
     serving({ "/api/v1/projects/current/story/jobs": [answered()] });
     const reload = vi.spyOn(useProjectStore.getState(), "reload");

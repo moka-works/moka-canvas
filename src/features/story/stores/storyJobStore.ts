@@ -195,6 +195,11 @@ export async function saveEverything(): Promise<boolean> {
     await useProjectStore.getState().flush();
     const { pending, saveStatus } = useProjectStore.getState();
     if (pending.length === 0) return true;
+    // A save another caller started is still on its way: the next turn shares
+    // it rather than reading a state that is mid-flight as a refusal. Two
+    // answers read at once — an answer being written while a part is sent —
+    // is exactly where this is met.
+    if (saveStatus === "saving") continue;
     // Nothing is on its way any more, and something is still waiting: the save
     // was refused or could not be made, and asking now would ask against a
     // document the server does not hold.
@@ -412,7 +417,10 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
    * batches reloads the project once for all of them, and for a reason: the
    * assets a batch filed arrived on the server's side of the document, and a
    * command that points at one of them is refused until this client has been
-   * told about it.
+   * told about it. An answer of words — a cast, an outline, a board — names no
+   * new file and moved nothing on the server, so it is written onto the
+   * document the reader already holds rather than reading the project back
+   * whole for every piece that comes home.
    */
   const readAnswersNow = async (records: StoryJobRecord[]): Promise<void> => {
     // Oldest first, though the room lists batches newest first: a batch asked
@@ -448,7 +456,15 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       return [{ record, known, fresh, ending }];
     });
     if (waiting.length === 0) return;
-    if (waiting.some(({ fresh }) => fresh.length > 0)) {
+    // A piece that came home with files is a drawing, a voice or a film filed
+    // on the server, and the document the reader holds has not heard of those
+    // files or of the revision they moved. Only then is the project read back:
+    // what is written has nothing to learn from the server, and reading it
+    // again for every written piece is a whole document decoded per answer.
+    const filedFiles = waiting.some(({ fresh }) =>
+      fresh.some((item) => (item.assetIds?.length ?? 0) > 0),
+    );
+    if (filedFiles) {
       // What the answers are written onto has to be the document as it stands,
       // so anything still waiting to be saved goes first: a reload would read
       // the server's copy over whatever the reader typed a moment ago. A save
