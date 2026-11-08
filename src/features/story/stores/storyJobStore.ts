@@ -15,6 +15,7 @@
  * the reader has said to the story since.
  */
 
+import { useMemo } from "react";
 import { create } from "zustand";
 
 import {
@@ -1193,8 +1194,16 @@ export function boardRuns(
 export function useStoryJobs(storyId: string | null): StoryJobRecord[] {
   const jobs = useStoryJobStore((state) => state.jobs);
   const held = useStoryJobStore((state) => state.storyId);
-  if (storyId === null || held !== storyId) return [];
-  return jobs.filter((job) => job.storyId === storyId);
+  // The list keeps its identity between renders that read the same batches:
+  // a step that derives sets from it can hold on to them across a page turned
+  // or a card checked, rather than rebuild them for the same records.
+  return useMemo(
+    () =>
+      storyId === null || held !== storyId
+        ? []
+        : jobs.filter((job) => job.storyId === storyId),
+    [jobs, held, storyId],
+  );
 }
 
 /**

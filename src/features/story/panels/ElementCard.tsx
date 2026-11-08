@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorText } from "../../../api/client";
@@ -54,7 +54,7 @@ const CHAPTER_CHIPS = 3;
  * is being worked on; what settles the step is its own confirm, not a press
  * per element.
  */
-export function ElementCard({
+export const ElementCard = memo(function ElementCard({
   story,
   element,
   busyMain,
@@ -70,7 +70,7 @@ export function ElementCard({
   busyTurnaround: boolean;
   /** Whether the card is among those a bulk action is about. */
   selected: boolean;
-  onSelect: (selected: boolean) => void;
+  onSelect: (elementId: string, selected: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
@@ -195,7 +195,7 @@ export function ElementCard({
           checked={selected}
           className="story-element-select"
           data-testid={`story-element-select-${element.name}`}
-          onChange={(event) => onSelect(event.target.checked)}
+          onChange={(event) => onSelect(element.id, event.target.checked)}
           type="checkbox"
         />
         <span className="story-element-kind">
@@ -356,7 +356,7 @@ export function ElementCard({
       )}
     </li>
   );
-}
+});
 
 /** The chapters an element stands in: what it is, and the list to change it. */
 function ChapterLine({

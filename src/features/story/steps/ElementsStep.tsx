@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -29,6 +29,7 @@ import { VoiceFields } from "../panels/VoiceFields";
 import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
 import {
   ELEMENT_MERGE_ID,
+  jobKey,
   planElementArtWaves,
   planElementMergeWaves,
   planElements,
@@ -39,7 +40,6 @@ import { chapterText } from "../readText";
 import {
   jobProgress,
   kindRunning,
-  targetRunning,
   useRunningJob,
   useStoryJobs,
   useStoryWavesAsk,
@@ -178,16 +178,37 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       [kind]: Math.min(Math.floor(first / next) + 1, pages),
     }));
   };
+  // The places the story's batches are making just now, read once per poll:
+  // every card and every bulk count asks whether its own place is in here,
+  // rather than walking every batch's pieces for each of them.
+  const busyTargets = useMemo(() => {
+    const keys = new Set<string>();
+    for (const job of jobs) {
+      if (job.status !== "queued" && job.status !== "running") continue;
+      for (const item of job.items) {
+        if (item.status !== "queued" && item.status !== "running") continue;
+        keys.add(jobKey(item.target));
+      }
+    }
+    return keys;
+  }, [jobs]);
   /** Whether one of a card's own pictures is being made just now. */
   const drawing = (
     element: StoryElement,
     view: "main" | "turnaround",
   ): boolean =>
-    targetRunning(
-      jobs,
-      story.id,
+    busyTargets.has(
       targetKey({ kind: "element", elementId: element.id, view }),
     );
+  /** Checks a card for a bulk action, whatever page either of them is on. */
+  const select = useCallback((elementId: string, selected: boolean) => {
+    setPicked((held) => {
+      const next = new Set(held);
+      if (selected) next.add(elementId);
+      else next.delete(elementId);
+      return next;
+    });
+  }, []);
   const undrawn = shown.filter(
     (element) => currentTake(element.main) === undefined,
   );
@@ -667,14 +688,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   busyTurnaround={drawing(element, "turnaround")}
                   element={element}
                   key={element.id}
-                  onSelect={(selected) =>
-                    setPicked((held) => {
-                      const next = new Set(held);
-                      if (selected) next.add(element.id);
-                      else next.delete(element.id);
-                      return next;
-                    })
-                  }
+                  onSelect={select}
                   selected={picked.has(element.id)}
                   story={story}
                 />
