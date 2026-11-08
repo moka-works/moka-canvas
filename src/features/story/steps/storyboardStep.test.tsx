@@ -716,7 +716,7 @@ describe("writing an episode's board", () => {
           .querySelector("img")
           ?.getAttribute("src"),
       ).toBe(
-        `/api/v1/projects/current/assets/asset-frame-first?w=768&project=${goldenNodeIds().project}`,
+        `/api/v1/projects/current/assets/asset-frame-first?w=480&project=${goldenNodeIds().project}`,
       ),
     );
 
