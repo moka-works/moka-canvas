@@ -264,6 +264,7 @@
   "picker": {
     "insertTitle": "从素材架插入",
     "addTitle": "从素材架添加",
+    "replaceTitle": "从素材库替换",
     "placeTitle": "添加到剪辑",
     "close": "关闭选择器",
     "nothingChosen": "尚未选择任何内容",
@@ -271,6 +272,7 @@
     "insertCountMany": "将插入 {{count}} 个节点",
     "addCountOne": "将添加 1 个引用",
     "addCountMany": "将添加 {{count}} 个引用",
+    "replaceCount": "将替换此节点的素材",
     "placeCountOne": "将作为 1 个片段添加，从播放头处开始",
     "placeCountMany": "将依次添加 {{count}} 个片段，从播放头处开始",
     "searchShelf": "搜索素材架",

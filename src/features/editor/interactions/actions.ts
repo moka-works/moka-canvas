@@ -1737,6 +1737,44 @@ export async function attachAssetsToNode(
 }
 
 /**
+ * Puts an asset the project already holds in place of what a node holds.
+ *
+ * The node stays where it is and its own picture changes, which is how a
+ * picture is swapped rather than grown beside: nothing is laid out, because the
+ * ask is about this node rather than about making another one. Kept to an asset
+ * the node can hold, so a picture never ends up filed under a kind it is not.
+ */
+export async function replaceNodeWithAsset(nodeId: NodeId, assetId: AssetId) {
+  const canvas = activeCanvas();
+  const { moka } = useProjectStore.getState();
+  const node = canvas ? findNode(canvas, nodeId) : undefined;
+  if (!canvas || !node || !moka) return;
+  const entry = buildResourceIndex(moka).get(assetId);
+  if (!entry || kindOfAsset(entry) !== node.kind) return;
+  const data = {
+    ...(node.data as NodeData),
+    ...(await assetDataFor(node.kind, entry)),
+  };
+  if (
+    execute(i18n.t("editor:history.replaceNodeAsset"), [
+      {
+        type: "updateNode",
+        canvasId: canvas.id,
+        nodeId,
+        patch: { data },
+      },
+    ])
+  ) {
+    announce(
+      i18n.t("editor:interactions.replaced", {
+        title: node.title,
+        name: entry.name,
+      }),
+    );
+  }
+}
+
+/**
  * Works on a picture the project already holds with a tool that asks nothing of
  * anybody, and lays out what came back.
  *

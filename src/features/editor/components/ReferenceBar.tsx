@@ -368,9 +368,14 @@ export function ReferenceBar({
         <button
           className="reference-add"
           onClick={() =>
-            useEditorStore
-              .getState()
-              .openAssetPicker({ mode: "reference", nodeId: node.id })
+            useEditorStore.getState().openAssetPicker(
+              // A picture node is the picture it holds, so a file chosen
+              // here takes the node's own place rather than arriving beside
+              // it as a reference to itself.
+              node.kind === "image"
+                ? { mode: "replace", nodeId: node.id }
+                : { mode: "reference", nodeId: node.id },
+            )
           }
           type="button"
         >
