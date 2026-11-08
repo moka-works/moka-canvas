@@ -8047,6 +8047,9 @@ button > .story-spin {
   justify-content: center;
 }
 
+/* The dialog stands as wide as it may whatever the pictures' own width is:
+   left to shrink to fit, its grid follows each lazy picture as it arrives and
+   the tiles grow under the reader's eyes. */
 .story-picks {
   background: var(--surface);
   border: 1px solid var(--stroke);
@@ -8057,6 +8060,7 @@ button > .story-spin {
   max-width: min(1000px, 92vw);
   overflow-y: auto;
   padding: 16px;
+  width: 100%;
 }
 
 .story-picks h2 {
