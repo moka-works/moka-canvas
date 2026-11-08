@@ -97,6 +97,10 @@ pub struct Features {
     /// The protocol can carry a mask beside the picture it edits.
     #[serde(default, skip_serializing_if = "is_false")]
     pub mask: bool,
+    /// The protocol takes a picture beside the words, so a kept picture can
+    /// be handed back to be changed rather than only described again.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub image_input: bool,
     /// The protocol answers through the task registry rather than in the
     /// call that asked. Video and recognition always do; an image protocol
     /// that needs a poll says so here.
@@ -115,6 +119,7 @@ impl Features {
             && !self.needs_voice
             && !self.needs_reference_audio
             && !self.mask
+            && !self.image_input
             && !self.job
             && self.extra.is_empty()
     }
@@ -426,7 +431,7 @@ mod tests {
               "script": "wan-image.lua",
               "order": 20,
               "auth": {"header": "x-api-key", "scheme": ""},
-              "features": {"mask": true},
+              "features": {"mask": true, "imageInput": true},
               "version": 1
             }"#,
             Some("wan-image.lua"),
@@ -447,6 +452,7 @@ mod tests {
             }
         );
         assert!(entry.features.mask);
+        assert!(entry.features.image_input);
     }
 
     #[test]
