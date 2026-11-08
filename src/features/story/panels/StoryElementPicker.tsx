@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -35,6 +35,7 @@ export function StoryElementPicker({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -44,9 +45,17 @@ export function StoryElementPicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const forms = story.elements.flatMap((element) =>
+  const all = story.elements.flatMap((element) =>
     elementForms(element).map((variant) => ({ element, variant })),
   );
+  const search = query.trim().toLowerCase();
+  const shown = all.filter(({ element, variant }) => {
+    if (search === "") return true;
+    return (
+      formName(element, variant).toLowerCase().includes(search) ||
+      element.name.toLowerCase().includes(search)
+    );
+  });
 
   return createPortal(
     <div
@@ -65,11 +74,28 @@ export function StoryElementPicker({
       >
         <h2>{t("story:storyboard.pickElement")}</h2>
         <p className="story-hint">{t("story:storyboard.pickElementHint")}</p>
-        {forms.length === 0 ? (
+        {all.length > 0 && (
+          <input
+            aria-label={t("story:storyboard.pickElementSearch")}
+            className="story-search"
+            data-testid="story-element-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("story:storyboard.pickElementSearch")}
+            type="search"
+            value={query}
+          />
+        )}
+        {all.length === 0 ? (
           <p className="story-hint">{t("story:elements.empty")}</p>
+        ) : shown.length === 0 ? (
+          <p className="story-hint" data-testid="story-element-no-match">
+            {t("story:storyboard.pickElementSearchEmpty", {
+              query: query.trim(),
+            })}
+          </p>
         ) : (
           <div className="story-picks-grid">
-            {forms.map(({ element, variant }) => (
+            {shown.map(({ element, variant }) => (
               <ElementTile
                 elementId={element.id}
                 key={`${element.id}:${variant?.id ?? ""}`}

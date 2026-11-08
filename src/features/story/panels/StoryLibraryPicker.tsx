@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -32,6 +32,7 @@ export function StoryLibraryPicker({
 }) {
   const { t } = useTranslation();
   const images = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -40,6 +41,11 @@ export function StoryLibraryPicker({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const search = query.trim().toLowerCase();
+  const shown = images.filter(
+    (entry) => search === "" || entry.name.toLowerCase().includes(search),
+  );
 
   return createPortal(
     <div
@@ -57,13 +63,28 @@ export function StoryLibraryPicker({
         role="dialog"
       >
         <h2>{t("story:panels.library", { label })}</h2>
+        {images.length > 0 && (
+          <input
+            aria-label={t("story:panels.librarySearch")}
+            className="story-search"
+            data-testid="story-library-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("story:panels.librarySearch")}
+            type="search"
+            value={query}
+          />
+        )}
         {images.length === 0 ? (
           <p className="story-hint" data-testid="story-library-empty">
             {t("story:panels.libraryEmpty")}
           </p>
+        ) : shown.length === 0 ? (
+          <p className="story-hint" data-testid="story-library-no-match">
+            {t("story:panels.librarySearchEmpty", { query: query.trim() })}
+          </p>
         ) : (
           <div className="story-picks-grid">
-            {images.map((entry) => (
+            {shown.map((entry) => (
               <button
                 className={`story-pick${entry.id === current ? " is-current" : ""}`}
                 data-testid={`story-library-${entry.id}`}

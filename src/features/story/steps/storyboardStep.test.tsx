@@ -631,6 +631,41 @@ describe("writing an episode's board", () => {
     ]);
   });
 
+  it("narrows the shelf and the elements while a picture is looked for", () => {
+    openAtBoard(boarded());
+
+    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-extra-library-0"));
+    const shelf = screen.getByTestId("story-library");
+    expect(shelf.querySelectorAll(".story-pick")).toHaveLength(6);
+    fireEvent.change(screen.getByTestId("story-library-search"), {
+      target: { value: "partner" },
+    });
+    expect(shelf.querySelectorAll(".story-pick")).toHaveLength(1);
+    fireEvent.change(screen.getByTestId("story-library-search"), {
+      target: { value: "nothing-like-it" },
+    });
+    expect(screen.getByTestId("story-library-no-match").textContent).toBe(
+      "No asset matches “nothing-like-it”",
+    );
+    fireEvent.click(within(shelf).getByRole("button", { name: "Close" }));
+
+    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-extra-element-0"));
+    const picker = screen.getByTestId("story-element-picker");
+    expect(picker.querySelectorAll(".story-pick")).toHaveLength(4);
+    fireEvent.change(screen.getByTestId("story-element-search"), {
+      target: { value: "末班" },
+    });
+    expect(picker.querySelectorAll(".story-pick")).toHaveLength(1);
+    fireEvent.change(screen.getByTestId("story-element-search"), {
+      target: { value: "zzz" },
+    });
+    expect(screen.getByTestId("story-element-no-match").textContent).toBe(
+      "No story element matches “zzz”",
+    );
+  });
+
   it("draws a new reference into the act's own cast", async () => {
     openAtBoard(boarded());
 

@@ -289,19 +289,22 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // taken from the shelf and kept on the shot it was added to.
     await firstAct.getByTestId("story-kf-extra-add-0").click();
     await firstAct.getByTestId("story-kf-extra-library-0").click();
-    await page
-      .getByTestId("story-library")
-      .locator(".story-pick")
-      .first()
-      .click();
+    const shelf = page.getByTestId("story-library");
+    await page.getByTestId("story-library-search").fill("no-such-picture");
+    await expect(shelf.locator(".story-pick")).toHaveCount(0);
+    await expect(shelf.getByText(/No asset matches/)).toBeVisible();
+    await page.getByTestId("story-library-search").fill("");
+    await shelf.locator(".story-pick").first().click();
     await expect(firstAct.getByTestId("story-kf-extra-0-0")).toBeVisible();
 
     // A picture beside the cast may also come from the story's own elements,
     // and the words may name it from an @ the same way they name the cast.
     await firstAct.getByTestId("story-kf-extra-add-0").click();
     await firstAct.getByTestId("story-kf-extra-element-0").click();
-    await page
-      .getByTestId("story-element-picker")
+    const picker = page.getByTestId("story-element-picker");
+    await page.getByTestId("story-element-search").fill("Last");
+    await expect(picker.locator(".story-pick")).toHaveCount(1);
+    await picker
       .locator(".story-pick")
       .filter({ hasText: "Last carriage" })
       .click();

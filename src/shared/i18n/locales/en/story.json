@@ -301,6 +301,8 @@
     "fromFile": "From this computer",
     "library": "{{label}} — choose from assets",
     "libraryEmpty": "The project holds no pictures yet",
+    "librarySearch": "Search the assets",
+    "librarySearchEmpty": "No asset matches “{{query}}”",
     "fileFailed": "The file could not be added"
   },
   "inspector": {
@@ -511,6 +513,8 @@
     "fromElements": "From story elements",
     "pickElement": "Choose a story element",
     "pickElementHint": "The element's current drawing travels with this shot",
+    "pickElementSearch": "Search story elements",
+    "pickElementSearchEmpty": "No story element matches “{{query}}”",
     "mentionCast": "References",
     "mentionExtras": "Extra references",
     "extraNote": "What this reference is for",
