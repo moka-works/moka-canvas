@@ -2737,7 +2737,12 @@ function holdAnswer(
     if (slot.text !== undefined) data.content = slot.text;
     return;
   }
-  if (slot.assetId !== undefined) data.assetId = slot.assetId;
+  if (slot.assetId !== undefined) {
+    data.assetId = slot.assetId;
+    // A poster was made for the file this one replaces; keeping it would show
+    // a still of another answer over this one.
+    delete data.posterAssetId;
+  }
 }
 
 /** A result that could be shown as its node's own, and what to call the choice. */

@@ -179,12 +179,13 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
     exported package for the model's key and find nothing, the
     snapshot included. Ask for several at once and confirm the node
     keeps the first while the rest become cards of their own. Run a
-    node that is already showing an answer and confirm it goes on
-    showing that one while the new answer becomes a card to its right
-    with an edge between them; run it once more and confirm the card is
-    written into rather than doubled. Revoke the key and run again: the
-    step fails with a reason and the node still says what it said
-    before. Finally import a package whose run records
+    node that is already showing an answer and confirm it now shows
+    the new one, with what it held kept as a result of its own
+    (pictures, recordings and shots alike); run it once more and
+    confirm the results grow by one rather than a card being added
+    beside it. Revoke the key and run again: the step fails with a
+    reason and the node still says what it said before. Finally import
+    a package whose run records
     did not travel with it and click **Run again** on one of its assets —
     a new run starts under the snapshot's parameters rather than a retry
     of a run this project has never heard of. The automated equivalents

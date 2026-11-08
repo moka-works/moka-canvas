@@ -14,10 +14,10 @@ use super::{
 use crate::domain::commands::make_node;
 use crate::domain::validate::{MAX_RESULT_SLOTS, MAX_TITLE_LENGTH};
 use crate::domain::{
-    new_id, now_iso, AssetId, CanvasDocument, Capability, DataType, DocumentCommand, EdgeEndpoint,
+    new_id, now_iso, AssetId, CanvasDocument, Capability, DataType, DocumentCommand,
     ExtensionCallRecord, ExtensionLogRecord, ExtensionOutputValue, MokaFile, NodeData, NodeId,
     NodeKind, NodePatch, PortDirection, ResultSlot, ResultSlotStatus, RunId, RunRecord, RunStatus,
-    RunStepRecord, SessionId, StepPortRecord, ValidationIssue, WorkflowEdge, WorkflowNode,
+    RunStepRecord, SessionId, StepPortRecord, ValidationIssue, WorkflowNode,
 };
 use crate::generate::{ingest_generated, GenerateResult};
 use crate::project::store::FsProjectStore;
@@ -207,12 +207,8 @@ fn remembered(
 /// this says what the canvas looks like afterwards, and a node that only passed
 /// a value through has nothing to say about either.
 enum Promotion {
-    /// The answers a step made, in the order the provider gave them, and where
-    /// the first of them goes.
-    Answered {
-        answers: Vec<Answer>,
-        placement: Placement,
-    },
+    /// The answers a step made, in the order the provider gave them.
+    Answered { answers: Vec<Answer> },
     /// What an extension handed back, by port, and the slots a reader chooses
     /// from. An extension makes no cards of its own.
     Extension {
@@ -224,20 +220,6 @@ enum Promotion {
     },
     /// Nothing worth keeping, and why.
     Failed(String),
-}
-
-/// Where the first answer of a run goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Placement {
-    /// Onto the node that asked: a node holding nothing has nothing to lose,
-    /// and a node holding words takes the new ones over the old, which stay
-    /// reachable as results of their own rather than as a copy of the node.
-    Own,
-    /// Onto a card beside the node that asked, which already showed a picture
-    /// and keeps showing it: an answer written over what somebody placed there
-    /// would take away the only copy of it, and asking a picture again is how
-    /// a canvas is compared rather than how it is overwritten.
-    Beside,
 }
 
 /// One answer, as the node that holds it records it.
@@ -261,7 +243,12 @@ impl Answer {
     fn write_onto(&self, data: &mut NodeData, kind: NodeKind) {
         match (self, kind) {
             (Answer::Words { text, .. }, NodeKind::Text) => data.content = Some(text.clone()),
-            (Answer::Media(asset_id), _) => data.asset_id = Some(asset_id.clone()),
+            (Answer::Media(asset_id), _) => {
+                data.asset_id = Some(asset_id.clone());
+                // A poster was made for the file this one replaces; keeping it
+                // would show a still of another answer over this one.
+                data.poster_asset_id = None;
+            }
             (Answer::Words { .. }, _) => {}
         }
     }
@@ -368,22 +355,15 @@ fn promotion_for(
     };
     // Read off the node as the run saw it rather than as it stands when the
     // answer lands: what somebody put there while it ran is theirs to keep, and
-    // a generation waited out is a long time to have changed one's mind.
+    // a generation waited out is a long time to have changed one's mind. A node
+    // with nothing new to say about itself — one the run read rather than asked
+    // — has no promotion at all.
     //
-    // Words are written onto the node whatever it said before: a text node's
-    // content is the same stuff its answer is, so a second ask would otherwise
-    // put a near-copy of the node beside it and call the pair a comparison.
-    // What the node said stays reachable as a result, which is the keeping that
-    // matters for words; a picture overwritten is a picture gone.
-    let words = matches!(answers.first(), Some(Answer::Words { .. }));
-    let placement = if was_empty(node) || words {
-        Placement::Own
-    } else {
-        Placement::Beside
-    };
-    // An answer with no asset in it leaves a media node holding what it held:
-    // there is nothing to point a card at.
-    (!answers.is_empty()).then_some(Promotion::Answered { answers, placement })
+    // Every answer is written onto the node that asked: asking a node again is
+    // how its working copy is brought forward. What it held stays reachable as
+    // a result of its own (see `slots_after`), and answers past the first still
+    // get a card each, so a batch is not lost.
+    (!answers.is_empty()).then_some(Promotion::Answered { answers })
 }
 
 /// A slot's id. The first is simply the result; the ones past it are numbered,
@@ -408,7 +388,8 @@ fn failed(message: &str) -> ResultSlot {
 }
 
 /// The cards for the answers that do not go onto the node that asked, and the
-/// ids to record on it. Cards are numbered from `first`.
+/// ids to record on it. The node holds the first answer, so the cards are
+/// numbered from the second.
 ///
 /// An answer that already has a card from an earlier run keeps it, updated rather
 /// than replaced, so a card the user moved stays where they put it and a re-run
@@ -419,7 +400,6 @@ fn result_nodes(
     canvas: &CanvasDocument,
     live: &WorkflowNode,
     extra: &[Answer],
-    first: usize,
 ) -> (Vec<DocumentCommand>, Vec<NodeId>) {
     let mut commands = Vec::new();
     let mut ids = Vec::new();
@@ -446,7 +426,7 @@ fn result_nodes(
             None => {
                 let mut child = make_node(
                     live.kind,
-                    card_title(&live.title, first + index),
+                    card_title(&live.title, index + 2),
                     live.bounds.x + (live.bounds.width + RESULT_GAP) * (index as f64 + 1.0),
                     live.bounds.y,
                 );
@@ -475,51 +455,6 @@ fn result_nodes(
             .cloned(),
     );
     (commands, ids)
-}
-
-/// The edge joining a node to the card that took its answer's place, or `None`
-/// when there is nowhere to put one.
-///
-/// A kind with no input that can take what the node makes is left unjoined
-/// rather than joined wrongly, and so is a card an earlier run made, which has
-/// the edge already or had it taken away on purpose. Both matter because a
-/// batch is applied as one: an edge the document refuses would cost the answers
-/// beside it.
-fn joined_back(
-    canvas: &CanvasDocument,
-    made: &[DocumentCommand],
-    live: &WorkflowNode,
-    card_id: &str,
-) -> Option<DocumentCommand> {
-    // The card is not on the canvas yet, it is in the commands about to be
-    // written, so it is read out of those.
-    let card = made.iter().find_map(|command| match command {
-        DocumentCommand::AddNode { node, .. } if node.id == card_id => Some(node),
-        _ => None,
-    })?;
-    let out = live.port("out")?;
-    let into = card.ports.iter().find(|port| {
-        port.direction == PortDirection::Input
-            && port
-                .data_types
-                .iter()
-                .any(|data_type| out.data_types.contains(data_type))
-    })?;
-    Some(DocumentCommand::AddEdge {
-        canvas_id: canvas.id.clone(),
-        edge: WorkflowEdge {
-            id: new_id(),
-            source: EdgeEndpoint {
-                node_id: live.id.clone(),
-                port_id: out.id.clone(),
-            },
-            target: EdgeEndpoint {
-                node_id: card.id.clone(),
-                port_id: into.id.clone(),
-            },
-            created_at: now_iso(),
-        },
-    })
 }
 
 /// A generated card's title: the node it came from, numbered. Shortened from the
@@ -1583,10 +1518,9 @@ impl RunManager {
 /// The commands one promotion is written with, built from the document as it
 /// stands, or `None` when the node it belongs to is no longer there.
 ///
-/// The cards come before the node that points at them and the edge between them
-/// comes after both, and the whole set is a single batch: written apart, a crash
-/// on the way would leave a slot naming a card that was never added, or an edge
-/// the document refuses for want of a node at one end of it.
+/// The cards come before the node that points at them: written apart, a crash
+/// on the way would leave a slot naming a card that was never added. The whole
+/// set is a single batch for the same reason.
 fn promotion_commands(
     moka: &MokaFile,
     canvas_id: &str,
@@ -1596,8 +1530,8 @@ fn promotion_commands(
     let canvas = moka.canvas(canvas_id)?;
     let live = canvas.node(node_id)?;
     let mut data = live.data.clone();
-    let (answers, placement) = match promotion {
-        Promotion::Answered { answers, placement } => (answers.as_slice(), *placement),
+    let answers = match promotion {
+        Promotion::Answered { answers } => answers.as_slice(),
         Promotion::Extension {
             run_id,
             outputs,
@@ -1627,78 +1561,56 @@ fn promotion_commands(
             return Some(vec![write_back(canvas_id, node_id, data)]);
         }
     };
-    let (own, cards, numbering) = match placement {
-        Placement::Own => (answers.first(), answers.get(1..).unwrap_or(&[]), 2),
-        Placement::Beside => (None, answers, 1),
-    };
+    let own = answers.first();
+    let cards = answers.get(1..).unwrap_or(&[]);
     if let Some(answer) = own {
         answer.write_onto(&mut data, live.kind);
     }
     let mut commands = Vec::new();
-    let (made, ids) = result_nodes(canvas, live, cards, numbering);
+    let (made, ids) = result_nodes(canvas, live, cards);
     commands.extend(made);
-    if placement == Placement::Beside {
-        if let Some(card_id) = ids.first() {
-            // The card standing in for the node's own answer is joined back to
-            // it, so the canvas says what it came from. One edge says that: the
-            // cards beside it are the same batch, not a chain.
-            commands.extend(joined_back(canvas, &commands, live, card_id));
-        }
-    }
     data.result_node_ids = Some(ids);
-    data.result_slots = Some(slots_after(live, answers, own.is_some(), placement));
+    data.result_slots = Some(slots_after(live, answers));
     commands.push(write_back(canvas_id, node_id, data));
     Some(commands)
 }
 
 /// The slot list a promotion leaves on the node that asked.
 ///
-/// An answer placed beside the node names the batch: the node keeps showing
-/// what it showed, and the list is what the cards hold. An answer written onto
-/// the node replaces what it held, so the results earlier runs left stay
-/// listed — demoted, in the order they were made — and words no slot ever held
-/// are kept as one more result: the node was their only copy, and the node is
-/// what the answer is written over. Where the list would grow past what a node
-/// may hold, the oldest kept results are what fall off, since a node over the
-/// ceiling is one no run can be started for.
-fn slots_after(
-    node: &WorkflowNode,
-    answers: &[Answer],
-    own: bool,
-    placement: Placement,
-) -> Vec<ResultSlot> {
-    let mut slots: Vec<ResultSlot> = match placement {
-        Placement::Own => {
-            let mut kept: Vec<ResultSlot> = node
-                .data
-                .result_slots
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|slot| slot.status == ResultSlotStatus::Succeeded)
-                .map(|slot| ResultSlot {
-                    is_primary: false,
-                    ..slot
-                })
-                .collect();
-            let preserved = preserved(node, &kept)
-                .filter(|slot| !answers.iter().any(|answer| same_answer(slot, answer)));
-            // A re-run that answers the same way is one result asked twice
-            // rather than two results to choose between: the kept copy makes
-            // way for the fresh one, which takes its place as the primary.
-            kept.retain(|slot| !answers.iter().any(|answer| same_answer(slot, answer)));
-            let room =
-                MAX_RESULT_SLOTS.saturating_sub(answers.len() + preserved.is_some() as usize);
-            if kept.len() > room {
-                kept.drain(0..kept.len() - room);
-            }
-            kept.extend(preserved);
-            kept
-        }
-        Placement::Beside => Vec::new(),
-    };
+/// An answer written onto the node replaces what it held, so the results
+/// earlier runs left stay listed — demoted, in the order they were made — and
+/// what no slot ever held is kept as one more result: the node was its only
+/// copy, and the node is what the answer is written over. Where the list would
+/// grow past what a node may hold, the oldest kept results are what fall off,
+/// since a node over the ceiling is one no run can be started for.
+fn slots_after(node: &WorkflowNode, answers: &[Answer]) -> Vec<ResultSlot> {
+    let mut kept: Vec<ResultSlot> = node
+        .data
+        .result_slots
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|slot| slot.status == ResultSlotStatus::Succeeded)
+        .map(|slot| ResultSlot {
+            is_primary: false,
+            ..slot
+        })
+        .collect();
+    let preserved = preserved(node, &kept)
+        .filter(|slot| !answers.iter().any(|answer| same_answer(slot, answer)));
+    // A re-run that answers the same way is one result asked twice rather than
+    // two results to choose between: the kept copy makes way for the fresh one,
+    // which takes its place as the primary.
+    kept.retain(|slot| !answers.iter().any(|answer| same_answer(slot, answer)));
+    let room = MAX_RESULT_SLOTS.saturating_sub(answers.len() + preserved.is_some() as usize);
+    if kept.len() > room {
+        kept.drain(0..kept.len() - room);
+    }
+    kept.extend(preserved);
+    let mut slots = kept;
     for (index, answer) in answers.iter().enumerate() {
-        slots.push(answer.slot(index, own && index == 0));
+        // The first answer of the batch is what the node shows now.
+        slots.push(answer.slot(index, index == 0));
     }
     // Numbered from scratch: an inspector lists results by these ids, and what
     // a result is called follows where it now stands rather than when it was
@@ -1722,28 +1634,39 @@ fn same_answer(slot: &ResultSlot, answer: &Answer) -> bool {
     }
 }
 
-/// What a node holds that no kept result holds: the words themselves, kept as
+/// What a node holds that no kept result holds: its words or its file, kept as
 /// one more result, because an answer written over them leaves the node as the
-/// only copy of them there ever was. Only a text node is asked, since only a
-/// text node's own content is what an answer replaces; a media node takes an
-/// answer onto itself only while it holds nothing.
+/// only copy there ever was — and the node is what an answer is written over.
 fn preserved(node: &WorkflowNode, kept: &[ResultSlot]) -> Option<ResultSlot> {
-    if node.kind != NodeKind::Text {
-        return None;
-    }
-    let text = node.data.content.as_deref()?;
-    if text.trim().is_empty() {
-        return None;
-    }
-    if kept.iter().any(|slot| slot.text.as_deref() == Some(text)) {
-        return None;
-    }
+    let (text, asset_id) = match node.kind {
+        NodeKind::Text => {
+            let text = node.data.content.as_deref()?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            if kept.iter().any(|slot| slot.text.as_deref() == Some(text)) {
+                return None;
+            }
+            (Some(text.to_string()), None)
+        }
+        NodeKind::Image | NodeKind::Audio | NodeKind::Video => {
+            let asset_id = node.data.asset_id.as_deref()?;
+            if kept
+                .iter()
+                .any(|slot| slot.asset_id.as_deref() == Some(asset_id))
+            {
+                return None;
+            }
+            (None, Some(asset_id.to_string()))
+        }
+        _ => return None,
+    };
     Some(ResultSlot {
         // Named where the list it joins is numbered.
         id: String::new(),
         status: ResultSlotStatus::Succeeded,
-        asset_id: None,
-        text: Some(text.to_string()),
+        asset_id,
+        text,
         error: None,
         is_primary: false,
     })
@@ -1855,33 +1778,10 @@ mod tests {
             .collect()
     }
 
-    /// A promotion whose first answer goes onto the node that asked, which is
-    /// what a node holding nothing gets — and what a node holding words gets
-    /// whatever it holds.
+    /// A promotion of the answers a step made, in the order the provider gave
+    /// them. The first is what the node will show; the rest get a card each.
     fn onto(answers: Vec<Answer>) -> Promotion {
-        Promotion::Answered {
-            answers,
-            placement: Placement::Own,
-        }
-    }
-
-    /// A promotion whose answers all go onto cards beside the node that asked,
-    /// which is what a node showing a picture gets when it asks again.
-    fn beside(answers: Vec<Answer>) -> Promotion {
-        Promotion::Answered {
-            answers,
-            placement: Placement::Beside,
-        }
-    }
-
-    /// Where a promotion puts its first answer.
-    fn placement_of(promotion: Option<Promotion>) -> Placement {
-        let Promotion::Answered { placement, .. } =
-            promotion.expect("a node an executor ran made something")
-        else {
-            panic!("and it made an answer");
-        };
-        placement
+        Promotion::Answered { answers }
     }
 
     fn document(nodes: Vec<WorkflowNode>) -> MokaFile {
@@ -1991,7 +1891,7 @@ mod tests {
     }
 
     #[test]
-    fn a_node_holding_something_keeps_a_picture_beside_it_and_takes_words_onto_it() {
+    fn a_node_holding_something_takes_the_new_answer_over_what_it_held() {
         let artifacts = StepArtifacts {
             text: Some("An answer.".to_string()),
             assets: Some(vec!["asset-1".to_string()]),
@@ -2000,47 +1900,46 @@ mod tests {
         };
         // A node made and never written in holds an empty string rather than
         // nothing, and is still a node with nothing to lose.
-        assert_eq!(
-            placement_of(promotion_for(
-                &asking(NodeKind::Text, "script"),
-                &artifacts,
-                true
-            )),
-            Placement::Own
-        );
-        assert_eq!(
-            placement_of(promotion_for(
-                &asking(NodeKind::Image, "poster"),
-                &artifacts,
-                true
-            )),
-            Placement::Own
-        );
+        assert!(matches!(
+            promotion_for(&asking(NodeKind::Text, "script"), &artifacts, true),
+            Some(Promotion::Answered { .. })
+        ));
+        assert!(matches!(
+            promotion_for(&asking(NodeKind::Image, "poster"), &artifacts, true),
+            Some(Promotion::Answered { .. })
+        ));
 
-        // Words are what a text node is made of, so a second ask replaces the
-        // first rather than putting a near-copy of the node beside it: what the
-        // node said stays reachable as a result instead of as a duplicate node.
-        let mut written_in = asking(NodeKind::Text, "script");
-        written_in.data.content = Some("Written by hand.".to_string());
-        assert_eq!(
-            placement_of(promotion_for(&written_in, &artifacts, true)),
-            Placement::Own
-        );
+        // Every kind replaces what the node held: asking again is how a node's
+        // working copy is brought forward. What it held stays reachable as a
+        // result rather than as a near-copy of the node beside it.
+        for kind in [
+            NodeKind::Text,
+            NodeKind::Image,
+            NodeKind::Audio,
+            NodeKind::Video,
+        ] {
+            let mut showing = asking(kind, "poster");
+            if kind == NodeKind::Text {
+                showing.data.content = Some("Written by hand.".to_string());
+            } else {
+                showing.data.asset_id = Some("asset-kept".to_string());
+            }
+            assert!(
+                matches!(
+                    promotion_for(&showing, &artifacts, true),
+                    Some(Promotion::Answered { .. })
+                ),
+                "a {kind:?} node holding something takes the answer onto itself",
+            );
+        }
 
-        let mut showing = asking(NodeKind::Image, "poster");
-        showing.data.asset_id = Some("asset-kept".to_string());
-        assert_eq!(
-            placement_of(promotion_for(&showing, &artifacts, true)),
-            Placement::Beside
-        );
-
-        // What a run wrote is on the node when the next one starts, so asking
-        // again is what puts an answer beside it rather than over it.
         let mut answered = asking(NodeKind::Text, "script");
         answered.data.content = Some("   ".to_string());
-        assert_eq!(
-            placement_of(promotion_for(&answered, &artifacts, true)),
-            Placement::Own,
+        assert!(
+            matches!(
+                promotion_for(&answered, &artifacts, true),
+                Some(Promotion::Answered { .. })
+            ),
             "a node saying nothing but spaces still says nothing"
         );
     }
@@ -2063,14 +1962,10 @@ mod tests {
 
         // With nothing yet to hand down it is a step of the run like any other,
         // and its answer lands on it.
-        assert_eq!(
-            placement_of(promotion_for(
-                &asking(NodeKind::Text, "script"),
-                &artifacts,
-                false
-            )),
-            Placement::Own
-        );
+        assert!(matches!(
+            promotion_for(&asking(NodeKind::Text, "script"), &artifacts, false),
+            Some(Promotion::Answered { .. })
+        ));
     }
 
     #[test]
@@ -2134,6 +2029,21 @@ mod tests {
         assert_eq!(slots[0].asset_id.as_deref(), Some("asset-1"));
         assert!(slots[0].text.is_none());
         assert!(slots[0].is_primary);
+    }
+
+    #[test]
+    fn an_answer_lets_go_of_the_still_that_belonged_to_the_old_file() {
+        let mut shot = asking(NodeKind::Video, "shot");
+        shot.data.asset_id = Some("asset-old".to_string());
+        shot.data.poster_asset_id = Some("poster-old".to_string());
+        let moka = document(vec![shot]);
+        let commands = written(&moka, "shot", &onto(media(&["asset-new"])));
+        let data = data_of(&commands[0]);
+        assert_eq!(data.asset_id.as_deref(), Some("asset-new"));
+        assert!(
+            data.poster_asset_id.is_none(),
+            "a still of the old answer over the new one would be a picture of something else"
+        );
     }
 
     #[test]
@@ -2446,111 +2356,91 @@ mod tests {
     }
 
     #[test]
-    fn answers_beside_a_node_join_only_the_first_card_to_it() {
+    fn a_batch_on_a_node_holding_something_shows_the_first_and_cards_the_rest() {
         let mut poster = asking(NodeKind::Image, "poster");
         poster.data.asset_id = Some("asset-kept".to_string());
         let moka = document(vec![poster]);
         let commands = written(
             &moka,
             "poster",
-            &beside(media(&["asset-new", "asset-second"])),
+            &onto(media(&["asset-new", "asset-second"])),
         );
         assert_eq!(
             commands.len(),
-            4,
-            "two cards, the edge to the first of them, and the node itself"
+            2,
+            "one card for the second answer, and the node itself"
         );
-        let DocumentCommand::AddNode { node: first, .. } = &commands[0] else {
+        let DocumentCommand::AddNode { node: card, .. } = &commands[0] else {
             panic!("checked above");
         };
-        let DocumentCommand::AddNode { node: second, .. } = &commands[1] else {
-            panic!("checked above");
-        };
-        assert_eq!(first.title, "poster 1");
-        assert_eq!(second.title, "poster 2");
-        assert_eq!(first.data.asset_id.as_deref(), Some("asset-new"));
-        assert_eq!(second.data.asset_id.as_deref(), Some("asset-second"));
-        assert!(
-            second.bounds.x > first.bounds.x + first.bounds.width,
-            "the cards are beside each other as well as beside the node"
-        );
+        assert_eq!(card.title, "poster 2");
+        assert_eq!(card.data.asset_id.as_deref(), Some("asset-second"));
 
-        let DocumentCommand::AddEdge { edge, .. } = &commands[2] else {
-            panic!("the first card is joined back");
-        };
-        assert_eq!(edge.source.node_id, "node-poster");
-        assert_eq!(edge.target.node_id, first.id);
-        assert_eq!(
-            edge.target.port_id, "images",
-            "a picture goes in where pictures are read"
-        );
-
-        let parent = data_of(&commands[3]);
+        let parent = data_of(&commands[1]);
         assert_eq!(
             parent.asset_id.as_deref(),
-            Some("asset-kept"),
-            "what the node showed is still what it shows"
+            Some("asset-new"),
+            "the node shows the first answer of the batch"
         );
         assert_eq!(
             parent
                 .result_node_ids
                 .clone()
-                .expect("the cards are recorded"),
-            vec![first.id.clone(), second.id.clone()]
+                .expect("the card is recorded"),
+            vec![card.id.clone()]
         );
         let slots = slots_of(parent);
-        assert_eq!(slots.len(), 2, "every answer is still named");
-        assert!(
-            slots.iter().all(|slot| !slot.is_primary),
-            "and none of them is the node's own"
+        assert_eq!(
+            slots.len(),
+            3,
+            "what the node held is a result too, beside the two answers"
         );
+        assert_eq!(slots[0].asset_id.as_deref(), Some("asset-kept"));
+        assert!(!slots[0].is_primary, "what it held is a choice now");
+        assert_eq!(slots[1].asset_id.as_deref(), Some("asset-new"));
+        assert!(slots[1].is_primary);
+        assert_eq!(slots[2].asset_id.as_deref(), Some("asset-second"));
+        assert!(!slots[2].is_primary);
     }
 
     #[test]
-    fn a_sound_card_is_joined_at_the_input_a_recording_lands_on() {
+    fn a_second_voice_replaces_what_the_node_holds_and_the_first_stays_a_result() {
         let mut voice = asking(NodeKind::Audio, "voice");
         voice.data.asset_id = Some("asset-kept".to_string());
         let moka = document(vec![voice]);
-        let commands = written(&moka, "voice", &beside(media(&["asset-new"])));
+        let commands = written(&moka, "voice", &onto(media(&["asset-new"])));
         assert_eq!(
             commands.len(),
-            3,
-            "a card, the edge into it, and the node: the sound card takes audio in, so the card its answer stands in is joined to it the way every other kind's is"
+            1,
+            "the node itself: no card beside it and no edge to one"
         );
-        let DocumentCommand::AddNode { node: card, .. } = &commands[0] else {
-            panic!("checked above");
-        };
-        let DocumentCommand::AddEdge { edge, .. } = &commands[1] else {
-            panic!("the card is joined back");
-        };
-        assert_eq!(edge.source.node_id, "node-voice");
-        assert_eq!(edge.source.port_id, "out");
-        assert_eq!(edge.target.node_id, card.id);
-        assert_eq!(
-            edge.target.port_id, "audio",
-            "a recording of the node lands where the voice the card copies is taken from"
-        );
-        assert_eq!(id_of(&commands[2]), "node-voice");
+        let data = data_of(&commands[0]);
+        assert_eq!(data.asset_id.as_deref(), Some("asset-new"));
+        let slots = slots_of(data);
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].asset_id.as_deref(), Some("asset-kept"));
+        assert_eq!(slots[1].asset_id.as_deref(), Some("asset-new"));
+        assert!(slots[1].is_primary);
     }
 
     #[test]
-    fn a_card_an_earlier_run_made_is_not_joined_a_second_time() {
+    fn a_card_an_earlier_run_made_is_left_as_it_is() {
         let mut poster = asking(NodeKind::Image, "poster");
         poster.data.asset_id = Some("asset-kept".to_string());
         poster.data.result_node_ids = Some(vec!["node-card".to_string()]);
         let moka = document(vec![poster, card("node-card", "asset-old")]);
-        let commands = written(&moka, "poster", &beside(media(&["asset-new"])));
+        let commands = written(&moka, "poster", &onto(media(&["asset-new"])));
         assert_eq!(
             commands.len(),
-            2,
-            "the card and the node, and no edge again"
+            1,
+            "the node is written; a card from an earlier run is the user's to keep or move"
         );
-        assert_eq!(id_of(&commands[0]), "node-card");
-        assert!(
-            matches!(commands[0], DocumentCommand::UpdateNode { .. }),
-            "a card that is there is written into, which is how an edge it already has, or one taken away on purpose, is left as it is"
+        assert_eq!(id_of(&commands[0]), "node-poster");
+        assert_eq!(
+            data_of(&commands[0]).result_node_ids.clone().unwrap(),
+            vec!["node-card".to_string()],
+            "and it stays listed, so the next batch that needs it writes into it"
         );
-        assert_eq!(id_of(&commands[1]), "node-poster");
     }
 
     #[test]

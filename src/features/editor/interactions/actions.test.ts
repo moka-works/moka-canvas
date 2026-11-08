@@ -716,6 +716,23 @@ describe("chooseResult", () => {
     expect(shown(batch.second).assetId).toBe("asset-two");
   });
 
+  it("lets go of a poster that belonged to the answer being replaced", () => {
+    const moka = hydrate(buildBatchMokaFile());
+    const poster = findNode(moka.canvas[0], batch.poster)!;
+    (poster.data as { posterAssetId?: string }).posterAssetId = "poster-one";
+
+    chooseResult(batch.poster, "result-3");
+
+    const data = shown(batch.poster) as {
+      assetId?: string;
+      posterAssetId?: string;
+    };
+    expect(data.assetId).toBe("asset-three");
+    // A still of the answer that was there would be a picture of something
+    // the node no longer shows.
+    expect(data.posterAssetId).toBeUndefined();
+  });
+
   it("offers what can still be chosen, and nothing past that", () => {
     const moka = hydrate(buildBatchMokaFile());
     const canvas = moka.canvas[0];
