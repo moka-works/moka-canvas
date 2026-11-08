@@ -46,6 +46,7 @@ export interface RoomView {
   error: string | null;
   context: ContextCounts | null;
   warnings: string[];
+  notice: string | null;
   plan: PlanItem[] | null;
   packs: string[];
   model: string | null;
@@ -64,6 +65,7 @@ export function blankView(): RoomView {
     error: null,
     context: null,
     warnings: [],
+    notice: null,
     plan: null,
     packs: [],
     model: null,
@@ -127,6 +129,7 @@ interface AgentState {
   setError: (room: AgentRoom, error: string | null) => void;
   setContext: (room: AgentRoom, context: ContextCounts | null) => void;
   setWarnings: (room: AgentRoom, warnings: string[]) => void;
+  setNotice: (room: AgentRoom, notice: string | null) => void;
   setPlan: (room: AgentRoom, plan: PlanItem[] | null) => void;
   addPacks: (room: AgentRoom, packs: string[]) => void;
   setCatalogHash: (hash: string | null) => void;
@@ -201,6 +204,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         error: null,
         context: null,
         warnings: [],
+        notice: null,
         historyOpen: false,
         packs: [],
       });
@@ -209,7 +213,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     async loadSession(room, id) {
       if (view(room).busy) get().stop(room);
       set({ sessionsLoading: true });
-      patch(room, { error: null, historyOpen: false });
+      patch(room, { error: null, notice: null, historyOpen: false });
       try {
         const answered = await agentSessionsApi.get(id, { limit: 200 });
         set({ sessionsLoading: false });
@@ -412,6 +416,10 @@ export const useAgentStore = create<AgentState>()((set, get) => {
 
     setWarnings(room, warnings) {
       patch(room, { warnings });
+    },
+
+    setNotice(room, notice) {
+      patch(room, { notice });
     },
 
     setPlan(room, plan) {

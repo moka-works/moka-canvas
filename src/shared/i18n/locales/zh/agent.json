@@ -33,7 +33,8 @@
     "undoable": "可用 Ctrl+Z 撤销",
     "audit": "不可撤销，已写入审计",
     "task": "已启动任务",
-    "details": "详情"
+    "details": "详情",
+    "trimmed": "完整内容过大未保留（{{size}}），仅保留概要。"
   },
   "approval": {
     "title": "确认这一步",
@@ -66,7 +67,8 @@
     "confirmDelete": "确认删除？",
     "cancel": "取消",
     "untitled": "新对话",
-    "untitledShort": "未命名"
+    "untitledShort": "未命名",
+    "trimmed": "会话达到存储上限，已丢弃 {{count}} 条较早的消息。"
   },
   "errors": {
     "saveFirst": "上一次修改还没保存，助理需要读到已保存的文档。请先保存或处理冲突，再发一次。",

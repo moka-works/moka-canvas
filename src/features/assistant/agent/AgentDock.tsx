@@ -54,9 +54,27 @@ function contextLine(context: ContextCounts, t: TFunction): string {
   }
 }
 
+function truncatedSize(value: unknown): number | null {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { truncated?: unknown }).truncated === true
+  ) {
+    const bytes = (value as { bytes?: unknown }).bytes;
+    return typeof bytes === "number" ? bytes : 0;
+  }
+  return null;
+}
+
+function sizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 function ToolCard({ call }: { call: AgentToolCallRecord }) {
   const { t } = useTranslation();
   const result = call.result;
+  const cut = truncatedSize(result?.data) ?? truncatedSize(call.input);
   return (
     <li className={`agent-tool is-${call.status}`}>
       <div className="agent-tool-head">
@@ -81,6 +99,11 @@ function ToolCard({ call }: { call: AgentToolCallRecord }) {
         {result?.task && (
           <span className="agent-tool-note">
             {t("agent:tool.task")} · {result.task.kind}
+          </span>
+        )}
+        {cut !== null && (
+          <span className="agent-tool-note is-strong">
+            {t("agent:tool.trimmed", { size: sizeLabel(cut) })}
           </span>
         )}
       </div>
@@ -267,6 +290,7 @@ export function AgentDock({
     error,
     context: standing,
     warnings,
+    notice,
     plan,
     approval,
     question,
@@ -375,6 +399,7 @@ export function AgentDock({
           {t("agent:context.warnings")}
         </p>
       )}
+      {notice && <p className="agent-warning">{notice}</p>}
 
       <ol className="agent-messages" data-testid="agent-messages">
         {messages.length === 0 && (

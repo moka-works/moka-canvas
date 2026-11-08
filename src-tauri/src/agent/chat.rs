@@ -241,15 +241,9 @@ async fn prepare(
                 format!("unknown message role '{}'", turn.role),
             ));
         }
-        if turn.text.chars().count() > MAX_MESSAGE_CHARS {
-            return Err(problem(
-                "VALIDATION_FAILED",
-                "a message is longer than 16000 characters",
-            ));
-        }
         conversation.push(ChatMessage {
             role: turn.role.clone(),
-            text: turn.text.clone(),
+            text: bounded_text(&turn.text),
             tool_calls: turn
                 .tool_calls
                 .iter()
@@ -314,44 +308,65 @@ async fn prepare(
     })
 }
 
+/// A turn longer than the model is handed is cut, not refused: the interface
+/// keeps what was said, and the model reads the head with the cut marked.
+fn bounded_text(text: &str) -> String {
+    let count = text.chars().count();
+    if count <= MAX_MESSAGE_CHARS {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(MAX_MESSAGE_CHARS).collect();
+    format!("{head}…[truncated {} chars]", count - MAX_MESSAGE_CHARS)
+}
+
 /// The conversation as one document a converter can send as a prompt.
+///
+/// Built from the newest turn backwards so the ask a step answers survives a
+/// long conversation; a part that would overflow stops the fold rather than
+/// leaving a gap in the middle.
 fn flatten_conversation(messages: &[ChatMessage]) -> String {
-    let mut out = String::new();
-    for message in messages {
-        let part = match message.role.as_str() {
-            "user" => format!("USER:\n{}\n\n", message.text),
-            "assistant" => {
-                let mut said = String::new();
-                if !message.text.trim().is_empty() {
-                    said.push_str(&format!("ASSISTANT:\n{}\n\n", message.text));
-                }
-                for call in &message.tool_calls {
-                    said.push_str(&format!(
-                        "ASSISTANT CALLED {} WITH {}\n\n",
-                        call.name,
-                        serde_json::to_string(&call.arguments).unwrap_or_default()
-                    ));
-                }
-                said
-            }
-            "tool" => format!(
-                "TOOL {} RESULT:\n{}\n\n",
-                message.name.as_deref().unwrap_or(""),
-                message.text
-            ),
-            _ => String::new(),
-        };
-        if out.chars().count() + part.chars().count() > MAX_FALLBACK_CHARS {
-            // Keep the newest part whole when it alone overflows; otherwise
-            // stop rather than cut a turn in half.
-            if out.is_empty() {
-                out.extend(part.chars().take(MAX_FALLBACK_CHARS));
+    let mut parts: Vec<String> = Vec::with_capacity(messages.len());
+    let mut used = 0usize;
+    for message in messages.iter().rev() {
+        let part = flatten_message(message);
+        let chars = part.chars().count();
+        if used + chars > MAX_FALLBACK_CHARS {
+            if parts.is_empty() {
+                parts.push(part.chars().take(MAX_FALLBACK_CHARS).collect());
             }
             break;
         }
-        out.push_str(&part);
+        used += chars;
+        parts.push(part);
     }
-    out
+    parts.reverse();
+    parts.concat()
+}
+
+fn flatten_message(message: &ChatMessage) -> String {
+    match message.role.as_str() {
+        "user" => format!("USER:\n{}\n\n", message.text),
+        "assistant" => {
+            let mut said = String::new();
+            if !message.text.trim().is_empty() {
+                said.push_str(&format!("ASSISTANT:\n{}\n\n", message.text));
+            }
+            for call in &message.tool_calls {
+                said.push_str(&format!(
+                    "ASSISTANT CALLED {} WITH {}\n\n",
+                    call.name,
+                    serde_json::to_string(&call.arguments).unwrap_or_default()
+                ));
+            }
+            said
+        }
+        "tool" => format!(
+            "TOOL {} RESULT:\n{}\n\n",
+            message.name.as_deref().unwrap_or(""),
+            message.text
+        ),
+        _ => String::new(),
+    }
 }
 
 fn stream_chat(
@@ -587,6 +602,29 @@ mod tests {
         assert!(prompt.contains("ASSISTANT CALLED canvas.list"));
         assert!(prompt.contains("TOOL canvas.list RESULT:"));
         assert!(prompt.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn a_turn_longer_than_the_budget_is_cut_and_marked() {
+        let bounded = bounded_text(&"x".repeat(MAX_MESSAGE_CHARS + 25));
+        assert!(bounded.starts_with(&"x".repeat(MAX_MESSAGE_CHARS)));
+        assert!(bounded.ends_with("…[truncated 25 chars]"));
+    }
+
+    #[test]
+    fn a_fallback_transcript_keeps_the_newest_turns() {
+        let mut messages = Vec::new();
+        for index in 0..40 {
+            let text = if index == 0 {
+                "FIRST-QUESTION".to_string()
+            } else {
+                format!("question {index} {}", "x".repeat(2_000))
+            };
+            messages.push(ChatMessage::text("user", text));
+        }
+        let prompt = flatten_conversation(&messages);
+        assert!(prompt.contains("question 39"));
+        assert!(!prompt.contains("FIRST-QUESTION"));
     }
 
     #[test]

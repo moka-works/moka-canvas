@@ -33,7 +33,8 @@
     "undoable": "Can be undone with Ctrl+Z",
     "audit": "Not undoable; recorded in the audit",
     "task": "Started a task",
-    "details": "Details"
+    "details": "Details",
+    "trimmed": "The full record was too large to keep ({{size}}); only the outline is kept."
   },
   "approval": {
     "title": "Confirm this step",
@@ -66,7 +67,8 @@
     "confirmDelete": "Delete?",
     "cancel": "Cancel",
     "untitled": "New conversation",
-    "untitledShort": "Untitled"
+    "untitledShort": "Untitled",
+    "trimmed": "{{count}} older messages were dropped to keep this conversation within its storage limit."
   },
   "errors": {
     "saveFirst": "Your last change has not been saved yet; the assistant needs the saved document. Save or resolve the conflict, then ask again.",

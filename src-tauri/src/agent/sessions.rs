@@ -18,12 +18,17 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 pub const SESSION_SCHEMA_VERSION: u32 = 1;
-pub const MAX_AGENT_MESSAGES_PER_SESSION: usize = 200;
-pub const MAX_AGENT_SESSION_BYTES: usize = 2 * 1024 * 1024;
-pub const MAX_AGENT_MESSAGE_LENGTH: usize = 8_000;
+/// Ceilings are guards against a runaway writer, not a reading budget: what a
+/// person types and what a tool returns should fit with room to spare.
+pub const MAX_AGENT_MESSAGES_PER_SESSION: usize = 2_000;
+pub const MAX_AGENT_SESSION_BYTES: usize = 20 * 1024 * 1024;
+pub const MAX_AGENT_MESSAGE_LENGTH: usize = 80_000;
 pub const MAX_AGENT_TITLE_LENGTH: usize = 80;
-pub const MAX_AGENT_TOOL_CALLS_BYTES: usize = 64 * 1024;
+/// A step's tool record is degraded rather than refused when it reaches this,
+/// so the value only bounds what a conversation file can hold in one message.
+pub const MAX_AGENT_TOOL_CALLS_BYTES: usize = 1024 * 1024;
 const SNIPPET_CHARS: usize = 160;
+const TRUNCATION_PREVIEW_CHARS: usize = 240;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -385,8 +390,11 @@ impl AgentSessionStore {
             return Ok((summary_of(&session, bytes, None), 0));
         }
         session.messages.push(message);
+        let mut trimmed = 0;
         if session.messages.len() > MAX_AGENT_MESSAGES_PER_SESSION {
+            let before = session.messages.len();
             session.messages = trim(&session.messages, MAX_AGENT_MESSAGES_PER_SESSION - 1);
+            trimmed += before.saturating_sub(session.messages.len());
         }
         session.updated_at = crate::domain::now_iso();
         if session.title.is_empty() || session.title == DEFAULT_TITLE {
@@ -398,7 +406,7 @@ impl AgentSessionStore {
                 session.title = clean_title(first_line(&first.text));
             }
         }
-        let trimmed = trim_to_size(&mut session)?;
+        trimmed += trim_to_size(&mut session)?;
         write_session(&path, &session)?;
         let bytes = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
         Ok((summary_of(&session, bytes, None), trimmed))
@@ -487,29 +495,85 @@ fn normalize_message(message: &mut AgentMessage) -> SessionResult<()> {
             message.role
         )));
     }
-    if message.text.chars().count() > MAX_AGENT_MESSAGE_LENGTH {
-        message.text = message
+    let chars = message.text.chars().count();
+    if chars > MAX_AGENT_MESSAGE_LENGTH {
+        let head: String = message
             .text
             .chars()
             .take(MAX_AGENT_MESSAGE_LENGTH)
-            .collect::<String>()
-            .trim_end()
-            .to_string();
-        message.text.push('…');
+            .collect();
+        message.text = format!(
+            "{}…[truncated {} chars]",
+            head.trim_end(),
+            chars - MAX_AGENT_MESSAGE_LENGTH
+        );
     }
-    if serde_json::to_vec(&message.tool_calls)
-        .map(|bytes| bytes.len())
-        .unwrap_or(0)
-        > MAX_AGENT_TOOL_CALLS_BYTES
-    {
-        return Err(SessionError::validation(
-            "the tool calls on one step are too large to keep",
-        ));
+    if tool_calls_bytes(&message.tool_calls) > MAX_AGENT_TOOL_CALLS_BYTES {
+        fit_tool_calls(&mut message.tool_calls);
     }
     if message.id.trim().is_empty() {
         message.id = crate::domain::new_id();
     }
     Ok(())
+}
+
+fn tool_calls_bytes(calls: &[Value]) -> usize {
+    serde_json::to_vec(calls)
+        .map(|bytes| bytes.len())
+        .unwrap_or(0)
+}
+
+/// Keeps a step's tool record under its ceiling without refusing the message.
+///
+/// The tool already ran and its summary is the part the conversation reads, so
+/// an oversized payload is replaced by a note of what it was rather than
+/// failing a turn that succeeded. The full record stays in the audit.
+fn fit_tool_calls(calls: &mut [Value]) {
+    for index in 0..calls.len() {
+        let Some(result) = calls[index]
+            .get_mut("result")
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        let Some(data) = result.remove("data") else {
+            continue;
+        };
+        result.insert("data".into(), truncation_marker(&data));
+        if tool_calls_bytes(calls) <= MAX_AGENT_TOOL_CALLS_BYTES {
+            return;
+        }
+    }
+    for index in 0..calls.len() {
+        let Some(input) = calls[index].get_mut("input") else {
+            continue;
+        };
+        let marker = truncation_marker(input);
+        *input = marker;
+        if tool_calls_bytes(calls) <= MAX_AGENT_TOOL_CALLS_BYTES {
+            return;
+        }
+    }
+    // Last resort: keep the outline of each call so the step still reads.
+    for call in calls.iter_mut() {
+        if let Some(object) = call.as_object_mut() {
+            object.retain(|key, _| {
+                matches!(
+                    key.as_str(),
+                    "id" | "name" | "kind" | "risk" | "status" | "startedAt" | "finishedAt"
+                )
+            });
+        }
+    }
+}
+
+fn truncation_marker(value: &Value) -> Value {
+    let encoded = serde_json::to_string(value).unwrap_or_default();
+    serde_json::json!({
+        "truncated": true,
+        "bytes": encoded.len(),
+        "preview": encoded.chars().take(TRUNCATION_PREVIEW_CHARS).collect::<String>(),
+    })
 }
 
 /// Drops the oldest messages, keeping the opening question and the recent tail.
@@ -750,21 +814,29 @@ mod tests {
     async fn a_session_over_the_message_ceiling_keeps_the_first_question_and_the_tail() {
         let (dir, store) = store().await;
         let session = store.create(dir.path(), None, None, None).await.unwrap();
-        for index in 0..MAX_AGENT_MESSAGES_PER_SESSION {
-            store
-                .append(
-                    dir.path(),
-                    &session.id,
-                    message(
-                        &format!("m_{index}"),
-                        if index == 0 { "user" } else { "assistant" },
-                        &format!("line {index}"),
-                    ),
-                )
-                .await
-                .unwrap();
-        }
-        store
+        let full = AgentSessionFile {
+            schema_version: SESSION_SCHEMA_VERSION,
+            session: AgentSession {
+                id: session.id.clone(),
+                title: session.title.clone(),
+                messages: (0..MAX_AGENT_MESSAGES_PER_SESSION)
+                    .map(|index| {
+                        message(
+                            &format!("m_{index}"),
+                            if index == 0 { "user" } else { "assistant" },
+                            &format!("line {index}"),
+                        )
+                    })
+                    .collect(),
+                created_at: session.created_at.clone(),
+                updated_at: session.updated_at.clone(),
+                last_scope: None,
+                model: None,
+            },
+        };
+        let path = AgentSessionStore::sessions_dir(dir.path()).join(format!("{}.json", session.id));
+        std::fs::write(&path, serde_json::to_vec(&full).unwrap()).unwrap();
+        let (_, trimmed) = store
             .append(
                 dir.path(),
                 &session.id,
@@ -772,13 +844,99 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(trimmed, 1);
         let read = store
-            .get(dir.path(), &session.id, 1_000, None)
+            .get(
+                dir.path(),
+                &session.id,
+                MAX_AGENT_MESSAGES_PER_SESSION,
+                None,
+            )
             .await
             .unwrap();
         assert!(read.messages.len() <= MAX_AGENT_MESSAGES_PER_SESSION);
         assert_eq!(read.messages[0].id, "m_0");
         assert_eq!(read.messages.last().expect("a tail").id, "m_last");
+    }
+
+    #[tokio::test]
+    async fn an_oversized_tool_result_is_kept_as_its_summary_instead_of_refused() {
+        let (dir, store) = store().await;
+        let session = store.create(dir.path(), None, None, None).await.unwrap();
+        let mut step = message("m_1", "assistant", "reading the story");
+        step.tool_calls = vec![serde_json::json!({
+            "id": "call_1",
+            "name": "story.get",
+            "kind": "read",
+            "input": {"storyId": "s_1"},
+            "status": "ok",
+            "result": {
+                "ok": true,
+                "summary": "story 湖边",
+                "data": {"chapters": "x".repeat(MAX_AGENT_TOOL_CALLS_BYTES + 1)},
+            },
+        })];
+        store
+            .append(dir.path(), &session.id, step)
+            .await
+            .expect("a step that already ran is still recorded");
+        let read = store.get(dir.path(), &session.id, 20, None).await.unwrap();
+        let call = &read.messages[0].tool_calls[0];
+        assert_eq!(call["result"]["summary"], "story 湖边");
+        assert_eq!(call["result"]["data"]["truncated"], true);
+        assert!(call["result"]["data"]["bytes"].as_u64().unwrap() > 0);
+        assert!(tool_calls_bytes(&read.messages[0].tool_calls) <= MAX_AGENT_TOOL_CALLS_BYTES);
+    }
+
+    #[tokio::test]
+    async fn an_oversized_tool_input_keeps_a_preview_instead_of_refusing_the_step() {
+        let (dir, store) = store().await;
+        let session = store.create(dir.path(), None, None, None).await.unwrap();
+        store
+            .append(
+                dir.path(),
+                &session.id,
+                message("m_1", "assistant", "planning"),
+            )
+            .await
+            .unwrap();
+        let mut step = message("m_1", "assistant", "planning");
+        step.tool_calls = vec![serde_json::json!({
+            "id": "call_1",
+            "name": "story.replace_chapters",
+            "kind": "command",
+            "input": {"chapters": "y".repeat(MAX_AGENT_TOOL_CALLS_BYTES + 1)},
+            "status": "pending",
+        })];
+        store
+            .update_message(dir.path(), &session.id, "m_1", step)
+            .await
+            .expect("the step is recorded with what fit");
+        let read = store.get(dir.path(), &session.id, 20, None).await.unwrap();
+        let call = &read.messages[0].tool_calls[0];
+        assert_eq!(call["input"]["truncated"], true);
+        assert!(
+            call["input"]["preview"].as_str().unwrap().chars().count() <= TRUNCATION_PREVIEW_CHARS
+        );
+        assert!(tool_calls_bytes(&read.messages[0].tool_calls) <= MAX_AGENT_TOOL_CALLS_BYTES);
+    }
+
+    #[tokio::test]
+    async fn a_message_longer_than_its_ceiling_is_cut_and_marked() {
+        let (dir, store) = store().await;
+        let session = store.create(dir.path(), None, None, None).await.unwrap();
+        store
+            .append(
+                dir.path(),
+                &session.id,
+                message("m_1", "user", &"x".repeat(MAX_AGENT_MESSAGE_LENGTH + 5)),
+            )
+            .await
+            .unwrap();
+        let read = store.get(dir.path(), &session.id, 20, None).await.unwrap();
+        let text = &read.messages[0].text;
+        assert!(text.ends_with("…[truncated 5 chars]"));
+        assert!(text.chars().count() > MAX_AGENT_MESSAGE_LENGTH);
     }
 
     #[tokio::test]

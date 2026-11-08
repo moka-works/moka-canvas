@@ -30,6 +30,15 @@ const MAX_STEPS = 12;
 const TASK_WAIT_MS = 90_000;
 const MAX_HISTORY_TURNS = 60;
 const OBSERVATION_CHARS = 4_000;
+/** The server's per-message budget; longer text is cut here, with a marker. */
+const TURN_CHARS = 16_000;
+
+function boundedTurn(text: string): string {
+  const chars = [...text];
+  if (chars.length <= TURN_CHARS) return text;
+  const cut = chars.length - TURN_CHARS;
+  return `${chars.slice(0, TURN_CHARS).join("")}…[truncated ${cut} chars]`;
+}
 
 function truncate(value: unknown, limit: number): unknown {
   if (value === undefined) return undefined;
@@ -61,20 +70,20 @@ function transcriptOf(messages: readonly DockMessage[]): ChatTurn[] {
   for (const message of messages) {
     if (message.live) continue;
     if (message.role === "user") {
-      turns.push({ role: "user", text: message.text });
+      turns.push({ role: "user", text: boundedTurn(message.text) });
       continue;
     }
     if (message.role !== "assistant") continue;
     const calls = message.toolCalls ?? [];
     if (calls.length === 0) {
       if (message.text.trim() !== "") {
-        turns.push({ role: "assistant", text: message.text });
+        turns.push({ role: "assistant", text: boundedTurn(message.text) });
       }
       continue;
     }
     turns.push({
       role: "assistant",
-      text: message.text,
+      text: boundedTurn(message.text),
       toolCalls: calls.map((call) => ({
         id: call.id,
         name: call.name,
@@ -106,12 +115,11 @@ async function persist(
   sessionId: string,
   message: DockMessage,
   existing: boolean,
-): Promise<void> {
-  if (existing) {
-    await agentSessionsApi.updateMessage(sessionId, message);
-  } else {
-    await agentSessionsApi.append(sessionId, message);
-  }
+): Promise<number> {
+  const stored = existing
+    ? await agentSessionsApi.updateMessage(sessionId, message)
+    : await agentSessionsApi.append(sessionId, message);
+  return stored.trimmed;
 }
 
 /**
@@ -128,9 +136,19 @@ export async function runTurn(room: AgentRoom, text: string): Promise<void> {
   const turnId = newId();
   const session = await ensureSession(room, scope);
 
+  const noteTrimmed = (trimmed: number) => {
+    if (trimmed > 0) {
+      agent().setNotice(
+        room,
+        i18n.t("agent:sessions.trimmed", { count: trimmed }),
+      );
+    }
+  };
+  agent().setNotice(room, null);
+
   const user = messageOf("user", text, turnId, { scope });
   agent().addMessage(room, user);
-  await agentSessionsApi.append(session.id, user);
+  noteTrimmed((await agentSessionsApi.append(session.id, user)).trimmed);
   void refreshSessionTitle(session.id);
 
   // The server reads the file, so anything still on its way must land first.
@@ -210,7 +228,7 @@ export async function runTurn(room: AgentRoom, text: string): Promise<void> {
         text: assistantText,
         toolCalls: calls,
       };
-      await persist(session.id, stepMessage, false);
+      noteTrimmed(await persist(session.id, stepMessage, false));
 
       if (calls.length === 0) {
         if (assistantText.trim() === "") {
@@ -274,14 +292,16 @@ export async function runTurn(room: AgentRoom, text: string): Promise<void> {
           result,
           finishedAt: nowIso(),
         });
-        await persist(
-          session.id,
-          {
-            ...agent().views[room].messages.find(
-              (each) => each.id === stepMessage.id,
-            )!,
-          },
-          true,
+        noteTrimmed(
+          await persist(
+            session.id,
+            {
+              ...agent().views[room].messages.find(
+                (each) => each.id === stepMessage.id,
+              )!,
+            },
+            true,
+          ),
         );
       }
     }
