@@ -137,6 +137,15 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
     await expect(page.locator(".story-element")).toHaveCount(4, {
       timeout: 30_000,
     });
+    // The cast is narrowed by name, and a search that finds nothing says so.
+    const search = page.getByTestId("story-elements-search");
+    await search.fill("Old");
+    await expect(page.locator(".story-element")).toHaveCount(1);
+    await expect(card(page, "prop", "Old ticket")).toBeVisible();
+    await search.fill("nothing here");
+    await expect(page.getByTestId("story-elements-search-empty")).toBeVisible();
+    await search.fill("");
+    await expect(page.locator(".story-element")).toHaveCount(4);
     await expect(
       card(page, "character", "Keeper").getByTestId(
         "story-element-description-Keeper",

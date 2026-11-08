@@ -1723,6 +1723,104 @@ describe("a cast too long for one page", () => {
   });
 });
 
+describe("finding a card in the cast", () => {
+  it("narrows the kind being looked at and turns back to its first page", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 20);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-elements-next"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
+    );
+
+    const field = screen.getByTestId("story-elements-search");
+    fireEvent.change(field, { target: { value: "道具 1" } });
+    // 道具 1 and 道具 10–19, read from the search's own first page.
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 11",
+    );
+    expect(screen.getByTestId("story-element-prop-道具 1")).toBeTruthy();
+    expect(screen.queryByTestId("story-element-prop-道具 2")).toBeNull();
+
+    fireEvent.change(field, { target: { value: "" } });
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 20",
+    );
+  });
+
+  it("searches the description too, within the kind on show", () => {
+    const moka = buildStoryMokaFile();
+    const waiting = {
+      ...castOf("scene", 1)[0]!,
+      name: "候车厅",
+      description: "长椅上空无一人。",
+    };
+    moka.stories![0].elements = [
+      ...castOf("character", 3),
+      waiting,
+      ...castOf("prop", 2),
+    ];
+    openAtElements(moka);
+
+    const field = screen.getByTestId("story-elements-search");
+    fireEvent.change(field, { target: { value: "长椅" } });
+    expect(screen.getByTestId("story-element-scene-候车厅")).toBeTruthy();
+    expect(screen.queryByTestId("story-element-character-角色 1")).toBeNull();
+
+    // A kind with no match says so rather than standing empty.
+    fireEvent.click(screen.getByTestId("story-elements-group-prop"));
+    expect(screen.getByTestId("story-elements-search-empty").textContent).toBe(
+      "No element matches “长椅”",
+    );
+    expect(screen.queryByTestId("story-element-prop-道具 1")).toBeNull();
+
+    // Back among the scenes, the same words find the card again.
+    fireEvent.click(screen.getByTestId("story-elements-group-scene"));
+    expect(screen.getByTestId("story-element-scene-候车厅")).toBeTruthy();
+  });
+
+  it("narrows the pictures a reference may be taken from", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("character", 2);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-element-reference-pick-角色 1"));
+
+    const dialog = screen.getByTestId("story-reference-picker");
+    expect(
+      within(dialog).getByTestId("story-reference-element-character-1"),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByTestId(`story-reference-asset-${ids.frameArt}`),
+    ).toBeTruthy();
+
+    const field = within(dialog).getByTestId("story-reference-search");
+    fireEvent.change(field, { target: { value: "frame" } });
+    // The element list and its heading step out of the way with no match.
+    expect(
+      within(dialog).queryByTestId("story-reference-element-character-1"),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByRole("heading", { name: "Elements" }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByTestId(`story-reference-asset-${ids.frameArt}`),
+    ).toBeTruthy();
+
+    fireEvent.change(field, { target: { value: "角色" } });
+    expect(
+      within(dialog).getByTestId("story-reference-element-character-1"),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByTestId(`story-reference-asset-${ids.frameArt}`),
+    ).toBeNull();
+
+    fireEvent.change(field, { target: { value: "不存在" } });
+    expect(
+      within(dialog).getByTestId("story-reference-no-match").textContent,
+    ).toBe("No reference picture matches “不存在”");
+  });
+});
+
 describe("arranging the elements", () => {
   it("turns to one unpaged list, and back to the page it was on", () => {
     const moka = buildStoryMokaFile();

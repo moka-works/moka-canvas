@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -38,8 +38,9 @@ export function ElementReferencePicker({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const shelf = useProjectStore((state) => state.moka?.resources.images ?? []);
   const file = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -49,7 +50,13 @@ export function ElementReferencePicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const others = story.elements.filter((held) => held.id !== element.id);
+  const search = query.trim().toLowerCase();
+  const matches = (name: string) =>
+    search === "" || name.toLowerCase().includes(search);
+  const others = story.elements
+    .filter((held) => held.id !== element.id)
+    .filter((held) => matches(held.name));
+  const images = shelf.filter((entry) => matches(entry.name));
   const chosenElement =
     current?.kind === "element" ? current.elementId : undefined;
   const chosenAsset = current?.kind === "asset" ? current.assetId : undefined;
@@ -72,76 +79,107 @@ export function ElementReferencePicker({
         <h2>{t("story:elements.referencePick")}</h2>
         <p className="story-hint">{t("story:elements.referenceLead")}</p>
 
-        <h3 className="story-picks-heading">
-          {t("story:elements.referenceElements")}
-        </h3>
-        {others.length === 0 ? (
-          <p className="story-hint">
-            {t("story:elements.referenceNoElements")}
-          </p>
-        ) : (
-          <div className="story-picks-grid">
-            {others.map((held) => {
-              const take = currentTake(held.main);
-              return (
-                <button
-                  className={`story-pick${chosenElement === held.id ? " is-current" : ""}`}
-                  data-testid={`story-reference-element-${held.id}`}
-                  key={held.id}
-                  onClick={() =>
-                    onChoose({ kind: "element", elementId: held.id })
-                  }
-                  type="button"
-                >
-                  {take === undefined ? (
-                    <span className="story-pick-empty">
-                      {t("story:elements.referenceUndrawn")}
-                    </span>
-                  ) : (
-                    <img
-                      alt={held.name}
-                      decoding="async"
-                      loading="lazy"
-                      src={assetThumbUrl(
-                        take.assetIds[0] ?? "",
-                        PICK_THUMB_WIDTH,
-                      )}
-                    />
-                  )}
-                  <span className="story-pick-foot">{held.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <input
+          aria-label={t("story:elements.referenceSearch")}
+          className="story-search"
+          data-testid="story-reference-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("story:elements.referenceSearchPlaceholder")}
+          type="search"
+          value={query}
+        />
 
-        <h3 className="story-picks-heading">
-          {t("story:elements.referenceAssets")}
-        </h3>
-        {images.length === 0 ? (
-          <p className="story-hint" data-testid="story-reference-assets-empty">
-            {t("story:elements.referenceNoAssets")}
+        {search !== "" && others.length === 0 && images.length === 0 ? (
+          <p className="story-hint" data-testid="story-reference-no-match">
+            {t("story:elements.referenceSearchEmpty", { query: query.trim() })}
           </p>
         ) : (
-          <div className="story-picks-grid">
-            {images.map((entry) => (
-              <button
-                className={`story-pick${chosenAsset === entry.id ? " is-current" : ""}`}
-                data-testid={`story-reference-asset-${entry.id}`}
-                key={entry.id}
-                onClick={() => onChoose({ kind: "asset", assetId: entry.id })}
-                type="button"
-              >
-                <img
-                  alt={entry.name}
-                  decoding="async"
-                  loading="lazy"
-                  src={assetThumbUrl(entry.id, PICK_THUMB_WIDTH)}
-                />
-                <span className="story-pick-foot">{entry.name}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            {(search === "" || others.length > 0) && (
+              <>
+                <h3 className="story-picks-heading">
+                  {t("story:elements.referenceElements")}
+                </h3>
+                {others.length === 0 ? (
+                  <p className="story-hint">
+                    {t("story:elements.referenceNoElements")}
+                  </p>
+                ) : (
+                  <div className="story-picks-grid">
+                    {others.map((held) => {
+                      const take = currentTake(held.main);
+                      return (
+                        <button
+                          className={`story-pick${chosenElement === held.id ? " is-current" : ""}`}
+                          data-testid={`story-reference-element-${held.id}`}
+                          key={held.id}
+                          onClick={() =>
+                            onChoose({ kind: "element", elementId: held.id })
+                          }
+                          type="button"
+                        >
+                          {take === undefined ? (
+                            <span className="story-pick-empty">
+                              {t("story:elements.referenceUndrawn")}
+                            </span>
+                          ) : (
+                            <img
+                              alt={held.name}
+                              decoding="async"
+                              loading="lazy"
+                              src={assetThumbUrl(
+                                take.assetIds[0] ?? "",
+                                PICK_THUMB_WIDTH,
+                              )}
+                            />
+                          )}
+                          <span className="story-pick-foot">{held.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {(search === "" || images.length > 0) && (
+              <>
+                <h3 className="story-picks-heading">
+                  {t("story:elements.referenceAssets")}
+                </h3>
+                {images.length === 0 ? (
+                  <p
+                    className="story-hint"
+                    data-testid="story-reference-assets-empty"
+                  >
+                    {t("story:elements.referenceNoAssets")}
+                  </p>
+                ) : (
+                  <div className="story-picks-grid">
+                    {images.map((entry) => (
+                      <button
+                        className={`story-pick${chosenAsset === entry.id ? " is-current" : ""}`}
+                        data-testid={`story-reference-asset-${entry.id}`}
+                        key={entry.id}
+                        onClick={() =>
+                          onChoose({ kind: "asset", assetId: entry.id })
+                        }
+                        type="button"
+                      >
+                        <img
+                          alt={entry.name}
+                          decoding="async"
+                          loading="lazy"
+                          src={assetThumbUrl(entry.id, PICK_THUMB_WIDTH)}
+                        />
+                        <span className="story-pick-foot">{entry.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
 
         <div className="story-reference-upload">

@@ -153,6 +153,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const failure = useStoryJobStore((state) => state.error);
   const run = useStoryWavesAsk();
   const [kind, setKind] = useState<ElementKindTab>("all");
+  // The words a reader narrows the cast by, within whichever kind is shown.
+  const [query, setQuery] = useState("");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
   // The cards a bulk action is about, chosen one checkbox at a time.
@@ -194,10 +196,16 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     kind: each,
     elements: story.elements.filter((element) => element.kind === each),
   }));
-  const shown =
+  const search = query.trim().toLowerCase();
+  const matches = (element: StoryElement) =>
+    search === "" ||
+    element.name.toLowerCase().includes(search) ||
+    element.description.toLowerCase().includes(search);
+  const shown = (
     kind === "all"
       ? story.elements
-      : story.elements.filter((element) => element.kind === kind);
+      : story.elements.filter((element) => element.kind === kind)
+  ).filter(matches);
   // A telling may hold two hundred of these, and every card is a form: one
   // page's worth is built at a time, and the kind's remembered page is read
   // against the list as it stands — an element taken out of the list takes a
@@ -219,6 +227,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     useStoryStore.getState().focusElement(null);
     if (index === -1) return;
     setKind("all");
+    setQuery("");
     setSorting(false);
     setPicked(new Set());
     setBulkAction("");
@@ -275,6 +284,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   /** Enters the ordered list, letting go of any cards a bulk action had. */
   const toggleSorting = () => {
     setSorting(!sorting);
+    // Arranging is done over the whole kind rather than over a search's few.
+    setQuery("");
     setPicked(new Set());
     setBulkAction("");
   };
@@ -600,6 +611,22 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
               </button>
             ))}
           </div>
+          {story.elements.length > 0 && !sorting && (
+            <input
+              aria-label={t("story:elements.search")}
+              className="story-search"
+              data-testid="story-elements-search"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                // A search is a new list: it is read from its top rather than
+                // from the page the kind happened to be on.
+                setPageOf((held) => ({ ...held, [kind]: 1 }));
+              }}
+              placeholder={t("story:elements.searchPlaceholder")}
+              type="search"
+              value={query}
+            />
+          )}
           <div className="story-step-actions">
             {!sorting && shown.length > 0 && (
               <button
@@ -828,6 +855,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             </p>
             <OrderList elements={shown} onMove={reorder} />
           </>
+        ) : shown.length === 0 ? (
+          <p className="story-hint" data-testid="story-elements-search-empty">
+            {t("story:elements.searchEmpty", { query: query.trim() })}
+          </p>
         ) : (
           <>
             <ul className="story-elements">

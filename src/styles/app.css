@@ -7253,6 +7253,25 @@ body.is-dragging-split {
   padding: 0;
 }
 
+/* The words a list is narrowed by: the cast on step three, and the pictures a
+   reference may be taken from. */
+.story-search {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  flex: 1 1 180px;
+  font: inherit;
+  font-size: 12px;
+  max-width: 320px;
+  padding: 5px 8px;
+}
+
+.story-picks .story-search {
+  max-width: none;
+  width: 100%;
+}
+
 .story-paging {
   align-items: center;
   color: var(--muted);
