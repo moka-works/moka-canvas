@@ -142,6 +142,41 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
         "story-element-description-Keeper",
       ),
     ).toHaveValue(/grey coat/);
+    // A prop's quick press asks for the props alone, and four views belong to
+    // characters, so the group of things offers no such press.
+    await page.getByTestId("story-elements-group-prop").click();
+    await expect(page.getByTestId("story-elements-draw-all")).toHaveText(
+      "Draw every missing picture (1)",
+    );
+    await expect(page.getByTestId("story-elements-views-all")).toHaveCount(0);
+    await page.getByTestId("story-elements-select-all").click();
+    await expect(page.getByTestId("story-bulk")).toContainText("1 chosen");
+    await page.getByTestId("story-bulk-clear").click();
+    await page.getByTestId("story-elements-group-all").click();
+
+    // A thing may be drawn in a frame of its own; the chosen cards may be
+    // given one picture model together.
+    await card(page, "prop", "Old ticket")
+      .getByTestId("story-element-ratio-Old ticket")
+      .selectOption("9:16");
+    await card(page, "prop", "Old ticket")
+      .getByTestId("story-element-select-Old ticket")
+      .check();
+    await card(page, "character", "Keeper")
+      .getByTestId("story-element-select-Keeper")
+      .check();
+    await expect(page.getByTestId("story-bulk")).toContainText("2 chosen");
+    await page.getByTestId("story-bulk-action").selectOption("model");
+    await page
+      .getByTestId("story-bulk-model")
+      .selectOption({ label: "Painter" });
+    await expect(page.getByTestId("story-bulk")).toHaveCount(0);
+    await expect(
+      card(page, "character", "Keeper")
+        .getByTestId("story-element-model-Keeper")
+        .getByRole("combobox"),
+    ).not.toHaveValue("");
+
     // Nobody has a picture yet, so the step's press says what it is missing
     // rather than opening the board: there is no agreement per element to give.
     await expect(page.getByTestId("story-elements-draw-all")).toHaveText(
@@ -262,6 +297,29 @@ test("the cast a reading left, and what the reader said since, outlast the room"
     await expect(page.getByTestId("story-pick-ask")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("story-picks")).toHaveCount(0);
+
+    // A picture may come from the project's own shelf rather than a model...
+    const ticket = card(page, "prop", "Old ticket");
+    await ticket.getByTestId("story-slot-main-library").click();
+    const library = page.getByTestId("story-library");
+    await expect(library).toBeVisible();
+    await library.locator('[data-testid^="story-library-"]').first().click();
+    await expect(
+      ticket.getByTestId("story-slot-main").locator("img"),
+    ).toBeVisible();
+
+    // ...or from a file on this computer, which is filed on the shelf first.
+    await ticket.getByTestId("story-slot-main-upload-input").setInputFiles({
+      name: "ticket.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+    await expect(ticket.getByTestId("story-slot-main-pick")).toBeVisible({
+      timeout: 60_000,
+    });
 
     // What the reader says to the cast by hand: one added, one taken out, and
     // a description of their own over the words the reading brought.
