@@ -7,6 +7,7 @@ import {
   buildStoryMokaFile,
 } from "../../../shared/domain/fixtures";
 import { useHistoryStore } from "../../editor/stores/historyStore";
+import { usePanelFolds } from "../../editor/stores/panelFolds";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useAssetsStore } from "../stores/assetsStore";
 import { AssetsOverview } from "./AssetsOverview";
@@ -30,6 +31,7 @@ beforeEach(() => {
     view: "all",
     kind: "image",
   });
+  usePanelFolds.setState({ left: false, right: false });
 });
 
 afterEach(cleanup);
@@ -71,5 +73,26 @@ describe("the project read at the stage", () => {
     openRoom(buildStoryMokaFile());
     fireEvent.click(screen.getByTestId("assets-overview-unused"));
     expect(useAssetsStore.getState().view).toBe("unused");
+  });
+
+  it("brings the column back when a card is pressed with it folded away", () => {
+    openRoom(buildStoryMokaFile());
+    usePanelFolds.setState({ left: true });
+
+    fireEvent.click(screen.getByTestId("assets-overview-unused"));
+    expect(usePanelFolds.getState().left).toBe(false);
+
+    usePanelFolds.setState({ left: true });
+    fireEvent.click(screen.getByTestId("assets-overview-video"));
+    expect(usePanelFolds.getState().left).toBe(false);
+  });
+
+  it("answers a kind card with the whole shelf, not the last question", () => {
+    openRoom(buildStoryMokaFile());
+    useAssetsStore.setState({ view: "unused" });
+
+    fireEvent.click(screen.getByTestId("assets-overview-audio"));
+    expect(useAssetsStore.getState().kind).toBe("audio");
+    expect(useAssetsStore.getState().view).toBe("all");
   });
 });

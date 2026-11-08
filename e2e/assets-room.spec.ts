@@ -148,6 +148,28 @@ test("a project's files are read whole in one room and placed from the rooms tha
   await expect(rowFor(page, "tone.wav")).toBeVisible();
   await page.getByTestId("assets-view-all").click();
 
+  // The stage's cards work with the column folded away: the column comes back
+  // to show what was asked for, and a kind card asks the whole shelf rather
+  // than the kind inside the last question the column was answering.
+  await page.getByTestId("panel-fold-left").click();
+  await expect(page.getByTestId("assets-view-all")).toHaveCount(0);
+  await page.getByTestId("assets-overview-unused").click();
+  await expect(page.getByTestId("assets-view-unused")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("panel-fold-left").click();
+  await expect(page.getByTestId("assets-view-all")).toHaveCount(0);
+  await page.getByTestId("assets-overview-audio").click();
+  await expect(page.getByTestId("assets-view-all")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("asset-kind-audio")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
   // The board's column is about what the board holds rather than the project:
   // it holds nothing, so both pictures wait in the tray above its list.
   await page.getByRole("button", { name: "Projects menu" }).click();

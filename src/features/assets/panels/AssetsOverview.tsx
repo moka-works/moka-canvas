@@ -8,6 +8,7 @@ import {
 } from "../../../shared/domain";
 import { formatBytes } from "../../editor/canvas/mediaCards";
 import { KIND_SHELVES } from "../../editor/panels/shelfFilter";
+import { usePanelFolds } from "../../editor/stores/panelFolds";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useAssetsStore } from "../stores/assetsStore";
 
@@ -54,6 +55,14 @@ export function AssetsOverview() {
     0,
   );
   const sizes = kindSizes(moka);
+
+  // A card can be pressed with the column folded away, and a card that turned
+  // something nobody can see would be a card that did nothing: what was asked
+  // for is brought back into view rather than left behind the fold.
+  const revealColumn = () => {
+    const folds = usePanelFolds.getState();
+    if (folds.left) folds.setFolded("left", false);
+  };
   const line =
     entries.length === 1
       ? t("assets:overview.totalOne", {
@@ -77,7 +86,10 @@ export function AssetsOverview() {
         <button
           className="assets-overview-unused"
           data-testid="assets-overview-unused"
-          onClick={() => useAssetsStore.getState().setView("unused")}
+          onClick={() => {
+            useAssetsStore.getState().setView("unused");
+            revealColumn();
+          }}
           type="button"
         >
           {t("assets:overview.unusedLink", { count: unused })}
@@ -90,7 +102,14 @@ export function AssetsOverview() {
             className="assets-overview-kind"
             data-testid={`assets-overview-${size.kind}`}
             key={size.kind}
-            onClick={() => useAssetsStore.getState().setKind(size.kind)}
+            onClick={() => {
+              // A kind is the whole shelf narrowed to it, not the kind inside
+              // whichever question the column was last asked: pressing a card
+              // answers "everything, this kind" rather than inheriting the view.
+              useAssetsStore.getState().setKind(size.kind);
+              useAssetsStore.getState().setView("all");
+              revealColumn();
+            }}
             type="button"
           >
             <strong>{t(ASSET_KIND_LABELS[size.kind])}</strong>
