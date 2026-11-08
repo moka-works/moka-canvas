@@ -1596,6 +1596,37 @@ describe("the voice of a character", () => {
   });
 });
 
+describe("the bulk asks of a group", () => {
+  it("counts and draws only the group being looked at", async () => {
+    const moka = buildStoryMokaFile();
+    // The place has lost its picture, so its group and the whole cast each
+    // have something missing to count.
+    moka.stories![0]!.elements.find(
+      (held) => held.name === "末班车车厢",
+    )!.main = { takes: [] };
+    openAtElements(moka);
+
+    fireEvent.click(screen.getByTestId("story-elements-group-scene"));
+    expect(screen.getByTestId("story-elements-draw-all").textContent).toBe(
+      "Draw every missing picture (1)",
+    );
+
+    fireEvent.click(screen.getByTestId("story-elements-group-all"));
+    expect(screen.getByTestId("story-elements-draw-all").textContent).toBe(
+      "Draw every missing picture (2)",
+    );
+
+    fireEvent.click(screen.getByTestId("story-elements-group-scene"));
+    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    expect(starts[0]?.items.map((item) => item.target)).toEqual([
+      { kind: "elementArt", elementId: ids.scene, view: "main" },
+    ]);
+  });
+});
+
 describe("a cast too big for one batch", () => {
   it("asks the drawings in waves the server takes, every place once", async () => {
     const moka = buildStoryMokaFile();

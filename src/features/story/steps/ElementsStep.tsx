@@ -130,7 +130,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       story.id,
       targetKey({ kind: "element", elementId: element.id, view }),
     );
-  const undrawn = story.elements.filter(
+  const undrawn = shown.filter(
     (element) => currentTake(element.main) === undefined,
   );
   const viewsMissing = story.elements.filter(
@@ -139,10 +139,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       currentTake(element.main) !== undefined &&
       currentTake(element.turnaround ?? EMPTY) === undefined,
   );
-  // What a bulk button hands over: the places still missing that picture and
-  // not already being drawn, since asking for a place twice pays for it twice.
-  // It is also what the button counts, so its number is the work it would ask
-  // for — while a card waits on its painter, the rest go on being askable.
+  // What a bulk button hands over: the places of the kind being looked at
+  // still missing that picture and not already being drawn, since asking for
+  // a place twice pays for it twice. The button counts the same set, so its
+  // number is the work of the press and follows the group chosen above it.
   const drawable = undrawn.filter((element) => !drawing(element, "main"));
   const viewable = viewsMissing.filter(
     (element) => !drawing(element, "turnaround"),
