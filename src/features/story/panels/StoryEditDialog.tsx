@@ -223,11 +223,11 @@ export function StoryEditDialog({
 
   const marked = marks.some(drawn);
   const refusal = !canInput
-    ? t("story:edit.noInput")
+    ? t("story:pictureEdit.noInput")
     : painting && !marked
-      ? t("story:edit.maskPrompt")
+      ? t("story:pictureEdit.maskPrompt")
       : words.trim() === ""
-        ? t("story:edit.sayWhatChanges")
+        ? t("story:pictureEdit.sayWhatChanges")
         : null;
 
   const submit = async () => {
@@ -271,7 +271,7 @@ export function StoryEditDialog({
         ...(maskAssetId === undefined ? {} : { maskAssetId }),
       });
       if (item === undefined) {
-        setFailed(t("story:edit.noSource"));
+        setFailed(t("story:pictureEdit.noSource"));
         return;
       }
       const record = await useStoryJobStore
@@ -283,7 +283,9 @@ export function StoryEditDialog({
           model,
         );
       if (record === null) {
-        setFailed(useStoryJobStore.getState().error ?? t("story:edit.failed"));
+        setFailed(
+          useStoryJobStore.getState().error ?? t("story:pictureEdit.failed"),
+        );
         return;
       }
       onClose();
@@ -296,8 +298,8 @@ export function StoryEditDialog({
     return createPortal(
       <div className="dialog-backdrop" role="presentation">
         <div className="dialog" role="dialog">
-          <h2>{t("story:edit.title", { name: label })}</h2>
-          <p className="dialog-error">{t("story:edit.noSource")}</p>
+          <h2>{t("story:pictureEdit.title", { name: label })}</h2>
+          <p className="dialog-error">{t("story:pictureEdit.noSource")}</p>
           <div className="dialog-actions">
             <button onClick={onClose} type="button">
               {t("story:panels.close")}
@@ -329,12 +331,14 @@ export function StoryEditDialog({
         }}
         role="dialog"
       >
-        <h2 id="story-edit-title">{t("story:edit.title", { name: label })}</h2>
-        <p className="dialog-note">{t("story:edit.note")}</p>
+        <h2 id="story-edit-title">
+          {t("story:pictureEdit.title", { name: label })}
+        </h2>
+        <p className="dialog-note">{t("story:pictureEdit.note")}</p>
 
         <div className="story-edit-models">
           <label className="dialog-field">
-            <span>{t("story:edit.model")}</span>
+            <span>{t("story:pictureEdit.model")}</span>
             <select
               data-testid="story-edit-model"
               onChange={(event) =>
@@ -342,7 +346,7 @@ export function StoryEditDialog({
               }
               value={model ?? ""}
             >
-              <option value="">{t("story:edit.pickModel")}</option>
+              <option value="">{t("story:pictureEdit.pickModel")}</option>
               {(view === null ? [] : modelOptionsFor(view, "image")).flatMap(
                 (option) => {
                   const found = view?.models.find(
@@ -367,7 +371,7 @@ export function StoryEditDialog({
                   (option) => option.reference === model,
                 ) && (
                   <option value={model}>
-                    {t("story:edit.unsupportedModel", { model })}
+                    {t("story:pictureEdit.unsupportedModel", { model })}
                   </option>
                 )}
             </select>
@@ -377,15 +381,15 @@ export function StoryEditDialog({
             data-testid="story-edit-capability"
           >
             {unknown
-              ? t("story:edit.capabilitiesUnknown")
+              ? t("story:pictureEdit.capabilitiesUnknown")
               : canInput
-                ? t("story:edit.modelReady")
-                : t("story:edit.noInput")}
+                ? t("story:pictureEdit.modelReady")
+                : t("story:pictureEdit.noInput")}
           </span>
         </div>
 
         <div
-          aria-label={t("story:edit.mode")}
+          aria-label={t("story:pictureEdit.mode")}
           className="tool-choices"
           role="group"
         >
@@ -394,16 +398,16 @@ export function StoryEditDialog({
             onClick={() => setMode("whole")}
             type="button"
           >
-            {t("story:edit.modeWhole")}
+            {t("story:pictureEdit.modeWhole")}
           </button>
           <button
             aria-pressed={painting}
             disabled={!canMask}
             onClick={() => setMode("mask")}
-            title={canMask ? undefined : t("story:edit.noMask")}
+            title={canMask ? undefined : t("story:pictureEdit.noMask")}
             type="button"
           >
-            {t("story:edit.modeMask")}
+            {t("story:pictureEdit.modeMask")}
           </button>
         </div>
 
@@ -439,7 +443,7 @@ export function StoryEditDialog({
             ? t("editor:repaint.cannotShow")
             : size === null
               ? t("editor:repaint.reading")
-              : t("story:edit.sourceSize", {
+              : t("story:pictureEdit.sourceSize", {
                   width: size.width.toLocaleString(),
                   height: size.height.toLocaleString(),
                 })}
@@ -521,11 +525,11 @@ export function StoryEditDialog({
         )}
 
         <label className="dialog-field">
-          <span>{t("story:edit.instruction")}</span>
+          <span>{t("story:pictureEdit.instruction")}</span>
           <textarea
             data-testid="story-edit-instruction"
             onChange={(event) => setWords(event.target.value)}
-            placeholder={t("story:edit.placeholder")}
+            placeholder={t("story:pictureEdit.placeholder")}
             rows={3}
             value={words}
           />
@@ -544,7 +548,9 @@ export function StoryEditDialog({
             title={refusal ?? undefined}
             type="submit"
           >
-            {busy ? t("story:edit.filing") : t("story:edit.submit")}
+            {busy
+              ? t("story:pictureEdit.filing")
+              : t("story:pictureEdit.submit")}
           </button>
         </div>
       </form>

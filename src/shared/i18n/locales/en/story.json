@@ -312,7 +312,7 @@
     "openCard": "Open the element card",
     "emptyHint": "Draw one, or bring one in from the shelf or this computer"
   },
-  "edit": {
+  "pictureEdit": {
     "title": "Edit {{name}}",
     "note": "Edits the current version; the result joins as a new version and the old one stays",
     "model": "Model for the edit",

@@ -280,7 +280,7 @@
     "close": "关闭",
     "cancel": "取消",
     "generate": "生成{{label}}",
-    "again": "换一张",
+    "again": "重新生成",
     "edit": "编辑",
     "drawing": "生成中…",
     "pick": "挑一张",
@@ -312,7 +312,7 @@
     "openCard": "打开元素卡片",
     "emptyHint": "可以生成一张，也可以从素材库或本机文件里换一张"
   },
-  "edit": {
+  "pictureEdit": {
     "title": "编辑「{{name}}」",
     "note": "编辑的是当前版本；结果会作为新版本加入，旧版本仍可找回",
     "model": "编辑用的模型",

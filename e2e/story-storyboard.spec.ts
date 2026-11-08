@@ -228,6 +228,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-picture-inspector")).toBeVisible();
     await page.getByTestId("story-inspector-edit").click();
     await expect(page.getByTestId("story-edit-dialog")).toBeVisible();
+    // The dialog's words come from the catalogue rather than standing as raw
+    // keys: the picture-edit copy is a section of its own.
+    const editDialog = page.getByTestId("story-edit-dialog");
+    await expect(editDialog.getByRole("heading")).toHaveText("Edit Keeper");
+    await expect(editDialog.getByText("What to change")).toBeVisible();
     await page
       .getByTestId("story-edit-dialog")
       .getByRole("button", { name: "Cancel" })
