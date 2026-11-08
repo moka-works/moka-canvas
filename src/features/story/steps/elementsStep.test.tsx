@@ -15,7 +15,7 @@ import type {
   StoryJobKind,
   StoryJobRecord,
 } from "../../../api/story";
-import type { MokaFile } from "../../../shared/domain";
+import { createElement, type MokaFile } from "../../../shared/domain";
 import {
   buildStoryMokaFile,
   goldenNodeIds,
@@ -1552,5 +1552,26 @@ describe("the voice of a character", () => {
     expect(screen.getByTestId("story-voice-林-state").textContent).toBe(
       "This machine does not have that model",
     );
+  });
+});
+
+describe("a cast too big for one batch", () => {
+  it("asks the drawings in waves the server takes, every place once", async () => {
+    const moka = buildStoryMokaFile();
+    // Forty-five places short of a drawing: past the pieces one batch carries.
+    moka.stories![0]!.elements = Array.from({ length: 45 }, (_, at) =>
+      createElement("prop", `道具${at + 1}`, `第 ${at + 1} 件道具。`),
+    );
+    openAtElements(moka);
+
+    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
+
+    await waitFor(() => expect(starts).toHaveLength(2), { timeout: 5_000 });
+    expect(starts.map((held) => held.items.length)).toEqual([40, 5]);
+    // Every place is asked for once, across the two asks.
+    const asked = starts.flatMap((held) =>
+      held.items.map((item) => JSON.stringify(item.target)),
+    );
+    expect(new Set(asked).size).toBe(45);
   });
 });

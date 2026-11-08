@@ -32,7 +32,12 @@ import {
 } from "../../../api/client";
 import { failureText } from "../../../shared/i18n/problems";
 import type { StoryDocument } from "../../../shared/domain/types";
-import { elementKey, type StoryStep } from "../../../shared/domain/story";
+import {
+  chunkWaves,
+  elementKey,
+  type StoryStep,
+} from "../../../shared/domain/story";
+import { MAX_ITEMS_PER_STORY_JOB } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
@@ -1192,5 +1197,43 @@ export function useStoryWavesRun(): (
       return;
     }
     await startWaves(storyId, kind, promised);
+  };
+}
+
+/**
+ * The same, for a step that planned more pieces than one batch may carry.
+ *
+ * A telling's whole cast or board can be asked for at once, and the server
+ * refuses such a batch whole rather than half-running it. The list is cut at
+ * the bound it refuses past and asked in waves of the model the room is set to
+ * — the model read where the ask is made, so a picker changed a moment ago is
+ * the one the first wave is asked of.
+ *
+ * A list that fits in one wave is one ask, placed as any other: nothing needs
+ * sequencing until there is a second wave to wait for the first.
+ */
+export function useStoryBulkRun(): (
+  storyId: string,
+  kind: StoryJobKind,
+  items: StoryJobItemDraft[],
+) => Promise<void> {
+  const start = useStoryJobStore((state) => state.start);
+  const startWaves = useStoryJobStore((state) => state.startWaves);
+  return async (storyId, kind, items) => {
+    if (items.length === 0) {
+      toast("info", i18n.t("story:jobs.nothingToAsk"));
+      return;
+    }
+    const model = storyAskModel(kind);
+    const waves = chunkWaves(items, MAX_ITEMS_PER_STORY_JOB);
+    if (waves.length === 1) {
+      await start(storyId, kind, waves[0]!, model);
+      return;
+    }
+    await startWaves(
+      storyId,
+      kind,
+      waves.map((part) => ({ model, items: part })),
+    );
   };
 }

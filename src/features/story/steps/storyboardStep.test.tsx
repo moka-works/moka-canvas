@@ -1627,3 +1627,31 @@ describe("the clock each act keeps", () => {
     expect(screen.queryAllByTestId("story-board-running")).toHaveLength(0);
   });
 });
+
+describe("a board bigger than one batch", () => {
+  /** One act whose forty-five shots are all still waiting for a picture. */
+  function withoutFortyFiveFrames(): MokaFile {
+    const moka = withUndrawnFrames();
+    const act = moka.stories![0]!.chapters[0]!.acts[0]!;
+    act.keyframes = Array.from({ length: 45 }, (_, at) => createKeyframe(at));
+    return moka;
+  }
+
+  it("asks every missing frame in waves the server takes", async () => {
+    openAtBoard(withoutFortyFiveFrames());
+
+    fireEvent.click(screen.getByTestId("story-board-draw-missing"));
+
+    await waitFor(() => expect(starts).toHaveLength(2), { timeout: 5_000 });
+    expect(starts.map((held) => held.items.length)).toEqual([40, 5]);
+  });
+
+  it("asks one act's shots in waves the server takes", async () => {
+    openAtBoard(withoutFortyFiveFrames());
+
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+
+    await waitFor(() => expect(starts).toHaveLength(2), { timeout: 5_000 });
+    expect(starts.map((held) => held.items.length)).toEqual([40, 5]);
+  });
+});

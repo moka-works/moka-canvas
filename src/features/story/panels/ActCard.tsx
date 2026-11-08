@@ -29,6 +29,7 @@ import {
   videoCeiling,
 } from "../jobs/plan";
 import {
+  useStoryBulkRun,
   useStoryRun,
   useStoryWavesRun,
   type ActRun,
@@ -100,6 +101,7 @@ export function ActCard({
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
+  const runBulk = useStoryBulkRun();
   const runWaves = useStoryWavesRun();
   const moka = useProjectStore((state) => state.moka);
   const [playing, setPlaying] = useState(false);
@@ -189,7 +191,7 @@ export function ActCard({
         keyframeId: keyframe.id,
       })),
     );
-    void run(story.id, "keyframeArt", items);
+    void runBulk(story.id, "keyframeArt", items);
   };
 
   const filmAct = () => {

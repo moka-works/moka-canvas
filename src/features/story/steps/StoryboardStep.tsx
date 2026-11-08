@@ -32,6 +32,7 @@ import {
   actRuns,
   boardRuns,
   kindRunning,
+  useStoryBulkRun,
   useStoryJobs,
   useStoryJobStore,
   useStoryRun,
@@ -66,6 +67,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const jobs = useStoryJobs(story.id);
   const failure = useStoryJobStore((state) => state.error);
   const run = useStoryRun();
+  const runBulk = useStoryBulkRun();
   const openChapterId = useStoryStore((state) => state.openChapterId);
   const [asking, setAsking] = useState(false);
   const [granularityTo, setGranularityTo] =
@@ -273,7 +275,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
               <button
                 data-testid="story-board-draw-missing"
                 onClick={() =>
-                  void run(
+                  void runBulk(
                     story.id,
                     "keyframeArt",
                     planKeyframeArt(story, missingFrames),

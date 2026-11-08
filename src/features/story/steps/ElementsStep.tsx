@@ -40,9 +40,9 @@ import {
   kindRunning,
   targetRunning,
   useRunningJob,
+  useStoryBulkRun,
   useStoryJobs,
   useStoryJobStore,
-  useStoryRun,
 } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 
@@ -73,7 +73,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const jobs = useStoryJobs(story.id);
   const running = useRunningJob(story.id);
   const failure = useStoryJobStore((state) => state.error);
-  const run = useStoryRun();
+  const run = useStoryBulkRun();
   const [kind, setKind] = useState<StoryElementKind | "all">("all");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
