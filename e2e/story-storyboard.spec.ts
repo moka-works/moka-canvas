@@ -141,6 +141,31 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // The pictures a shot stands on are the board's to look at: an element's
+    // reference opens over the board, and the kept picture can be changed
+    // rather than only drawn again.
+    await expect(firstAct.getByTestId("story-kf-extras-0")).toBeVisible();
+    await firstAct.getByTestId("story-ref-view-Keeper").click();
+    await expect(page.getByTestId("story-picture-inspector")).toBeVisible();
+    await page.getByTestId("story-inspector-edit").click();
+    await expect(page.getByTestId("story-edit-dialog")).toBeVisible();
+    await page
+      .getByTestId("story-edit-dialog")
+      .getByRole("button", { name: "Cancel" })
+      .click();
+    await page.getByTestId("story-inspector-close").click();
+
+    // A picture beside the cast, which the shot's own words do not name, is
+    // taken from the shelf and kept on the shot it was added to.
+    await firstAct.getByTestId("story-kf-extra-add-0").click();
+    await firstAct.getByTestId("story-kf-extra-library-0").click();
+    await page
+      .getByTestId("story-library")
+      .locator(".story-pick")
+      .first()
+      .click();
+    await expect(firstAct.getByTestId("story-kf-extra-0-0")).toBeVisible();
+
     // The cell shows the ask as it will be sent: the name the words mention
     // stands as a chip, and the picture it calls in stands under them.
     await expect(
