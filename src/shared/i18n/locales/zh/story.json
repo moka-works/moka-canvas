@@ -384,7 +384,8 @@
     "bulkModelPick": "选择模型…",
     "bulkClear": "取消选择",
     "bulkDeleteTitle": "删除 {{count}} 个元素？",
-    "bulkDeleteBody": "这 {{count}} 个元素会离开卡司；分镜里引用到的地方会留下空位。"
+    "bulkDeleteBody": "这 {{count}} 个元素会离开卡司；分镜里引用到的地方会留下空位。",
+    "ratio": "比例"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",

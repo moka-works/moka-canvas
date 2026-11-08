@@ -972,6 +972,12 @@ export interface StoryElement {
    * of its own rather than leaving the room's model to draw it.
    */
   imageModel?: string;
+  /**
+   * The frame a prop is drawn in, where the reader has chosen one of its own.
+   * Characters are always drawn upright and places in the telling's frame, so
+   * this is a prop's own answer.
+   */
+  ratio?: StoryAspect;
 }
 
 export const STORY_SHOT_GRANULARITIES = ["act", "keyframe"] as const;
@@ -1159,6 +1165,8 @@ export interface StoryElementPatch {
   voice?: StoryVoiceProfile | null;
   /** The picture model drawn of it; a null hands it back to the room's own. */
   imageModel?: string | null;
+  /** The frame a prop is drawn in; a null keeps it square. */
+  ratio?: StoryAspect | null;
 }
 
 /**

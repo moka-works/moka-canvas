@@ -492,17 +492,44 @@ describe("planning the drawings", () => {
     ]);
   });
 
-  it("asks for a character's main picture in the frame of the film", () => {
+  it("draws a character upright whatever frame the film is cut to", () => {
     const items = planElementArt(story(), [
       { elementId: ids.hero, view: "main" },
     ]);
 
     expect(items[0].id).toBe(`element:main:${ids.hero}`);
     expect(items[0].capability).toBe("image");
-    expect(items[0].params).toEqual({ size: "1536x1024" });
+    expect(items[0].params).toEqual({ size: "1024x1536" });
     expect(items[0].inputs).toEqual([]);
     expect(items[0].prompt).toContain("林");
     expect(items[0].prompt).toContain("现代都市风");
+  });
+
+  it("draws a place in the film's frame and a thing square by default", () => {
+    const scene = planElementArt(story(), [
+      { elementId: ids.scene, view: "main" },
+    ]);
+    expect(scene[0].params).toEqual({ size: "1536x1024" });
+
+    const prop = planElementArt(story(), [
+      { elementId: ids.prop, view: "main" },
+    ]);
+    expect(prop[0].params).toEqual({ size: "1024x1024" });
+  });
+
+  it("draws a thing in the frame its card names", () => {
+    const held = story();
+    held.elements.find((element) => element.id === ids.prop)!.ratio = "9:16";
+
+    const prop = planElementArt(held, [{ elementId: ids.prop, view: "main" }]);
+    expect(prop[0].params).toEqual({ size: "1024x1536" });
+  });
+
+  it("keeps the turn-around a square sheet of four views", () => {
+    const items = planElementArt(story(), [
+      { elementId: ids.hero, view: "turnaround" },
+    ]);
+    expect(items[0].params).toEqual({ size: "1024x1024" });
   });
 
   it("draws a turn-around from the picture the character already has", () => {

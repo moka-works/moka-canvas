@@ -7279,6 +7279,25 @@ body.is-dragging-split {
   flex: none;
 }
 
+/* The frame and the painter a card may name for its own pictures. */
+
+.story-element-fields {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.story-element-fields .dialog-field {
+  flex: 1;
+  max-width: 220px;
+  min-width: 150px;
+}
+
+.story-element-fields select {
+  width: 100%;
+}
+
 /* The bar a checked card brings up: what to do with the chosen few. */
 
 .story-bulk {

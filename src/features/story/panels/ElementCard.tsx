@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  ASPECT_LABELS,
+  STORY_ASPECTS,
   STORY_NAME_MAX,
   currentTake,
   elementOf,
@@ -10,6 +12,7 @@ import {
   voiceNamed,
 } from "../../../shared/domain";
 import type {
+  StoryAspect,
   StoryChapter,
   StoryDocument,
   StoryElement,
@@ -22,7 +25,7 @@ import { ModelPicker } from "../../settings/ModelPicker";
 import { planElementArtWaves, resolveVoice } from "../jobs/plan";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { frameRatio } from "./ratios";
+import { elementRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
@@ -80,7 +83,7 @@ export function ElementCard({
     // A name nobody could read is not a name: the element keeps the one it had.
     if (name !== "" && name !== element.name) write(story, element, { name });
   });
-  const ratio = frameRatio(story);
+  const ratio = elementRatio(story, element);
 
   const generate = (view: "main" | "turnaround") => {
     void run(
@@ -173,19 +176,46 @@ export function ElementCard({
         setOpen={setChaptersOpen}
       />
 
-      <div
-        className="story-element-model"
-        data-testid={`story-element-model-${element.name}`}
-      >
-        <ModelPicker
-          capability="image"
-          label={t("story:elements.imageModel")}
-          noneLabel={t("story:elements.imageModelNone")}
-          onChange={(reference) =>
-            write(story, element, { imageModel: reference })
-          }
-          value={element.imageModel ?? null}
-        />
+      <div className="story-element-fields">
+        <div
+          className="story-element-model"
+          data-testid={`story-element-model-${element.name}`}
+        >
+          <ModelPicker
+            capability="image"
+            label={t("story:elements.imageModel")}
+            noneLabel={t("story:elements.imageModelNone")}
+            onChange={(reference) =>
+              write(story, element, { imageModel: reference })
+            }
+            value={element.imageModel ?? null}
+          />
+        </div>
+        {element.kind === "prop" && (
+          <label
+            className="dialog-field story-element-ratio"
+            data-testid={`story-element-ratio-${element.name}`}
+          >
+            <span>{t("story:elements.ratio")}</span>
+            <select
+              onChange={(event) =>
+                write(story, element, {
+                  ratio:
+                    event.target.value === "1:1"
+                      ? null
+                      : (event.target.value as StoryAspect),
+                })
+              }
+              value={element.ratio ?? "1:1"}
+            >
+              {STORY_ASPECTS.map((aspect) => (
+                <option key={aspect} value={aspect}>
+                  {t(ASPECT_LABELS[aspect])}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <textarea

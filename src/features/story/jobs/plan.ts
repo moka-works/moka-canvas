@@ -34,6 +34,7 @@ import {
   actPlannedMs,
   chunkWaves,
   currentTake,
+  elementAspect,
   elementOf,
   keyframeAt,
   storyMentions,
@@ -715,13 +716,17 @@ export function planElementArt(
   targets: Array<{ elementId: string; view: "main" | "turnaround" }>,
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
-  const size = imageSizeForAspect(story.brief.aspect);
   return targets.flatMap(({ elementId, view }) => {
     const element = elementOf(story, elementId);
     if (element === undefined) return [];
     const main = currentTake(element.main);
     if (view === "turnaround" && main === undefined) return [];
     const target: StoryTarget = { kind: "elementArt", elementId, view };
+    // A turn-around is one sheet of four views and stays square; every other
+    // picture is drawn in the frame its kind is drawn in.
+    const size = imageSizeForAspect(
+      view === "turnaround" ? "1:1" : elementAspect(story, element),
+    );
     return [
       {
         id: jobKey(target),

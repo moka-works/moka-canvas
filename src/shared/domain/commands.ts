@@ -2295,6 +2295,10 @@ function applyOne(
           before.imageModel !== undefined
             ? { imageModel: before.imageModel }
             : {}),
+          // A prop's frame is the reader's answer as well.
+          ...(element.ratio === undefined && before.ratio !== undefined
+            ? { ratio: before.ratio }
+            : {}),
         };
       });
       const next: StoryDocument = { ...story, elements };
@@ -2396,6 +2400,9 @@ function applyOne(
           if (command.patch.imageModel === null) delete merged.imageModel;
           else if (command.patch.imageModel !== undefined)
             merged.imageModel = command.patch.imageModel;
+          if (command.patch.ratio === null) delete merged.ratio;
+          else if (command.patch.ratio !== undefined)
+            merged.ratio = command.patch.ratio;
           return merged;
         }),
       };

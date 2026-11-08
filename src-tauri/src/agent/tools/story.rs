@@ -727,6 +727,7 @@ fn element_from(value: &Value, existing: Option<&StoryElement>) -> Result<StoryE
         turnaround: None,
         voice: None,
         image_model: None,
+        ratio: None,
     });
     if let Some(word) = value.get("kind").and_then(Value::as_str) {
         element.kind = parse_word(word)?;

@@ -1064,7 +1064,7 @@ describe("a description the reader rewrites", () => {
 });
 
 describe("the pictures of an element", () => {
-  it("asks for a main picture from the description, at the story's own frame", async () => {
+  it("asks for a main picture from the description, in its kind's frame", async () => {
     openAtElements(buildStoryMokaFile());
 
     fireEvent.click(
@@ -1082,7 +1082,8 @@ describe("the pictures of an element", () => {
       view: "main",
     });
     expect(item?.inputs).toEqual([]);
-    expect(item?.params).toEqual({ size: "1536x1024" });
+    // A prop is square unless its card says otherwise.
+    expect(item?.params).toEqual({ size: "1024x1024" });
 
     await waitFor(() => {
       expect(starts).toHaveLength(1);
@@ -1099,6 +1100,49 @@ describe("the pictures of an element", () => {
     expect(shown?.getAttribute("src")).toBe(
       `/api/v1/projects/current/assets/asset-ticket-main?w=480&project=${goldenNodeIds().project}`,
     );
+  });
+
+  it("gives each kind its own frame, and a thing the one its card names", async () => {
+    openAtElements(buildStoryMokaFile());
+    const shape = (name: string, kind: string) =>
+      (
+        within(card(name, kind))
+          .getByTestId("story-slot-main")
+          .querySelector(
+            ".story-slot-picture, .story-slot-empty",
+          ) as HTMLElement
+      ).style.aspectRatio;
+
+    // A character is upright, a place follows the film, and a thing is square
+    // until its card says otherwise.
+    expect(shape("林", "character")).toBe("9 / 16");
+    expect(shape("末班车车厢", "scene")).toBe("16 / 9");
+    expect(shape("旧车票", "prop")).toBe("1 / 1");
+    expect(
+      within(card("林", "character")).queryByTestId("story-element-ratio-林"),
+    ).toBeNull();
+    expect(
+      within(card("末班车车厢", "scene")).queryByTestId(
+        "story-element-ratio-末班车车厢",
+      ),
+    ).toBeNull();
+
+    const ratio = within(card("旧车票", "prop"))
+      .getByTestId("story-element-ratio-旧车票")
+      .querySelector("select")!;
+    fireEvent.change(ratio, { target: { value: "9:16" } });
+    await waitFor(() => {
+      expect(element("旧车票")?.ratio).toBe("9:16");
+    });
+    expect(shape("旧车票", "prop")).toBe("9 / 16");
+
+    fireEvent.click(
+      within(card("旧车票", "prop")).getByTestId("story-slot-main-generate"),
+    );
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    expect(starts[0]?.items[0]?.params).toEqual({ size: "1024x1536" });
   });
 
   it("draws the four views from the main picture, and only once there is one", async () => {

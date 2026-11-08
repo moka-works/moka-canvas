@@ -493,6 +493,10 @@ pub struct StoryElement {
     /// one of its own rather than leaving the room's model to draw it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_model: Option<String>,
+    /// The frame a prop is drawn in, where the reader has chosen one of its
+    /// own. A character is upright and a place is as wide as the telling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<StoryAspect>,
 }
 
 /// One clip this story's assembly laid down.
@@ -635,6 +639,12 @@ pub struct StoryElementPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub image_model: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub ratio: Option<Option<StoryAspect>>,
 }
 
 /// The fields a caller may move on an act, for `updateStoryAct`.
@@ -1658,6 +1668,7 @@ pub fn apply_story_command(
                             .image_model
                             .clone()
                             .or_else(|| before.image_model.clone()),
+                        ratio: element.ratio.or(before.ratio),
                         ..element.clone()
                     },
                     None => element.clone(),
@@ -1744,6 +1755,7 @@ pub fn apply_story_command(
                     .image_model
                     .as_ref()
                     .map(|_| element.image_model.clone()),
+                ratio: patch.ratio.as_ref().map(|_| element.ratio),
             };
             let mut next = story.clone();
             for held in next.elements.iter_mut() {
@@ -1770,6 +1782,9 @@ pub fn apply_story_command(
                         .as_ref()
                         .map(|model| model.trim().to_string())
                         .filter(|model| !model.is_empty());
+                }
+                if let Some(ratio) = &patch.ratio {
+                    held.ratio = *ratio;
                 }
             }
             Ok((

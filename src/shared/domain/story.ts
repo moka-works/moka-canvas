@@ -156,6 +156,27 @@ export function elementDescribed(element: StoryElement): boolean {
   return element.name.trim() !== "" && element.description.trim() !== "";
 }
 
+/**
+ * The frame an element's main picture is drawn in.
+ *
+ * A character is always upright, a place is as wide as the telling is told,
+ * and a thing is square unless its card names another shape — a shelf of props
+ * is not made of one kind of thing.
+ */
+export function elementAspect(
+  story: StoryDocument,
+  element: StoryElement,
+): StoryAspect {
+  switch (element.kind) {
+    case "character":
+      return "9:16";
+    case "scene":
+      return story.brief.aspect;
+    case "prop":
+      return element.ratio ?? "1:1";
+  }
+}
+
 /** Whether a character has both drawings a character is drawn with. */
 export function elementDrawn(element: StoryElement): boolean {
   if (element.main.takes.length === 0) return false;

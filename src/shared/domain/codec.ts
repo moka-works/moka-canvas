@@ -47,6 +47,7 @@ import type {
   ResourceEntry,
   ResultSlot,
   StoryAct,
+  StoryAspect,
   StoryBrief,
   StoryChapter,
   StoryDialogueLine,
@@ -538,6 +539,7 @@ function encodeStoryElement(element: StoryElement): Record<string, unknown> {
   if (element.voice !== undefined)
     doc.voice = encodeStoryVoiceProfile(element.voice);
   if (element.imageModel !== undefined) doc.imageModel = element.imageModel;
+  if (element.ratio !== undefined) doc.ratio = element.ratio;
   return doc;
 }
 
@@ -1565,6 +1567,10 @@ function decodeStoryElement(value: unknown): StoryElement {
     element.voice = decodeStoryVoiceProfile(doc.voice, "elements[].voice");
   const imageModel = optionalString(doc.imageModel);
   if (imageModel !== undefined) element.imageModel = imageModel;
+  const ratio = optionalString(doc.ratio);
+  if (ratio !== undefined && STORY_ASPECTS.includes(ratio as StoryAspect)) {
+    element.ratio = ratio as StoryAspect;
+  }
   return element;
 }
 
