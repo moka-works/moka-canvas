@@ -312,7 +312,10 @@ test("the cast a reading left, and what the reader said since, outlast the room"
     await ticket.getByTestId("story-slot-main-library").click();
     const library = page.getByTestId("story-library");
     await expect(library).toBeVisible();
-    await library.locator('[data-testid^="story-library-"]').first().click();
+    // The tiles are the pictures on the shelf: the dialog's own search box and
+    // its notices share the shelf's name, so the tile is named rather than the
+    // first thing under it.
+    await library.locator(".story-pick").first().click();
     await expect(
       ticket.getByTestId("story-slot-main").locator("img"),
     ).toBeVisible();
