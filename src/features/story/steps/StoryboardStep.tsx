@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { StoryJobRecord } from "../../../api/story";
 import {
   actComplete,
+  actGranularity,
   actsRegenerationCost,
   chunkWaves,
   formatDuration,
@@ -133,10 +134,12 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         })),
     ),
   );
-  const videos = countVideos(story);
+  const videos = countVideos(story, (act) => act.shotGranularity === undefined);
   const completeActs = story.chapters
     .flatMap((held) => held.acts)
-    .filter((act) => actComplete(act, story.shotGranularity)).length;
+    .filter((act) =>
+      actComplete(act, actGranularity(act, story.shotGranularity)),
+    ).length;
 
   // A telling longer than one batch is boarded in waves, the next one
   // beginning when the one before it is over rather than when the reader
@@ -251,10 +254,14 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         </p>
 
         <div className="story-step-bar">
+          <span className="story-hint">
+            {t("story:storyboard.granularityDefault")}
+          </span>
           <span
-            aria-label={t("story:storyboard.granularity")}
+            aria-label={t("story:storyboard.granularityDefault")}
             className="story-granularity"
             role="radiogroup"
+            title={t("story:storyboard.granularityDefaultHint")}
           >
             {STORY_GRANULARITY_OPTIONS.map((option) => (
               <button
@@ -489,10 +496,11 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         <ConfirmDialog
           body={t("story:storyboard.granularityBody", {
             count: videos,
-            from: t(`story:storyboard.granularity_${story.shotGranularity}`),
-            to: t(`story:storyboard.granularity_${granularityTo}`),
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
           })}
-          confirm={t("story:storyboard.granularityConfirm")}
+          confirm={t("story:storyboard.granularityConfirm", {
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
+          })}
           note={t("story:storyboard.granularityNote")}
           onCancel={() => setGranularityTo(null)}
           onConfirm={() => {
@@ -500,7 +508,9 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             setGranularityTo(null);
           }}
           testId="change-granularity"
-          title={t("story:storyboard.granularityTitle")}
+          title={t("story:storyboard.granularityDefaultTitle", {
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
+          })}
         />
       )}
     </div>
@@ -558,7 +568,11 @@ function boardState(
   granularity: StoryShotGranularity,
 ): { key: string; values?: Record<string, number> } {
   if (chapter.acts.length === 0) return { key: "story:storyboard.chipEmpty" };
-  if (chapter.acts.every((act) => actComplete(act, granularity))) {
+  if (
+    chapter.acts.every((act) =>
+      actComplete(act, actGranularity(act, granularity)),
+    )
+  ) {
     return { key: "story:storyboard.chipFilmed" };
   }
   const drawn = chapter.acts.reduce(
@@ -579,10 +593,17 @@ function boardState(
   };
 }
 
-/** How many clips a story holds, wherever they were made. */
-function countVideos(story: StoryDocument): number {
+/**
+ * How many clips a story holds, wherever they were made, counted over the acts
+ * a switch would actually touch.
+ */
+function countVideos(
+  story: StoryDocument,
+  of: (act: StoryAct) => boolean,
+): number {
   return story.chapters
     .flatMap((chapter) => chapter.acts)
+    .filter(of)
     .reduce(
       (sum, act) =>
         sum +

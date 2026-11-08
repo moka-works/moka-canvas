@@ -151,6 +151,7 @@ fn act(id: &str) -> StoryAct {
         },
         keyframes: Vec::new(),
         video: empty_slot(),
+        shot_granularity: None,
         voice: None,
         music: None,
     }
@@ -307,6 +308,7 @@ fn story_document() -> MokaFile {
                             created_at: NOW.into(),
                         }],
                     },
+                    shot_granularity: None,
                     voice: None,
                     music: None,
                 }],
@@ -536,6 +538,54 @@ fn changes_the_granularity_and_keeps_the_clips_already_made() {
     let story = story_of(&next);
     assert_eq!(story.shot_granularity, StoryShotGranularity::Keyframe);
     assert_eq!(story.chapters[0].acts[0].video.takes.len(), 1);
+}
+
+#[test]
+fn changes_one_acts_granularity_and_leaves_the_telling_alone() {
+    let moka = story_document();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Keyframe),
+        }],
+    );
+    let story = story_of(&next);
+    assert_eq!(story.shot_granularity, StoryShotGranularity::Act);
+    assert_eq!(
+        story.chapters[0].acts[0].shot_granularity,
+        Some(StoryShotGranularity::Keyframe)
+    );
+    assert_eq!(story.chapters[0].acts[0].video.takes.len(), 1);
+}
+
+#[test]
+fn hands_an_act_back_to_the_tellings_own_granularity() {
+    let moka = story_document();
+    let (set, _) = apply(
+        &moka,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Keyframe),
+        }],
+    );
+    let (cleared, _) = apply(
+        &set,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: None,
+        }],
+    );
+    assert_eq!(
+        story_of(&cleared).chapters[0].acts[0].shot_granularity,
+        None
+    );
 }
 
 #[test]

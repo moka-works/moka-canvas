@@ -111,6 +111,18 @@ export function actHasShots(act: StoryAct): boolean {
   return act.keyframes.length > 0;
 }
 
+/**
+ * The granularity an act is filmed at: its own where it has chosen one, and
+ * otherwise the telling's habit, which is also what an act written before it
+ * could choose meant.
+ */
+export function actGranularity(
+  act: StoryAct,
+  fallback: StoryDocument["shotGranularity"],
+): StoryDocument["shotGranularity"] {
+  return act.shotGranularity ?? fallback;
+}
+
 /** Whether an act's clip has been made, at whichever granularity is in force. */
 export function actHasVideo(
   act: StoryAct,
@@ -223,7 +235,7 @@ export function storyProgress(
     elements.length > 0 && completeElements === elements.length;
 
   const completeActs = acts.filter((act) =>
-    actComplete(act, granularity),
+    actComplete(act, actGranularity(act, granularity)),
   ).length;
   const everyActComplete = acts.length > 0 && completeActs === acts.length;
 
@@ -299,6 +311,7 @@ export type StoryStepGap =
   | { kind: "actsWithoutShots"; count: number }
   | { kind: "framesMissing"; count: number }
   | { kind: "clipsMissing"; count: number }
+  | { kind: "shotsMissing"; count: number }
   | { kind: "noTimeline" };
 
 /**
@@ -364,8 +377,26 @@ export function stepGaps(
         0,
       );
       if (frames > 0) gaps.push({ kind: "framesMissing", count: frames });
-      const clips = acts.filter((act) => !actHasVideo(act, granularity)).length;
+      const clips = acts.filter(
+        (act) =>
+          actGranularity(act, granularity) === "act" &&
+          !actHasVideo(act, "act"),
+      ).length;
       if (clips > 0) gaps.push({ kind: "clipsMissing", count: clips });
+      // A telling filmed a shot at a time is short of shots rather than of
+      // acts, and a mixed one is short of both: the two are counted apart so
+      // the reason says which way each act is waiting.
+      const shots = acts
+        .filter((act) => actGranularity(act, granularity) === "keyframe")
+        .reduce(
+          (sum, act) =>
+            sum +
+            act.keyframes.filter(
+              (keyframe) => keyframe.video.takes.length === 0,
+            ).length,
+          0,
+        );
+      if (shots > 0) gaps.push({ kind: "shotsMissing", count: shots });
       return gaps;
     }
     case "edit": {

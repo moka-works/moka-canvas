@@ -11,6 +11,7 @@ import {
   STORY_FILM_ROLES,
   STORY_SHOT_SIZES,
   actCast,
+  actGranularity,
   createKeyframe,
   currentTake,
   keyframeAt,
@@ -104,7 +105,7 @@ export function KeyframeTable({
 }) {
   const { t } = useTranslation();
   const [dialogueAt, setDialogueAt] = useState<string | null>(null);
-  const perShot = story.shotGranularity === "keyframe";
+  const perShot = actGranularity(act, story.shotGranularity) === "keyframe";
   // The last drawn frame cannot open a pair — nothing is drawn after it — and
   // the act's own closing frame, when the pair before it takes it, is not the
   // reader's to give a role at all.

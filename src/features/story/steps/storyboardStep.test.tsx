@@ -1006,6 +1006,27 @@ describe("writing an episode's board", () => {
     expect(item?.inputs?.map((input) => input.role)).toEqual(["firstFrame"]);
   });
 
+  it("films one act by shot while the telling's own habit stays put", async () => {
+    openAtBoard(withEveryFrame());
+    // The act already holds a clip, so its own switch is a question too — and
+    // what it changes is this act, not every act beside it.
+    expect(
+      screen.queryByTestId("story-act-granularity-keyframe-0"),
+    ).not.toBeNull();
+    fireEvent.click(screen.getByTestId("story-act-granularity-keyframe-0"));
+    expect(screen.getByTestId("change-act-granularity-0")).toBeDefined();
+    fireEvent.click(screen.getByTestId("change-act-granularity-0-confirm"));
+    await waitFor(() =>
+      expect(story().chapters[0].acts[0].shotGranularity).toBe("keyframe"),
+    );
+    expect(story().shotGranularity).toBe("act");
+
+    // The row that belongs to the shot is the one that films it.
+    fireEvent.click(screen.getByTestId("story-kf-video-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("keyframeVideo");
+  });
+
   it("asks for a shot's clip again from the row that holds it", async () => {
     openAtBoard(withFilmedShot());
     const first = card(0);

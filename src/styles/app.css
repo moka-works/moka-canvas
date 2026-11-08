@@ -8069,6 +8069,13 @@ button > .story-spin {
   gap: 8px;
 }
 
+/* One act's own way of filming, set on its card: a quiet pair beside the
+   title rather than another row of the step's own choices. */
+.story-act-granularity .story-choice {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 .story-act-index {
   color: var(--muted);
   font-size: 12px;

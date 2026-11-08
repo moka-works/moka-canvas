@@ -415,6 +415,7 @@ fn act_from(
             },
             keyframes: Vec::new(),
             video: empty_slot(),
+            shot_granularity: None,
             voice: None,
             music: None,
         },

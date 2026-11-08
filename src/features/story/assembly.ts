@@ -25,6 +25,7 @@ import {
 import { newId, nowIso } from "../../shared/domain/ids";
 import { findResource } from "../../shared/domain/validate";
 import {
+  actGranularity,
   actPlannedMs,
   currentTake,
   takeFile,
@@ -109,7 +110,7 @@ interface ShotSlot {
  * on the track in the order they were filmed in, which is the act.
  */
 function shotsOf(story: StoryDocument, act: StoryAct): ShotSlot[] {
-  if (story.shotGranularity === "keyframe") {
+  if (actGranularity(act, story.shotGranularity) === "keyframe") {
     return act.keyframes.map((keyframe) => {
       const file = takeFile(currentTake(keyframe.video));
       return {
@@ -659,7 +660,7 @@ export function shotWindows(
   units: AssemblyUnit[],
 ): Map<string, { startMs: number; durationMs: number }> {
   const windows = new Map<string, { startMs: number; durationMs: number }>();
-  const perShot = story.shotGranularity === "keyframe";
+  const perShot = actGranularity(act, story.shotGranularity) === "keyframe";
   const actUnit = units.find(
     (unit) => unit.actId === act.id && unit.keyframeId === undefined,
   );
@@ -698,10 +699,13 @@ export function assemblySummary(
   story: StoryDocument,
   plan: AssemblyPlan,
 ): string {
+  const anyPerShot = story.chapters.some((chapter) =>
+    chapter.acts.some(
+      (act) => actGranularity(act, story.shotGranularity) === "keyframe",
+    ),
+  );
   return i18n.t(
-    story.shotGranularity === "keyframe"
-      ? "story:edit.summaryByShot"
-      : "story:edit.summary",
+    anyPerShot ? "story:edit.summaryByShot" : "story:edit.summary",
     {
       name: story.name,
       count: plan.units.length,

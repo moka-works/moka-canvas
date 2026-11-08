@@ -99,7 +99,7 @@ export function StepConfirm({
         >
           <ul>
             {gaps.map((gap, index) => (
-              <li key={index}>{gapLine(gap, t, story)}</li>
+              <li key={index}>{gapLine(gap, t)}</li>
             ))}
           </ul>
         </div>
@@ -112,7 +112,6 @@ export function StepConfirm({
 function gapLine(
   gap: StoryStepGap,
   t: (key: string, values?: Record<string, unknown>) => string,
-  story: StoryDocument,
 ): string {
   switch (gap.kind) {
     case "ideaMissing":
@@ -143,12 +142,9 @@ function gapLine(
     case "framesMissing":
       return t("story:confirm.gapFrames", { count: gap.count });
     case "clipsMissing":
-      return t(
-        story.shotGranularity === "keyframe"
-          ? "story:confirm.gapShotClips"
-          : "story:confirm.gapActClips",
-        { count: gap.count },
-      );
+      return t("story:confirm.gapActClips", { count: gap.count });
+    case "shotsMissing":
+      return t("story:confirm.gapShotClips", { count: gap.count });
     case "noTimeline":
       return t("story:confirm.gapNoTimeline");
   }

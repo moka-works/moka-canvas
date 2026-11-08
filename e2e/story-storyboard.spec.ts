@@ -205,6 +205,25 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect.poll(() => played.getAttribute("src")).not.toBe(wasPlaying);
     await expect(firstAct.getByTestId("story-act-video-again-0")).toBeEnabled();
 
+    // One act can be filmed its own way: the choice stands on its own card,
+    // and switching over clips already made is a question scoped to this act.
+    await firstAct.getByTestId("story-act-granularity-keyframe-0").click();
+    const scoped = page.getByTestId("change-act-granularity-0");
+    await expect(scoped).toBeVisible();
+    await expect(scoped).toContainText("by shot");
+    await page.getByTestId("change-act-granularity-0-confirm").click();
+    await expect(firstAct.getByTestId("story-kf-video-0")).toBeVisible();
+    // The telling's default has not moved with the act beside it.
+    await expect(page.getByTestId("story-granularity-act")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    // And back, from the same card, with the clip that was kept.
+    await firstAct.getByTestId("story-act-granularity-act-0").click();
+    await page.getByTestId("change-act-granularity-0-confirm").click();
+    await expect(firstAct.getByTestId("story-act-video-again-0")).toBeVisible();
+
     // The fifth step's door waits on the board being finished — every act
     // framed and filmed — and the step's own press is what says what is left
     // and, once there is nothing left, what opens it.

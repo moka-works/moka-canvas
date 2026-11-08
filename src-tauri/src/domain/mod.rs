@@ -1665,6 +1665,15 @@ pub enum DocumentCommand {
         story_id: String,
         shot_granularity: StoryShotGranularity,
     },
+    /// How one act is filmed, where it parts from the telling's default. A
+    /// null hands the act back to the telling's granularity.
+    #[serde(rename_all = "camelCase")]
+    UpdateActGranularity {
+        story_id: String,
+        chapter_id: String,
+        act_id: String,
+        shot_granularity: Option<StoryShotGranularity>,
+    },
     /// Only the picture limit moves; frames already drawn are kept as they are.
     #[serde(rename_all = "camelCase")]
     UpdateStoryReferenceLimit {

@@ -453,6 +453,10 @@ pub struct StoryAct {
     pub sound: StoryActSound,
     pub keyframes: Vec<StoryKeyframe>,
     pub video: StorySlot,
+    /// How this act's clip is made, where it parts from the telling's own
+    /// habit; absent means the act is filmed the way the story says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shot_granularity: Option<StoryShotGranularity>,
     /// The lines read aloud, and the music under them. Absent rather than
     /// empty on a telling that was never voiced: the two say different things,
     /// and only one of them is a reader who has not asked yet.
@@ -1578,6 +1582,39 @@ pub fn apply_story_command(
                 replace_story(moka, next),
                 vec![DocumentCommand::UpdateStoryGranularity {
                     story_id: story_id.clone(),
+                    shot_granularity: previous,
+                }],
+            ))
+        }
+        DocumentCommand::UpdateActGranularity {
+            story_id,
+            chapter_id,
+            act_id,
+            shot_granularity,
+        } => {
+            let story = story_of(moka, story_id)?;
+            let act = story
+                .act(chapter_id, act_id)
+                .ok_or_else(story_target_invalid)?;
+            let previous = act.shot_granularity;
+            let mut next = story.clone();
+            for chapter in next.chapters.iter_mut() {
+                if &chapter.id != chapter_id {
+                    continue;
+                }
+                for held in chapter.acts.iter_mut() {
+                    if &held.id != act_id {
+                        continue;
+                    }
+                    held.shot_granularity = *shot_granularity;
+                }
+            }
+            Ok((
+                replace_story(moka, next),
+                vec![DocumentCommand::UpdateActGranularity {
+                    story_id: story_id.clone(),
+                    chapter_id: chapter_id.clone(),
+                    act_id: act_id.clone(),
                     shot_granularity: previous,
                 }],
             ))

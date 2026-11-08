@@ -903,6 +903,15 @@ export interface StoryAct {
   /** The act's whole clip, when the story is boarded an act at a time. */
   video: StorySlot;
   /**
+   * How this act's clip is made, where it parts from the telling's own habit.
+   *
+   * Absent means the act is filmed the way the story says — its
+   * `shotGranularity` — which is also what every act of a telling written
+   * before acts had a say meant. One act may be filmed a shot at a time while
+   * the acts beside it stay whole.
+   */
+  shotGranularity?: StoryShotGranularity;
+  /**
    * The lines of this act read aloud, in one voice, and the music and sound
    * under it. Optional because a telling made before either was asked for is
    * still a telling: a slot that is not there has simply never been made.
@@ -1504,6 +1513,20 @@ export type DocumentCommand =
       type: "updateStoryGranularity";
       storyId: string;
       shotGranularity: StoryShotGranularity;
+    }
+  /**
+   * How one act is filmed, where it parts from the telling's default.
+   *
+   * A null hands the act back to the telling's own granularity, and the field
+   * is taken away rather than written as nothing — an act that has not chosen
+   * is not an act that chose to follow. Clips already made are kept.
+   */
+  | {
+      type: "updateActGranularity";
+      storyId: string;
+      chapterId: string;
+      actId: string;
+      shotGranularity: StoryShotGranularity | null;
     }
   /** Only the picture limit moves; frames already drawn are kept as they are. */
   | {

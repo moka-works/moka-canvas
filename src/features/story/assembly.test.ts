@@ -179,6 +179,29 @@ describe("planAssembly", () => {
     expect(plan.warnings[0]?.place).toContain("1");
   });
 
+  it("films one act by shot while the telling around it stays whole", () => {
+    const moka = filmed({ secondAct: true });
+    const held = story(moka);
+    const perShot = held.chapters[0]!.acts[0]!;
+    perShot.shotGranularity = "keyframe";
+    perShot.keyframes[0]!.video = {
+      takes: [{ assetIds: [ids.actVideo], createdAt: T0 }],
+    };
+    const plan = planAssembly(held, moka);
+    // The act's own whole clip is not what this act is made of any more: its
+    // first shot is, and the second act beside it is still one clip.
+    expect(plan.units.map((unit) => unit.keyframeId)).toEqual([
+      ids.frameFirst,
+      undefined,
+    ]);
+    expect(plan.units.map((unit) => unit.assetId)).toEqual([
+      ids.actVideo,
+      "asset-video-2",
+    ]);
+    expect(plan.warnings.map((warning) => warning.kind)).toEqual(["noVideo"]);
+    expect(assemblySummary(held, plan)).toContain("shot");
+  });
+
   it("falls back to the planned length for material that was never measured", () => {
     const moka = filmed({ videos: [video(ids.actVideo)] });
     const plan = planAssembly(story(moka), moka);

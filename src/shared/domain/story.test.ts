@@ -248,6 +248,31 @@ describe("storyProgress", () => {
     expect(storyProgress(story).storyboard.done).toBe(1);
   });
 
+  it("reads an act by its own granularity while the telling keeps another", () => {
+    const story = createStory("新的故事", { idea: "一句话" });
+    const whole = createActFor("chapter-whole");
+    whole.shotGranularity = "act";
+    const only = createKeyframe(0);
+    only.art = { takes: [take(ids.frameArt)] };
+    whole.keyframes = [only];
+    whole.video = { takes: [take(ids.actVideo)] };
+
+    const perShot = createActFor("chapter-shot");
+    perShot.shotGranularity = "keyframe";
+    const first = createKeyframe(0);
+    const second = createKeyframe(1);
+    first.art = { takes: [take(ids.frameArt)] };
+    second.art = { takes: [take(ids.frameArt)] };
+    first.video = { takes: [take(ids.actVideo)] };
+    perShot.keyframes = [first, second];
+
+    story.chapters = [{ ...createChapter("一"), acts: [whole, perShot] }];
+    expect(storyProgress(story).storyboard.done).toBe(1);
+
+    second.video = { takes: [take(ids.actVideo)] };
+    expect(storyProgress(story).storyboard.done).toBe(2);
+  });
+
   it("reads the assembly as empty until a timeline is named, and done once it is", () => {
     const story = createStory("新的故事", { idea: "一句话" });
     expect(storyProgress(story).edit.state).toBe("empty");
@@ -319,6 +344,33 @@ describe("what a step is still waiting for", () => {
       { kind: "actsWithoutShots", count: 1 },
       { kind: "framesMissing", count: 1 },
       { kind: "clipsMissing", count: 1 },
+    ]);
+  });
+
+  it("counts the acts and the shots a mixed board is short of", () => {
+    const story = createStory("新的故事", { idea: "一句话" });
+    const whole = createActFor(ids.chapterFirst);
+    whole.shotGranularity = "act";
+    const only = createKeyframe(0);
+    only.art = { takes: [take(ids.frameArt)] };
+    whole.keyframes = [only];
+
+    const perShot = createActFor(ids.chapterSecond);
+    perShot.shotGranularity = "keyframe";
+    const first = createKeyframe(0);
+    const second = createKeyframe(1);
+    first.art = { takes: [take(ids.frameArt)] };
+    second.art = { takes: [take(ids.frameArt)] };
+    first.video = { takes: [take(ids.actVideo)] };
+    perShot.keyframes = [first, second];
+
+    story.chapters = [
+      { ...createChapter("一"), acts: [whole] },
+      { ...createChapter("二"), acts: [perShot] },
+    ];
+    expect(stepGaps(story, "storyboard")).toEqual([
+      { kind: "clipsMissing", count: 1 },
+      { kind: "shotsMissing", count: 1 },
     ]);
   });
 
@@ -1173,6 +1225,60 @@ describe("story lifecycle commands", () => {
         apply(moka, {
           type: "updateStoryGranularity",
           storyId: storyIds().story,
+          shotGranularity: "scene" as never,
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
+  it("films one act a shot at a time while the telling stays whole", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const next = expectRoundTrip(moka, {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "keyframe",
+    });
+    const story = storyOfFile(next);
+    expect(story.shotGranularity).toBe("act");
+    expect(story.chapters[0].acts[0].shotGranularity).toBe("keyframe");
+    expect(story.chapters[0].acts[0].video.takes).toHaveLength(1);
+  });
+
+  it("hands an act back to the telling's own granularity", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const set = apply(moka, {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "keyframe",
+    }).next;
+    const cleared = apply(set, {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: null,
+    }).next;
+    expect(
+      storyOfFile(cleared).chapters[0].acts[0].shotGranularity,
+    ).toBeUndefined();
+  });
+
+  it("refuses an act's granularity that is neither of the two", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateActGranularity",
+          storyId: ids.story,
+          chapterId: ids.chapterFirst,
+          actId: ids.act,
           shotGranularity: "scene" as never,
         }),
       ),
@@ -2037,6 +2143,37 @@ describe("a story through the codec", () => {
     expect(read.stories![0].brief.style).toBe("现代都市风");
   });
 
+  it("keeps an act's own granularity, and leaves a silent act to the telling's", () => {
+    const moka = buildStoryMokaFile();
+    const story = storyOfFile(moka);
+    const act = story.chapters[0].acts[0];
+    const read = decodeMokaFile(
+      encodeMokaFile({
+        ...moka,
+        stories: [
+          {
+            ...story,
+            chapters: [
+              {
+                ...story.chapters[0],
+                acts: [
+                  { ...act, shotGranularity: "keyframe" as const },
+                  { ...act, id: "act-silent" },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(read.stories![0].chapters[0].acts[0].shotGranularity).toBe(
+      "keyframe",
+    );
+    expect(
+      read.stories![0].chapters[0].acts[1].shotGranularity,
+    ).toBeUndefined();
+  });
+
   it("is absent from a document that tells no story, and stays absent", () => {
     const moka = buildEmptyStory();
     delete moka.stories;
@@ -2063,6 +2200,7 @@ describe("a story through the codec", () => {
                 acts: [
                   {
                     ...act,
+                    shotGranularity: "everyShot" as never,
                     keyframes: [
                       { ...act.keyframes[0], shotSize: "gigantic" as never },
                     ],
@@ -2075,6 +2213,7 @@ describe("a story through the codec", () => {
       }),
     );
     expect(read.stories![0].shotGranularity).toBe("act");
+    expect(read.stories![0].chapters[0].acts[0].shotGranularity).toBe("act");
     expect(read.stories![0].chapters[0].acts[0].keyframes[0].shotSize).toBe(
       "medium",
     );

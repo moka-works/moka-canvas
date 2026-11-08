@@ -2180,6 +2180,48 @@ function applyOne(
       };
     }
 
+    case "updateActGranularity": {
+      const story = storyOf(moka, command.storyId);
+      const chapter = chapterOf(story, command.chapterId);
+      const act = actOf(chapter, command.actId);
+      if (
+        command.shotGranularity !== null &&
+        !STORY_SHOT_GRANULARITIES.includes(command.shotGranularity)
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyGranularityUnknown"),
+        );
+      const previous = act.shotGranularity ?? null;
+      const chapters = story.chapters.map((held) =>
+        held.id === command.chapterId
+          ? {
+              ...held,
+              acts: held.acts.map((heldAct) => {
+                if (heldAct.id !== command.actId) return heldAct;
+                const next: StoryAct = { ...heldAct };
+                if (command.shotGranularity === null)
+                  delete next.shotGranularity;
+                else next.shotGranularity = command.shotGranularity;
+                return next;
+              }),
+            }
+          : held,
+      );
+      return {
+        next: replaceStory(moka, { ...story, chapters }),
+        inverse: [
+          {
+            type: "updateActGranularity",
+            storyId: command.storyId,
+            chapterId: command.chapterId,
+            actId: command.actId,
+            shotGranularity: previous,
+          },
+        ],
+      };
+    }
+
     case "updateStoryReferenceLimit": {
       const story = storyOf(moka, command.storyId);
       if (

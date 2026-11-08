@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   actCast,
+  actGranularity,
   actPlannedMs,
   currentTake,
   type StoryGuess,
@@ -13,6 +14,7 @@ import type {
   StoryActPatch,
   StoryActSound,
   StoryDocument,
+  StoryShotGranularity,
 } from "../../../shared/domain/types";
 import { assetUrl } from "../../../api/assets";
 import { i18n } from "../../../shared/i18n";
@@ -43,6 +45,9 @@ import { moved, writeActs } from "./writeBoard";
 
 /** The longest an act and a shot may be edited to, in seconds. */
 const ACT_TITLE_MAX = 40;
+
+/** The two ways an act's clip may be made, in the order the room shows them. */
+const GRANULARITY_OPTIONS: StoryShotGranularity[] = ["act", "keyframe"];
 
 /**
  * One act of a board: who is in it, what happens, how it sounds, and the shots
@@ -107,7 +112,11 @@ export function ActCard({
   const [playing, setPlaying] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [sound, setSound] = useState<StoryActSound>(act.sound);
-  const perShot = story.shotGranularity === "keyframe";
+  /** The granularity a switch is waiting on, where the act has clips to keep. */
+  const [granularityTo, setGranularityTo] =
+    useState<StoryShotGranularity | null>(null);
+  const granularity = actGranularity(act, story.shotGranularity);
+  const perShot = granularity === "keyframe";
   const clip = currentTake(act.video);
   const voice = act.voice === undefined ? undefined : currentTake(act.voice);
   const music = act.music === undefined ? undefined : currentTake(act.music);
@@ -199,6 +208,37 @@ export function ActCard({
     void run(story.id, "actVideo", items);
   };
 
+  // What a switch would leave behind: every clip this act has, of either kind,
+  // which is what the dialog counts before the reader decides.
+  const actVideos =
+    act.video.takes.length +
+    act.keyframes.reduce(
+      (sum, keyframe) => sum + keyframe.video.takes.length,
+      0,
+    );
+
+  /** Records this act's own way of filming, which the other acts do not share. */
+  const writeGranularity = (next: StoryShotGranularity) => {
+    execute(i18n.t("story:history.storyboard"), [
+      {
+        type: "updateActGranularity",
+        storyId: story.id,
+        chapterId,
+        actId: act.id,
+        shotGranularity: next,
+      },
+    ]);
+  };
+
+  const chooseGranularity = (next: StoryShotGranularity) => {
+    if (next === granularity) return;
+    if (actVideos > 0) {
+      setGranularityTo(next);
+      return;
+    }
+    writeGranularity(next);
+  };
+
   // The lines the act's button would ask for: the ones with nothing read for
   // them yet, and the ones whose words have changed since they were read. A
   // line being read just now is not one of them, since asking again would pay
@@ -257,7 +297,7 @@ export function ActCard({
             seconds: Math.round((plannedMs / 1000) * 10) / 10,
           })}
         </span>
-        {split && (
+        {!perShot && split && (
           <span
             className="story-clamp"
             data-testid={`story-act-split-${index}`}
@@ -269,7 +309,7 @@ export function ActCard({
             })}
           </span>
         )}
-        {adjusted && (
+        {!perShot && adjusted && (
           <span
             className="story-clamp"
             data-testid={`story-act-clamp-${index}`}
@@ -278,6 +318,27 @@ export function ActCard({
             {t("story:storyboard.clamped", { seconds: askedSeconds })}
           </span>
         )}
+        {/* How this act is filmed, where it parts from the telling's default:
+            one act's card is where one act's way of filming belongs. */}
+        <span
+          aria-label={t("story:storyboard.actGranularity")}
+          className="story-granularity story-act-granularity"
+          role="radiogroup"
+        >
+          {GRANULARITY_OPTIONS.map((option) => (
+            <button
+              aria-checked={granularity === option}
+              className={`story-choice${granularity === option ? " is-on" : ""}`}
+              data-testid={`story-act-granularity-${option}-${index}`}
+              key={option}
+              onClick={() => chooseGranularity(option)}
+              role="radio"
+              type="button"
+            >
+              {t(`story:storyboard.granularity_${option}`)}
+            </button>
+          ))}
+        </span>
         {/* Where the act stands in the episode, and how it leaves: the board
             is the reader's to reorder and to cut down, not only to fill in. */}
         <span className="story-act-tools">
@@ -609,6 +670,28 @@ export function ActCard({
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
           video
+        />
+      )}
+
+      {granularityTo !== null && (
+        <ConfirmDialog
+          body={t("story:storyboard.granularityBody", {
+            count: actVideos,
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
+          })}
+          confirm={t("story:storyboard.granularityConfirm", {
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
+          })}
+          note={t("story:storyboard.granularityNote")}
+          onCancel={() => setGranularityTo(null)}
+          onConfirm={() => {
+            writeGranularity(granularityTo);
+            setGranularityTo(null);
+          }}
+          testId={`change-act-granularity-${index}`}
+          title={t("story:storyboard.granularityTitle", {
+            to: t(`story:storyboard.granularity_by_${granularityTo}`),
+          })}
         />
       )}
 
