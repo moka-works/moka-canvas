@@ -8728,6 +8728,19 @@ button > .story-spin {
   width: 128px;
 }
 
+/* The frame's own row of actions wraps inside the column rather than widening
+   the table: a place with a picture can be replaced, edited and drawn again,
+   and those three words still belong to one narrow cell. The slot itself is
+   held to the column too, so a table that has room to stretch does not turn a
+   frame into a picture the framing columns lose their words to. */
+.story-table .story-col-frame .story-slot {
+  max-width: 128px;
+}
+
+.story-table .story-col-frame .story-slot-actions {
+  max-width: 128px;
+}
+
 .story-table .story-col-frame .story-slot-picture img {
   max-width: 128px;
 }
