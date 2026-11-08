@@ -57,6 +57,7 @@ import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { frameRatio } from "./ratios";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
+import { staleReferences } from "./stalePictures";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { filePictureFromComputer } from "./elementPictures";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
@@ -340,6 +341,8 @@ function KeyframeRow({
   // drawn would be made from is the words alone, which is not what the board
   // says the shot looks like.
   const filmed = keyframe.art.takes.length > 0;
+  // The references this frame was drawn with that have been redrawn since.
+  const stale = staleReferences(story, keyframe);
 
   return (
     <>
@@ -491,6 +494,17 @@ function KeyframeRow({
             slot={keyframe.art}
             testId={`story-kf-slot-${index}`}
           />
+          {stale.length > 0 && (
+            <span
+              className="story-kf-stale"
+              data-testid={`story-kf-stale-ref-${index}`}
+              title={t("story:storyboard.staleRefHint", {
+                names: stale.map((element) => element.name).join("、"),
+              })}
+            >
+              {t("story:storyboard.staleRef")}
+            </span>
+          )}
         </td>
         {perShot && (
           <td>

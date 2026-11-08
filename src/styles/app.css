@@ -8657,6 +8657,19 @@ button > .story-spin {
   max-width: 128px;
 }
 
+/* A frame drawn before one of its references changed: said in the column where
+   the picture stands, so the staleness is seen beside the thing to redo. */
+.story-kf-stale {
+  background: color-mix(in srgb, var(--coral) 16%, transparent);
+  border: 1px solid var(--coral);
+  border-radius: 999px;
+  color: var(--coral);
+  display: inline-block;
+  font-size: 10px;
+  margin-top: 4px;
+  padding: 1px 6px;
+}
+
 .story-kf-seconds {
   min-width: 72px;
   width: 92px;

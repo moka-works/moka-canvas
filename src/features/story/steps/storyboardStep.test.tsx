@@ -500,6 +500,30 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.keyframes).toHaveLength(2);
   });
 
+  it("marks a frame whose reference was redrawn, and draws it again from it", async () => {
+    const moka = boarded();
+    settle(moka.stories![0], "林", (element) => {
+      element.main = {
+        takes: [
+          {
+            assetIds: ["asset-hero-new"],
+            createdAt: "2027-01-01T00:00:00.000Z",
+          },
+        ],
+      };
+    });
+    openAtBoard(moka);
+
+    expect(screen.getByTestId("story-kf-stale-ref-0")).toBeDefined();
+    fireEvent.click(screen.getByTestId("story-act-redraw-stale-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("keyframeArt");
+    expect(starts[0]!.items).toHaveLength(1);
+    expect(starts[0]!.items[0]?.inputs?.map((input) => input.assetId)).toEqual([
+      "asset-hero-new",
+    ]);
+  });
+
   it("draws a new reference into the act's own cast", async () => {
     openAtBoard(boarded());
 

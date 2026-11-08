@@ -46,6 +46,7 @@ import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
 import { liveStory } from "./removeOldTake";
 import { RefPicker } from "./RefPicker";
+import { staleFrames } from "./stalePictures";
 import { StoryLightbox } from "./StoryLightbox";
 import { secondsOf } from "./takes";
 import { useField } from "./useField";
@@ -200,6 +201,12 @@ export function ActCard({
   // missing ones go on being askable.
   const drawable = missing.filter(
     (keyframe) => !busyKeyframes.has(keyframe.id),
+  );
+  // The shots drawn before one of their references changed: not missing, so
+  // the draw button does not count them, but worth drawing again from the
+  // pictures the story uses now.
+  const stale = staleFrames(story, act.keyframes, (id) =>
+    busyKeyframes.has(id),
   );
   const drawn = act.keyframes.length - missing.length;
   // A clip is made from the pictures of the act: every shot of it is drawn
@@ -587,6 +594,30 @@ export function ActCard({
                 })
               : t("story:storyboard.noRefs")}
           </span>
+        )}
+
+        {stale.length > 0 && (
+          <button
+            data-testid={`story-act-redraw-stale-${index}`}
+            onClick={() =>
+              void runBulk(
+                story.id,
+                "keyframeArt",
+                planKeyframeArt(
+                  story,
+                  stale.map((keyframe) => ({
+                    chapterId,
+                    actId: act.id,
+                    keyframeId: keyframe.id,
+                  })),
+                ),
+              )
+            }
+            title={t("story:storyboard.redrawStaleHint")}
+            type="button"
+          >
+            {t("story:storyboard.redrawStale", { count: stale.length })}
+          </button>
         )}
 
         {drawable.length > 0 && (
