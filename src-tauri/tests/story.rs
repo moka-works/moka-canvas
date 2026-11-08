@@ -691,6 +691,50 @@ fn moves_only_the_fields_an_element_patch_names() {
 }
 
 #[test]
+fn names_the_model_and_frame_an_element_is_drawn_with() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryElement {
+            story_id: STORY.into(),
+            element_id: HERO.into(),
+            patch: StoryElementPatch {
+                image_model: Some(Some("paint-2".into())),
+                ratio: Some(Some(story::StoryAspect::Vertical)),
+                ..Default::default()
+            },
+        }],
+    );
+    let hero = story_of(&set)
+        .elements
+        .iter()
+        .find(|element| element.id == HERO)
+        .unwrap();
+    assert_eq!(hero.image_model.as_deref(), Some("paint-2"));
+    assert_eq!(hero.ratio, Some(story::StoryAspect::Vertical));
+
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryElement {
+            story_id: STORY.into(),
+            element_id: HERO.into(),
+            patch: StoryElementPatch {
+                image_model: Some(None),
+                ratio: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    let hero = story_of(&cleared)
+        .elements
+        .iter()
+        .find(|element| element.id == HERO)
+        .unwrap();
+    assert_eq!(hero.image_model, None);
+    assert_eq!(hero.ratio, None);
+}
+
+#[test]
 fn names_the_chapters_an_element_was_seen_in_and_refuses_a_chapter_it_has_not() {
     let moka = story_document();
     let next = round_trip(

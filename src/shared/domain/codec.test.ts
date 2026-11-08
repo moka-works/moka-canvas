@@ -72,6 +72,18 @@ describe("moka codec", () => {
     expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
   });
 
+  it("carries the picture model and frame an element was given", () => {
+    const moka = buildStoryMokaFile();
+    const element = moka.stories![0]!.elements[0]!;
+    element.imageModel = "paint-2";
+    element.ratio = "9:16";
+
+    const back = decodeMokaFile(encodeMokaFile(moka));
+    const read = back.stories![0]!.elements[0]!;
+    expect(read.imageModel).toBe("paint-2");
+    expect(read.ratio).toBe("9:16");
+  });
+
   it("is byte-canonical on re-save", () => {
     const golden = buildGoldenMokaFile();
     const first = encodeMokaFile(golden);
