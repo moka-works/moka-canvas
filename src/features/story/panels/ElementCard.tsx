@@ -45,7 +45,7 @@ import { VoiceFields } from "./VoiceFields";
 const EMPTY_SLOT: StorySlot = { takes: [] };
 
 /** How many chapters a card lists before the rest are left to the menu. */
-const CHAPTER_CHIPS = 3;
+const CHAPTER_CHIPS = 2;
 
 /** The form picker's item that opens the dialog rather than choosing a form. */
 const MANAGE_FORMS = "__manage__";
@@ -487,7 +487,7 @@ function ChapterLine({
   onPick: (chapterIds: string[]) => void;
 }) {
   const { t } = useTranslation();
-  // The chapters are listed in telling order, three at a time: the button
+  // The chapters are listed in telling order, two at a time: the button
   // beside them opens the whole list, so a card in a long telling stays short.
   const standing = chapters.flatMap((chapter, index) =>
     chosen.includes(chapter.id) ? [{ chapter, number: index + 1 }] : [],

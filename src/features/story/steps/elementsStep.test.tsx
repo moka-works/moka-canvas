@@ -1081,7 +1081,7 @@ describe("a description the reader rewrites", () => {
     expect(element("旧车票")?.chapterIds).toEqual([ids.chapterFirst]);
   });
 
-  it("names the chapters an element stands in, three at a time", () => {
+  it("names the chapters an element stands in, two at a time", () => {
     const moka = buildStoryMokaFile();
     const story = moka.stories![0]!;
     story.chapters = [
@@ -1099,7 +1099,7 @@ describe("a description the reader rewrites", () => {
     openAtElements(moka);
 
     const held = screen.getByTestId("story-element-prop-旧车票");
-    expect(within(held).getAllByText(/^Chapter \d+$/)).toHaveLength(3);
+    expect(within(held).getAllByText(/^Chapter \d+$/)).toHaveLength(2);
     expect(
       within(held).getByTestId("story-element-chapters-more-旧车票")
         .textContent,
