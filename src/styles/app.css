@@ -7468,6 +7468,20 @@ body.is-dragging-split {
   gap: 10px;
 }
 
+/* A card's advanced row: the voice, folded away until it is wanted. */
+
+.story-element-advanced {
+  border-top: 1px solid var(--stroke);
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.story-element-advanced .story-voice {
+  border-top: none;
+  padding-top: 0;
+}
+
 .story-element-state {
   color: var(--success);
   font-size: 12px;

@@ -371,7 +371,8 @@
     "voiceOrphanNote": "This machine does not have that model; lines fall back to the next layer",
     "voiceLines": "Lines this character says in the story: {{count}}",
     "voiceNoLines": "No lines yet",
-    "voiceNamed": "{{named}}/{{total}} characters have a voice"
+    "voiceNamed": "{{named}}/{{total}} characters have a voice",
+    "advanced": "Advanced"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",

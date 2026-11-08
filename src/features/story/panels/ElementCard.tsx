@@ -7,6 +7,7 @@ import {
   elementOf,
   slotWithoutTake,
   slotWithCurrent,
+  voiceNamed,
 } from "../../../shared/domain";
 import type {
   StoryChapter,
@@ -55,6 +56,9 @@ export function ElementCard({
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  // The voice is a card's least used form, and every one of them is a model
+  // picker and a recording row: it is kept folded until the reader opens it.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const run = useStoryRun();
   const main = currentTake(element.main);
   const character = element.kind === "character";
@@ -162,14 +166,30 @@ export function ElementCard({
       />
 
       {character && (
-        <VoiceFields
-          characterId={element.id}
-          fallbackVoice={resolveVoice(story, element.id)}
-          onWrite={(voice) => write(story, element, { voice })}
-          story={story}
-          testId={`story-voice-${element.name}`}
-          voice={element.voice}
-        />
+        <div className="story-element-advanced">
+          <button
+            aria-expanded={advancedOpen}
+            className="link"
+            data-testid={`story-element-advanced-${element.name}`}
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            type="button"
+          >
+            {t("story:elements.advanced")}
+            {voiceNamed(element.voice)
+              ? ` · ${t("story:elements.voiceSet")}`
+              : ""}
+          </button>
+          {advancedOpen && (
+            <VoiceFields
+              characterId={element.id}
+              fallbackVoice={resolveVoice(story, element.id)}
+              onWrite={(voice) => write(story, element, { voice })}
+              story={story}
+              testId={`story-voice-${element.name}`}
+              voice={element.voice}
+            />
+          )}
+        </div>
       )}
 
       <div className="story-element-actions">

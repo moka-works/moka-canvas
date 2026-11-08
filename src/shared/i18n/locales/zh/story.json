@@ -371,7 +371,8 @@
     "voiceOrphanNote": "本机没有这个模型，念的时候按下一层回退",
     "voiceLines": "这个角色在故事里说 {{count}} 句",
     "voiceNoLines": "还没有台词",
-    "voiceNamed": "{{named}}/{{total}} 个角色定了声音"
+    "voiceNamed": "{{named}}/{{total}} 个角色定了声音",
+    "advanced": "高级"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",

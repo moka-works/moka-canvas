@@ -18,7 +18,6 @@ import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
@@ -48,6 +47,15 @@ import { useStoryStore } from "../stores/storyStore";
 
 /** The kinds of element, in the order the room shows them. */
 const KINDS: StoryElementKind[] = ["character", "scene", "prop"];
+
+/**
+ * How many cards one look builds at once.
+ *
+ * A card is a form with one or two pictures, so a hundred of them is a
+ * hundred forms and a hundred thumbnails the page pays for before it shows
+ * anything. A page's worth is built at a time, and the reader walks the rest.
+ */
+export const ELEMENTS_PAGE = 24;
 
 const EMPTY = { takes: [] };
 
@@ -104,8 +112,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       ? story.elements
       : story.elements.filter((element) => element.kind === kind);
   // A telling may hold two hundred of these, and every card is a form: the
-  // list is shown a shelf's worth at a time, as the asset shelf is.
-  const visible = shown.slice(0, pages * SHELF_PAGE);
+  // list is shown a page's worth at a time.
+  const visible = shown.slice(0, pages * ELEMENTS_PAGE);
 
   /** Another kind of thing is another list, and it starts at its top. */
   const chooseKind = (next: StoryElementKind | "all") => {
@@ -533,7 +541,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   type="button"
                 >
                   {t("story:elements.showMore", {
-                    count: Math.min(SHELF_PAGE, shown.length - visible.length),
+                    count: Math.min(
+                      ELEMENTS_PAGE,
+                      shown.length - visible.length,
+                    ),
                   })}
                 </button>
               </div>
@@ -594,9 +605,19 @@ function VoiceSummary({ story }: { story: StoryDocument }) {
         onClick={() => {
           if (first === undefined) return;
           const escaped = first.name.replace(/["\\]/g, "\\$&");
-          document
-            .querySelector(`[data-testid="story-voice-${escaped}"]`)
-            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          // The voice fields are folded away with the card's advanced row:
+          // the walk opens the first one that still needs a voice rather than
+          // landing on a closed card.
+          const open = document.querySelector<HTMLButtonElement>(
+            `[data-testid="story-element-advanced-${escaped}"]`,
+          );
+          if (open?.getAttribute("aria-expanded") === "false") open.click();
+          const scroll = () =>
+            document
+              .querySelector(`[data-testid="story-voice-${escaped}"]`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          // A row that was just opened is drawn on the next turn.
+          setTimeout(scroll, 0);
         }}
         type="button"
       >

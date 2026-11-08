@@ -7,9 +7,9 @@ import type { StorySlot } from "../../../shared/domain/types";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 
-/** How wide a place's picture is asked for: it fills the panel and is
+/** How wide a place's picture is asked for: a card's column at most, and
     enlarged — where the file itself is shown — in the lightbox. */
-const SLOT_THUMB_WIDTH = 768;
+const SLOT_THUMB_WIDTH = 480;
 
 /**
  * One place a drawing lives: a character's face, a character's four views, a
@@ -106,6 +106,8 @@ export function StorySlotView({
           >
             <img
               alt={label}
+              decoding="async"
+              loading="lazy"
               src={assetThumbUrl(take.assetIds[0], SLOT_THUMB_WIDTH)}
             />
           </button>

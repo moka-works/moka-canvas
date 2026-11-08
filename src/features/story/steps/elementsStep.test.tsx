@@ -24,7 +24,7 @@ import {
 import { actCast } from "../../../shared/domain/story";
 import { currentUiPrefs, resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { undo } from "../../editor/commands/execute";
-import { SHELF_PAGE } from "../../editor/panels/shelfFilter";
+import { ELEMENTS_PAGE } from "./ElementsStep";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useModelStore } from "../../settings/modelStore";
 import { useHistoryStore } from "../../editor/stores/historyStore";
@@ -294,6 +294,12 @@ function slotOf(name: string, view: "main" | "turnaround") {
   return view === "main" ? held.main : held.turnaround;
 }
 
+/** Opens the folded row a character's voice lives in. */
+function openVoice(name: string) {
+  const toggle = screen.getByTestId(`story-element-advanced-${name}`);
+  if (toggle.getAttribute("aria-expanded") === "false") fireEvent.click(toggle);
+}
+
 /** The cast an ask is answered with, in the shape a model answers in. */
 function castAnswer(
   characters: Array<{
@@ -555,7 +561,7 @@ describe("a room opened again over what it has already read", () => {
         .querySelector("img")
         ?.getAttribute("src"),
     ).toBe(
-      `/api/v1/projects/current/assets/asset-lover-main?w=768&project=${goldenNodeIds().project}`,
+      `/api/v1/projects/current/assets/asset-lover-main?w=480&project=${goldenNodeIds().project}`,
     );
     // Nothing was asked for a second time, and nothing was said again.
     expect(starts).toHaveLength(3);
@@ -922,7 +928,7 @@ describe("the pictures of an element", () => {
       .getByTestId("story-slot-main")
       .querySelector("img");
     expect(shown?.getAttribute("src")).toBe(
-      `/api/v1/projects/current/assets/asset-ticket-main?w=768&project=${goldenNodeIds().project}`,
+      `/api/v1/projects/current/assets/asset-ticket-main?w=480&project=${goldenNodeIds().project}`,
     );
   });
 
@@ -1282,7 +1288,7 @@ describe("a cast too long to show at once", () => {
   it("shows a shelf's worth of cards and offers the rest", () => {
     const moka = buildStoryMokaFile();
     const story = moka.stories![0];
-    story.elements = Array.from({ length: SHELF_PAGE + 5 }, (_, at) => ({
+    story.elements = Array.from({ length: ELEMENTS_PAGE + 5 }, (_, at) => ({
       id: `extra-${at}`,
       kind: "prop" as const,
       name: `道具 ${at + 1}`,
@@ -1293,14 +1299,16 @@ describe("a cast too long to show at once", () => {
     openAtElements(moka);
 
     expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(
-      SHELF_PAGE,
+      ELEMENTS_PAGE,
     );
     const paging = screen.getByTestId("story-elements-shown");
-    expect(paging.textContent).toBe(`${SHELF_PAGE} of ${SHELF_PAGE + 5} shown`);
+    expect(paging.textContent).toBe(
+      `${ELEMENTS_PAGE} of ${ELEMENTS_PAGE + 5} shown`,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
     expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(
-      SHELF_PAGE + 5,
+      ELEMENTS_PAGE + 5,
     );
     expect(screen.queryByTestId("story-elements-shown")).toBeNull();
   });
@@ -1370,6 +1378,7 @@ describe("the voice of a character", () => {
   it("writes the tone a reader types as one step of the history", async () => {
     openAtElements(buildStoryMokaFile());
     const before = useHistoryStore.getState().undoStack.length;
+    openVoice("林");
     const tone = screen.getByTestId("story-voice-林-tone") as HTMLInputElement;
     fireEvent.change(tone, { target: { value: "longxiaochun" } });
     fireEvent.blur(tone);
@@ -1387,6 +1396,7 @@ describe("the voice of a character", () => {
 
   it("takes the voice off the element when the last thing said of it is cleared", async () => {
     openAtElements(buildStoryMokaFile());
+    openVoice("林");
     const tone = screen.getByTestId("story-voice-林-tone") as HTMLInputElement;
     fireEvent.change(tone, { target: { value: "longxiaochun" } });
     fireEvent.blur(tone);
@@ -1405,6 +1415,7 @@ describe("the voice of a character", () => {
 
   it("lets the room's own voice model be picked for a character", async () => {
     openAtElements(buildStoryMokaFile());
+    openVoice("林");
     const picker = within(screen.getByTestId("story-voice-林-model")).getByRole(
       "combobox",
     );
@@ -1425,6 +1436,8 @@ describe("the voice of a character", () => {
 
   it("counts the lines of a character, and how much of the cast has a voice", async () => {
     openAtElements(buildStoryMokaFile());
+    openVoice("林");
+    openVoice("周");
     expect(screen.getByTestId("story-voice-林-lines").textContent).toBe(
       "Lines this character says in the story: 1",
     );
@@ -1469,6 +1482,7 @@ describe("the voice of a character", () => {
     });
     fireEvent.click(screen.getByTestId("add-element-confirm"));
 
+    openVoice("旅人");
     const tone = (await screen.findByTestId(
       "story-voice-旅人-tone",
     )) as HTMLInputElement;
@@ -1503,6 +1517,7 @@ describe("the voice of a character", () => {
     const moka = buildStoryMokaFile();
     const held = moka.resources.voice.length;
     openAtElements(moka);
+    openVoice("林");
 
     fireEvent.click(screen.getByTestId("story-voice-林-try"));
     await waitFor(() => {
@@ -1532,6 +1547,7 @@ describe("the voice of a character", () => {
       voice: { model: "reader-gone", voice: "longxiaochun" },
     };
     openAtElements(moka);
+    openVoice("林");
 
     const picker = within(screen.getByTestId("story-voice-林-model")).getByRole(
       "combobox",
