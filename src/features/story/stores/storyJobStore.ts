@@ -112,6 +112,29 @@ function toast(
 }
 
 /**
+ * What a refused ask listed under its one line.
+ *
+ * A batch turned down for several reasons answers with the first of them as a
+ * status and the whole list beside it. The list is what a reader can act on —
+ * which places were wrong and why — so it travels under the toast rather than
+ * being left in the response.
+ */
+function issuesUnder(problem: unknown): string | undefined {
+  if (!isApiError(problem)) return undefined;
+  const issues = problem.details?.issues;
+  if (!Array.isArray(issues)) return undefined;
+  const lines = issues.flatMap((issue) => {
+    if (typeof issue !== "object" || issue === null) return [];
+    const held = issue as { code?: unknown; message?: unknown };
+    const code = typeof held.code === "string" ? held.code : "";
+    const message = typeof held.message === "string" ? held.message : "";
+    if (message === "") return code === "" ? [] : [code];
+    return code === "" ? [message] : [`${code}: ${message}`];
+  });
+  return lines.length === 0 ? undefined : lines.join("\n");
+}
+
+/**
  * What a batch that came back short has to say.
  *
  * The count, and the reason under it: a reader told only how many pieces did
@@ -725,9 +748,14 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             go: () => useModelStore.getState().openSettings(),
           });
         } else {
-          set({
-            error: problem instanceof Error ? problem.message : String(problem),
-          });
+          const said =
+            problem instanceof Error ? problem.message : String(problem);
+          set({ error: said });
+          // A refused ask says which of its pieces were wrong beside the one
+          // line it is refused with; the toast keeps that list, so a reader is
+          // told what to fix rather than only that the ask was turned down.
+          const detail = issuesUnder(problem);
+          if (detail !== undefined) toast("error", said, undefined, detail);
         }
         return null;
       } finally {

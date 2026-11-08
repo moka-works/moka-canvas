@@ -338,6 +338,48 @@ describe("starting a batch", () => {
     expect(useStoryJobStore.getState().jobs).toEqual([]);
   });
 
+  it("keeps the reasons a refused ask listed, under its one line", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: "VALIDATION_FAILED",
+              message: "The requested story job is not valid",
+              status: 422,
+              details: {
+                issues: [
+                  {
+                    code: "STORY_JOB_ITEM_LIMIT",
+                    message: "A job asks for between 1 and 40 pieces",
+                  },
+                  {
+                    code: "ASSET_MISSING",
+                    message: "Item 2 points at the missing asset asset-gone",
+                  },
+                ],
+              },
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    await useStoryJobStore.getState().start(ids.story, "elementArt", []);
+
+    const last = useAppStore.getState().toasts.at(-1);
+    expect(last?.kind).toBe("error");
+    expect(last?.message).toBe("The requested story job is not valid");
+    expect(last?.detail).toContain(
+      "STORY_JOB_ITEM_LIMIT: A job asks for between 1 and 40 pieces",
+    );
+    expect(last?.detail).toContain(
+      "ASSET_MISSING: Item 2 points at the missing asset asset-gone",
+    );
+  });
+
   it("sends a reader with no model for this work to the settings", async () => {
     vi.stubGlobal(
       "fetch",
