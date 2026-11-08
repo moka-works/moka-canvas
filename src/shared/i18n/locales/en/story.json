@@ -131,6 +131,7 @@
     "source": "Load a manuscript",
     "chapters": "Write the chapters",
     "elements": "Write the elements",
+    "reorderElements": "Reorder the elements",
     "storyboard": "Write the board",
     "sound": "Choose the sound of an act",
     "assemble": "Assemble the film",
@@ -395,7 +396,15 @@
     "bulkDeleteTitle": "Delete {{count}} elements?",
     "bulkDeleteBody": "The {{count}} elements leave the cast. Where a board names them, the reference is left standing as a gap.",
     "ratio": "Aspect",
-    "selectAll": "Select all ({{count}})"
+    "selectAll": "Select all ({{count}})",
+    "reorder": "Adjust order",
+    "reorderDone": "Done",
+    "reorderHint": "Drag a row by its handle, or use the arrows beside it. Every move is saved as you go.",
+    "reorderHandle": "Drag to reorder",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "orderList": "The elements in order",
+    "emptyGroup": "Nothing of this kind yet"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",

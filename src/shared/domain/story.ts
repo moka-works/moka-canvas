@@ -660,13 +660,37 @@ export function mergeElements(
       chapterIds,
     });
   }
-  const merged = [...cast.values()];
-  if (!partial) return merged;
+  // The cast keeps the order the reader arranged it in: what was already there
+  // stays where it was, and what this reading found for the first time is added
+  // after it in the order the answer named them. A reading again is not the
+  // room's word on how the cast should be listed.
+  const firstAt = new Map<string, number>();
+  existing.forEach((element, at) => {
+    const key = elementKey(element.kind, element.name);
+    if (!firstAt.has(key)) firstAt.set(key, at);
+  });
+  const kept = existing.flatMap((element, at) => {
+    const key = elementKey(element.kind, element.name);
+    if (firstAt.get(key) !== at) return [];
+    const merged = cast.get(key);
+    return merged === undefined ? [] : [merged];
+  });
+  const added: StoryElement[] = [];
+  const taken = new Set<string>();
+  for (const draft of identified) {
+    const key = elementKey(draft.kind, draft.name);
+    if (known.has(key) || taken.has(key)) continue;
+    taken.add(key);
+    const element = cast.get(key);
+    if (element !== undefined) added.push(element);
+  }
+  if (!partial) return [...kept, ...added];
   const named = new Set(
     identified.map((draft) => elementKey(draft.kind, draft.name)),
   );
   return [
-    ...merged,
+    ...kept,
+    ...added,
     ...existing.filter((held) => !named.has(elementKey(held.kind, held.name))),
   ];
 }

@@ -7311,6 +7311,117 @@ body.is-dragging-split {
   padding: 3px 6px;
 }
 
+/* The cast as an ordered list, for the reader arranging it: one short row an
+   element, the whole kind at once, and the row's own places kept to its kind. */
+
+.story-sort-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.story-sort-row {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 22px 28px 56px 64px minmax(0, 1fr) auto;
+  padding: 6px 10px;
+}
+
+.story-sort-row.is-dragging {
+  opacity: 0.4;
+}
+
+.story-sort-row.is-over-before {
+  box-shadow: 0 -2px 0 var(--primary);
+}
+
+.story-sort-row.is-over-after {
+  box-shadow: 0 2px 0 var(--primary);
+}
+
+.story-sort-handle {
+  color: var(--muted);
+  cursor: grab;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+
+.story-sort-index {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.story-sort-thumb {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: 56px;
+  justify-content: center;
+  overflow: hidden;
+  width: 56px;
+}
+
+.story-sort-thumb img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.story-sort-none {
+  color: var(--muted);
+  font-size: 10px;
+  padding: 2px;
+  text-align: center;
+}
+
+.story-sort-kind {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.story-sort-name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-sort-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.story-sort-buttons button {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 9px;
+}
+
+.story-sort-buttons button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.45;
+}
+
 .story-element {
   background: var(--surface);
   border: 1px solid var(--stroke);

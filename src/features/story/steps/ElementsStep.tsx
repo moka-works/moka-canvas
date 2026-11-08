@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
+
+import { assetThumbUrl } from "../../../api/assets";
 
 import {
   STORY_ELEMENT_KINDS,
@@ -74,6 +83,42 @@ const FIRST_PAGES: Record<ElementKindTab, number> = {
   prop: 1,
 };
 
+/**
+ * One element moved within the kind it is listed under.
+ *
+ * The places a kind holds in the document stay its own: a character moved
+ * among characters takes another character's place rather than stepping over
+ * the places and props between them, so arranging one kind leaves the others
+ * where they were. The whole cast is a list of its own and moves freely.
+ */
+function moveElement(
+  elements: StoryElement[],
+  kind: ElementKindTab,
+  id: string,
+  targetId: string,
+  after: boolean,
+): StoryElement[] {
+  if (id === targetId) return elements;
+  const places: number[] = [];
+  elements.forEach((element, at) => {
+    if (kind === "all" || element.kind === kind) places.push(at);
+  });
+  const held = places.map((at) => elements[at]!);
+  const from = held.findIndex((element) => element.id === id);
+  if (from === -1 || !held.some((element) => element.id === targetId)) {
+    return elements;
+  }
+  const [moved] = held.splice(from, 1);
+  if (moved === undefined) return elements;
+  const at = held.findIndex((element) => element.id === targetId);
+  held.splice(at + (after ? 1 : 0), 0, moved);
+  const next = [...elements];
+  places.forEach((place, index) => {
+    next[place] = held[index]!;
+  });
+  return next;
+}
+
 const EMPTY = { takes: [] };
 
 /** Whether an item of an elements batch is one whose answer the step reads. */
@@ -115,6 +160,9 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // back to what the reader was looking at rather than to its first page.
   const [pageOf, setPageOf] = useState(FIRST_PAGES);
   const [perPage, setPerPage] = useState<number>(ELEMENTS_PAGE);
+  // The list as one ordered set rather than pages of cards: arranging a cast
+  // is a different task than writing on a card, and no page turns under a drag.
+  const [sorting, setSorting] = useState(false);
   const [waves, setWaves] = useState<StoryReadingPiece[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
   // A batch is being handed over, whether for the first part or a later one.
@@ -177,6 +225,23 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       ...held,
       [kind]: Math.min(Math.floor(first / next) + 1, pages),
     }));
+  };
+
+  /** Enters the ordered list, letting go of any cards a bulk action had. */
+  const toggleSorting = () => {
+    setSorting(!sorting);
+    setPicked(new Set());
+    setBulkAction("");
+  };
+
+  /** Puts one element before or after another, as one step of the history. */
+  const reorder = (id: string, targetId: string, after: boolean) => {
+    const live = liveStory(story.id) ?? story;
+    const elements = moveElement(live.elements, kind, id, targetId, after);
+    if (elements === live.elements) return;
+    execute(i18n.t("story:history.reorderElements"), [
+      { type: "setStoryElements", storyId: story.id, elements },
+    ]);
   };
   // The places the story's batches are making just now, read once per poll:
   // every card and every bulk count asks whether its own place is in here,
@@ -473,7 +538,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             ))}
           </div>
           <div className="story-step-actions">
-            {shown.length > 0 && (
+            {!sorting && shown.length > 0 && (
               <button
                 className="link"
                 data-testid="story-elements-select-all"
@@ -489,6 +554,18 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                 {allPicked
                   ? t("story:elements.bulkClear")
                   : t("story:elements.selectAll", { count: shown.length })}
+              </button>
+            )}
+            {(sorting || shown.length > 1) && (
+              <button
+                className="link"
+                data-testid="story-elements-reorder"
+                onClick={toggleSorting}
+                type="button"
+              >
+                {sorting
+                  ? t("story:elements.reorderDone")
+                  : t("story:elements.reorder")}
               </button>
             )}
             {drawable.length > 0 && (
@@ -679,6 +756,13 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
               </button>
             </div>
           </div>
+        ) : sorting ? (
+          <>
+            <p className="story-hint" data-testid="story-elements-reorder-hint">
+              {t("story:elements.reorderHint")}
+            </p>
+            <OrderList elements={shown} onMove={reorder} />
+          </>
         ) : (
           <>
             <ul className="story-elements">
@@ -846,6 +930,138 @@ function PageJump({
       />
       <span>{t("story:elements.pageOf", { total: pageCount })}</span>
     </span>
+  );
+}
+
+/**
+ * The cast as one ordered list, for the reader arranging it.
+ *
+ * A card is a form and a form is not a thing to drag: here every element is a
+ * short row — its picture, its kind and its name — and the whole kind is
+ * listed at once. Nothing turns a page under a drag, so a row can be taken
+ * from one end of a long cast to the other in one movement.
+ */
+function OrderList({
+  elements,
+  onMove,
+}: {
+  elements: StoryElement[];
+  onMove: (id: string, targetId: string, after: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
+
+  /** Whether the pointer is past the middle of the row it is over. */
+  const dropsAfter = (event: DragEvent<HTMLElement>): boolean => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientY > box.top + box.height / 2;
+  };
+  const finish = () => {
+    setDragging(null);
+    setOver(null);
+  };
+
+  if (elements.length === 0) {
+    return (
+      <p className="story-hint" data-testid="story-elements-order-empty">
+        {t("story:elements.emptyGroup")}
+      </p>
+    );
+  }
+
+  return (
+    <ol
+      aria-label={t("story:elements.orderList")}
+      className="story-sort-list"
+      data-testid="story-elements-order"
+    >
+      {elements.map((element, at) => {
+        const take = currentTake(element.main);
+        const up = elements[at - 1];
+        const down = elements[at + 1];
+        const side =
+          over?.id === element.id ? (over.after ? "after" : "before") : "";
+        return (
+          <li
+            className={`story-sort-row${dragging === element.id ? " is-dragging" : ""}${side === "" ? "" : ` is-over-${side}`}`}
+            data-testid={`story-sort-${element.kind}-${element.name}`}
+            key={element.id}
+            onDragEnd={finish}
+            onDragOver={(event) => {
+              if (dragging === null || dragging === element.id) return;
+              event.preventDefault();
+              setOver({ id: element.id, after: dropsAfter(event) });
+            }}
+            onDragStart={(event) => {
+              setDragging(element.id);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", element.id);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (dragging !== null && dragging !== element.id) {
+                onMove(dragging, element.id, dropsAfter(event));
+              }
+              finish();
+            }}
+          >
+            <span
+              aria-hidden="true"
+              className="story-sort-handle"
+              data-testid={`story-sort-handle-${element.name}`}
+              draggable
+              title={t("story:elements.reorderHandle")}
+            >
+              ⠿
+            </span>
+            <span className="story-sort-index">{at + 1}</span>
+            <span className="story-sort-thumb">
+              {take === undefined ? (
+                <span className="story-sort-none">—</span>
+              ) : (
+                <img
+                  alt=""
+                  decoding="async"
+                  loading="lazy"
+                  src={assetThumbUrl(take.assetIds[0], 96)}
+                />
+              )}
+            </span>
+            <span className="story-sort-kind">
+              {t(`story:element.${element.kind}`)}
+            </span>
+            <span className="story-sort-name">{element.name}</span>
+            <span className="story-sort-buttons">
+              <button
+                aria-label={t("story:elements.moveUp", { name: element.name })}
+                data-testid={`story-sort-up-${element.name}`}
+                disabled={up === undefined}
+                onClick={() => {
+                  if (up !== undefined) onMove(element.id, up.id, false);
+                }}
+                type="button"
+              >
+                ↑
+              </button>
+              <button
+                aria-label={t("story:elements.moveDown", {
+                  name: element.name,
+                })}
+                data-testid={`story-sort-down-${element.name}`}
+                disabled={down === undefined}
+                onClick={() => {
+                  if (down !== undefined) onMove(element.id, down.id, true);
+                }}
+                type="button"
+              >
+                ↓
+              </button>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

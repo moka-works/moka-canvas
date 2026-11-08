@@ -516,6 +516,26 @@ describe("mergeElements", () => {
     expect(merged[0].turnaround?.takes).toHaveLength(1);
   });
 
+  it("keeps the order the reader arranged, adding what the reading found anew", () => {
+    const partner = {
+      ...element("element-partner", "character"),
+      name: "周",
+      description: "年轻。",
+    };
+    const merged = mergeElements(
+      [hero, partner],
+      [
+        { kind: "character", name: "周", description: "年轻。" },
+        { kind: "prop", name: "旧车票", description: "一张车票" },
+        { kind: "character", name: "林", description: "换了衣服。" },
+      ],
+      [],
+    );
+    // The answer named 周 first, but the cast was listed 林 then 周 and stays
+    // that way; the thing nobody had seen before is added at the end.
+    expect(merged.map((each) => each.name)).toEqual(["林", "周", "旧车票"]);
+  });
+
   it("drops a character the reading no longer finds, and gives a new one no drawings", () => {
     const merged = mergeElements(
       [hero],

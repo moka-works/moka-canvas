@@ -1723,6 +1723,166 @@ describe("a cast too long for one page", () => {
   });
 });
 
+describe("arranging the elements", () => {
+  it("turns to one unpaged list, and back to the page it was on", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 20);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-elements-next"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
+    );
+
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+    // The whole cast is one list while it is being arranged: no pages turn
+    // under a drag, and no card's form is in the way.
+    expect(screen.getAllByTestId(/^story-sort-prop-/)).toHaveLength(20);
+    expect(screen.queryByTestId("story-elements-paging")).toBeNull();
+    expect(screen.queryByTestId("story-element-prop-道具 1")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
+    );
+  });
+
+  it("moves a row with the arrows as one step of the history", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 3);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+    const before = useHistoryStore.getState().undoStack.length;
+
+    fireEvent.click(screen.getByTestId("story-sort-down-道具 1"));
+    expect(story().elements.map((each) => each.name)).toEqual([
+      "道具 2",
+      "道具 1",
+      "道具 3",
+    ]);
+    expect(useHistoryStore.getState().undoStack).toHaveLength(before + 1);
+    expect(useHistoryStore.getState().undoStack.at(-1)?.label).toBe(
+      "Reorder the elements",
+    );
+
+    act(() => {
+      undo();
+    });
+    expect(story().elements.map((each) => each.name)).toEqual([
+      "道具 1",
+      "道具 2",
+      "道具 3",
+    ]);
+  });
+
+  it("drags a row before or after the middle of another", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 3);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+
+    /**
+     * A drag from one row onto another, dropped above or below its middle.
+     *
+     * The row's box is given a middle the test's zero clientY can fall on
+     * either side of: jsdom draws every element at zero height.
+     */
+    const drag = (from: string, to: string, after: boolean) => {
+      const dataTransfer = { effectAllowed: "", setData: vi.fn() };
+      const target = screen.getByTestId(`story-sort-prop-${to}`);
+      vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+        bottom: 10,
+        height: 10,
+        left: 0,
+        right: 0,
+        top: after ? -20 : 0,
+        width: 0,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+      fireEvent.dragStart(screen.getByTestId(`story-sort-prop-${from}`), {
+        dataTransfer,
+      });
+      // jsdom has no DragEvent of its own, so the events that answer a drop
+      // are sent as mouse events: React reads the pointer's height off them.
+      act(() => {
+        target.dispatchEvent(
+          new MouseEvent("dragover", {
+            bubbles: true,
+            cancelable: true,
+            clientY: 0,
+          }),
+        );
+        target.dispatchEvent(
+          new MouseEvent("drop", {
+            bubbles: true,
+            cancelable: true,
+            clientY: 0,
+          }),
+        );
+      });
+    };
+
+    // Above the middle is before it; below is after.
+    drag("道具 3", "道具 1", false);
+    expect(story().elements.map((each) => each.name)).toEqual([
+      "道具 3",
+      "道具 1",
+      "道具 2",
+    ]);
+
+    drag("道具 3", "道具 2", true);
+    expect(story().elements.map((each) => each.name)).toEqual([
+      "道具 1",
+      "道具 2",
+      "道具 3",
+    ]);
+  });
+
+  it("keeps the way out while a kind with nothing in it is looked at", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 3);
+    openAtElements(moka);
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+
+    fireEvent.click(screen.getByTestId("story-elements-group-scene"));
+    expect(screen.getByTestId("story-elements-order-empty")).toBeTruthy();
+    // The way back is still there, though this kind has no rows to arrange.
+    expect(screen.getByTestId("story-elements-reorder").textContent).toBe(
+      "Done",
+    );
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+    expect(screen.queryByTestId("story-elements-order")).toBeNull();
+    expect(screen.queryByTestId("story-elements-order-empty")).toBeNull();
+  });
+
+  it("keeps the other kinds' places when one kind is arranged", () => {
+    const moka = buildStoryMokaFile();
+    const characters = castOf("character", 2);
+    const props = castOf("prop", 2);
+    moka.stories![0].elements = [
+      characters[0]!,
+      props[0]!,
+      characters[1]!,
+      props[1]!,
+    ];
+    openAtElements(moka);
+
+    fireEvent.click(screen.getByTestId("story-elements-group-character"));
+    fireEvent.click(screen.getByTestId("story-elements-reorder"));
+    expect(screen.getAllByTestId(/^story-sort-character-/)).toHaveLength(2);
+    fireEvent.click(screen.getByTestId("story-sort-up-角色 2"));
+
+    // The characters trade places with each other; the props keep theirs.
+    expect(story().elements.map((each) => each.name)).toEqual([
+      "角色 2",
+      "道具 1",
+      "角色 1",
+      "道具 2",
+    ]);
+  });
+});
+
 describe("the voice of a character", () => {
   /** The speech model a deployment that reads lines aloud keeps. */
   const reader = {

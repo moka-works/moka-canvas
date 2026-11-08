@@ -131,6 +131,7 @@
     "source": "载入稿子",
     "chapters": "改写章节",
     "elements": "改写元素",
+    "reorderElements": "调整元素顺序",
     "storyboard": "写分镜",
     "sound": "选定这一幕的声音",
     "assemble": "装配成片",
@@ -395,7 +396,15 @@
     "bulkDeleteTitle": "删除 {{count}} 个元素？",
     "bulkDeleteBody": "这 {{count}} 个元素会离开卡司；分镜里引用到的地方会留下空位。",
     "ratio": "比例",
-    "selectAll": "全选（{{count}}）"
+    "selectAll": "全选（{{count}}）",
+    "reorder": "调整顺序",
+    "reorderDone": "完成",
+    "reorderHint": "拖动行左侧的手柄调整顺序，或用右侧箭头移动。每次移动都会保存。",
+    "reorderHandle": "拖动排序",
+    "moveUp": "上移 {{name}}",
+    "moveDown": "下移 {{name}}",
+    "orderList": "按顺序排列的元素",
+    "emptyGroup": "这一类还没有元素"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",
