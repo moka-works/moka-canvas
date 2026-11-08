@@ -772,7 +772,7 @@ export interface ElementArtWave {
  */
 export function elementArtModel(element: StoryElement): string | null {
   const own = (element.imageModel ?? "").trim();
-  return own === "" ? storyAskModel("image") : own;
+  return own === "" ? storyAskModel("elementArt") : own;
 }
 
 /**

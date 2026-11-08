@@ -120,7 +120,7 @@ export function ElementCard({
           .pushToast("error", blocked.message, undefined, blocked.detail);
         return;
       }
-      const filed = await assetsApi.upload(file, { categoryHint: "image" });
+      const filed = await assetsApi.upload(file, { categoryHint: "images" });
       useProjectStore.getState().integrateAssetEntry(filed.entry, {
         revision: filed.revision,
         updatedAt: filed.updatedAt,
