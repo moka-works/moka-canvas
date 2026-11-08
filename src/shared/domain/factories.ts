@@ -9,6 +9,7 @@ import {
   DEFAULT_NODE_WIDTH,
   DEFAULT_STORY_ASPECT,
   DEFAULT_STORY_DURATION_MS,
+  DEFAULT_STORY_TRANSITION_MS,
   DEFAULT_TEXT_CLIP_MS,
   EXTENSION_EXECUTOR_KEY,
   GENERATION_PARAM_KEYS,
@@ -817,6 +818,19 @@ export function createAct(title: string, summary = ""): StoryAct {
     sound: { music: "", sfx: "" },
     keyframes: [],
     video: emptyStorySlot(),
+  };
+}
+
+/**
+ * A bridge between two acts, with nothing said about the move yet.
+ *
+ * It holds no shots: the pictures it is filmed from belong to the acts beside
+ * it, and what it keeps of its own is the words and the length.
+ */
+export function createTransitionAct(title: string): StoryAct {
+  return {
+    ...createAct(title),
+    transition: { prompt: "", durationMs: DEFAULT_STORY_TRANSITION_MS },
   };
 }
 

@@ -26,7 +26,8 @@ import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ActCard } from "../panels/ActCard";
-import { writeActs } from "../panels/writeBoard";
+import { TransitionCard } from "../panels/TransitionCard";
+import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
 import { chapterGuesses } from "../jobs/apply";
 import { jobKey, planKeyframeArt, planStoryboard } from "../jobs/plan";
 import {
@@ -134,7 +135,12 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         })),
     ),
   );
-  const videos = countVideos(story, (act) => act.shotGranularity === undefined);
+  // A bridge keeps its clip whichever granularity is in force, so it is not a
+  // clip a switch would strand.
+  const videos = countVideos(
+    story,
+    (act) => act.shotGranularity === undefined && act.transition === undefined,
+  );
   const completeActs = story.chapters
     .flatMap((held) => held.acts)
     .filter((act) =>
@@ -435,29 +441,72 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                     the new act belongs to.
                   */}
                   <li className="story-insert">
-                    <button
-                      data-testid={`story-act-insert-${at}`}
-                      onClick={() => insertAct(at)}
-                      type="button"
-                    >
-                      {t("story:storyboard.insertAct")}
-                    </button>
+                    {/*
+                      A seam between two acts is where a bridge or a join is
+                      asked for as well as a new act: the two acts either side
+                      are exactly the two a reader would name.
+                    */}
+                    <span className="story-insert-actions">
+                      <button
+                        data-testid={`story-act-insert-${at}`}
+                        onClick={() => insertAct(at)}
+                        type="button"
+                      >
+                        {t("story:storyboard.insertAct")}
+                      </button>
+                      {at > 0 &&
+                        at < chapter.acts.length &&
+                        chapter.acts[at - 1]?.transition === undefined &&
+                        chapter.acts[at]?.transition === undefined && (
+                          <>
+                            <button
+                              data-testid={`story-act-merge-${at}`}
+                              onClick={() => mergeActsAt(story, chapter.id, at)}
+                              title={t("story:storyboard.mergeActsHint")}
+                              type="button"
+                            >
+                              {t("story:storyboard.mergeActs")}
+                            </button>
+                            <button
+                              data-testid={`story-act-transition-${at}`}
+                              onClick={() =>
+                                addTransitionAt(story, chapter.id, at)
+                              }
+                              title={t("story:storyboard.addTransitionHint")}
+                              type="button"
+                            >
+                              {t("story:storyboard.addTransition")}
+                            </button>
+                          </>
+                        )}
+                    </span>
                   </li>
-                  <ActCard
-                    act={act}
-                    busyKeyframes={busy.frames}
-                    busyClips={busy.clips}
-                    busyLines={busy.lines}
-                    chapterId={chapter.id}
-                    guesses={marks.get(act.id) ?? []}
-                    index={at}
-                    last={at === chapter.acts.length - 1}
-                    musicBusy={busy.music}
-                    runs={actRuns(jobs, chapter.id, act.id)}
-                    story={story}
-                    videoBusy={busy.video}
-                    voiceBusy={busy.voice}
-                  />
+                  {act.transition !== undefined ? (
+                    <TransitionCard
+                      act={act}
+                      chapter={chapter}
+                      index={at}
+                      runs={actRuns(jobs, chapter.id, act.id)}
+                      story={story}
+                      videoBusy={busy.video}
+                    />
+                  ) : (
+                    <ActCard
+                      act={act}
+                      busyKeyframes={busy.frames}
+                      busyClips={busy.clips}
+                      busyLines={busy.lines}
+                      chapterId={chapter.id}
+                      guesses={marks.get(act.id) ?? []}
+                      index={at}
+                      last={at === chapter.acts.length - 1}
+                      musicBusy={busy.music}
+                      runs={actRuns(jobs, chapter.id, act.id)}
+                      story={story}
+                      videoBusy={busy.video}
+                      voiceBusy={busy.voice}
+                    />
+                  )}
                 </Fragment>
               );
             })}

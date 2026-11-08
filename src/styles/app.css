@@ -8429,6 +8429,18 @@ button > .story-spin {
   color: var(--ink);
 }
 
+/* A seam between acts offers the ways the two sides may become one: another
+   act, a join, or a bridge over a cut the video model cannot keep whole. */
+.story-insert-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.story-insert-actions button {
+  flex: 1;
+  width: auto;
+}
+
 .story-act-title {
   background: none;
   border: 1px solid transparent;
@@ -9177,6 +9189,67 @@ button > .story-spin {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/*
+  A bridge between acts: the same card as an act, with the two frames it is
+  filmed between where a board would stand. The frames are the neighbours' and
+  are read-only here, so the card says what it has rather than offering it.
+*/
+.story-transition {
+  border-style: dashed;
+}
+
+.story-transition-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.story-transition-ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.story-transition-end {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.story-transition-end img {
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  height: 64px;
+  object-fit: cover;
+  width: 96px;
+}
+
+.story-transition-end-empty {
+  align-items: center;
+  border: 1px dashed var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  height: 64px;
+  justify-content: center;
+  padding: 4px;
+  text-align: center;
+  width: 96px;
+}
+
+.story-transition-length {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.story-transition-length input {
+  width: 76px;
 }
 
 .story-act-clip {

@@ -110,6 +110,16 @@ interface ShotSlot {
  * on the track in the order they were filmed in, which is the act.
  */
 function shotsOf(story: StoryDocument, act: StoryAct): ShotSlot[] {
+  // A bridge is one clip whatever the telling's habit: the move itself.
+  if (act.transition !== undefined) {
+    const take = currentTake(act.video);
+    return [
+      {
+        assetIds: take?.assetIds ?? [],
+        plannedMs: act.transition.durationMs,
+      },
+    ];
+  }
   if (actGranularity(act, story.shotGranularity) === "keyframe") {
     return act.keyframes.map((keyframe) => {
       const file = takeFile(currentTake(keyframe.video));

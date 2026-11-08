@@ -418,6 +418,7 @@ fn act_from(
             shot_granularity: None,
             voice: None,
             music: None,
+            transition: None,
         },
     };
     if let Some(title) = value.get("title").and_then(Value::as_str) {

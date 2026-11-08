@@ -914,6 +914,20 @@ export interface StoryActSound {
 }
 
 /**
+ * A bridge between two acts, made to join what a video model could not keep in
+ * one take.
+ *
+ * A transition is an act of a special shape: it holds no shots of its own, and
+ * its clip is filmed from the frame the act before it ends on and the frame the
+ * act after it begins on. The prompt says how the picture should move between
+ * the two, and the length is the reader's rather than the board's.
+ */
+export interface StoryTransition {
+  prompt: string;
+  durationMs: number;
+}
+
+/**
  * An act: one stretch of story, and the unit a clip is made of.
  *
  * Everything in it stays the reader's to edit for as long as the telling is
@@ -948,6 +962,12 @@ export interface StoryAct {
    */
   voice?: StorySlot;
   music?: StorySlot;
+  /**
+   * What makes this act a bridge rather than a stretch of the story: two
+   * neighbouring acts' frames and a move between them, instead of shots of its
+   * own.
+   */
+  transition?: StoryTransition;
 }
 
 /** A chapter — one episode of the telling. */

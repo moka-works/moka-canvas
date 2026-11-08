@@ -270,6 +270,21 @@ function withASecondAct(): MokaFile {
   return moka;
 }
 
+/** Two acts, every frame of both drawn, with nothing bridged between them yet. */
+function withTwoDrawnActs(): MokaFile {
+  const moka = withEveryFrame();
+  const chapter = moka.stories![0].chapters[0]!;
+  const second = {
+    ...createAct("第 2 幕 空车厢", "灯管忽明忽暗。"),
+    keyframes: [createKeyframe(0)],
+  };
+  second.keyframes[0]!.art = {
+    takes: [{ assetIds: ["asset-second-act-frame"], createdAt: T0 }],
+  };
+  chapter.acts.push(second);
+  return moka;
+}
+
 /** The same telling with its first act's clip not yet made. */
 function withoutTheClip(): MokaFile {
   const moka = withEveryFrame();
@@ -1421,6 +1436,116 @@ describe("writing an episode's board", () => {
       undo();
     });
     expect(acts()).toHaveLength(1);
+  });
+
+  it("cuts an act in two at the seam between two of its shots", async () => {
+    openAtBoard(withEveryFrame());
+    const before = acts()[0]!;
+    const [head, tail] = before.keyframes;
+
+    fireEvent.click(screen.getByTestId("story-kf-split-1"));
+    await waitFor(() => expect(acts()).toHaveLength(2));
+
+    // The shots keep the acts they were written into: the first frame above
+    // the cut, the second below it, pictures and all.
+    expect(acts()[0]?.keyframes.map((frame) => frame.id)).toEqual([head?.id]);
+    expect(acts()[1]?.keyframes.map((frame) => frame.id)).toEqual([tail?.id]);
+    expect(acts()[0]?.keyframes[0]?.art.takes[0]?.assetIds[0]).toBe(
+      head?.art.takes[0]?.assetIds[0],
+    );
+    expect(acts()[1]?.keyframes[0]?.art.takes[0]?.assetIds[0]).toBe(
+      tail?.art.takes[0]?.assetIds[0],
+    );
+    // What the old act was filmed as belonged to neither half.
+    expect(acts()[0]?.video.takes).toHaveLength(0);
+    expect(acts()[1]?.video.takes).toHaveLength(0);
+    expect(acts()[1]?.title).toContain("(cont.)");
+    expect(acts()[0]?.id).not.toBe(before.id);
+    expect(acts()[1]?.id).not.toBe(before.id);
+
+    act(() => {
+      undo();
+    });
+    expect(acts()).toHaveLength(1);
+    expect(acts()[0]?.keyframes).toHaveLength(2);
+  });
+
+  it("joins two neighbouring acts at their seam, their shots running on", async () => {
+    openAtBoard(withTwoDrawnActs());
+    const [first, second] = acts();
+    const frames = [...first!.keyframes, ...second!.keyframes];
+
+    fireEvent.click(screen.getByTestId("story-act-merge-1"));
+    await waitFor(() => expect(acts()).toHaveLength(1));
+
+    expect(acts()[0]?.id).not.toBe(first?.id);
+    expect(acts()[0]?.keyframes.map((frame) => frame.id)).toEqual(
+      frames.map((frame) => frame.id),
+    );
+    expect(
+      acts()[0]?.keyframes.every((frame) => frame.art.takes.length > 0),
+    ).toBe(true);
+    // One act, filmed again: the two clips the halves held are not it.
+    expect(acts()[0]?.video.takes).toHaveLength(0);
+
+    act(() => {
+      undo();
+    });
+    expect(acts()).toHaveLength(2);
+  });
+
+  it("bridges two acts with a transition filmed between their frames", async () => {
+    openAtBoard(withTwoDrawnActs());
+    const from = acts()[0]!.keyframes.at(-1)!.art.takes[0]!.assetIds[0];
+    const to = acts()[1]!.keyframes[0]!.art.takes[0]!.assetIds[0];
+
+    fireEvent.click(screen.getByTestId("story-act-transition-1"));
+    await waitFor(() => expect(acts()).toHaveLength(3));
+    const bridge = acts()[1]!;
+    expect(bridge.transition).toEqual({ prompt: "", durationMs: 3_000 });
+    expect(bridge.keyframes).toHaveLength(0);
+    expect(screen.getByTestId("story-transition-1")).toBeDefined();
+
+    // Both ends of the move are shown where they come from: the act before's
+    // last drawn frame and the act after's first.
+    expect(
+      screen.getByTestId("story-transition-from-1").querySelector("img"),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId("story-transition-to-1").querySelector("img"),
+    ).not.toBeNull();
+
+    fireEvent.change(screen.getByTestId("story-transition-prompt-1"), {
+      target: { value: "灯管闪成一条白线" },
+    });
+    fireEvent.blur(screen.getByTestId("story-transition-prompt-1"));
+    await waitFor(() =>
+      expect(acts()[1]?.transition?.prompt).toBe("灯管闪成一条白线"),
+    );
+    fireEvent.change(screen.getByTestId("story-transition-seconds-1"), {
+      target: { value: "5" },
+    });
+    fireEvent.blur(screen.getByTestId("story-transition-seconds-1"));
+    await waitFor(() => expect(acts()[1]?.transition?.durationMs).toBe(5_000));
+
+    fireEvent.click(screen.getByTestId("story-transition-video-go-1"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    const [item] = starts[0]!.items;
+    expect(starts[0]!.kind).toBe("actVideo");
+    expect(item?.inputs?.map((input) => [input.role, input.assetId])).toEqual([
+      ["firstFrame", from],
+      ["lastFrame", to],
+    ]);
+    expect(item?.params?.seconds).toBe(5);
+    expect(item?.prompt).toContain("灯管闪成一条白线");
+
+    // One step each for the bridge, its words and its length.
+    act(() => {
+      undo();
+      undo();
+      undo();
+    });
+    expect(acts()).toHaveLength(2);
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

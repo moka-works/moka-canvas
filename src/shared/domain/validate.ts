@@ -1230,6 +1230,16 @@ export function validateStory(story: StoryDocument): ValidationIssue[] {
           "STORY_KEYFRAME_LIMIT",
           i18n.t("errors:validate.storyKeyframeLimit"),
         );
+      if (
+        act.transition !== undefined &&
+        (!Number.isInteger(act.transition.durationMs) ||
+          act.transition.durationMs < MIN_KEYFRAME_MS ||
+          act.transition.durationMs > MAX_KEYFRAME_MS)
+      )
+        at(
+          "VALIDATION_FAILED",
+          i18n.t("errors:validate.storyTransitionDurationOutOfRange"),
+        );
       for (const keyframe of act.keyframes) {
         slot(keyframe.art);
         slot(keyframe.video);

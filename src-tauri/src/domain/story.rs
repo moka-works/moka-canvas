@@ -444,6 +444,18 @@ pub struct StoryActSound {
     pub ambience: Option<String>,
 }
 
+/// A bridge between two acts: the words of the move and how long it runs.
+///
+/// It holds no shots of its own — the pictures it is filmed between belong to
+/// the acts either side of it — so a transition is an act of a special shape
+/// rather than a second kind of board.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryTransition {
+    pub prompt: String,
+    pub duration_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryAct {
@@ -457,6 +469,10 @@ pub struct StoryAct {
     pub sound: StoryActSound,
     pub keyframes: Vec<StoryKeyframe>,
     pub video: StorySlot,
+    /// What makes this act a bridge between its neighbours rather than a
+    /// stretch of the story: absent on an ordinary act.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<StoryTransition>,
     /// How this act's clip is made, where it parts from the telling's own
     /// habit; absent means the act is filmed the way the story says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1326,6 +1342,17 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
                     "Keyframe limit reached".into(),
                 ));
             }
+            if let Some(transition) = &act.transition {
+                if !(MIN_KEYFRAME_MS..=MAX_KEYFRAME_MS).contains(&transition.duration_ms) {
+                    issues.push(issue(
+                        "VALIDATION_FAILED",
+                        format!(
+                            "Transition duration {} is out of range",
+                            transition.duration_ms
+                        ),
+                    ));
+                }
+            }
             for keyframe in &act.keyframes {
                 slots.push(&keyframe.art);
                 slots.push(&keyframe.video);
@@ -2144,6 +2171,14 @@ pub fn apply_story_command(
                         "STORY_KEYFRAME_LIMIT",
                         "Keyframe limit reached",
                     ));
+                }
+                if let Some(transition) = &act.transition {
+                    if !(MIN_KEYFRAME_MS..=MAX_KEYFRAME_MS).contains(&transition.duration_ms) {
+                        return Err(CommandError::new(
+                            "VALIDATION_FAILED",
+                            "Transition duration is out of range",
+                        ));
+                    }
                 }
             }
             let held_acts: BTreeMap<&str, &StoryAct> = chapter

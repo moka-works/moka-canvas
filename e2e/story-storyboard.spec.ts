@@ -30,6 +30,7 @@ async function persistedBoard(page: Page): Promise<{
   contents: string[];
   drawn: number;
   clips: number;
+  bridges: Array<{ prompt?: string; durationMs?: number }>;
 }> {
   return page.evaluate(async () => {
     const response = await fetch("/api/v1/projects/current");
@@ -39,6 +40,7 @@ async function persistedBoard(page: Page): Promise<{
           chapters?: {
             acts?: {
               title?: string;
+              transition?: { prompt?: string; durationMs?: number };
               keyframes?: { content?: string; art?: { takes?: unknown[] } }[];
               video?: { takes?: unknown[] };
             }[];
@@ -60,6 +62,9 @@ async function persistedBoard(page: Page): Promise<{
         .flatMap((act) => act.keyframes ?? [])
         .filter((keyframe) => (keyframe.art?.takes ?? []).length > 0).length,
       clips: acts.filter((act) => (act.video?.takes ?? []).length > 0).length,
+      bridges: acts
+        .filter((act) => act.transition !== undefined)
+        .map((act) => act.transition ?? {}),
     };
   });
 }
@@ -513,6 +518,54 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
     expect(board.titles).toEqual(["The platform", "The last carriage"]);
     expect(board.frames).toBe(4);
     expect(board.drawn).toBe(0);
+
+    // A long act is cut in two at the seam between two of its shots: the
+    // shots keep the acts they were written into, and the second half says
+    // what it is.
+    await firstAct.getByTestId("story-kf-split-1").click();
+    await expect(page.getByTestId("story-act-2")).toBeVisible();
+    await expect.poll(async () => (await persistedBoard(page)).acts).toBe(3);
+    await expect(
+      page.getByTestId("story-act-1").getByTestId("story-act-title-1"),
+    ).toHaveValue("The platform (cont.)");
+
+    // The two halves are joined back at the same seam, one act again.
+    await page.getByTestId("story-act-merge-1").click();
+    await expect(page.getByTestId("story-act-2")).toHaveCount(0);
+    await expect.poll(async () => (await persistedBoard(page)).acts).toBe(2);
+    await expect(
+      page.getByTestId("story-act-0").getByTestId("story-act-title-0"),
+    ).toHaveValue("The platform");
+
+    // A bridge stands between the two acts, waiting for the ends it is filmed
+    // between: neither act has been drawn in this telling.
+    await page.getByTestId("story-act-transition-1").click();
+    const transition = page.getByTestId("story-transition-1");
+    await expect(transition).toBeVisible();
+    await expect
+      .poll(async () => (await persistedBoard(page)).bridges)
+      .toEqual([{ prompt: "", durationMs: 3_000 }]);
+    await expect(
+      transition.getByTestId("story-transition-video-go-1"),
+    ).toBeDisabled();
+    await expect(
+      transition.getByTestId("story-transition-missing-1"),
+    ).toContainText("ending frame");
+
+    await transition
+      .getByTestId("story-transition-prompt-1")
+      .fill("Fade through the dark");
+    await transition.getByTestId("story-transition-prompt-1").press("Tab");
+    await transition.getByTestId("story-transition-seconds-1").fill("4");
+    await transition.getByTestId("story-transition-seconds-1").press("Tab");
+    await expect
+      .poll(async () => (await persistedBoard(page)).bridges)
+      .toEqual([{ prompt: "Fade through the dark", durationMs: 4_000 }]);
+
+    // Taken away again, the two acts close up.
+    await transition.getByTestId("story-transition-remove-1").click();
+    await expect(page.getByTestId("story-transition-1")).toHaveCount(0);
+    await expect.poll(async () => (await persistedBoard(page)).acts).toBe(2);
   } finally {
     forgetHome(home);
   }

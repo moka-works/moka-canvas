@@ -95,8 +95,9 @@ export function keyframeCount(chapter: StoryChapter): number {
   return chapter.acts.reduce((sum, act) => sum + act.keyframes.length, 0);
 }
 
-/** How long an act is meant to run: its shots, one after another. */
+/** How long an act is meant to run: its shots, or the length a bridge was given. */
 export function actPlannedMs(act: StoryAct): number {
+  if (act.transition !== undefined) return act.transition.durationMs;
   return act.keyframes.reduce((sum, keyframe) => sum + keyframe.durationMs, 0);
 }
 
@@ -110,7 +111,43 @@ export function actHasAllArt(act: StoryAct): boolean {
 
 /** Whether an act has a board at all: shots for a clip to be made of. */
 export function actHasShots(act: StoryAct): boolean {
+  if (act.transition !== undefined) return true;
   return act.keyframes.length > 0;
+}
+
+/** One end of a transition: the picture and the shot's words. */
+export interface StoryTransitionFrame {
+  assetId: AssetId;
+  content: string;
+}
+
+/**
+ * The pictures a transition is filmed between: the last drawn frame of the act
+ * before it and the first drawn frame of the act after it.
+ *
+ * A clip is made from these pictures, and the frame a clip ends on is the last
+ * picture its act was drawn with, so these are the ends the two neighbouring
+ * videos meet at. A neighbour that is itself a bridge, or has no drawn frame
+ * yet, leaves its end of the move unspoken.
+ */
+export function transitionFrames(
+  chapter: StoryChapter,
+  at: number,
+): { from?: StoryTransitionFrame; to?: StoryTransitionFrame } {
+  const before = chapter.acts[at - 1];
+  const after = chapter.acts[at + 1];
+  const endOf = (act: StoryAct | undefined, tail: boolean) => {
+    if (act === undefined || act.transition !== undefined) return undefined;
+    const drawn = act.keyframes.filter(
+      (keyframe) => currentTake(keyframe.art) !== undefined,
+    );
+    const frame = tail ? drawn[drawn.length - 1] : drawn[0];
+    if (frame === undefined) return undefined;
+    const assetId = currentTake(frame.art)?.assetIds[0];
+    if (assetId === undefined) return undefined;
+    return { assetId, content: frame.content };
+  };
+  return { from: endOf(before, true), to: endOf(after, false) };
 }
 
 /**
@@ -130,6 +167,9 @@ export function actHasVideo(
   act: StoryAct,
   granularity: StoryDocument["shotGranularity"],
 ): boolean {
+  // A bridge has one clip whatever the telling's habit: its video is the whole
+  // of what it makes.
+  if (act.transition !== undefined) return act.video.takes.length > 0;
   if (granularity === "keyframe") return chapterClipMade(act);
   return act.video.takes.length > 0;
 }
@@ -144,6 +184,9 @@ export function actComplete(
   act: StoryAct,
   granularity: StoryDocument["shotGranularity"],
 ): boolean {
+  // A bridge is settled once its clip is: it has no pictures of its own to
+  // draw, so the pictures its neighbours hold are not its gap.
+  if (act.transition !== undefined) return act.video.takes.length > 0;
   return actHasShots(act) && actHasAllArt(act) && actHasVideo(act, granularity);
 }
 
@@ -457,7 +500,10 @@ export function stepGaps(
     case "storyboard": {
       if (acts.length === 0) return [{ kind: "noActs" }];
       const gaps: StoryStepGap[] = [];
-      const bare = acts.filter((act) => !actHasShots(act));
+      // A bridge has no shots by design, so it is not an act waiting for them.
+      const bare = acts.filter(
+        (act) => act.transition === undefined && !actHasShots(act),
+      );
       if (bare.length > 0) {
         gaps.push({ kind: "actsWithoutShots", count: bare.length });
       }
@@ -469,10 +515,11 @@ export function stepGaps(
         0,
       );
       if (frames > 0) gaps.push({ kind: "framesMissing", count: frames });
-      const clips = acts.filter(
-        (act) =>
-          actGranularity(act, granularity) === "act" &&
-          !actHasVideo(act, "act"),
+      const clips = acts.filter((act) =>
+        act.transition !== undefined
+          ? !actHasVideo(act, granularity)
+          : actGranularity(act, granularity) === "act" &&
+            !actHasVideo(act, "act"),
       ).length;
       if (clips > 0) gaps.push({ kind: "clipsMissing", count: clips });
       // A telling filmed a shot at a time is short of shots rather than of
@@ -831,8 +878,11 @@ export function mergeActs(
   existing: StoryAct[],
   proposed: ActDraft[],
 ): StoryAct[] {
+  // A bridge is not a board the model wrote and has nothing to keep when the
+  // board is written again; the acts around it are matched without it.
+  const regular = existing.filter((act) => act.transition === undefined);
   return proposed.map((draft, index) => {
-    const held = existing[index];
+    const held = regular[index];
     const keyframes = mergeKeyframes(held?.keyframes ?? [], draft.keyframes);
     if (!held) {
       return {

@@ -45,6 +45,7 @@ import storyKeyframe from "./story/keyframe.tmpl?raw";
 import storyActVideo from "./story/act-video.tmpl?raw";
 import storyActMusic from "./story/act-music.tmpl?raw";
 import storyKeyframeVideo from "./story/keyframe-video.tmpl?raw";
+import storyTransitionVideo from "./story/transition-video.tmpl?raw";
 
 /**
  * The engine, configured once.
@@ -455,6 +456,25 @@ export function storyActVideoPrompt(
     dialogue: storySpokenLines(input.dialogue ?? []),
     references: input.mode === "references",
   });
+}
+
+/**
+ * A bridge between two acts, filmed from the last frame of the one before it
+ * and the first frame of the one after.
+ *
+ * The two pictures given are the ends of the clip; the words say how to move
+ * between them, and the shots around it are named only so the move knows what
+ * it is leaving and where it is going.
+ */
+export function storyTransitionVideoPrompt(
+  input: StoryLook & {
+    from: string;
+    to: string;
+    move: string;
+    seconds: number;
+  },
+): string {
+  return render(storyTransitionVideo, input);
 }
 
 /** One shot filmed, starting from the frame that was drawn for it. */

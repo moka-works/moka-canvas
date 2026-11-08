@@ -407,8 +407,11 @@ export function chapterGuesses(
     );
   if (written === undefined) return marks;
   const read = readBoardAnswer(story, written);
+  // A bridge is not one of the acts the board answered about, so the answer's
+  // acts are matched to the chapter's ordinary ones in order.
+  const acts = chapter.acts.filter((act) => act.transition === undefined);
   (read.drafts ?? []).forEach((draft, index) => {
-    const act = chapter.acts[index];
+    const act = acts[index];
     if (act !== undefined && draft.guessed !== undefined) {
       marks.set(act.id, draft.guessed);
     }

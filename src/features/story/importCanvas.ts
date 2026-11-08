@@ -613,6 +613,9 @@ function tellingBand(
     if (premise !== undefined) wire(sheet, premise, chapterCard, "prompt");
 
     chapter.acts.forEach((act, actAt) => {
+      // A bridge has no board of its own to lay out; what it is made from
+      // belongs to the acts either side.
+      if (act.transition !== undefined) return;
       const place = `${chapterAt + 1}.${actAt + 1}`;
       const actRow = freeRow(sheet);
       const actCard = words(

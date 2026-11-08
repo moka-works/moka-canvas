@@ -2571,6 +2571,14 @@ function applyOne(
             "STORY_KEYFRAME_LIMIT",
             i18n.t("errors:command.storyKeyframeLimit"),
           );
+        if (
+          act.transition !== undefined &&
+          !isKeyframeMs(act.transition.durationMs)
+        )
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyTransitionDurationOutOfRange"),
+          );
         const cleaned: StoryAct = {
           ...act,
           characterIds: [...new Set(act.characterIds)],
@@ -3448,6 +3456,14 @@ function checkStory(story: StoryDocument) {
         throw new CommandError(
           "STORY_KEYFRAME_LIMIT",
           i18n.t("errors:command.storyKeyframeLimit"),
+        );
+      if (
+        act.transition !== undefined &&
+        !isKeyframeMs(act.transition.durationMs)
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyTransitionDurationOutOfRange"),
         );
     }
   }

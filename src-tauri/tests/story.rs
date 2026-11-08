@@ -155,6 +155,7 @@ fn act(id: &str) -> StoryAct {
         shot_granularity: None,
         voice: None,
         music: None,
+        transition: None,
     }
 }
 
@@ -316,6 +317,7 @@ fn story_document() -> MokaFile {
                     shot_granularity: None,
                     voice: None,
                     music: None,
+                    transition: None,
                 }],
             },
             StoryChapter {

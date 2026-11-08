@@ -80,7 +80,7 @@ import { useField } from "./useField";
 /** How wide the little references beside a frame's ask are asked for: they are
     drawn 44 px square, and the inspector shows the file itself. */
 const REF_THUMB_WIDTH = 128;
-import { moved, writeKeyframes } from "./writeBoard";
+import { moved, splitAct, writeKeyframes } from "./writeBoard";
 
 /** The longest and shortest a shot may be, in seconds. */
 const SHOT_MIN_S = 0.4;
@@ -618,6 +618,23 @@ function KeyframeRow({
         )}
         <td>
           <span className="story-kf-tools">
+            {/*
+              A seam inside an act is where the act is cut in two: the row
+              above the gap says so, and the shots keep the acts they were
+              written into.
+            */}
+            {index > 0 && (
+              <button
+                aria-label={cell(t("story:storyboard.splitAct"))}
+                className="story-kf-remove"
+                data-testid={`story-kf-split-${index}`}
+                onClick={() => splitAct(story, chapterId, act, index)}
+                title={t("story:storyboard.splitActHint")}
+                type="button"
+              >
+                ✂
+              </button>
+            )}
             <button
               aria-label={cell(t("story:storyboard.moveShotUp"))}
               className="story-kf-move"

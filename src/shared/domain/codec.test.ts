@@ -72,6 +72,22 @@ describe("moka codec", () => {
     expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
   });
 
+  it("carries a bridge between two acts, and reads one written before bridges", () => {
+    const moka = buildStoryMokaFile();
+    const act = moka.stories![0]!.chapters[0]!.acts[0]!;
+    act.transition = { prompt: "Fade through the dark", durationMs: 4_000 };
+    const back = decodeMokaFile(encodeMokaFile(moka));
+    expect(back.stories![0]!.chapters[0]!.acts[0]!.transition).toEqual({
+      prompt: "Fade through the dark",
+      durationMs: 4_000,
+    });
+
+    // A document written before bridges existed holds ordinary acts only.
+    const old = buildStoryMokaFile();
+    const read = decodeMokaFile(encodeMokaFile(old));
+    expect(read.stories![0]!.chapters[0]!.acts[0]!.transition).toBeUndefined();
+  });
+
   it("carries the picture model and frame an element was given", () => {
     const moka = buildStoryMokaFile();
     const element = moka.stories![0]!.elements[0]!;

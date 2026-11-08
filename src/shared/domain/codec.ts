@@ -3,6 +3,7 @@ import {
   CANVAS_SCHEMA_VERSION,
   CANVAS_SCHEMA_VERSION_MIN,
   DEFAULT_CHAPTER_MS,
+  DEFAULT_STORY_TRANSITION_MS,
   MOKA_FILE_VERSION,
   MOKA_MAGIC,
   PROJECT_ASSET_CATEGORIES,
@@ -506,6 +507,12 @@ function encodeStoryAct(act: StoryAct): Record<string, unknown> {
   // the document says which of the two the reader has not asked for yet.
   if (act.voice !== undefined) doc.voice = encodeStorySlot(act.voice);
   if (act.music !== undefined) doc.music = encodeStorySlot(act.music);
+  if (act.transition !== undefined) {
+    doc.transition = {
+      prompt: act.transition.prompt,
+      durationMs: asLong(act.transition.durationMs),
+    };
+  }
   return doc;
 }
 
@@ -1622,6 +1629,14 @@ function decodeStoryAct(value: unknown): StoryAct {
     );
   if (doc.voice !== undefined) act.voice = decodeStorySlot(doc.voice);
   if (doc.music !== undefined) act.music = decodeStorySlot(doc.music);
+  if (doc.transition !== undefined) {
+    const transition = asRecord(doc.transition, "acts[].transition");
+    act.transition = {
+      prompt: optionalString(transition.prompt) ?? "",
+      durationMs:
+        decodeLongField(transition.durationMs) ?? DEFAULT_STORY_TRANSITION_MS,
+    };
+  }
   return act;
 }
 

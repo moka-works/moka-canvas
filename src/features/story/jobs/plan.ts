@@ -45,6 +45,7 @@ import {
   stripStoryMentions,
   takeFile,
   targetKey,
+  transitionFrames,
   voiceFor,
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
@@ -78,6 +79,7 @@ import {
   storyOutlinePrompt,
   storyStoryboardPrompt,
   storySystemPrompt,
+  storyTransitionVideoPrompt,
   type StoryFacts,
   type StoryLook,
 } from "../../../shared/prompts";
@@ -1059,12 +1061,40 @@ export function planActVideos(
   const look = lookOf(story);
   const ceiling = videoCeiling();
   return actIds.flatMap((actId) => {
+    const chapter = story.chapters.find((held) => held.id === chapterId);
     const act = actAt(story, chapterId, actId);
-    if (act === undefined || act.keyframes.length === 0) return [];
-    const pieces = actClipPieces(act, ceiling);
-    if (pieces.length === 0) return [];
+    if (chapter === undefined || act === undefined) return [];
     const target: StoryTarget = { kind: "actVideo", chapterId, actId };
     const base = jobKey(target);
+    // A bridge is filmed between the frames its neighbours end and begin on,
+    // rather than between pictures of its own: it has none.
+    if (act.transition !== undefined) {
+      const ends = transitionFrames(chapter, chapter.acts.indexOf(act));
+      if (ends.from === undefined || ends.to === undefined) return [];
+      const seconds = clampSeconds(act.transition.durationMs, ceiling);
+      return [
+        {
+          id: base,
+          target,
+          capability: "video" as const,
+          prompt: storyTransitionVideoPrompt({
+            ...look,
+            from: stripStoryMentions(ends.from.content),
+            to: stripStoryMentions(ends.to.content),
+            move: act.transition.prompt,
+            seconds,
+          }),
+          inputs: [
+            { role: "firstFrame" as const, assetId: ends.from.assetId },
+            { role: "lastFrame" as const, assetId: ends.to.assetId },
+          ],
+          params: videoParams(story.brief.aspect, seconds, "auto"),
+        },
+      ];
+    }
+    if (act.keyframes.length === 0) return [];
+    const pieces = actClipPieces(act, ceiling);
+    if (pieces.length === 0) return [];
     const several = pieces.length > 1;
     return pieces.map((piece, at) => {
       const held = piece.keyframes.flatMap((keyframe) => {
