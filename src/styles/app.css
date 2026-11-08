@@ -7432,7 +7432,11 @@ body.is-dragging-split {
   opacity: 0.45;
 }
 
+/* A card in a row of taller ones keeps its own rows at the size its words and
+   pictures ask for: the row's spare height is left at the card's bottom rather
+   than spread into every gap inside it. */
 .story-element {
+  align-content: start;
   background: var(--surface);
   border: 1px solid var(--stroke);
   border-left: 3px solid var(--muted);
