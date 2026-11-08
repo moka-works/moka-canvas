@@ -1,12 +1,12 @@
 /**
  * The ring of light that goes round a card while its node is being worked on.
  *
- * Everything here is arithmetic: how long the ring is, how the bright arcs are
- * cut out of it, and where the whole thing has got to at a given moment. The
- * drawing module puts these numbers on a pair of Rects, and the controller asks
- * for a fresh frame on every tick of the browser's clock. Nothing here knows
- * what a leafer is, so a ring can be reasoned about — and tested — as the
- * shape it is.
+ * Everything here is arithmetic: how long the ring is, how the bright arcs and
+ * the wakes behind them are cut out of it, and where the whole thing has got
+ * to at a given moment. The drawing module puts these numbers on a stack of
+ * Rects, and the controller asks for a fresh frame on every tick of the
+ * browser's clock. Nothing here knows what a leafer is, so a ring can be
+ * reasoned about — and tested — as the shape it is.
  */
 
 /** A card's own box, in the world's units. */
@@ -30,8 +30,8 @@ export const HALO_OFFSET = 4;
  */
 export const HALO_SELECTED_OFFSET = 9;
 /** How thick the arcs are drawn, and the light under them. */
-export const HALO_STROKE = 2.5;
-export const HALO_GLOW_STROKE = 6;
+export const HALO_STROKE = 3;
+export const HALO_GLOW_STROKE = 7;
 export const HALO_GLOW_BLUR = 18;
 
 /**
@@ -46,28 +46,46 @@ export const HALO_ARC_SPACING = 200;
 export const HALO_MIN_ARCS = 2;
 export const HALO_MAX_ARCS = 6;
 /** What fraction of its own stretch an arc lights up; the rest stays dark. */
-export const HALO_ARC_SPAN = 0.2;
+export const HALO_ARC_SPAN = 0.3;
 
 /** One lap of the arcs, in milliseconds, for a node being worked on. */
-export const HALO_TURN_MS = 5200;
+export const HALO_TURN_MS = 2400;
 /**
  * One lap for a node still waiting its turn.
  *
  * Waiting is drawn slower and fainter rather than not drawn at all: a card in
  * the queue still says something is coming, without claiming to be working.
  */
-export const HALO_QUEUED_TURN_MS = 16000;
+export const HALO_QUEUED_TURN_MS = 9000;
 /** One breath of the light under the arcs. */
 export const HALO_BREATH_MS = 2400;
 
+/**
+ * The wake each arc drags round with it: how far it reaches back along the
+ * ring (in arc-lengths), how thick that stretch is drawn, and how much of the
+ * light under the arcs it carries.
+ *
+ * Two layers, the far one first, so the near wake keeps the comet solid behind
+ * the head and the far one lets it die away instead of stopping short. A wake
+ * always reaches less than the gap to the arc behind it, and ends inside its
+ * own arc's lit stretch, so its round cap hides under the head rather than
+ * poking past the leading edge.
+ */
+export const HALO_TAILS = [
+  { reach: 1.5, width: 6.5, alpha: 0.34 },
+  { reach: 0.8, width: 5, alpha: 0.75 },
+] as const;
+/** How much of its own arc a wake runs under, hiding its front end. */
+export const HALO_TAIL_OVERLAP = 0.25;
+
 /** How bright the light under the arcs gets, at the bottom and top of a breath. */
 export const HALO_GLOW = {
-  working: { dim: 0.5, bright: 0.9 },
+  working: { dim: 0.62, bright: 0.9 },
   waiting: { dim: 0.22, bright: 0.38 },
 };
 /** How bright the arcs themselves get over the same breath. */
 export const HALO_ARC = {
-  working: { dim: 0.8, bright: 1 },
+  working: { dim: 0.85, bright: 1 },
   waiting: { dim: 0.45, bright: 0.62 },
 };
 
@@ -90,6 +108,30 @@ export interface HaloArcs {
   lap: number;
   /** How many arcs the ring carries. */
   arcs: number;
+  /** The wakes the arcs drag behind them, far layer first. */
+  tails: HaloTailCut[];
+}
+
+/** How one wake layer is cut out of the same ring as the arcs. */
+export interface HaloTailCut {
+  /** The lit stretch of this wake layer. */
+  dash: number;
+  /** The dark stretch that completes its slot round the ring. */
+  gap: number;
+  /** How far ahead of its arc's stretch this layer begins, so it trails behind. */
+  lead: number;
+  /** How thick the layer is drawn. */
+  width: number;
+  /** The share of the ring's light this layer carries. */
+  alpha: number;
+}
+
+/** One wake layer's place in a frame. */
+export interface HaloTailFrame {
+  /** Where this layer's stretch begins. */
+  dashOffset: number;
+  /** How bright it is on this frame. */
+  opacity: number;
 }
 
 /** One frame of the halo's movement. */
@@ -100,6 +142,8 @@ export interface HaloFrame {
   glow: number;
   /** How bright the arcs are on this frame. */
   arc: number;
+  /** One entry per wake layer, in the order they are cut. */
+  tails: HaloTailFrame[];
 }
 
 /**
@@ -165,7 +209,22 @@ export function haloArcs(bounds: HaloBounds, offset = HALO_OFFSET): HaloArcs {
   const arcs = Math.min(HALO_MAX_ARCS, Math.max(HALO_MIN_ARCS, wanted));
   const slot = lap / arcs;
   const dash = slot * HALO_ARC_SPAN;
-  return { dash, gap: slot - dash, lap, arcs };
+  const gap = slot - dash;
+  const overlap = dash * HALO_TAIL_OVERLAP;
+  const tails = HALO_TAILS.map((tail) => {
+    // A wake reaches back less than the gap to the arc behind it, and runs
+    // past its own arc's start only as far as the overlap, so its front cap
+    // sits under the head rather than past the arc's leading edge.
+    const reach = Math.min(tail.reach * dash, gap * 0.95);
+    return {
+      dash: reach + overlap,
+      gap: slot - reach - overlap,
+      lead: reach,
+      width: tail.width,
+      alpha: tail.alpha,
+    };
+  });
+  return { dash, gap, lap, arcs, tails };
 }
 
 function between(dim: number, bright: number, breath: number): number {
@@ -180,10 +239,14 @@ function between(dim: number, bright: number, breath: number): number {
  * like the same effect: both are read off the one clock rather than from when
  * each of them happened to start. A card that is only waiting its turn turns
  * more slowly and glows less, which is the difference between "soon" and "now".
+ *
+ * Each wake keeps its place a fixed distance behind its arc and takes its
+ * brightness from the same breath as the light it sits in, so the comet reads
+ * as one body rather than as a line chasing another.
  */
 export function haloFrame(
   at: number,
-  lap: number,
+  pattern: HaloArcs,
   waiting: boolean,
 ): HaloFrame {
   const turn = waiting ? HALO_QUEUED_TURN_MS : HALO_TURN_MS;
@@ -197,9 +260,15 @@ export function haloFrame(
     2;
   const glow = waiting ? HALO_GLOW.waiting : HALO_GLOW.working;
   const arc = waiting ? HALO_ARC.waiting : HALO_ARC.working;
+  const dashOffset = -progress * pattern.lap;
+  const light = between(glow.dim, glow.bright, breath);
   return {
-    dashOffset: -progress * lap,
-    glow: between(glow.dim, glow.bright, breath),
+    dashOffset,
+    glow: light,
     arc: between(arc.dim, arc.bright, breath),
+    tails: pattern.tails.map((tail) => ({
+      dashOffset: dashOffset + tail.lead,
+      opacity: light * tail.alpha,
+    })),
   };
 }

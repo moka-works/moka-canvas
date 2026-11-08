@@ -26,10 +26,12 @@ import {
   type MediaCardInfo,
 } from "./mediaCards";
 
-/** The two strokes of a running card's ring, and how they are cut. */
+/** The strokes of a running card's ring, and how they are cut. */
 export interface HaloView {
   /** The soft light under the arcs, which is the one that breathes. */
   glow: Rect;
+  /** The wakes the arcs drag round with them, far layer first. */
+  tails: Rect[];
   /** The bright arcs themselves, which travel round the card. */
   arcs: Rect;
   /** How the arcs are cut out of a ring round a card of this size. */
@@ -631,7 +633,7 @@ function syncRunMarks(
  *
  * Made the moment a run reaches the node and taken away the moment it leaves,
  * so a card nobody has asked carries nothing and one whose run has ended goes
- * quiet again. Both strokes are put under the card rather than over it: the
+ * quiet again. Every stroke is put under the card rather than over it: the
  * light belongs behind what it is lighting, and the card stays as readable as
  * it was.
  */
@@ -639,9 +641,12 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
   const status = visual.run?.status ?? null;
   const lit = status === "queued" || status === "running";
   if (!lit) {
-    view.halo?.glow.remove();
-    view.halo?.arcs.remove();
-    view.halo = null;
+    if (view.halo) {
+      view.halo.glow.remove();
+      view.halo.tails.forEach((tail) => tail.remove());
+      view.halo.arcs.remove();
+      view.halo = null;
+    }
     return;
   }
   const waiting = status === "queued";
@@ -649,6 +654,7 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
   const offset = haloOffset(visual.selected);
   if (!view.halo) {
     const ring = haloRing(node.bounds, offset);
+    const pattern = haloArcs(node.bounds, offset);
     const glow = new Rect({
       ...ring,
       fill: "#00000000",
@@ -657,23 +663,38 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
       shadow: { x: 0, y: 0, blur: HALO_GLOW_BLUR, color },
       hittable: false,
     });
+    const tails = pattern.tails.map(
+      (tail) =>
+        new Rect({
+          ...ring,
+          fill: "#00000000",
+          stroke: color,
+          strokeWidth: tail.width,
+          strokeCap: "round",
+          dashPattern: [tail.dash, tail.gap],
+          hittable: false,
+        }),
+    );
     const arcs = new Rect({
       ...ring,
       fill: "#00000000",
       stroke: color,
       strokeWidth: HALO_STROKE,
       strokeCap: "round",
+      dashPattern: [pattern.dash, pattern.gap],
       hittable: false,
     });
     view.group.addAt(glow, 0);
-    view.group.addAt(arcs, 1);
+    tails.forEach((tail, index) => view.group.addAt(tail, index + 1));
+    view.group.addAt(arcs, tails.length + 1);
     view.halo = {
       glow,
+      tails,
       arcs,
-      pattern: { dash: 0, gap: 0, lap: 0, arcs: 0 },
-      width: -1,
-      height: -1,
-      offset: -1,
+      pattern,
+      width: node.bounds.width,
+      height: node.bounds.height,
+      offset,
       waiting,
       color,
     };
@@ -683,6 +704,7 @@ function syncHalo(view: NodeView, node: WorkflowNode, visual: NodeVisualState) {
       stroke: color,
       shadow: { x: 0, y: 0, blur: HALO_GLOW_BLUR, color },
     });
+    view.halo.tails.forEach((tail) => tail.set({ stroke: color }));
     view.halo.arcs.set({ stroke: color });
   }
   if (view.halo.waiting !== waiting) view.halo.waiting = waiting;
@@ -703,9 +725,10 @@ function placeHalo(
   if (!halo) return;
   const ring = haloRing(bounds, offset);
   halo.glow.set(ring);
+  halo.tails.forEach((tail) => tail.set(ring));
   halo.arcs.set(ring);
   // Both the card's size and its standoff decide how far it is round the ring,
-  // so either one changing asks for the arcs to be cut again.
+  // so either one changing asks for the arcs and the wakes to be cut again.
   if (
     halo.width !== bounds.width ||
     halo.height !== bounds.height ||
@@ -716,6 +739,10 @@ function placeHalo(
     halo.offset = offset;
     halo.pattern = haloArcs(bounds, offset);
     halo.arcs.set({ dashPattern: [halo.pattern.dash, halo.pattern.gap] });
+    halo.tails.forEach((tail, index) => {
+      const cut = halo.pattern.tails[index];
+      tail.set({ dashPattern: [cut.dash, cut.gap] });
+    });
   }
 }
 
@@ -730,9 +757,15 @@ function placeHalo(
 export function advanceHalo(view: NodeView, at: number) {
   const halo = view.halo;
   if (!halo) return;
-  const frame = haloFrame(at, halo.pattern.lap, halo.waiting);
+  const frame = haloFrame(at, halo.pattern, halo.waiting);
   halo.glow.set({ opacity: frame.glow });
   halo.arcs.set({ dashOffset: frame.dashOffset, opacity: frame.arc });
+  halo.tails.forEach((tail, index) => {
+    tail.set({
+      dashOffset: frame.tails[index].dashOffset,
+      opacity: frame.tails[index].opacity,
+    });
+  });
 }
 
 /**
@@ -743,7 +776,7 @@ export function advanceHalo(view: NodeView, at: number) {
  * being baked into a file somebody keeps.
  */
 export function haloLeaves(view: NodeView): Rect[] {
-  return view.halo ? [view.halo.glow, view.halo.arcs] : [];
+  return view.halo ? [view.halo.glow, ...view.halo.tails, view.halo.arcs] : [];
 }
 
 function applyVisual(view: NodeView, visual: NodeVisualState) {

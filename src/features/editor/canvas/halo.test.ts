@@ -100,43 +100,48 @@ describe("the arcs cut out of that ring", () => {
 });
 
 describe("the movement of the ring over time", () => {
-  const { lap } = haloArcs(CARD);
+  const pattern = haloArcs(CARD);
+  const { lap } = pattern;
 
   it("travels forward, and never further than one lap from where it began", () => {
-    const first = haloFrame(0, lap, false);
-    const later = haloFrame(HALO_TURN_MS / 4, lap, false);
+    const first = haloFrame(0, pattern, false);
+    const later = haloFrame(HALO_TURN_MS / 4, pattern, false);
     expect(first.dashOffset).toBeCloseTo(0);
     expect(later.dashOffset).toBeLessThan(first.dashOffset);
     expect(later.dashOffset).toBeGreaterThan(-lap);
   });
 
   it("comes back to where it started after exactly one lap", () => {
-    expect(haloFrame(HALO_TURN_MS, lap, false).dashOffset).toBeCloseTo(0);
-    expect(haloFrame(HALO_TURN_MS * 3, lap, false).dashOffset).toBeCloseTo(0);
+    expect(haloFrame(HALO_TURN_MS, pattern, false).dashOffset).toBeCloseTo(0);
+    expect(haloFrame(HALO_TURN_MS * 3, pattern, false).dashOffset).toBeCloseTo(
+      0,
+    );
   });
 
   it("keeps the same reading for two cards asked at the same moment", () => {
     // Both rings are read off the one clock, so a canvas full of running nodes
     // looks like one effect rather than a hundred that began at different times.
-    expect(haloFrame(1234, lap, false)).toEqual(haloFrame(1234, lap, false));
+    expect(haloFrame(1234, pattern, false)).toEqual(
+      haloFrame(1234, pattern, false),
+    );
   });
 
   it("turns a waiting card more slowly than a working one", () => {
     const at = HALO_TURN_MS / 4;
-    const working = haloFrame(at, lap, false).dashOffset;
-    const waiting = haloFrame(at, lap, true).dashOffset;
+    const working = haloFrame(at, pattern, false).dashOffset;
+    const waiting = haloFrame(at, pattern, true).dashOffset;
     expect(Math.abs(waiting)).toBeLessThan(Math.abs(working));
     expect(waiting).toBeCloseTo(working * (HALO_TURN_MS / HALO_QUEUED_TURN_MS));
   });
 
   it("breathes: dim at the start of a breath, bright halfway through it", () => {
-    const bottom = haloFrame(0, lap, false);
-    const top = haloFrame(HALO_BREATH_MS / 2, lap, false);
+    const bottom = haloFrame(0, pattern, false);
+    const top = haloFrame(HALO_BREATH_MS / 2, pattern, false);
     expect(bottom.glow).toBeCloseTo(HALO_GLOW.working.dim);
     expect(top.glow).toBeCloseTo(HALO_GLOW.working.bright);
     expect(bottom.arc).toBeCloseTo(HALO_ARC.working.dim);
     expect(top.arc).toBeCloseTo(HALO_ARC.working.bright);
-    expect(haloFrame(HALO_BREATH_MS, lap, false).glow).toBeCloseTo(
+    expect(haloFrame(HALO_BREATH_MS, pattern, false).glow).toBeCloseTo(
       HALO_GLOW.working.dim,
     );
   });
@@ -144,7 +149,7 @@ describe("the movement of the ring over time", () => {
   it("keeps every brightness it reports inside the range it was given", () => {
     for (const waiting of [false, true]) {
       for (let at = 0; at < HALO_QUEUED_TURN_MS; at += 97) {
-        const frame = haloFrame(at, lap, waiting);
+        const frame = haloFrame(at, pattern, waiting);
         const glow = waiting ? HALO_GLOW.waiting : HALO_GLOW.working;
         const arc = waiting ? HALO_ARC.waiting : HALO_ARC.working;
         expect(frame.glow).toBeGreaterThanOrEqual(glow.dim);
@@ -157,11 +162,66 @@ describe("the movement of the ring over time", () => {
 
   it("glows less for a card that is only waiting its turn", () => {
     const at = HALO_BREATH_MS / 2;
-    expect(haloFrame(at, lap, true).glow).toBeLessThan(
-      haloFrame(at, lap, false).glow,
+    expect(haloFrame(at, pattern, true).glow).toBeLessThan(
+      haloFrame(at, pattern, false).glow,
     );
-    expect(haloFrame(at, lap, true).arc).toBeLessThan(
-      haloFrame(at, lap, false).arc,
+    expect(haloFrame(at, pattern, true).arc).toBeLessThan(
+      haloFrame(at, pattern, false).arc,
     );
+  });
+});
+
+describe("the wake each arc drags behind it", () => {
+  const pattern = haloArcs(CARD);
+
+  it("trails back from its arc without reaching the one behind it", () => {
+    for (const tail of pattern.tails) {
+      // A wake begins behind its arc's start but never as far back as the arc
+      // behind it ends: every arc keeps its own stretch of ring.
+      expect(tail.lead).toBeGreaterThan(0);
+      expect(tail.lead).toBeLessThan(pattern.gap);
+      // Its front runs under the arc's light, hidden by the round cap of the
+      // head, rather than past the arc's leading edge.
+      expect(tail.dash - tail.lead).toBeGreaterThan(0);
+      expect(tail.dash - tail.lead).toBeLessThan(pattern.dash);
+      expect(tail.dash + tail.gap).toBeCloseTo(pattern.dash + pattern.gap, 6);
+    }
+  });
+
+  it("fades and widens the further back the layers reach", () => {
+    for (let index = 1; index < pattern.tails.length; index += 1) {
+      expect(pattern.tails[index].lead).toBeLessThan(
+        pattern.tails[index - 1].lead,
+      );
+      expect(pattern.tails[index].alpha).toBeGreaterThan(
+        pattern.tails[index - 1].alpha,
+      );
+      expect(pattern.tails[index].width).toBeLessThan(
+        pattern.tails[index - 1].width,
+      );
+    }
+  });
+
+  it("keeps its place a fixed distance behind the arc, in step with the light", () => {
+    for (const at of [0, HALO_TURN_MS / 3, HALO_BREATH_MS / 2]) {
+      const frame = haloFrame(at, pattern, false);
+      pattern.tails.forEach((tail, index) => {
+        expect(frame.tails[index].dashOffset - frame.dashOffset).toBeCloseTo(
+          tail.lead,
+        );
+        expect(frame.tails[index].opacity).toBeGreaterThan(0);
+        expect(frame.tails[index].opacity).toBeLessThanOrEqual(frame.glow);
+      });
+    }
+  });
+
+  it("breathes with the light: brighter halfway through a breath than at its start", () => {
+    const bottom = haloFrame(0, pattern, false);
+    const top = haloFrame(HALO_BREATH_MS / 2, pattern, false);
+    pattern.tails.forEach((_, index) => {
+      expect(top.tails[index].opacity).toBeGreaterThan(
+        bottom.tails[index].opacity,
+      );
+    });
   });
 });
