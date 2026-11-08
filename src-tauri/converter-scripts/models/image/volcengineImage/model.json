@@ -4,5 +4,6 @@
   "urlExample": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
   "script": "volcengine-image.lua",
   "order": 30,
+  "features": { "imageInput": true },
   "version": 1
 }

@@ -16,6 +16,7 @@ import {
 } from "./elementPictures";
 import { relativeTime } from "../relativeTime";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
+import { StoryEditDialog } from "./StoryEditDialog";
 
 /** How wide the inspector's own picture is asked for: the stage is a window
     wide, and the thumbnail beside it is a version at a glance. */
@@ -49,6 +50,7 @@ export function ElementPictureInspector({
   const run = useStoryWavesAsk();
   const jobs = useStoryJobs(story.id);
   const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const slot = view === "main" ? element.main : (element.turnaround ?? EMPTY);
   const take = currentTake(slot);
@@ -160,6 +162,14 @@ export function ElementPictureInspector({
                 {busy ? t("story:panels.drawing") : t("story:panels.again")}
               </button>
               <button
+                data-testid="story-inspector-edit"
+                disabled={take === undefined || busy}
+                onClick={() => setEditing(true)}
+                type="button"
+              >
+                {t("story:panels.edit")}
+              </button>
+              <button
                 data-testid="story-inspector-library"
                 onClick={() => setPicking(true)}
                 type="button"
@@ -250,6 +260,14 @@ export function ElementPictureInspector({
           </div>
         </div>
       </div>
+
+      {editing && (
+        <StoryEditDialog
+          onClose={() => setEditing(false)}
+          place={{ kind: "element", element, view }}
+          story={story}
+        />
+      )}
 
       {picking && (
         <StoryLibraryPicker

@@ -5,6 +5,6 @@
   "script": "openai-images.lua",
   "order": 10,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "features": { "mask": true },
+  "features": { "mask": true, "imageInput": true },
   "version": 3
 }

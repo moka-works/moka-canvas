@@ -32,6 +32,7 @@ import {
   writeElementSlot,
 } from "./elementPictures";
 import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
+import { StoryEditDialog } from "./StoryEditDialog";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
@@ -82,6 +83,8 @@ export const ElementCard = memo(function ElementCard({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // The place whose picture is being taken from the project's own shelf.
   const [picking, setPicking] = useState<"main" | "turnaround" | null>(null);
+  // The place whose picture is being changed rather than drawn again.
+  const [editing, setEditing] = useState<"main" | "turnaround" | null>(null);
   const run = useStoryWavesAsk();
   const main = currentTake(element.main);
   const character = element.kind === "character";
@@ -112,6 +115,16 @@ export const ElementCard = memo(function ElementCard({
     >
       <div className="story-element-pictures">
         <StorySlotView
+          actions={
+            <button
+              className="link"
+              data-testid="story-slot-edit-main"
+              onClick={() => setEditing("main")}
+              type="button"
+            >
+              {t("story:panels.edit")}
+            </button>
+          }
           busy={busyMain}
           canGenerate
           label={t("story:elements.main")}
@@ -134,6 +147,16 @@ export const ElementCard = memo(function ElementCard({
         />
         {character && (
           <StorySlotView
+            actions={
+              <button
+                className="link"
+                data-testid="story-slot-edit-turnaround"
+                onClick={() => setEditing("turnaround")}
+                type="button"
+              >
+                {t("story:panels.edit")}
+              </button>
+            }
             busy={busyTurnaround}
             canGenerate={main !== undefined}
             disabledReason={
@@ -309,6 +332,14 @@ export const ElementCard = memo(function ElementCard({
             setPicking(null);
           }}
           onClose={() => setPicking(null)}
+        />
+      )}
+
+      {editing !== null && (
+        <StoryEditDialog
+          onClose={() => setEditing(null)}
+          place={{ kind: "element", element, view: editing }}
+          story={story}
         />
       )}
 

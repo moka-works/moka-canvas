@@ -4288,6 +4288,16 @@ button.danger:hover:not(:disabled) {
   width: min(640px, calc(100vw - 48px));
 }
 
+/* The model an edit is asked of, and what that model can be asked to do. */
+.story-edit-models {
+  display: grid;
+  gap: 6px;
+}
+
+.story-edit-models select {
+  width: 100%;
+}
+
 /* Clipped, so what is drawn over the picture can be larger than the frame it is
    drawn in and still not escape the stage it is on. */
 .tool-stage {

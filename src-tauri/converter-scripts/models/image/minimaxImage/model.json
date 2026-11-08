@@ -4,5 +4,6 @@
   "urlExample": "https://api.minimaxi.com/v1/image_generation",
   "script": "minimax-image.lua",
   "order": 40,
+  "features": { "imageInput": true },
   "version": 1
 }

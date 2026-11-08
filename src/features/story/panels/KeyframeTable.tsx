@@ -60,6 +60,7 @@ import { liveStory, removeOldTake, type TakeDrop } from "./removeOldTake";
 import { staleReferences } from "./stalePictures";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { filePictureFromComputer } from "./elementPictures";
+import { StoryEditDialog } from "./StoryEditDialog";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
 import { useField } from "./useField";
@@ -282,6 +283,7 @@ function KeyframeRow({
   const { t } = useTranslation();
   const run = useStoryRun();
   const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
@@ -466,15 +468,25 @@ function KeyframeRow({
         <td className="story-col-frame">
           <StorySlotView
             actions={
-              perShot ? undefined : (
-                <FilmRoleSelect
-                  index={index}
-                  locked={roleLocked}
-                  onWrite={(role) => write({ filmRole: role })}
-                  pairable={rolePairable}
-                  role={filmRoleOf(keyframe)}
-                />
-              )
+              <>
+                {!perShot && (
+                  <FilmRoleSelect
+                    index={index}
+                    locked={roleLocked}
+                    onWrite={(role) => write({ filmRole: role })}
+                    pairable={rolePairable}
+                    role={filmRoleOf(keyframe)}
+                  />
+                )}
+                <button
+                  className="link"
+                  data-testid={`story-kf-edit-${index}`}
+                  onClick={() => setEditing(true)}
+                  type="button"
+                >
+                  {t("story:panels.edit")}
+                </button>
+              </>
             }
             busy={busy}
             canGenerate
@@ -613,6 +625,13 @@ function KeyframeRow({
             setPicking(false);
           }}
           onClose={() => setPicking(false)}
+        />
+      )}
+      {editing && (
+        <StoryEditDialog
+          onClose={() => setEditing(false)}
+          place={{ kind: "keyframe", chapterId, act, keyframe }}
+          story={story}
         />
       )}
     </>
