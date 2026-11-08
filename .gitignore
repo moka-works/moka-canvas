@@ -5,6 +5,9 @@ release/
 *.tsbuildinfo
 src-tauri/target/
 src-tauri/gen/
+# Worktrees and build outputs an agent checkout keeps for itself; they are
+# another checkout of this repo, not part of it.
+.qoder/
 .DS_Store
 .idea/
 data/
