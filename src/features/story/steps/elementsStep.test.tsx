@@ -24,7 +24,7 @@ import {
 import { actCast } from "../../../shared/domain/story";
 import { currentUiPrefs, resetUiPrefs } from "../../../shared/prefs/prefsData";
 import { undo } from "../../editor/commands/execute";
-import { ELEMENTS_PAGE } from "./ElementsStep";
+import { ELEMENTS_PAGE, ELEMENTS_PAGE_SIZES } from "./ElementsStep";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useModelStore } from "../../settings/modelStore";
 import { useHistoryStore } from "../../editor/stores/historyStore";
@@ -1591,33 +1591,135 @@ describe("an element the reader types in", () => {
   });
 });
 
-describe("a cast too long to show at once", () => {
-  it("shows a shelf's worth of cards and offers the rest", () => {
+/** A cast of elements of one kind, none of them drawn, named by their place. */
+function castOf(kind: "character" | "scene" | "prop", count: number) {
+  const label =
+    kind === "character" ? "角色" : kind === "scene" ? "场景" : "道具";
+  return Array.from({ length: count }, (_, at) => ({
+    id: `${kind}-${at}`,
+    kind,
+    name: `${label} ${at + 1}`,
+    description: "一件东西。",
+    chapterIds: [],
+    main: { takes: [] },
+    ...(kind === "character" ? { turnaround: { takes: [] } } : {}),
+  }));
+}
+
+describe("a cast too long for one page", () => {
+  it("shows a page's worth of cards and turns to the rest", () => {
     const moka = buildStoryMokaFile();
-    const story = moka.stories![0];
-    story.elements = Array.from({ length: ELEMENTS_PAGE + 5 }, (_, at) => ({
-      id: `extra-${at}`,
-      kind: "prop" as const,
-      name: `道具 ${at + 1}`,
-      description: "一件东西。",
-      chapterIds: [],
-      main: { takes: [] },
-    }));
+    moka.stories![0].elements = castOf("prop", 20);
     openAtElements(moka);
 
     expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(
       ELEMENTS_PAGE,
     );
-    const paging = screen.getByTestId("story-elements-shown");
-    expect(paging.textContent).toBe(
-      `${ELEMENTS_PAGE} of ${ELEMENTS_PAGE + 5} shown`,
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 20",
+    );
+    expect(screen.queryByTestId("story-element-prop-道具 10")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-next"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
+    );
+    expect(screen.getByTestId("story-element-prop-道具 10")).toBeTruthy();
+    expect(screen.queryByTestId("story-element-prop-道具 1")).toBeNull();
+
+    // The last page holds what is left rather than a page's worth, and the
+    // arrow on that side says there is nowhere further to turn.
+    fireEvent.click(screen.getByTestId("story-elements-next"));
+    expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(2);
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 19–20 of 20",
+    );
+    expect(
+      (screen.getByTestId("story-elements-next") as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByTestId("story-elements-prev"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
+    );
+  });
+
+  it("jumps to the page a reader types, within the pages there are", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 20);
+    openAtElements(moka);
+
+    const jump = screen.getByTestId("story-elements-page") as HTMLInputElement;
+    fireEvent.change(jump, { target: { value: "2" } });
+    fireEvent.keyDown(jump, { key: "Enter" });
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–18 of 20",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
-    expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(
-      ELEMENTS_PAGE + 5,
+    // A page past the end is read as the last one rather than as nothing.
+    fireEvent.change(jump, { target: { value: "99" } });
+    fireEvent.keyDown(jump, { key: "Enter" });
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 19–20 of 20",
     );
-    expect(screen.queryByTestId("story-elements-shown")).toBeNull();
+    expect(jump.value).toBe("3");
+  });
+
+  it("keeps each kind on the page the reader left it on", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = [
+      ...castOf("character", 10),
+      ...castOf("prop", 10),
+    ];
+    openAtElements(moka);
+
+    fireEvent.click(screen.getByTestId("story-elements-group-character"));
+    fireEvent.click(screen.getByTestId("story-elements-next"));
+    expect(screen.getByTestId("story-element-character-角色 10")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("story-elements-group-prop"));
+    expect(screen.getByTestId("story-element-prop-道具 1")).toBeTruthy();
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 10",
+    );
+
+    // Back to the characters, back to where they were left — not to their top.
+    fireEvent.click(screen.getByTestId("story-elements-group-character"));
+    expect(screen.getByTestId("story-element-character-角色 10")).toBeTruthy();
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 10–10 of 10",
+    );
+
+    // The whole cast is a list of its own, standing where it stood.
+    fireEvent.click(screen.getByTestId("story-elements-group-all"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 20",
+    );
+  });
+
+  it("shows a page size a reader picks, in counts that fill whole rows", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 20);
+    openAtElements(moka);
+
+    const size = screen.getByTestId(
+      "story-elements-per-page",
+    ) as HTMLSelectElement;
+    const sizes = [...size.options].map((option) => Number(option.value));
+    expect(sizes).toEqual([...ELEMENTS_PAGE_SIZES]);
+    expect(sizes.every((count) => count % 3 === 0)).toBe(true);
+    expect(size.value).toBe(String(ELEMENTS_PAGE));
+
+    fireEvent.change(size, { target: { value: "12" } });
+    expect(screen.getAllByTestId(/^story-element-prop-/)).toHaveLength(12);
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–12 of 20",
+    );
+  });
+
+  it("shows no pager for a cast that fits on one page", () => {
+    openAtElements(buildStoryMokaFile());
+    expect(screen.queryByTestId("story-elements-paging")).toBeNull();
   });
 });
 

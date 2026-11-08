@@ -54,13 +54,25 @@ const KINDS: StoryElementKind[] = ["character", "scene", "prop"];
 const BULK_DEFAULT_MODEL = "__default__";
 
 /**
- * How many cards one look builds at once.
+ * How many cards one page holds, and the other sizes a reader may pick.
  *
  * A card is a form with one or two pictures, so a hundred of them is a
  * hundred forms and a hundred thumbnails the page pays for before it shows
- * anything. A page's worth is built at a time, and the reader walks the rest.
+ * anything. One page's worth is built at a time, and the reader turns to the
+ * rest. Every size is a multiple of three so a page fills its rows exactly.
  */
-export const ELEMENTS_PAGE = 24;
+export const ELEMENTS_PAGE = 9;
+export const ELEMENTS_PAGE_SIZES = [9, 12, 15, 18, 21, 24] as const;
+
+/** The kinds of element as the page lists them, the whole cast included. */
+type ElementKindTab = StoryElementKind | "all";
+
+const FIRST_PAGES: Record<ElementKindTab, number> = {
+  all: 1,
+  character: 1,
+  scene: 1,
+  prop: 1,
+};
 
 const EMPTY = { takes: [] };
 
@@ -87,14 +99,17 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const running = useRunningJob(story.id);
   const failure = useStoryJobStore((state) => state.error);
   const run = useStoryWavesAsk();
-  const [kind, setKind] = useState<StoryElementKind | "all">("all");
+  const [kind, setKind] = useState<ElementKindTab>("all");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
   // The cards a bulk action is about, chosen one checkbox at a time.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
   const [removingPicked, setRemovingPicked] = useState(false);
-  const [pages, setPages] = useState(1);
+  // The page each kind was last standing on, so going back to a kind goes
+  // back to what the reader was looking at rather than to its first page.
+  const [pageOf, setPageOf] = useState(FIRST_PAGES);
+  const [perPage, setPerPage] = useState<number>(ELEMENTS_PAGE);
   const [waves, setWaves] = useState<StoryReadingPiece[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
   // A batch is being handed over, whether for the first part or a later one.
@@ -124,16 +139,39 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     kind === "all"
       ? story.elements
       : story.elements.filter((element) => element.kind === kind);
-  // A telling may hold two hundred of these, and every card is a form: the
-  // list is shown a page's worth at a time.
-  const visible = shown.slice(0, pages * ELEMENTS_PAGE);
+  // A telling may hold two hundred of these, and every card is a form: one
+  // page's worth is built at a time, and the kind's remembered page is read
+  // against the list as it stands — an element taken out of the list takes a
+  // page with it rather than leaving the reader past the end.
+  const pageCount = Math.max(1, Math.ceil(shown.length / perPage));
+  const page = Math.min(pageOf[kind], pageCount);
+  const first = (page - 1) * perPage;
+  const visible = shown.slice(first, first + perPage);
 
-  /** Another kind of thing is another list, and it starts at its top. */
-  const chooseKind = (next: StoryElementKind | "all") => {
+  /** Turns to a page of the kind being looked at, kept for that kind. */
+  const goToPage = (wanted: number) => {
+    const next = Math.min(Math.max(1, Math.round(wanted)), pageCount);
+    setPageOf((held) => ({ ...held, [kind]: next }));
+  };
+
+  /** Another kind of thing is another list, standing where it stood before. */
+  const chooseKind = (next: ElementKindTab) => {
     setKind(next);
-    setPages(1);
     setPicked(new Set());
     setBulkAction("");
+  };
+
+  /**
+   * Another page size, keeping the card at the top of the page in view: the
+   * reader is looking at this part of the cast, not at a page number.
+   */
+  const choosePerPage = (next: number) => {
+    setPerPage(next);
+    const pages = Math.max(1, Math.ceil(shown.length / next));
+    setPageOf((held) => ({
+      ...held,
+      [kind]: Math.min(Math.floor(first / next) + 1, pages),
+    }));
   };
   /** Whether one of a card's own pictures is being made just now. */
   const drawing = (
@@ -632,25 +670,54 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                 />
               ))}
             </ul>
-            {shown.length > visible.length && (
-              <div className="story-paging">
+            {(pageCount > 1 || shown.length > ELEMENTS_PAGE) && (
+              <div className="story-paging" data-testid="story-elements-paging">
                 <span data-testid="story-elements-shown">
                   {t("story:elements.shown", {
-                    shown: visible.length,
+                    from: first + 1,
+                    to: Math.min(first + perPage, shown.length),
                     total: shown.length,
                   })}
                 </span>
-                <button
-                  onClick={() => setPages((current) => current + 1)}
-                  type="button"
-                >
-                  {t("story:elements.showMore", {
-                    count: Math.min(
-                      ELEMENTS_PAGE,
-                      shown.length - visible.length,
-                    ),
-                  })}
-                </button>
+                <div className="story-pages">
+                  <button
+                    aria-label={t("story:elements.prevPage")}
+                    className="story-page-step"
+                    data-testid="story-elements-prev"
+                    disabled={page <= 1}
+                    onClick={() => goToPage(page - 1)}
+                    type="button"
+                  >
+                    ‹
+                  </button>
+                  <PageJump onGo={goToPage} page={page} pageCount={pageCount} />
+                  <button
+                    aria-label={t("story:elements.nextPage")}
+                    className="story-page-step"
+                    data-testid="story-elements-next"
+                    disabled={page >= pageCount}
+                    onClick={() => goToPage(page + 1)}
+                    type="button"
+                  >
+                    ›
+                  </button>
+                </div>
+                <label className="story-page-size">
+                  {t("story:elements.perPage")}
+                  <select
+                    data-testid="story-elements-per-page"
+                    onChange={(event) =>
+                      choosePerPage(Number(event.target.value))
+                    }
+                    value={perPage}
+                  >
+                    {ELEMENTS_PAGE_SIZES.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
           </>
@@ -699,6 +766,62 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The page a reader is on, typed in rather than turned to.
+ *
+ * A telling of two hundred cards is many pages, and a row of page numbers is
+ * not a list a reader can aim at; the arrow beside this steps one page at a
+ * time, and this jumps to the one they name.
+ */
+function PageJump({
+  page,
+  pageCount,
+  onGo,
+}: {
+  page: number;
+  pageCount: number;
+  onGo: (page: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(String(page));
+
+  // The page may be turned by the arrow beside the field, or read as a
+  // shorter list when elements are taken out; the field follows it.
+  useEffect(() => {
+    setText(String(page));
+  }, [page]);
+
+  const go = () => {
+    const typed = Number.parseInt(text, 10);
+    const wanted = Number.isFinite(typed) ? typed : page;
+    const next = Math.min(Math.max(1, wanted), pageCount);
+    setText(String(next));
+    if (next !== page) onGo(next);
+  };
+
+  return (
+    <span className="story-page-jump">
+      <input
+        aria-label={t("story:elements.pageJump")}
+        data-testid="story-elements-page"
+        inputMode="numeric"
+        max={pageCount}
+        min={1}
+        onBlur={go}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          go();
+        }}
+        type="number"
+        value={text}
+      />
+      <span>{t("story:elements.pageOf", { total: pageCount })}</span>
+    </span>
   );
 }
 

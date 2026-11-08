@@ -7232,10 +7232,12 @@ body.is-dragging-split {
    Step three: the elements, and the places their pictures live in
    --------------------------------------------------------------------------- */
 
+/* Three cards to a row wherever the room is wide enough for them, and the
+   page sizes are multiples of three so a page's last row is a whole one. */
 .story-elements {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
@@ -7245,8 +7247,68 @@ body.is-dragging-split {
   align-items: center;
   color: var(--muted);
   display: flex;
+  flex-wrap: wrap;
   font-size: 11px;
-  gap: 8px;
+  gap: 8px 16px;
+}
+
+.story-pages {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.story-page-step {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+}
+
+.story-page-step:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.story-page-jump {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.story-page-jump input {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 4px;
+  text-align: center;
+  width: 52px;
+}
+
+.story-page-size {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.story-page-size select {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
 }
 
 .story-element {
