@@ -88,6 +88,19 @@ export function ElementPictureInspector({
     );
   };
 
+  // The edit dialog takes the inspector's place while it stands: two dark
+  // veils over the board, one under the other, is a dialog nobody can press.
+  // Closing it hands the reader back to the reference they were looking at.
+  if (editing) {
+    return (
+      <StoryEditDialog
+        onClose={() => setEditing(false)}
+        place={{ kind: "element", element, view }}
+        story={story}
+      />
+    );
+  }
+
   return createPortal(
     <div
       className="story-lightbox"
@@ -260,14 +273,6 @@ export function ElementPictureInspector({
           </div>
         </div>
       </div>
-
-      {editing && (
-        <StoryEditDialog
-          onClose={() => setEditing(false)}
-          place={{ kind: "element", element, view }}
-          story={story}
-        />
-      )}
 
       {picking && (
         <StoryLibraryPicker
