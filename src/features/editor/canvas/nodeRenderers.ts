@@ -26,6 +26,7 @@ import {
   type HaloArcs,
 } from "./halo";
 import { layoutPorts, type PortView } from "./portLayout";
+import { dimOpacity } from "./emphasis";
 import {
   generationSummary,
   mediaSignature,
@@ -972,7 +973,7 @@ function applyVisual(view: NodeView, visual: NodeVisualState) {
   }
   syncRunMarks(view, view.node, visual);
   syncHalo(view, view.node, visual);
-  group.opacity = visual.dimmed ? 0.35 : 1;
+  group.opacity = visual.dimmed ? dimOpacity(visual.run) : 1;
 }
 
 /** Returns true when the port layout changed and edges must be refreshed. */

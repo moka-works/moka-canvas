@@ -43,6 +43,7 @@ import {
   type ViewSize,
 } from "./camera";
 import { createEdgeView, updateEdgeView, type EdgeView } from "./edgeRenderer";
+import { relatedDimmed } from "./emphasis";
 import { GridBackground, type GridMode } from "./gridRenderer";
 import { MinimapView } from "./minimap";
 import {
@@ -394,16 +395,15 @@ export class LeaferEditorController {
         scene.pick !== null &&
         node.id !== scene.pick.nodeId &&
         !scene.pick.candidates.has(node.id);
+      const run = scene.runViews.get(node.id) ?? null;
       const visual = {
         selected: scene.selection.nodeIds.includes(node.id),
         hovered: scene.hoveredNodeId === node.id,
         lowDetail,
         dimmed:
           pickDimmed ||
-          (relatedNodes !== null &&
-            !relatedNodes.has(node.id) &&
-            scene.pick === null),
-        run: scene.runViews.get(node.id) ?? null,
+          (scene.pick === null && relatedDimmed(relatedNodes, node.id)),
+        run,
       };
       let view = this.nodeViews.get(node.id);
       const media = mediaInfoForNode(node, scene.resources, scene.issues);
