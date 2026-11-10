@@ -837,6 +837,7 @@ export function ActCard({
           assetIds={clip.assetIds}
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
+          poster={clipPoster}
           video
         />
       )}

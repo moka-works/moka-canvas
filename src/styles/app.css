@@ -8053,6 +8053,15 @@ button > .story-spin {
   object-fit: contain;
 }
 
+/* A clip as large as the window will take it, like the pictures beside it. */
+.story-lightbox-body video {
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 0 auto;
+  max-height: 82vh;
+  max-width: 100%;
+}
+
 .story-lightbox-foot {
   align-items: center;
   color: var(--ink);
@@ -9220,9 +9229,14 @@ button > .story-spin {
   gap: 6px;
 }
 
+/* A clip's preview is given a width of its own rather than only a ceiling.
+   WebKit gives a video that has not opened a picture yet no width of its own,
+   and a flex row is free to squeeze it away — the clip was there and played on
+   click, but its preview drew a one-pixel sliver. The telling's shape rides on
+   the element itself (aspect-ratio), so the width makes both sides. */
 .story-kf-clip video {
   border-radius: var(--radius-sm);
-  max-width: 96px;
+  width: 96px;
 }
 
 .story-act-foot {
@@ -9320,7 +9334,7 @@ button > .story-spin {
 .story-act-play video {
   border-radius: var(--radius-sm);
   display: block;
-  max-width: 160px;
+  width: 160px;
 }
 
 /* ---------------------------------------------------------------------------

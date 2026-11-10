@@ -618,6 +618,12 @@ describe("writing an episode's board", () => {
       .getByTestId("story-act-video-0")
       .querySelector("video");
     expect(preview?.getAttribute("poster")).toContain("asset-frame-new");
+
+    // The same picture stands under the clip as it is watched large, so the
+    // window is not empty before the file has a frame to be painted.
+    fireEvent.click(screen.getByTestId("story-act-video-0"));
+    const watched = screen.getByTestId("story-lightbox").querySelector("video");
+    expect(watched?.getAttribute("poster")).toContain("asset-frame-new");
   });
 
   it("carries a picture beside the cast that the shot's words do not name", async () => {
@@ -1676,6 +1682,15 @@ describe("writing an episode's board", () => {
       ["firstFrame", "frame-from"],
       ["lastFrame", "frame-to"],
     ]);
+
+    // The bridge's clip, handed back at once, is previewed by the picture its
+    // opening frame was cut from until a frame of the clip is painted — the
+    // same stand-in the acts' own clip previews keep.
+    await comesBack();
+    const preview = screen
+      .getByTestId("story-transition-video-1")
+      .querySelector("video");
+    expect(preview?.getAttribute("poster")).toContain("frame-from");
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

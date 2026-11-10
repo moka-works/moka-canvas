@@ -22,6 +22,7 @@ export function StoryLightbox({
   label,
   note,
   video,
+  poster,
   onClose,
 }: {
   /** The files to show, in the order they play. */
@@ -32,6 +33,8 @@ export function StoryLightbox({
   note?: string;
   /** Whether the place holds a clip rather than a picture. */
   video?: boolean;
+  /** The picture the clip opens on, shown until a frame of it is played. */
+  poster?: string;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -68,6 +71,7 @@ export function StoryLightbox({
             controls
             key={file}
             onEnded={() => setAt((held) => held + 1)}
+            poster={at === 0 ? poster : undefined}
             preload="metadata"
             src={assetUrl(file)}
           />

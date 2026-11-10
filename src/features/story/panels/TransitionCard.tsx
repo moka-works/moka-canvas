@@ -23,6 +23,7 @@ import { RunningBar } from "../components/RunningBar";
 import { planActVideos, videoCeiling } from "../jobs/plan";
 import { useStoryRun, type ActRun } from "../stores/storyJobStore";
 import { liveStory } from "./removeOldTake";
+import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
 import { useField } from "./useField";
 import { writeActs } from "./writeBoard";
@@ -30,6 +31,9 @@ import { writeActs } from "./writeBoard";
 /** The shortest and longest a bridge may be, in seconds. */
 const TRANSITION_MIN_S = 1;
 const TRANSITION_MAX_S = 60;
+
+/** How wide a bridge's clip poster is asked for: its preview is drawn 160 px. */
+const TRANSITION_POSTER_WIDTH = 320;
 
 /**
  * A bridge between two acts, as a card of its own.
@@ -146,6 +150,12 @@ export function TransitionCard({
   );
 
   const clip = currentTake(act.video);
+  // The bridge is filmed from the picture it starts at, and that picture is
+  // what its preview shows until WebKit has a frame of the clip to paint.
+  const clipPoster =
+    frames.from === undefined
+      ? undefined
+      : assetThumbUrl(frames.from.assetId, TRANSITION_POSTER_WIDTH);
   const ceiling = videoCeiling();
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
@@ -444,8 +454,10 @@ export function TransitionCard({
             >
               <video
                 muted
+                poster={clipPoster}
                 preload="metadata"
                 src={assetUrl(clip.assetIds[0])}
+                style={{ aspectRatio: frameRatio(story) }}
               />
             </button>
             <button
@@ -481,6 +493,7 @@ export function TransitionCard({
           assetIds={clip.assetIds}
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
+          poster={clipPoster}
           video
         />
       )}

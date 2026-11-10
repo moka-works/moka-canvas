@@ -411,6 +411,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // A clip is not the last word: the ask that made it stands beside the
     // take, and asking again plays a fresh one in its place.
     const played = firstAct.getByTestId("story-act-video-0").locator("video");
+    // The preview has a width of its own rather than only a ceiling: WebKit
+    // gives a video that has not opened a picture no width, and a flex row
+    // squeezes it to a sliver — the clip was there and played on click while
+    // its preview drew nothing.
+    await expect(played).toHaveCSS("width", "160px");
     const wasPlaying = await played.getAttribute("src");
     await expect(firstAct.getByTestId("story-act-video-again-0")).toHaveText(
       "Ask for another",
