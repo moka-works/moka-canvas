@@ -295,12 +295,15 @@ function KeyframeRow({
   const run = useStoryRun();
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
-  // The shot's own picture is what its clip opens on, and what its preview
-  // shows until WebKit has a frame of the clip itself to paint.
   const clipPoster = takeFile(currentTake(keyframe.art));
+  const clipPosterUrl =
+    clipPoster === undefined
+      ? undefined
+      : assetThumbUrl(clipPoster, CLIP_POSTER_WIDTH);
   const clipStale = shotClipStale(keyframe);
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
@@ -589,17 +592,20 @@ function KeyframeRow({
               </button>
             ) : (
               <span className="story-kf-clip">
-                <video
-                  muted
-                  poster={
-                    clipPoster === undefined
-                      ? undefined
-                      : assetThumbUrl(clipPoster, CLIP_POSTER_WIDTH)
-                  }
-                  preload="metadata"
-                  src={assetUrl(clip.assetIds[0])}
-                  style={{ aspectRatio: frameRatio(story) }}
-                />
+                <button
+                  aria-label={t("story:storyboard.playClip")}
+                  className="story-act-play"
+                  data-testid={`story-kf-video-${index}`}
+                  onClick={() => setPlaying(true)}
+                  type="button"
+                >
+                  <img
+                    alt=""
+                    decoding="async"
+                    src={clipPosterUrl}
+                    style={{ aspectRatio: frameRatio(story) }}
+                  />
+                </button>
                 {/*
                   The shot is filmed once, but not only once: a take the reader
                   does not like is asked over from the row that holds it.
@@ -699,6 +705,15 @@ function KeyframeRow({
             />
           </td>
         </tr>
+      )}
+      {playing && clip !== undefined && (
+        <StoryLightbox
+          assetIds={clip.assetIds}
+          label={t("story:storyboard.playClip")}
+          onClose={() => setPlaying(false)}
+          poster={clipPosterUrl}
+          video
+        />
       )}
       {picking && (
         <StoryLibraryPicker

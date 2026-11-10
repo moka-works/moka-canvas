@@ -7974,23 +7974,10 @@ button > .story-spin {
   width: 100%;
 }
 
-/* A drawing is shown whole and scaled down inside its place rather than
-   cropped to it: it is made at the nearest size the model offers, which is not
-   the telling's exact shape, and a preview holding only part of it would send
-   the reader to the lightbox to see what was drawn.
-
-   The picture is laid over the place rather than sized in its flow: the place
-   is only as tall as its shape (`aspect-ratio` on the button), and WebKit does
-   not resolve a percentage height against a height that comes from a shape —
-   the picture keeps its own full height instead, and `contain` then centres it
-   in that taller box, below the place's own clipping, so the place goes dark.
-   Pinned to the place's edges, the box it is drawn in is the place itself. */
+/* The picture owns the shape in normal flow, without a percentage height. */
 .story-slot-picture img {
   display: block;
-  height: 100%;
-  inset: 0;
   object-fit: contain;
-  position: absolute;
   width: 100%;
 }
 
@@ -9229,13 +9216,7 @@ button > .story-spin {
   gap: 6px;
 }
 
-/* A clip's preview is given a width of its own rather than only a ceiling.
-   WebKit gives a video that has not opened a picture yet no width of its own,
-   and a flex row is free to squeeze it away — the clip was there and played on
-   click, but its preview drew a one-pixel sliver. The telling's shape rides on
-   the element itself (aspect-ratio), so the width makes both sides. */
-.story-kf-clip video {
-  border-radius: var(--radius-sm);
+.story-kf-clip .story-act-play img {
   width: 96px;
 }
 
@@ -9331,9 +9312,11 @@ button > .story-spin {
   padding: 0;
 }
 
-.story-act-play video {
+.story-act-play img {
+  background: var(--canvas);
   border-radius: var(--radius-sm);
   display: block;
+  object-fit: contain;
   width: 160px;
 }
 

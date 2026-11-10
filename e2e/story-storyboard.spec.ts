@@ -1,5 +1,6 @@
+import { createRequire } from "node:module";
 import { join } from "node:path";
-import { expect, test, type Page } from "./fixtures";
+import { expect, test, type Locator, type Page } from "./fixtures";
 import {
   configureTheWholeStudio,
   createProject,
@@ -13,6 +14,42 @@ import {
 // The whole telling is walked in one test — five steps, every ask through a
 // stand-in — which needs longer than the suite's own budget for one case.
 test.describe.configure({ timeout: 60_000 });
+
+const { PNG } = createRequire(import.meta.url)(
+  "playwright-core/lib/utilsBundle",
+) as {
+  PNG: {
+    sync: {
+      read: (bytes: Buffer) => { data: Buffer; width: number; height: number };
+    };
+  };
+};
+
+async function expectPreviewPainted(preview: Locator): Promise<void> {
+  await expect
+    .poll(async () =>
+      preview.evaluate((element) => {
+        const image = element as unknown as {
+          complete: boolean;
+          naturalWidth: number;
+        };
+        return image.complete && image.naturalWidth > 0;
+      }),
+    )
+    .toBe(true);
+  const picture = PNG.sync.read(await preview.screenshot());
+  let coloured = 0;
+  for (let at = 0; at < picture.data.length; at += 4) {
+    const red = picture.data[at]!;
+    const green = picture.data[at + 1]!;
+    const blue = picture.data[at + 2]!;
+    const brightest = Math.max(red, green, blue);
+    if (brightest > 70 && brightest - Math.min(red, green, blue) > 40) {
+      coloured += 1;
+    }
+  }
+  expect(coloured / (picture.width * picture.height)).toBeGreaterThan(0.2);
+}
 
 /**
  * The fourth step: one episode's board, its frames and its clip.
@@ -381,6 +418,9 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       firstAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toHaveCSS("object-fit", "contain");
+    await expectPreviewPainted(
+      firstAct.getByTestId("story-kf-slot-0").locator("img"),
+    );
 
     // A drawn frame's own size must not push the attribute column aside: with
     // the picture in place the selects still hold their words whole, and the
@@ -410,19 +450,25 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
 
     // A clip is not the last word: the ask that made it stands beside the
     // take, and asking again plays a fresh one in its place.
-    const played = firstAct.getByTestId("story-act-video-0").locator("video");
-    // The preview has a width of its own rather than only a ceiling: WebKit
-    // gives a video that has not opened a picture no width, and a flex row
-    // squeezes it to a sliver — the clip was there and played on click while
-    // its preview drew nothing.
+    const played = firstAct.getByTestId("story-act-video-0").locator("img");
     await expect(played).toHaveCSS("width", "160px");
-    const wasPlaying = await played.getAttribute("src");
+    await expectPreviewPainted(played);
+    await firstAct.getByTestId("story-act-video-0").click();
+    const wasPlaying = await page
+      .getByTestId("story-lightbox")
+      .locator("video")
+      .getAttribute("src");
+    await page.getByTestId("story-lightbox-close").click();
     await expect(firstAct.getByTestId("story-act-video-again-0")).toHaveText(
       "Ask for another",
     );
     await firstAct.getByTestId("story-act-video-again-0").click();
-    await expect.poll(() => played.getAttribute("src")).not.toBe(wasPlaying);
     await expect(firstAct.getByTestId("story-act-video-again-0")).toBeEnabled();
+    await firstAct.getByTestId("story-act-video-0").click();
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).not.toHaveAttribute("src", wasPlaying ?? "");
+    await page.getByTestId("story-lightbox-close").click();
 
     // One act can be filmed its own way: the choice stands on its own card,
     // and switching over clips already made is a question scoped to this act.
@@ -432,6 +478,18 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(scoped).toContainText("by shot");
     await page.getByTestId("change-act-granularity-0-confirm").click();
     await expect(firstAct.getByTestId("story-kf-video-0")).toBeVisible();
+    await firstAct.getByTestId("story-kf-video-0").click();
+    await expect(firstAct.getByTestId("story-kf-video-again-0")).toBeVisible({
+      timeout: 60_000,
+    });
+    const shotPreview = firstAct.getByTestId("story-kf-video-0").locator("img");
+    await expect(shotPreview).toHaveCSS("width", "96px");
+    await expectPreviewPainted(shotPreview);
+    await firstAct.getByTestId("story-kf-video-0").click();
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).toHaveAttribute("src", /\/api\/v1\/projects\/current\/assets\/.+/);
+    await page.getByTestId("story-lightbox-close").click();
     // The telling's default has not moved with the act beside it.
     await expect(page.getByTestId("story-granularity-act")).toHaveAttribute(
       "aria-checked",

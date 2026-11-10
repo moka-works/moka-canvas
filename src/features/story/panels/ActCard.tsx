@@ -144,11 +144,7 @@ export function ActCard({
   const granularity = actGranularity(act, story.shotGranularity);
   const perShot = granularity === "keyframe";
   const clip = currentTake(act.video);
-  // The clip's preview shows the frame it was filmed from until a frame of the
-  // clip itself is painted: WebKit keeps a video at its poster until it is
-  // played, and a preview with no poster at all stays blank on the desktop's
-  // own engine. The clip is made of the act's frames in order, so its first
-  // shot's picture is the one it opens on.
+  // The clip opens on the act's first drawn frame.
   const opening = drawnFrames(act)[0];
   const openingFrame =
     opening === undefined ? undefined : takeFile(currentTake(opening.art));
@@ -681,11 +677,10 @@ export function ActCard({
               onClick={() => setPlaying(true)}
               type="button"
             >
-              <video
-                muted
-                poster={clipPoster}
-                preload="metadata"
-                src={assetUrl(clip.assetIds[0])}
+              <img
+                alt=""
+                decoding="async"
+                src={clipPoster}
                 style={{ aspectRatio: frameRatio(story) }}
               />
             </button>

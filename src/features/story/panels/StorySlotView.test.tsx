@@ -80,12 +80,15 @@ describe("a place being drawn", () => {
 describe("a place with a picture", () => {
   it("shows it, with a way to ask for another and to pick between them", () => {
     const { onGenerate } = draw({ slot: slot(["asset-one"]) });
+    const picture = screen.getByTestId("story-slot-main").querySelector("img");
+    expect(picture?.getAttribute("src")).toBe(
+      "/api/v1/projects/current/assets/asset-one?w=480",
+    );
+    expect(picture?.style.aspectRatio).toBe("16 / 9");
     expect(
-      screen
-        .getByTestId("story-slot-main")
-        .querySelector("img")
-        ?.getAttribute("src"),
-    ).toBe("/api/v1/projects/current/assets/asset-one?w=480");
+      screen.getByTestId("story-slot-main").querySelector("button")?.style
+        .aspectRatio,
+    ).toBe("");
 
     fireEvent.click(screen.getByTestId("story-slot-main-again"));
     expect(onGenerate).toHaveBeenCalledTimes(1);

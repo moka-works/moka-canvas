@@ -612,12 +612,11 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-act-video-stale-0")).toBeDefined();
     // The older clip is marked, not taken away.
     expect(screen.getByTestId("story-act-video-0")).toBeDefined();
-    // Its preview stands on the frame the act was filmed from until a frame of
-    // the clip itself is painted, which is what WebKit lays over a video.
     const preview = screen
       .getByTestId("story-act-video-0")
-      .querySelector("video");
-    expect(preview?.getAttribute("poster")).toContain("asset-frame-new");
+      .querySelector("img");
+    expect(preview?.getAttribute("src")).toContain("asset-frame-new");
+    expect(preview?.style.aspectRatio).toBe("16 / 9");
 
     // The same picture stands under the clip as it is watched large, so the
     // window is not empty before the file has a frame to be painted.
@@ -1294,7 +1293,18 @@ describe("writing an episode's board", () => {
     // The shot holds a clip, and its row says what may be done about it: the
     // take asked over beside the take settled on — while the shot next to it,
     // holding nothing, still asks for its first.
-    expect(within(first).queryByTestId("story-kf-video-0")).toBeNull();
+    const preview = within(first).getByTestId("story-kf-video-0");
+    expect(preview.querySelector("img")?.getAttribute("src")).toContain(
+      "asset-frame",
+    );
+    fireEvent.click(preview);
+    expect(
+      screen
+        .getByTestId("story-lightbox")
+        .querySelector("video")
+        ?.getAttribute("src"),
+    ).toContain("asset-first-shot-clip");
+    fireEvent.click(screen.getByTestId("story-lightbox-close"));
     const again = within(first).getByTestId(
       "story-kf-video-again-0",
     ) as HTMLButtonElement;
@@ -1683,14 +1693,11 @@ describe("writing an episode's board", () => {
       ["lastFrame", "frame-to"],
     ]);
 
-    // The bridge's clip, handed back at once, is previewed by the picture its
-    // opening frame was cut from until a frame of the clip is painted — the
-    // same stand-in the acts' own clip previews keep.
     await comesBack();
     const preview = screen
       .getByTestId("story-transition-video-1")
-      .querySelector("video");
-    expect(preview?.getAttribute("poster")).toContain("frame-from");
+      .querySelector("img");
+    expect(preview?.getAttribute("src")).toContain("frame-from");
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

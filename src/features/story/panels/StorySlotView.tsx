@@ -172,7 +172,6 @@ export function StorySlotView({
             aria-label={t("story:panels.enlarge", { label })}
             className="story-slot-picture"
             onClick={() => setZoomed(true)}
-            style={{ aspectRatio: ratio }}
             type="button"
           >
             <img
@@ -180,6 +179,7 @@ export function StorySlotView({
               decoding="async"
               loading="lazy"
               src={assetThumbUrl(take.assetIds[0], SLOT_THUMB_WIDTH)}
+              style={{ aspectRatio: ratio }}
             />
           </button>
           {busy === true && (

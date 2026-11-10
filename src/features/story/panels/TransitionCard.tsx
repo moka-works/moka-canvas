@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { assetsApi, assetThumbUrl, assetUrl } from "../../../api/assets";
+import { assetsApi, assetThumbUrl } from "../../../api/assets";
 import { errorText } from "../../../api/client";
 import {
   DEFAULT_STORY_TRANSITION_MS,
@@ -150,8 +150,7 @@ export function TransitionCard({
   );
 
   const clip = currentTake(act.video);
-  // The bridge is filmed from the picture it starts at, and that picture is
-  // what its preview shows until WebKit has a frame of the clip to paint.
+  // The bridge is filmed from the picture it starts at.
   const clipPoster =
     frames.from === undefined
       ? undefined
@@ -452,11 +451,10 @@ export function TransitionCard({
               onClick={() => setPlaying(true)}
               type="button"
             >
-              <video
-                muted
-                poster={clipPoster}
-                preload="metadata"
-                src={assetUrl(clip.assetIds[0])}
+              <img
+                alt=""
+                decoding="async"
+                src={clipPoster}
                 style={{ aspectRatio: frameRatio(story) }}
               />
             </button>

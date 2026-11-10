@@ -1203,7 +1203,7 @@ describe("the pictures of an element", () => {
         within(card(name, kind))
           .getByTestId("story-slot-main")
           .querySelector(
-            ".story-slot-picture, .story-slot-empty",
+            ".story-slot-picture img, .story-slot-empty",
           ) as HTMLElement
       ).style.aspectRatio;
 
