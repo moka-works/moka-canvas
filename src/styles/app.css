@@ -7970,17 +7970,27 @@ button > .story-spin {
   display: block;
   overflow: hidden;
   padding: 0;
+  position: relative;
   width: 100%;
 }
 
 /* A drawing is shown whole and scaled down inside its place rather than
    cropped to it: it is made at the nearest size the model offers, which is not
    the telling's exact shape, and a preview holding only part of it would send
-   the reader to the lightbox to see what was drawn. */
+   the reader to the lightbox to see what was drawn.
+
+   The picture is laid over the place rather than sized in its flow: the place
+   is only as tall as its shape (`aspect-ratio` on the button), and WebKit does
+   not resolve a percentage height against a height that comes from a shape —
+   the picture keeps its own full height instead, and `contain` then centres it
+   in that taller box, below the place's own clipping, so the place goes dark.
+   Pinned to the place's edges, the box it is drawn in is the place itself. */
 .story-slot-picture img {
   display: block;
   height: 100%;
+  inset: 0;
   object-fit: contain;
+  position: absolute;
   width: 100%;
 }
 
