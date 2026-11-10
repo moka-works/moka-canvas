@@ -16,9 +16,45 @@ const MODELS_ROOT: &str = "converter-scripts/models";
 const NODES_ROOT: &str = "node-scripts/nodes";
 
 fn main() {
+    emit_build_commit();
     emit_builtin_scripts();
     emit_builtin_nodes();
     tauri_build::build();
+}
+
+/// Embeds the commit this build was made from, which the About panel names
+/// beside the version: a reader reporting a problem can say which build they
+/// saw it in. A tree without git (an unpacked source archive) says `unknown`
+/// rather than pretending to name a commit.
+///
+/// What names the commit is watched too, so a later build does not keep
+/// saying an older one.
+fn emit_build_commit() {
+    let commit = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=MOKA_COMMIT={commit}");
+
+    let mut watched = Vec::new();
+    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
+        watched.push(head);
+    }
+    if let Some(reference) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(path) = git(&["rev-parse", "--git-path", &reference]) {
+            watched.push(path);
+        }
+    }
+    for path in watched {
+        println!("cargo:rerun-if-changed={path}");
+    }
+}
+
+/// One git command's answer, when it succeeds and says something.
+fn git(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let answer = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!answer.is_empty()).then_some(answer)
 }
 
 /// Writes `builtin_nodes.rs` beside the other build output.

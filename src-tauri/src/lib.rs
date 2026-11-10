@@ -25,7 +25,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 pub fn run() {
     telemetry::init_app();
-    let built = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -46,8 +46,10 @@ pub fn run() {
                 report_startup_failure(app, &error);
             }
             Ok(())
-        })
-        .build(tauri::generate_context!());
+        });
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu_with_build);
+    let built = builder.build(tauri::generate_context!());
     let app = match built {
         Ok(app) => app,
         Err(error) => {
@@ -67,6 +69,45 @@ pub fn run() {
             }
         }
     });
+}
+
+/// The window's menu, with the About panel naming the build as well as the
+/// version.
+///
+/// macOS fills the parenthesized build number from the bundle, which Tauri
+/// gives the version — "0.4.0 (0.4.0)" says nothing about which build a
+/// problem was seen in. The commit this binary was made from stands there
+/// instead; the version keeps the place before it.
+///
+/// The default menu is kept as it is and only its About item is replaced, so
+/// the rest of the platform's own menu still answers for itself.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn menu_with_build<R: tauri::Runtime>(
+    handle: &tauri::AppHandle<R>,
+) -> tauri::Result<tauri::menu::Menu<R>> {
+    use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem};
+
+    let menu = Menu::default(handle)?;
+    let items = menu.items()?;
+    let Some(app_menu) = items.first().and_then(|item| item.as_submenu()) else {
+        return Ok(menu);
+    };
+    if app_menu.remove_at(0)?.is_none() {
+        return Ok(menu);
+    }
+    let about = PredefinedMenuItem::about(
+        handle,
+        None,
+        Some(AboutMetadata {
+            name: Some(handle.package_info().name.clone()),
+            version: Some(handle.package_info().version.to_string()),
+            short_version: Some(env!("MOKA_COMMIT").to_string()),
+            copyright: handle.config().bundle.copyright.clone(),
+            ..Default::default()
+        }),
+    )?;
+    app_menu.insert(&about, 0)?;
+    Ok(menu)
 }
 
 /// Everything the window needs, from the metadata directory down to the
