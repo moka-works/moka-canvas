@@ -80,6 +80,9 @@ import { useField } from "./useField";
 /** How wide the little references beside a frame's ask are asked for: they are
     drawn 44 px square, and the inspector shows the file itself. */
 const REF_THUMB_WIDTH = 128;
+
+/** How wide a shot's clip poster is asked for: its preview is drawn 96 px. */
+const CLIP_POSTER_WIDTH = 192;
 import { moved, splitAct, writeKeyframes } from "./writeBoard";
 
 /** The longest and shortest a shot may be, in seconds. */
@@ -295,6 +298,9 @@ function KeyframeRow({
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
+  // The shot's own picture is what its clip opens on, and what its preview
+  // shows until WebKit has a frame of the clip itself to paint.
+  const clipPoster = takeFile(currentTake(keyframe.art));
   const clipStale = shotClipStale(keyframe);
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
@@ -585,8 +591,14 @@ function KeyframeRow({
               <span className="story-kf-clip">
                 <video
                   muted
+                  poster={
+                    clipPoster === undefined
+                      ? undefined
+                      : assetThumbUrl(clipPoster, CLIP_POSTER_WIDTH)
+                  }
                   preload="metadata"
                   src={assetUrl(clip.assetIds[0])}
+                  style={{ aspectRatio: frameRatio(story) }}
                 />
                 {/*
                   The shot is filmed once, but not only once: a take the reader

@@ -612,6 +612,12 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-act-video-stale-0")).toBeDefined();
     // The older clip is marked, not taken away.
     expect(screen.getByTestId("story-act-video-0")).toBeDefined();
+    // Its preview stands on the frame the act was filmed from until a frame of
+    // the clip itself is painted, which is what WebKit lays over a video.
+    const preview = screen
+      .getByTestId("story-act-video-0")
+      .querySelector("video");
+    expect(preview?.getAttribute("poster")).toContain("asset-frame-new");
   });
 
   it("carries a picture beside the cast that the shot's words do not name", async () => {

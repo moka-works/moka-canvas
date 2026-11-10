@@ -17,7 +17,7 @@ import type {
   StoryDocument,
   StoryShotGranularity,
 } from "../../../shared/domain/types";
-import { assetUrl } from "../../../api/assets";
+import { assetThumbUrl, assetUrl } from "../../../api/assets";
 import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -26,6 +26,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
 import {
   actClipPieces,
+  drawnFrames,
   planActMusic,
   planActVideos,
   planElementArtWaves,
@@ -46,6 +47,7 @@ import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
 import { liveStory } from "./removeOldTake";
 import { RefPicker } from "./RefPicker";
+import { frameRatio } from "./ratios";
 import { actClipStale } from "./staleClips";
 import { staleFrames } from "./stalePictures";
 import { StoryLightbox } from "./StoryLightbox";
@@ -55,6 +57,9 @@ import { moved, writeActs } from "./writeBoard";
 
 /** The longest an act and a shot may be edited to, in seconds. */
 const ACT_TITLE_MAX = 40;
+
+/** How wide a clip's poster is asked for: its preview is drawn 160 px wide. */
+const CLIP_POSTER_WIDTH = 320;
 
 /** The two ways an act's clip may be made, in the order the room shows them. */
 const GRANULARITY_OPTIONS: StoryShotGranularity[] = ["act", "keyframe"];
@@ -139,6 +144,18 @@ export function ActCard({
   const granularity = actGranularity(act, story.shotGranularity);
   const perShot = granularity === "keyframe";
   const clip = currentTake(act.video);
+  // The clip's preview shows the frame it was filmed from until a frame of the
+  // clip itself is painted: WebKit keeps a video at its poster until it is
+  // played, and a preview with no poster at all stays blank on the desktop's
+  // own engine. The clip is made of the act's frames in order, so its first
+  // shot's picture is the one it opens on.
+  const opening = drawnFrames(act)[0];
+  const openingFrame =
+    opening === undefined ? undefined : takeFile(currentTake(opening.art));
+  const clipPoster =
+    openingFrame === undefined
+      ? undefined
+      : assetThumbUrl(openingFrame, CLIP_POSTER_WIDTH);
   const clipStale = actClipStale(act);
   const voice = act.voice === undefined ? undefined : currentTake(act.voice);
   const music = act.music === undefined ? undefined : currentTake(act.music);
@@ -666,8 +683,10 @@ export function ActCard({
             >
               <video
                 muted
+                poster={clipPoster}
                 preload="metadata"
                 src={assetUrl(clip.assetIds[0])}
+                style={{ aspectRatio: frameRatio(story) }}
               />
             </button>
             {!perShot && (
