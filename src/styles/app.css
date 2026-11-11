@@ -7970,7 +7970,6 @@ button > .story-spin {
   display: block;
   overflow: hidden;
   padding: 0;
-  position: relative;
   width: 100%;
 }
 
@@ -7979,25 +7978,6 @@ button > .story-spin {
   display: block;
   object-fit: contain;
   width: 100%;
-}
-
-.story-slot-stamp {
-  background: rgb(0 0 0 / 55%);
-  border: 1px solid var(--stroke);
-  border-radius: 999px;
-  color: var(--ink);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 8px;
-  position: absolute;
-  right: 6px;
-  top: 6px;
-}
-
-.story-slot-stamp.is-on {
-  background: var(--success);
-  border-color: var(--success);
-  color: var(--canvas);
 }
 
 .story-slot-actions {
