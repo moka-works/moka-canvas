@@ -347,6 +347,10 @@ export const MAX_ELEMENTS_PER_STORY = 500;
 export const MAX_TAKES_PER_SLOT = 12;
 export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
+/** How many hand-written clip prompts one telling may keep. */
+export const MAX_VIDEO_PROMPT_OVERRIDES = 4_096;
+/** The longest name one clip's ask may be known by in that map. */
+export const MAX_VIDEO_PROMPT_KEY_LENGTH = 200;
 
 /** How many pictures a shot may carry outside its cast. */
 export const MAX_EXTRA_REFERENCES_PER_SHOT = 4;

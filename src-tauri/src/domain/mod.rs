@@ -1733,6 +1733,13 @@ pub enum DocumentCommand {
         keyframe_id: String,
         patch: StoryKeyframePatch,
     },
+    /// Video prompts written by hand, keyed by the ask they replace. A null
+    /// entry takes one away and the board's own words stand again.
+    #[serde(rename_all = "camelCase")]
+    SetStoryVideoPromptOverrides {
+        story_id: String,
+        prompts: BTreeMap<String, Option<story::StoryVideoPromptOverride>>,
+    },
     /// One place's takes, whole.
     ///
     /// Whole rather than one take added at a time, because keeping an older

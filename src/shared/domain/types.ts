@@ -774,6 +774,19 @@ export interface StoryTake {
   createdAt: IsoTimestamp;
 }
 
+/**
+ * One video prompt a reader wrote by hand, in place of the one the board
+ * would render for that piece.
+ *
+ * `auto` is the short reading of the automatic prompt the piece had when the
+ * words were written, so the room can say when the board has moved on and the
+ * hand-written words no longer come from what stands there now.
+ */
+export interface StoryVideoPromptOverride {
+  prompt: string;
+  auto: string;
+}
+
 export const STORY_SHOT_SIZES = [
   "extremeClose",
   "close",
@@ -1171,6 +1184,16 @@ export interface StoryDocument {
    * a character of the cast, and what every character's own voice stands over.
    */
   narrator?: StoryVoiceProfile;
+  /**
+   * Prompts the reader has written by hand for the clips this board films,
+   * keyed by the ask they belong to.
+   *
+   * A clip asked for again, in a batch, or after a failure is asked for with
+   * these words for as long as they stand, rather than with the ones the board
+   * would render. Absent means every clip is asked for in the board's own
+   * words; a key the board no longer plans is simply never read.
+   */
+  videoPromptOverrides?: Record<string, StoryVideoPromptOverride>;
   edit: StoryEdit;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
@@ -1740,6 +1763,17 @@ export type DocumentCommand =
       chapterId: string;
       actId: string;
       patch: StoryActPatch;
+    }
+  /**
+   * Video prompts written by hand, keyed by the ask they replace.
+   *
+   * Whole entries move: a null takes one away and the board's own words stand
+   * again. Keys the board no longer plans may be taken away with the rest.
+   */
+  | {
+      type: "setStoryVideoPromptOverrides";
+      storyId: string;
+      prompts: Record<string, StoryVideoPromptOverride | null>;
     }
   | {
       type: "updateStoryKeyframe";

@@ -47,6 +47,7 @@ import {
   takeFile,
   targetKey,
   transitionFrames,
+  videoPromptOverride,
   voiceFor,
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
@@ -1082,13 +1083,15 @@ export function planActVideos(
         id: base,
         target,
         capability: "video" as const,
-        prompt: storyTransitionVideoPrompt({
-          ...look,
-          from: stripStoryMentions(from.content),
-          to: stripStoryMentions(to.content),
-          move: act.transition?.prompt ?? "",
-          seconds,
-        }),
+        prompt:
+          videoPromptOverride(story, base)?.prompt ??
+          storyTransitionVideoPrompt({
+            ...look,
+            from: stripStoryMentions(from.content),
+            to: stripStoryMentions(to.content),
+            move: act.transition?.prompt ?? "",
+            seconds,
+          }),
         inputs: [
           { role: "firstFrame" as const, assetId: from.assetId },
           { role: "lastFrame" as const, assetId: to.assetId },
@@ -1154,24 +1157,27 @@ export function planActVideos(
               ? [{ role: "lastFrame" as const, assetId: last.assetId }]
               : []),
           ];
+      const id = several ? `${base}:${at + 1}` : base;
       return {
-        id: several ? `${base}:${at + 1}` : base,
+        id,
         target,
         capability: "video" as const,
-        prompt: storyActVideoPrompt({
-          ...look,
-          title: act.title,
-          summary: act.summary,
-          first: first.content,
-          last: last.content,
-          middle: (references ? held : between)
-            .map((frame) => frame.content)
-            .join("; "),
-          mode: references ? "references" : "frames",
-          seconds: piece.seconds,
-          dialogue: piece.keyframes.flatMap((keyframe) => keyframe.dialogue),
-          ...(several ? { part: at + 1, total: pieces.length } : {}),
-        }),
+        prompt:
+          videoPromptOverride(story, id)?.prompt ??
+          storyActVideoPrompt({
+            ...look,
+            title: act.title,
+            summary: act.summary,
+            first: first.content,
+            last: last.content,
+            middle: (references ? held : between)
+              .map((frame) => frame.content)
+              .join("; "),
+            mode: references ? "references" : "frames",
+            seconds: piece.seconds,
+            dialogue: piece.keyframes.flatMap((keyframe) => keyframe.dialogue),
+            ...(several ? { part: at + 1, total: pieces.length } : {}),
+          }),
         inputs,
         params: videoParams(
           story.brief.aspect,
@@ -1218,18 +1224,21 @@ export function planKeyframeVideos(
     if (lastFrame !== undefined && lastFrame !== frame.assetIds[0]) {
       inputs.push({ role: "lastFrame", assetId: lastFrame });
     }
+    const id = jobKey(target);
     return [
       {
-        id: jobKey(target),
+        id,
         target,
         capability: "video",
-        prompt: storyKeyframeVideoPrompt({
-          ...look,
-          title: keyframe.title,
-          content: stripStoryMentions(keyframe.content),
-          seconds,
-          dialogue: keyframe.dialogue,
-        }),
+        prompt:
+          videoPromptOverride(story, id)?.prompt ??
+          storyKeyframeVideoPrompt({
+            ...look,
+            title: keyframe.title,
+            content: stripStoryMentions(keyframe.content),
+            seconds,
+            dialogue: keyframe.dialogue,
+          }),
         inputs,
         params: videoParams(story.brief.aspect, seconds),
       },

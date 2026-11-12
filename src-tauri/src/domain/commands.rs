@@ -1524,6 +1524,7 @@ fn apply_one(
         | DocumentCommand::SetStoryActs { .. }
         | DocumentCommand::UpdateStoryAct { .. }
         | DocumentCommand::UpdateStoryKeyframe { .. }
+        | DocumentCommand::SetStoryVideoPromptOverrides { .. }
         | DocumentCommand::SetStorySlot { .. }
         | DocumentCommand::ConfirmStoryStep { .. }
         | DocumentCommand::SetStoryEdit { .. }) => story::apply_story_command(moka, command),

@@ -22,6 +22,10 @@ pub const MAX_ELEMENTS_PER_STORY: usize = 500;
 pub const MAX_TAKES_PER_SLOT: usize = 12;
 pub const MAX_ACTS_PER_CHAPTER: usize = 300;
 pub const MAX_KEYFRAMES_PER_ACT: usize = 12;
+/// How many hand-written clip prompts one telling may keep, and how long the
+/// name of the ask each belongs to may be.
+pub const MAX_VIDEO_PROMPT_OVERRIDES: usize = 4_096;
+pub const MAX_VIDEO_PROMPT_KEY_LENGTH: usize = 200;
 /// How many of a frame's mentioned reference pictures its ask carries when the
 /// story says nothing, and the most it may be set to carry.
 pub const REFERENCE_IMAGES_DEFAULT: u32 = 3;
@@ -630,6 +634,16 @@ pub struct StoryEdit {
     pub assembled_digest: Option<String>,
 }
 
+/// One clip prompt a reader wrote by hand, and the automatic prompt it
+/// replaced, read short so the room can tell when the board has moved on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryVideoPromptOverride {
+    pub prompt: String,
+    /// The short reading of the automatic prompt when the words were written.
+    pub auto: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryDocument {
@@ -656,6 +670,10 @@ pub struct StoryDocument {
     /// every character without a voice of its own falls back to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub narrator: Option<StoryVoiceProfile>,
+    /// Clip prompts the reader wrote by hand, keyed by the ask they replace.
+    /// Absent means every clip is asked for in the board's own words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_prompt_overrides: Option<BTreeMap<String, StoryVideoPromptOverride>>,
     pub created_at: IsoTimestamp,
     pub updated_at: IsoTimestamp,
 }
@@ -1364,6 +1382,36 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
             ),
         ));
     }
+    if let Some(overrides) = &story.video_prompt_overrides {
+        if overrides.len() > MAX_VIDEO_PROMPT_OVERRIDES {
+            issues.push(issue(
+                "STORY_VIDEO_PROMPT_LIMIT",
+                "Hand-written video prompt limit reached".into(),
+            ));
+        }
+        for (ask_id, wrote) in overrides {
+            if ask_id.trim().is_empty() || ask_id.chars().count() > MAX_VIDEO_PROMPT_KEY_LENGTH {
+                issues.push(issue(
+                    "VALIDATION_FAILED",
+                    "A hand-written video prompt is filed under an invalid ask".into(),
+                ));
+            }
+            if wrote.prompt.trim().is_empty()
+                || wrote.prompt.chars().count() > crate::domain::validate::MAX_PROMPT_LENGTH
+            {
+                issues.push(issue(
+                    "VALIDATION_FAILED",
+                    "A hand-written video prompt is empty or too long".into(),
+                ));
+            }
+            if wrote.auto.trim().is_empty() || wrote.auto.chars().count() > 64 {
+                issues.push(issue(
+                    "VALIDATION_FAILED",
+                    "A hand-written video prompt has no reading of its automatic words".into(),
+                ));
+            }
+        }
+    }
 
     let mut slots: Vec<&StorySlot> = Vec::new();
     for element in &story.elements {
@@ -1422,6 +1470,25 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
         }
     }
     issues
+}
+
+/// One clip prompt a reader wrote by hand, as a command may write it.
+fn check_video_prompt_override(wrote: &StoryVideoPromptOverride) -> Result<(), CommandError> {
+    if wrote.prompt.trim().is_empty()
+        || wrote.prompt.chars().count() > crate::domain::validate::MAX_PROMPT_LENGTH
+    {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A hand-written video prompt is empty or too long",
+        ));
+    }
+    if wrote.auto.trim().is_empty() || wrote.auto.chars().count() > 64 {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A hand-written video prompt has no reading of its automatic words",
+        ));
+    }
+    Ok(())
 }
 
 // -----------------------------------------------------------------------------
@@ -2455,6 +2522,61 @@ pub fn apply_story_command(
                     act_id: act_id.clone(),
                     keyframe_id: keyframe_id.clone(),
                     patch: previous,
+                }],
+            ))
+        }
+        DocumentCommand::SetStoryVideoPromptOverrides { story_id, prompts } => {
+            let story = story_of(moka, story_id)?;
+            let mut previous: BTreeMap<String, Option<StoryVideoPromptOverride>> = BTreeMap::new();
+            for (ask_id, held) in prompts {
+                if ask_id.trim().is_empty() || ask_id.chars().count() > MAX_VIDEO_PROMPT_KEY_LENGTH
+                {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "A hand-written video prompt is filed under an invalid ask",
+                    ));
+                }
+                if let Some(override_) = held {
+                    check_video_prompt_override(override_)?;
+                }
+                previous.insert(
+                    ask_id.clone(),
+                    story
+                        .video_prompt_overrides
+                        .as_ref()
+                        .and_then(|held| held.get(ask_id))
+                        .cloned(),
+                );
+            }
+            let mut next = story.clone();
+            let mut overrides = next.video_prompt_overrides.take().unwrap_or_default();
+            for (ask_id, held) in prompts {
+                match held {
+                    Some(override_) => {
+                        overrides.insert(ask_id.clone(), override_.clone());
+                    }
+                    None => {
+                        overrides.remove(ask_id);
+                    }
+                }
+            }
+            if overrides.len() > MAX_VIDEO_PROMPT_OVERRIDES {
+                return Err(CommandError::new(
+                    "STORY_VIDEO_PROMPT_LIMIT",
+                    "Hand-written video prompt limit reached",
+                ));
+            }
+            // A telling with no hand-written words keeps no map at all.
+            next.video_prompt_overrides = if overrides.is_empty() {
+                None
+            } else {
+                Some(overrides)
+            };
+            Ok((
+                replace_story(moka, next),
+                vec![DocumentCommand::SetStoryVideoPromptOverrides {
+                    story_id: story_id.clone(),
+                    prompts: previous,
                 }],
             ))
         }

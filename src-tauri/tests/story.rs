@@ -11,16 +11,17 @@ use moka_canvas::domain::story::{
     self, StoryAct, StoryActSound, StoryBrief, StoryChapter, StoryDialogueLine, StoryDocument,
     StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind, StoryElementPatch,
     StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryShotGranularity, StoryShotSize,
-    StorySlot, StorySlotTarget, StoryTake, MAX_ACTS_PER_CHAPTER, MAX_CHAPTERS_PER_STORY,
-    MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT, MAX_TAKES_PER_SLOT,
-    STORY_NAME_MAX,
+    StorySlot, StorySlotTarget, StoryTake, StoryVideoPromptOverride, MAX_ACTS_PER_CHAPTER,
+    MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT,
+    MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
 };
-use moka_canvas::domain::validate::validate_moka_file;
+use moka_canvas::domain::validate::{validate_moka_file, MAX_PROMPT_LENGTH};
 use moka_canvas::domain::{
     CanvasDocument, DocumentCommand, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry,
     TimelineDocument, TimelineSettings, MOKA_FILE_VERSION,
 };
 use moka_canvas::project::codec::{decode_moka_file, encode_moka_file, MOKA_MAGIC};
+use std::collections::BTreeMap;
 
 const NOW: &str = "2026-01-01T00:00:00.000Z";
 
@@ -368,6 +369,7 @@ fn story_document() -> MokaFile {
             assembled_digest: None,
         },
         narrator: None,
+        video_prompt_overrides: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }]);
@@ -1191,6 +1193,84 @@ fn moves_only_the_fields_a_shot_patch_names_and_keeps_a_shot_to_its_length() {
 }
 
 #[test]
+fn keeps_hand_written_clip_prompts_and_takes_them_away_again() {
+    let moka = story_document();
+    let ask = format!("actVideo:{CHAPTER_FIRST}:{ACT}");
+    let mut prompts = BTreeMap::new();
+    prompts.insert(
+        ask.clone(),
+        Some(StoryVideoPromptOverride {
+            prompt: "Only the lantern moves.".into(),
+            auto: "0badcafe".into(),
+        }),
+    );
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SetStoryVideoPromptOverrides {
+            story_id: STORY.into(),
+            prompts,
+        }],
+    );
+    let held = story_of(&next)
+        .video_prompt_overrides
+        .as_ref()
+        .expect("the words are kept with the telling");
+    assert_eq!(
+        held.get(&ask).map(|override_| override_.prompt.as_str()),
+        Some("Only the lantern moves.")
+    );
+
+    let mut remove = BTreeMap::new();
+    remove.insert(ask.clone(), None);
+    let gone = round_trip(
+        &next,
+        vec![DocumentCommand::SetStoryVideoPromptOverrides {
+            story_id: STORY.into(),
+            prompts: remove,
+        }],
+    );
+    assert!(story_of(&gone).video_prompt_overrides.is_none());
+
+    let mut blank = BTreeMap::new();
+    blank.insert(
+        ask.clone(),
+        Some(StoryVideoPromptOverride {
+            prompt: "   ".into(),
+            auto: "0badcafe".into(),
+        }),
+    );
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryVideoPromptOverrides {
+                story_id: STORY.into(),
+                prompts: blank,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+
+    let mut long = BTreeMap::new();
+    long.insert(
+        ask,
+        Some(StoryVideoPromptOverride {
+            prompt: "x".repeat(MAX_PROMPT_LENGTH + 1),
+            auto: "0badcafe".into(),
+        }),
+    );
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryVideoPromptOverrides {
+                story_id: STORY.into(),
+                prompts: long,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
 fn refuses_a_line_of_dialogue_with_no_name_of_its_own_or_two_sharing_one() {
     let moka = story_document();
     let patched = |dialogue: Vec<StoryDialogueLine>| DocumentCommand::UpdateStoryKeyframe {
@@ -1941,6 +2021,7 @@ fn create_story(name: &str) -> StoryDocument {
         confirmed_steps: Vec::new(),
         edit: StoryEdit::default(),
         narrator: None,
+        video_prompt_overrides: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }
