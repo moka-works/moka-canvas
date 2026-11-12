@@ -8235,6 +8235,41 @@ button > .story-spin {
   width: 100%;
 }
 
+/* A clip's takes are watched rather than looked at: the player stands where a
+   drawing's picture does, and the press that keeps one stands under it, since
+   the player answers clicks of its own. */
+.story-picks-grid.is-clip {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.story-pick.is-clip,
+.story-pick.is-audio {
+  cursor: default;
+}
+
+.story-pick video {
+  background: #000;
+  border-radius: var(--radius-sm);
+  display: block;
+  max-height: 260px;
+  object-fit: contain;
+  width: 100%;
+}
+
+/* A recording has its own player, which needs the room its controls take. */
+.story-picks-grid.is-audio {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.story-pick audio {
+  display: block;
+  width: 100%;
+}
+
+.story-pick-keep {
+  justify-self: start;
+}
+
 .story-pick-foot {
   align-items: center;
   color: var(--muted);

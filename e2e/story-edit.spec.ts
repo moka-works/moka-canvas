@@ -141,6 +141,40 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
       timeout: 60_000,
     });
 
+    // The score is a take like any other: asking again keeps both, and the row
+    // that plays one says which score the act is scored by — and is where an
+    // older one leaves, its file with it.
+    const score = firstAct.getByTestId("story-act-music-0");
+    const firstScore = await score.getAttribute("src");
+    await firstAct.getByTestId("story-act-music-again-0").click();
+    await expect(score).not.toHaveAttribute("src", firstScore ?? "");
+    const secondScore = await score.getAttribute("src");
+    const fileOf = (url: string | null) =>
+      url === null
+        ? ""
+        : (new URL(url, "http://localhost").pathname.split("/").pop() ?? "");
+    await firstAct.getByTestId("story-act-music-pick-0").click();
+    const scores = page.getByTestId("story-audio-picks");
+    await expect(scores.locator(".story-pick-tile")).toHaveCount(2);
+    await expect(
+      scores.getByTestId(`story-audio-pick-${fileOf(secondScore)}`),
+    ).toHaveClass(/is-current/);
+    await scores.getByTestId(`story-audio-keep-${fileOf(firstScore)}`).click();
+    await expect(page.getByTestId("story-audio-picks")).toHaveCount(0);
+    await expect(score).toHaveAttribute("src", firstScore ?? "");
+
+    await firstAct.getByTestId("story-act-music-pick-0").click();
+    await scores
+      .getByTestId(`story-audio-pick-remove-${fileOf(secondScore)}`)
+      .click();
+    await expect(page.getByTestId("story-pick-ask")).toContainText("recording");
+    await page.getByTestId("story-pick-remove-confirm").click();
+    await expect(scores.locator(".story-pick-tile")).toHaveCount(1);
+    await expect(
+      scores.getByTestId(`story-audio-pick-remove-${fileOf(firstScore)}`),
+    ).toHaveCount(0);
+    await scores.getByRole("button", { name: "Close" }).click();
+
     // The second act is framed and filmed too, which is what the step's own
     // press reads before it opens step five.
     const secondAct = page.getByTestId("story-act-1");

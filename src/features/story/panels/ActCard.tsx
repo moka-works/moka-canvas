@@ -42,6 +42,8 @@ import {
   type ActRun,
 } from "../stores/storyJobStore";
 import { KeyframeTable } from "./KeyframeTable";
+import { keepTake, removeTake, type TakePlace } from "./takePicks";
+import { StoryPicks } from "./StoryPicks";
 import { ElementDraftDialog } from "./ElementDraftDialog";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
@@ -126,6 +128,9 @@ export function ActCard({
   const runArt = useStoryWavesAsk();
   const moka = useProjectStore((state) => state.moka);
   const [playing, setPlaying] = useState(false);
+  const [pickingClip, setPickingClip] = useState(false);
+  const [pickingVoice, setPickingVoice] = useState(false);
+  const [pickingMusic, setPickingMusic] = useState(false);
   const [removing, setRemoving] = useState(false);
   // The element whose picture the reader asked to look at, if any. Held by
   // name rather than by the object: a drawing that lands while the inspector
@@ -144,6 +149,21 @@ export function ActCard({
   const granularity = actGranularity(act, story.shotGranularity);
   const perShot = granularity === "keyframe";
   const clip = currentTake(act.video);
+  const clipPlace: TakePlace = {
+    kind: "actVideo",
+    chapterId,
+    actId: act.id,
+  };
+  const voicePlace: TakePlace = {
+    kind: "actVoice",
+    chapterId,
+    actId: act.id,
+  };
+  const musicPlace: TakePlace = {
+    kind: "actMusic",
+    chapterId,
+    actId: act.id,
+  };
   // The clip opens on the act's first drawn frame.
   const opening = drawnFrames(act)[0];
   const openingFrame =
@@ -700,6 +720,21 @@ export function ActCard({
                 {videoBusy ? t("story:panels.drawing") : t("story:voice.again")}
               </button>
             )}
+            {!perShot && act.video.takes.length > 1 && (
+              /*
+                Every ask made another take and none of them was thrown away,
+                so the row that plays one is also where the reader says which
+                one the act is filmed by — and where an unwanted one leaves.
+              */
+              <button
+                className="link"
+                data-testid={`story-act-video-pick-${index}`}
+                onClick={() => setPickingClip(true)}
+                type="button"
+              >
+                {t("story:panels.pickClip")}
+              </button>
+            )}
             {clipStale && (
               <span
                 className="story-clip-stale"
@@ -765,6 +800,16 @@ export function ActCard({
                 {" · "}
                 {t("story:voice.legacyNote")}
               </span>
+              {act.voice !== undefined && act.voice.takes.length > 1 && (
+                <button
+                  className="link"
+                  data-testid={`story-act-voice-pick-${index}`}
+                  onClick={() => setPickingVoice(true)}
+                  type="button"
+                >
+                  {t("story:panels.pickClip")}
+                </button>
+              )}
             </>
           )}
         </span>
@@ -801,6 +846,16 @@ export function ActCard({
               >
                 {t("story:voice.again")}
               </button>
+              {act.music !== undefined && act.music.takes.length > 1 && (
+                <button
+                  className="link"
+                  data-testid={`story-act-music-pick-${index}`}
+                  onClick={() => setPickingMusic(true)}
+                  type="button"
+                >
+                  {t("story:panels.pickClip")}
+                </button>
+              )}
             </>
           )}
         </span>
@@ -834,6 +889,52 @@ export function ActCard({
           onClose={() => setPlaying(false)}
           poster={clipPoster}
           video
+        />
+      )}
+
+      {pickingClip && clip !== undefined && (
+        <StoryPicks
+          current={takeFile(clip)}
+          kind="clip"
+          label={t("story:import.clip")}
+          onChoose={(assetId) => {
+            keepTake(story.id, clipPlace, assetId);
+            setPickingClip(false);
+          }}
+          onClose={() => setPickingClip(false)}
+          onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
+          poster={clipPoster}
+          takes={act.video.takes}
+        />
+      )}
+
+      {pickingVoice && voice !== undefined && (
+        <StoryPicks
+          current={takeFile(voice)}
+          kind="audio"
+          label={t("story:voice.rowLabel")}
+          onChoose={(assetId) => {
+            keepTake(story.id, voicePlace, assetId);
+            setPickingVoice(false);
+          }}
+          onClose={() => setPickingVoice(false)}
+          onRemove={(assetId) => removeTake(story.id, voicePlace, assetId)}
+          takes={act.voice === undefined ? [] : act.voice.takes}
+        />
+      )}
+
+      {pickingMusic && music !== undefined && (
+        <StoryPicks
+          current={takeFile(music)}
+          kind="audio"
+          label={t("story:storyboard.sound_music")}
+          onChoose={(assetId) => {
+            keepTake(story.id, musicPlace, assetId);
+            setPickingMusic(false);
+          }}
+          onClose={() => setPickingMusic(false)}
+          onRemove={(assetId) => removeTake(story.id, musicPlace, assetId)}
+          takes={act.music === undefined ? [] : act.music.takes}
         />
       )}
 

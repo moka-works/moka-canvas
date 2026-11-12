@@ -471,15 +471,51 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .getAttribute("src");
     await page.getByTestId("story-lightbox-close").click();
     await expect(firstAct.getByTestId("story-act-video-again-0")).toHaveText(
-      "Ask for another",
+      "Generate again",
     );
     await firstAct.getByTestId("story-act-video-again-0").click();
     await expect(firstAct.getByTestId("story-act-video-again-0")).toBeEnabled();
     await firstAct.getByTestId("story-act-video-0").click();
+    const lightboxVideo = page.getByTestId("story-lightbox").locator("video");
+    await expect(lightboxVideo).not.toHaveAttribute("src", wasPlaying ?? "");
+    const nowPlaying = await lightboxVideo.getAttribute("src");
+    await page.getByTestId("story-lightbox-close").click();
+
+    // Two takes are a choice, so the row that plays one also says which one:
+    // every take is watched in its list, and keeping one is a press beside the
+    // player, which answers clicks of its own.
+    const takeOf = (url: string | null) =>
+      url === null
+        ? ""
+        : (new URL(url, "http://localhost").pathname.split("/").pop() ?? "");
+    const firstTake = takeOf(wasPlaying);
+    const secondTake = takeOf(nowPlaying);
+    await firstAct.getByTestId("story-act-video-pick-0").click();
+    const archive = page.getByTestId("story-clip-picks");
+    await expect(archive).toBeVisible();
+    await expect(archive.locator(".story-pick-tile")).toHaveCount(2);
+    await expect(
+      archive.getByTestId(`story-clip-pick-${secondTake}`),
+    ).toHaveClass(/is-current/);
+    await archive.getByTestId(`story-clip-keep-${firstTake}`).click();
+    await expect(page.getByTestId("story-clip-picks")).toHaveCount(0);
+    await firstAct.getByTestId("story-act-video-0").click();
     await expect(
       page.getByTestId("story-lightbox").locator("video"),
-    ).not.toHaveAttribute("src", wasPlaying ?? "");
+    ).toHaveAttribute("src", wasPlaying ?? "");
     await page.getByTestId("story-lightbox-close").click();
+
+    // A take no longer wanted leaves the list and the shelf with it, while the
+    // take in use is not the list's to throw away.
+    await firstAct.getByTestId("story-act-video-pick-0").click();
+    await archive.getByTestId(`story-clip-pick-remove-${secondTake}`).click();
+    await expect(page.getByTestId("story-pick-ask")).toBeVisible();
+    await page.getByTestId("story-pick-remove-confirm").click();
+    await expect(archive.locator(".story-pick-tile")).toHaveCount(1);
+    await expect(
+      archive.getByTestId(`story-clip-pick-remove-${firstTake}`),
+    ).toHaveCount(0);
+    await archive.getByRole("button", { name: "Close" }).click();
 
     // One act can be filmed its own way: the choice stands on its own card,
     // and switching over clips already made is a question scoped to this act.

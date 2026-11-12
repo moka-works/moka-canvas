@@ -8,6 +8,7 @@ import {
   STORY_TRANSITION_SOURCES,
   currentTake,
   neighbourVideos,
+  takeFile,
   transitionFrames,
   type StoryTransition,
   type StoryTransitionSource,
@@ -22,9 +23,11 @@ import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { RunningBar } from "../components/RunningBar";
 import { planActVideos, videoCeiling } from "../jobs/plan";
 import { useStoryRun, type ActRun } from "../stores/storyJobStore";
+import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
 import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
+import { StoryPicks } from "./StoryPicks";
 import { useField } from "./useField";
 import { writeActs } from "./writeBoard";
 
@@ -66,6 +69,7 @@ export function TransitionCard({
   const { t } = useTranslation();
   const run = useStoryRun();
   const [playing, setPlaying] = useState(false);
+  const [pickingClip, setPickingClip] = useState(false);
   const [fetching, setFetching] = useState(false);
   // The card is only handed a bridge, but the fallback keeps the hooks below
   // unconditional.
@@ -150,6 +154,11 @@ export function TransitionCard({
   );
 
   const clip = currentTake(act.video);
+  const clipPlace: TakePlace = {
+    kind: "actVideo",
+    chapterId: chapter.id,
+    actId: act.id,
+  };
   // The bridge is filmed from the picture it starts at.
   const clipPoster =
     frames.from === undefined
@@ -474,6 +483,16 @@ export function TransitionCard({
                     ? t("story:storyboard.transitionFetchAndFilm")
                     : t("story:storyboard.transitionAgain")}
             </button>
+            {act.video.takes.length > 1 && (
+              <button
+                className="link"
+                data-testid={`story-transition-video-pick-${index}`}
+                onClick={() => setPickingClip(true)}
+                type="button"
+              >
+                {t("story:panels.pickClip")}
+              </button>
+            )}
           </span>
         )}
         {missing !== undefined && (
@@ -493,6 +512,22 @@ export function TransitionCard({
           onClose={() => setPlaying(false)}
           poster={clipPoster}
           video
+        />
+      )}
+
+      {pickingClip && clip !== undefined && (
+        <StoryPicks
+          current={takeFile(clip)}
+          kind="clip"
+          label={t("story:storyboard.transitionTitle")}
+          onChoose={(assetId) => {
+            keepTake(story.id, clipPlace, assetId);
+            setPickingClip(false);
+          }}
+          onClose={() => setPickingClip(false)}
+          onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
+          poster={clipPoster}
+          takes={act.video.takes}
         />
       )}
     </li>

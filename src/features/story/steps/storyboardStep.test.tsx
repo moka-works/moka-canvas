@@ -1832,6 +1832,43 @@ describe("writing an episode's board", () => {
     expect(acts()[0]!.keyframes[0]!.voices?.[0]?.slot.takes).toHaveLength(2);
   });
 
+  it("keeps an older reading of a line over the one made last", async () => {
+    openAtBoard(boarded());
+    fireEvent.click(screen.getByTestId("story-act-voice-go-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    await comesBack();
+    await waitFor(() => expect(lineVoice()).toBeDefined());
+    const first = lineVoice()!;
+
+    // Rewritten, the line is read again: the reading it had is kept beside the
+    // new one rather than replaced by it.
+    fireEvent.click(screen.getByTestId("story-kf-dialogue-0"));
+    fireEvent.change(screen.getByTestId("story-line-text-0"), {
+      target: { value: "车不会来了。" },
+    });
+    fireEvent.click(screen.getByTestId("story-line-done"));
+    await waitFor(() => expect(storyLine()?.text).toBe("车不会来了。"));
+    fireEvent.click(screen.getByTestId("story-kf-dialogue-0"));
+    landed[
+      `lineVoice:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:${ids.lineFirst}`
+    ] = ["asset-lineVoice-reread"];
+    fireEvent.click(screen.getByTestId("story-line-voice-go-0"));
+    await waitFor(() => expect(starts).toHaveLength(2));
+    await comesBack();
+    await waitFor(() => expect(lineVoice()).toBe("asset-lineVoice-reread"));
+
+    // A line read more than once is a choice: the older reading is played in
+    // the list and kept from it, and the row reads it from then on.
+    fireEvent.click(screen.getByTestId("story-line-voice-pick-0"));
+    expect(screen.getByTestId("story-audio-picks")).toBeDefined();
+    fireEvent.click(screen.getByTestId(`story-audio-keep-${first}`));
+    await waitFor(() => expect(lineVoice()).toBe(first));
+    expect(
+      screen.getByTestId("story-line-voice-take-0").getAttribute("src"),
+    ).toContain(first);
+    expect(screen.queryByTestId("story-audio-picks")).toBeNull();
+  });
+
   it("asks for the score once the board says what the act sounds like", async () => {
     const moka = boarded();
     const act = moka.stories![0].chapters[0]!.acts[0]!;

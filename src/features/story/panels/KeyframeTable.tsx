@@ -74,7 +74,9 @@ import { StoryEditDialog } from "./StoryEditDialog";
 import { StoryElementPicker } from "./StoryElementPicker";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StoryLightbox } from "./StoryLightbox";
+import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
+import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
 
 /** How wide the little references beside a frame's ask are asked for: they are
@@ -294,11 +296,18 @@ function KeyframeRow({
   const { t } = useTranslation();
   const run = useStoryRun();
   const [picking, setPicking] = useState(false);
+  const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
   const [playing, setPlaying] = useState(false);
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
+  const clipPlace: TakePlace = {
+    kind: "keyframeVideo",
+    chapterId,
+    actId: act.id,
+    keyframeId: keyframe.id,
+  };
   const clipPoster = takeFile(currentTake(keyframe.art));
   const clipPosterUrl =
     clipPoster === undefined
@@ -621,6 +630,16 @@ function KeyframeRow({
                     ? t("story:panels.drawing")
                     : t("story:voice.again")}
                 </button>
+                {keyframe.video.takes.length > 1 && (
+                  <button
+                    className="link"
+                    data-testid={`story-kf-video-pick-${index}`}
+                    onClick={() => setPickingClip(true)}
+                    type="button"
+                  >
+                    {t("story:panels.pickClip")}
+                  </button>
+                )}
                 {clipStale && (
                   <span
                     className="story-clip-stale"
@@ -724,6 +743,21 @@ function KeyframeRow({
             setPicking(false);
           }}
           onClose={() => setPicking(false)}
+        />
+      )}
+      {pickingClip && clip !== undefined && (
+        <StoryPicks
+          current={takeFile(clip)}
+          kind="clip"
+          label={t("story:import.clip")}
+          onChoose={(assetId) => {
+            keepTake(story.id, clipPlace, assetId);
+            setPickingClip(false);
+          }}
+          onClose={() => setPickingClip(false)}
+          onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
+          poster={clipPosterUrl}
+          takes={keyframe.video.takes}
         />
       )}
       {editing && (
@@ -1296,6 +1330,8 @@ function SpeakerField({
  */
 function LineVoiceRow({
   index,
+  storyId,
+  place,
   take,
   sentence,
   cue,
@@ -1305,6 +1341,9 @@ function LineVoiceRow({
   onAsk,
 }: {
   index: number;
+  storyId: string;
+  /** Where this line's readings live, for keeping one or letting one go. */
+  place: TakePlace;
   take: StoryVoiceTake | undefined;
   /** The line as the document holds it, which the take is read against. */
   sentence: StoryDialogueLine;
@@ -1317,6 +1356,7 @@ function LineVoiceRow({
   onAsk: () => void;
 }) {
   const { t } = useTranslation();
+  const [picking, setPicking] = useState(false);
   const assetId = take?.slot.takes.at(-1)?.assetIds[0];
   const stale = take !== undefined && take.text !== sentence.text.trim();
   return (
@@ -1358,6 +1398,16 @@ function LineVoiceRow({
           {fitsLine(cue)}
         </span>
       )}
+      {take !== undefined && take.slot.takes.length > 1 && (
+        <button
+          className="link"
+          data-testid={`story-line-voice-pick-${index}`}
+          onClick={() => setPicking(true)}
+          type="button"
+        >
+          {t("story:panels.pickClip")}
+        </button>
+      )}
       <button
         className="link"
         data-testid={`story-line-voice-go-${index}`}
@@ -1372,6 +1422,20 @@ function LineVoiceRow({
             ? t("story:voice.lineAsk")
             : t("story:voice.again")}
       </button>
+      {picking && take !== undefined && (
+        <StoryPicks
+          current={takeFile(currentTake(take.slot))}
+          kind="audio"
+          label={t("story:import.voiceLine", { at: index + 1 })}
+          onChoose={(assetId) => {
+            keepTake(storyId, place, assetId);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+          onRemove={(assetId) => removeTake(storyId, place, assetId)}
+          takes={take.slot.takes}
+        />
+      )}
     </div>
   );
 }
@@ -1519,7 +1583,15 @@ function DialogueEditor({
                 index={index}
                 moka={moka}
                 onAsk={() => ask(line.id)}
+                place={{
+                  kind: "lineVoice",
+                  chapterId,
+                  actId: act.id,
+                  keyframeId: keyframe.id,
+                  lineId: line.id,
+                }}
                 sentence={saved}
+                storyId={story.id}
                 take={voiceTakeOf(keyframe, line.id)}
               />
             )}
