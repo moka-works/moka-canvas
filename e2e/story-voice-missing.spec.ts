@@ -60,6 +60,8 @@ test("a voiceless try-out leads to the voice field that answers it", async ({
 
     // The refusal, in the words of the thing that knows it, and answered
     // where it was raised: the press takes the reader to this card's Tone.
+    // The voice form — try-out included — is folded until the card is opened.
+    await page.getByTestId("story-element-advanced-Keeper").click();
     await page.getByTestId("story-voice-Keeper-try").click();
     const told = page.locator(".toast").last();
     await expect(told).toContainText("has no voice yet", { timeout: 30_000 });

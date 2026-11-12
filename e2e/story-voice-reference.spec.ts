@@ -122,6 +122,11 @@ test("a telling's lines are read in a voice copied from the cards' recordings", 
       page.getByTestId("story-element-character-Keeper"),
     ).toBeVisible({ timeout: 10_000 });
 
+    // The recording row stands in the card's voice form, which is folded until
+    // the card is opened.
+    await page.getByTestId("story-element-advanced-Keeper").click();
+    await page.getByTestId("story-element-advanced-Traveller").click();
+
     // Two cards, one recording, two ways of pointing at it: the keeper's comes
     // off this machine, and the traveller's picks what the project now holds.
     await page.getByTestId("story-voice-Keeper-reference-file").setInputFiles({

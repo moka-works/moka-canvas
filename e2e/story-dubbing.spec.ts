@@ -191,6 +191,10 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
     await expect(page.locator(".story-element")).toHaveCount(4, {
       timeout: 30_000,
     });
+    // A character's voice form is folded behind the card's advanced row until
+    // the reader opens it, which is where its model and tone stand.
+    await page.getByTestId("story-element-advanced-Keeper").click();
+    await page.getByTestId("story-element-advanced-Traveller").click();
     await page
       .getByTestId("story-voice-Keeper-model")
       .locator("select")
