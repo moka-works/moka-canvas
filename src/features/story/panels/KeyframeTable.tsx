@@ -53,6 +53,7 @@ import { planDubbing, type DubCue } from "../dubbing";
 import {
   drawnFrames,
   filmRoleOf,
+  jobKey,
   keyframeCast,
   planKeyframeArt,
   planKeyframeVideos,
@@ -78,6 +79,7 @@ import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
+import { VideoPromptDialog } from "./VideoPromptDialog";
 
 /** How wide the little references beside a frame's ask are asked for: they are
     drawn 44 px square, and the inspector shows the file itself. */
@@ -298,6 +300,7 @@ function KeyframeRow({
   const [picking, setPicking] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
   const [playing, setPlaying] = useState(false);
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
@@ -314,6 +317,13 @@ function KeyframeRow({
       ? undefined
       : assetThumbUrl(clipPoster, CLIP_POSTER_WIDTH);
   const clipStale = shotClipStale(keyframe);
+  const promptId = jobKey({
+    kind: "keyframeVideo",
+    chapterId,
+    actId: act.id,
+    keyframeId: keyframe.id,
+  });
+  const promptEdited = story.videoPromptOverrides?.[promptId] !== undefined;
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
 
@@ -585,20 +595,35 @@ function KeyframeRow({
         {perShot && (
           <td>
             {clip === undefined ? (
-              <button
-                className="link"
-                data-testid={`story-kf-video-${index}`}
-                disabled={!filmed || clipBusy}
-                onClick={film}
-                title={
-                  filmed ? undefined : t("story:storyboard.drawFrameFirst")
-                }
-                type="button"
-              >
-                {clipBusy
-                  ? t("story:panels.drawing")
-                  : t("story:storyboard.film")}
-              </button>
+              <>
+                <button
+                  className="link"
+                  data-testid={`story-kf-video-${index}`}
+                  disabled={!filmed || clipBusy}
+                  onClick={film}
+                  title={
+                    filmed ? undefined : t("story:storyboard.drawFrameFirst")
+                  }
+                  type="button"
+                >
+                  {clipBusy
+                    ? t("story:panels.drawing")
+                    : t("story:storyboard.film")}
+                </button>
+                {filmed && (
+                  <button
+                    className="link"
+                    data-testid={`story-kf-video-prompt-${index}`}
+                    onClick={() => setEditingPrompt(true)}
+                    type="button"
+                  >
+                    {t("story:storyboard.videoPromptEdit")}
+                    {promptEdited
+                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                      : ""}
+                  </button>
+                )}
+              </>
             ) : (
               <span className="story-kf-clip">
                 <button
@@ -630,6 +655,19 @@ function KeyframeRow({
                     ? t("story:panels.drawing")
                     : t("story:voice.again")}
                 </button>
+                {filmed && (
+                  <button
+                    className="link"
+                    data-testid={`story-kf-video-prompt-${index}`}
+                    onClick={() => setEditingPrompt(true)}
+                    type="button"
+                  >
+                    {t("story:storyboard.videoPromptEdit")}
+                    {promptEdited
+                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                      : ""}
+                  </button>
+                )}
                 {keyframe.video.takes.length > 1 && (
                   <button
                     className="link"
@@ -764,6 +802,19 @@ function KeyframeRow({
         <StoryEditDialog
           onClose={() => setEditing(false)}
           place={{ kind: "keyframe", chapterId, act, keyframe }}
+          story={story}
+        />
+      )}
+      {editingPrompt && (
+        <VideoPromptDialog
+          onClose={() => setEditingPrompt(false)}
+          place={{
+            kind: "shot",
+            chapterId,
+            actId: act.id,
+            keyframeId: keyframe.id,
+            name: t("story:storyboard.videoPromptShot", { index: at }),
+          }}
           story={story}
         />
       )}
