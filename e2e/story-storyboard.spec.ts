@@ -236,6 +236,17 @@ async function toTheBoard(
     // Step four: the episode the room opens on is boarded.
     await page.getByTestId("story-step-storyboard").click();
     await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
+    // A step never stood on before is read from its top, not from wherever
+    // the step before it happened to be scrolled to.
+    await expect
+      .poll(async () =>
+        page
+          .locator(".story-step-body")
+          .evaluate(
+            (body) => (body as unknown as { scrollTop: number }).scrollTop,
+          ),
+      )
+      .toBe(0);
     await expect(page.getByTestId("story-board-empty")).toBeVisible();
     await page.getByTestId("story-board-generate").click();
   }
@@ -519,6 +530,31 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,
     });
+
+    // The step is put back where it was being read: stepping over to another
+    // step and back does not strand the reader at the end of shorter work.
+    const scroller = page.locator(".story-step-body");
+    await scroller.evaluate((body) => {
+      (body as unknown as { scrollTop: number }).scrollTop = 360;
+    });
+    await expect
+      .poll(async () =>
+        scroller.evaluate(
+          (body) => (body as unknown as { scrollTop: number }).scrollTop,
+        ),
+      )
+      .toBe(360);
+    await page.getByTestId("story-step-outline").click();
+    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
+    await page.getByTestId("story-step-storyboard").click();
+    await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
+    await expect
+      .poll(async () =>
+        scroller.evaluate(
+          (body) => (body as unknown as { scrollTop: number }).scrollTop,
+        ),
+      )
+      .toBe(360);
 
     await page.getByTestId("story-confirm-storyboard").click();
     await expect(page.getByTestId("story-step-body-edit")).toBeVisible();

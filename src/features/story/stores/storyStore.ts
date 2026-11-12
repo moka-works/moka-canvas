@@ -72,6 +72,26 @@ interface StoryState {
   forget: () => void;
 }
 
+/**
+ * Where each step of a telling was scrolled to, by story and step.
+ *
+ * Scrolling is a place on this machine like the step itself: a reader who
+ * stepped away to another step — or another room — and came back is put where
+ * they were reading, not at the top of work they had already walked through.
+ * Held outside the store's own state because nothing drawn depends on it.
+ */
+const stepScrolls = new Map<string, number>();
+
+/** How far a step was scrolled when it was last left, or its top. */
+export function stepScrollAt(key: string): number {
+  return stepScrolls.get(key) ?? 0;
+}
+
+/** Keeps a step's scroll where the reader last left it. */
+export function rememberStepScroll(key: string, top: number): void {
+  stepScrolls.set(key, top);
+}
+
 /** The place this machine remembers for a project, which may be nowhere. */
 export function rememberedPlace(projectId: string):
   | {
@@ -269,6 +289,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
     },
 
     forget() {
+      stepScrolls.clear();
       set({
         storyId: null,
         step: "idea",

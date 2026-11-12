@@ -1,4 +1,10 @@
-import { useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ASPECT_LABELS,
@@ -15,7 +21,11 @@ import { execute } from "../editor/commands/execute";
 import { AgentDock } from "../assistant/agent/AgentDock";
 import { StoryStepBody } from "./steps/StoryStepBody";
 import { useStoryStepFailure } from "./stores/storyJobStore";
-import { useStoryStore } from "./stores/storyStore";
+import {
+  rememberStepScroll,
+  stepScrollAt,
+  useStoryStore,
+} from "./stores/storyStore";
 
 /**
  * One story's telling, from the premise to the finished film.
@@ -32,6 +42,25 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const progress = storyProgress(story);
+
+  // The scroller is one element shared by every step, so a step is put back
+  // where the reader left it rather than inheriting the last step's offset —
+  // or, worse, having that offset clamped to the end of shorter work it has
+  // just been given. Restored before the frame is drawn, so nothing flashes.
+  const scrollKey = `${story.id}:${step}`;
+  const bodyRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    body.scrollTop = stepScrollAt(scrollKey);
+  }, [scrollKey]);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    const onScroll = () => rememberStepScroll(scrollKey, body.scrollTop);
+    body.addEventListener("scroll", onScroll, { passive: true });
+    return () => body.removeEventListener("scroll", onScroll);
+  }, [scrollKey]);
 
   const commitRename = () => {
     if (renaming === null) return;
@@ -175,6 +204,7 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           className="story-step-body"
           data-testid={`story-step-body-${step}`}
           id={`story-step-panel-${step}`}
+          ref={bodyRef}
           role="tabpanel"
           tabIndex={-1}
         >
