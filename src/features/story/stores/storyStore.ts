@@ -44,6 +44,15 @@ interface StoryState {
    */
   focusElementId: string | null;
   /**
+   * The element the elements step is to open at its voice form, once standing.
+   *
+   * A batch that fell to a missing voice or a missing recording is repaired on
+   * the character cards, and the form those fields live in is folded away. The
+   * card is told to open it rather than the reader being left on a closed card
+   * to find the row themselves.
+   */
+  focusVoiceId: string | null;
+  /**
    * Whether the elements step still has reading of its own left to send.
    *
    * The step owns the waves it has not handed over yet and the merge that
@@ -59,6 +68,8 @@ interface StoryState {
   goStep: (step: StoryStep) => void;
   /** Opens the elements step on one of its cards, or clears the place. */
   focusElement: (elementId: string | null) => void;
+  /** Opens the elements step on one card of the cast, at its voice form. */
+  focusVoice: (elementId: string | null) => void;
   /** Whether leaving the elements step now would drop work. */
   setElementsBusy: (busy: boolean) => void;
   /** Goes where the standing question asked, without asking again. */
@@ -153,7 +164,9 @@ export const useStoryStore = create<StoryState>()((set, get) => {
     set({
       step,
       pendingLeave: null,
-      ...(step === "elements" ? {} : { focusElementId: null }),
+      ...(step === "elements"
+        ? {}
+        : { focusElementId: null, focusVoiceId: null }),
     });
     rememberPlace(useProjectStore.getState().moka?.metadata.id ?? null, {
       storyId: get().storyId,
@@ -175,6 +188,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
       expanded: [],
       pendingLeave: null,
       focusElementId: null,
+      focusVoiceId: null,
     });
     rememberPlace(moka?.metadata.id ?? null, { storyId, step });
   };
@@ -187,6 +201,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
     newStoryOpen: false,
     elementsBusy: false,
     focusElementId: null,
+    focusVoiceId: null,
     pendingLeave: null,
 
     adopt(moka) {
@@ -215,7 +230,9 @@ export const useStoryStore = create<StoryState>()((set, get) => {
         storyId,
         step,
         openChapterId,
-        ...(held.storyId === storyId ? {} : { focusElementId: null }),
+        ...(held.storyId === storyId
+          ? {}
+          : { focusElementId: null, focusVoiceId: null }),
       });
       rememberPlace(projectId, { storyId, step });
     },
@@ -252,7 +269,19 @@ export const useStoryStore = create<StoryState>()((set, get) => {
       // holding back from a departure stands in the way of one, and this is
       // the opposite direction.
       if (get().step !== "elements") goToStep("elements");
-      set({ focusElementId: elementId });
+      set({ focusElementId: elementId, focusVoiceId: null });
+    },
+
+    focusVoice(elementId) {
+      // A voice is written on a card, so the jump is the card's as well: the
+      // element step is turned to the same way, and the card is told to open
+      // the form the fields stand in.
+      if (elementId === null) {
+        set({ focusVoiceId: null });
+        return;
+      }
+      if (get().step !== "elements") goToStep("elements");
+      set({ focusElementId: elementId, focusVoiceId: elementId });
     },
 
     setElementsBusy(busy) {
@@ -298,6 +327,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
         newStoryOpen: false,
         elementsBusy: false,
         focusElementId: null,
+        focusVoiceId: null,
         pendingLeave: null,
       });
     },

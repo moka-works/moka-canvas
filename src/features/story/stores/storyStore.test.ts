@@ -74,6 +74,25 @@ describe("where the room is standing", () => {
     expect(store().focusElementId).toBeNull();
   });
 
+  it("opens the elements step on the card a voice is written on", () => {
+    store().adopt(buildStoryMokaFile());
+    store().goStep("storyboard");
+
+    store().focusVoice(storyIds().hero);
+    expect(store().step).toBe("elements");
+    expect(store().focusElementId).toBe(storyIds().hero);
+    expect(store().focusVoiceId).toBe(storyIds().hero);
+
+    // A card looked at afterwards is a picture's jump, not a voice's: the
+    // folded form is not asked to open for it.
+    store().focusElement(storyIds().partner);
+    expect(store().focusVoiceId).toBeNull();
+
+    store().focusVoice(storyIds().hero);
+    store().goStep("storyboard");
+    expect(store().focusVoiceId).toBeNull();
+  });
+
   it("stands on no story at all when the project tells none", () => {
     const moka = buildStoryMokaFile();
     store().adopt({ ...moka, stories: [] });

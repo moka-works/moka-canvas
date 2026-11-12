@@ -161,7 +161,11 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // The card a jump from another step asked to be brought into view.
   const [focused, setFocused] = useState<string | null>(null);
+  // The card a jump asked to open at its voice form, which is where a voice or
+  // a recording that a batch fell short of is written.
+  const [voiceOpen, setVoiceOpen] = useState<string | null>(null);
   const focusElementId = useStoryStore((state) => state.focusElementId);
+  const focusVoiceId = useStoryStore((state) => state.focusVoiceId);
   const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
   const [removingPicked, setRemovingPicked] = useState(false);
   // The page each kind was last standing on, so going back to a kind goes
@@ -224,6 +228,9 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     const index = story.elements.findIndex(
       (element) => element.id === focusElementId,
     );
+    // Read before the place is cleared: clearing it takes the voice form's
+    // request with it.
+    const wantedVoice = focusVoiceId === focusElementId;
     useStoryStore.getState().focusElement(null);
     if (index === -1) return;
     setKind("all");
@@ -236,7 +243,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       all: Math.floor(index / perPage) + 1,
     }));
     setFocused(focusElementId);
-  }, [focusElementId, perPage, story.elements]);
+    if (wantedVoice) setVoiceOpen(focusElementId);
+  }, [focusElementId, focusVoiceId, perPage, story.elements]);
 
   // The card is drawn on the page the effect above turned to, so the scroll
   // waits for that paint: what a jump promises is the card in the middle of
@@ -244,9 +252,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   useEffect(() => {
     if (focused === null) return;
     const frame = requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-element-id="${focused}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const card = document.querySelector(`[data-element-id="${focused}"]`);
+      if (typeof card?.scrollIntoView === "function") {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     });
     const timer = setTimeout(() => setFocused(null), 2600);
     return () => {
@@ -254,6 +263,14 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
       clearTimeout(timer);
     };
   }, [focused]);
+
+  // The voice form stays open — it is where the reader was sent — while the
+  // request itself is let go, so the same card can be sent to again later.
+  useEffect(() => {
+    if (voiceOpen === null) return;
+    const timer = setTimeout(() => setVoiceOpen(null), 2600);
+    return () => clearTimeout(timer);
+  }, [voiceOpen]);
 
   /** Turns to a page of the kind being looked at, kept for that kind. */
   const goToPage = (wanted: number) => {
@@ -871,6 +888,7 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   onSelect={select}
                   selected={picked.has(element.id)}
                   story={story}
+                  voiceOpen={voiceOpen === element.id}
                 />
               ))}
             </ul>

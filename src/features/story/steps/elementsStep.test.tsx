@@ -1748,6 +1748,26 @@ describe("finding a card in the cast", () => {
     );
   });
 
+  it("opens the card a failed reading sent the reader to, at its voice form", async () => {
+    openAtElements(buildStoryMokaFile());
+    // The voice form every voice and recording is written in starts folded.
+    expect(
+      screen
+        .getByTestId("story-element-advanced-林")
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+
+    act(() => useStoryStore.getState().focusVoice(ids.hero));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("story-element-advanced-林")
+          .getAttribute("aria-expanded"),
+      ).toBe("true"),
+    );
+    expect(screen.getByTestId("story-voice-林-model")).toBeTruthy();
+  });
+
   it("searches the description too, within the kind on show", () => {
     const moka = buildStoryMokaFile();
     const waiting = {

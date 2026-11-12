@@ -584,16 +584,17 @@ describe("a batch coming back", () => {
     const said = useAppStore.getState().toasts.at(-1);
     expect(said?.kind).toBe("error");
     // The characters' own voices are the repair, so the line says where they
-    // are written and the press steps back into the telling — the settings
-    // page offers only the machine default, which is the last link of the
-    // chain rather than the one a cast is given.
+    // are written and the press lands on the card of the character whose line
+    // fell short — with the form those fields live in opened for them. The
+    // settings page offers only the machine default, which is the last link of
+    // the chain rather than the one a cast is given.
     expect(said?.message).toContain("Some characters have no voice yet");
     expect(said?.message).toContain("Elements");
     expect(said?.choice?.label).toBe("Set the voices");
-    const step = vi.spyOn(useStoryStore.getState(), "goStep");
+    const voice = vi.spyOn(useStoryStore.getState(), "focusVoice");
     said?.choice?.go();
-    expect(step).toHaveBeenCalledWith("elements");
-    step.mockRestore();
+    expect(voice).toHaveBeenCalledWith(ids.hero);
+    voice.mockRestore();
     apply.mockRestore();
   });
 
@@ -626,15 +627,15 @@ describe("a batch coming back", () => {
     const said = useAppStore.getState().toasts.at(-1);
     expect(said?.kind).toBe("error");
     // The recordings are picked on the character cards, so the line says
-    // where they are and the press steps back into the telling — not to the
-    // settings, which hold no recording at all.
+    // where they are and the press lands on the speaker's card with the form
+    // opened — not on the settings, which hold no recording at all.
     expect(said?.message).toContain("still need a reference recording");
     expect(said?.message).toContain("Elements");
     expect(said?.choice?.label).toBe("Pick the recordings");
-    const step = vi.spyOn(useStoryStore.getState(), "goStep");
+    const voice = vi.spyOn(useStoryStore.getState(), "focusVoice");
     said?.choice?.go();
-    expect(step).toHaveBeenCalledWith("elements");
-    step.mockRestore();
+    expect(voice).toHaveBeenCalledWith(ids.hero);
+    voice.mockRestore();
     apply.mockRestore();
   });
 

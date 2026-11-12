@@ -34,8 +34,10 @@ import {
 import { failureText } from "../../../shared/i18n/problems";
 import type { StoryDocument } from "../../../shared/domain/types";
 import {
+  actAt,
   chunkWaves,
   elementKey,
+  keyframeAt,
   type StoryStep,
 } from "../../../shared/domain/story";
 import { MAX_ITEMS_PER_STORY_JOB } from "../../../shared/domain/constants";
@@ -111,6 +113,46 @@ function toast(
   detail?: string,
 ): void {
   useAppStore.getState().pushToast(kind, message, choice, detail);
+}
+
+/**
+ * The first character card a failed reading is written on.
+ *
+ * A reading is asked of a line, or of a whole act from before every line had
+ * a voice of its own; the repair is the speaker's card. Read at the press
+ * rather than when the failure was said, so a telling edited since is
+ * answered as it stands.
+ */
+function voiceCardOf(
+  record: StoryJobRecord,
+  items: StoryJobItem[],
+): string | undefined {
+  const story = useProjectStore
+    .getState()
+    .moka?.stories?.find((held) => held.id === record.storyId);
+  if (story === undefined) return undefined;
+  for (const item of items) {
+    const target = item.target;
+    if (target.kind === "lineVoice") {
+      const line = keyframeAt(story, target)?.dialogue.find(
+        (held) => held.id === target.lineId,
+      );
+      if (line?.characterId !== undefined) return line.characterId;
+    } else if (target.kind === "voice") {
+      const card = actAt(story, target.chapterId, target.actId)
+        ?.characterIds[0];
+      if (card !== undefined) return card;
+    }
+  }
+  return undefined;
+}
+
+/** The way back to the cards a missing voice or recording is written on. */
+function goToVoices(record: StoryJobRecord, items: StoryJobItem[]): void {
+  const held = useStoryStore.getState();
+  const card = voiceCardOf(record, items);
+  if (card === undefined) held.goStep("elements");
+  else held.focusVoice(card);
 }
 
 /**
@@ -561,12 +603,12 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
               voiceless
                 ? {
                     label: i18n.t("story:jobs.voiceMissingGo"),
-                    go: () => useStoryStore.getState().goStep("elements"),
+                    go: () => goToVoices(record, failedItems),
                   }
                 : unreferenced
                   ? {
                       label: i18n.t("story:jobs.referenceMissingGo"),
-                      go: () => useStoryStore.getState().goStep("elements"),
+                      go: () => goToVoices(record, failedItems),
                     }
                   : trouble.blockedByConfiguration === true
                     ? {

@@ -122,9 +122,11 @@ test("a telling's lines are read in a voice copied from the cards' recordings", 
       page.getByTestId("story-element-character-Keeper"),
     ).toBeVisible({ timeout: 10_000 });
 
-    // The recording row stands in the card's voice form, which is folded until
-    // the card is opened.
-    await page.getByTestId("story-element-advanced-Keeper").click();
+    // The jump was made for the recording row, so the card it lands on already
+    // has its voice form open; the other card is the reader's to open.
+    await expect(
+      page.getByTestId("story-element-advanced-Keeper"),
+    ).toHaveAttribute("aria-expanded", "true");
     await page.getByTestId("story-element-advanced-Traveller").click();
 
     // Two cards, one recording, two ways of pointing at it: the keeper's comes

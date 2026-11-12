@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
@@ -72,6 +72,7 @@ export const ElementCard = memo(function ElementCard({
   selected,
   onSelect,
   focused,
+  voiceOpen,
 }: {
   story: StoryDocument;
   element: StoryElement;
@@ -82,6 +83,8 @@ export const ElementCard = memo(function ElementCard({
   onSelect: (elementId: string, selected: boolean) => void;
   /** Whether a jump from another step asked for this card to be in view. */
   focused?: boolean;
+  /** Whether a jump asked this card to open the form its voice is written in. */
+  voiceOpen?: boolean;
 }) {
   const { t } = useTranslation();
   const [removing, setRemoving] = useState(false);
@@ -93,6 +96,11 @@ export const ElementCard = memo(function ElementCard({
   // The voice is a card's least used form, and every one of them is a model
   // picker and a recording row: it is kept folded until the reader opens it.
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // A jump sent here for the voice opens the row it is written in, rather than
+  // landing the reader on a closed card.
+  useEffect(() => {
+    if (voiceOpen === true) setAdvancedOpen(true);
+  }, [voiceOpen]);
   // The place whose picture is being taken from the project's own shelf.
   const [picking, setPicking] = useState<"main" | "turnaround" | null>(null);
   // The place whose picture is being changed rather than drawn again.
