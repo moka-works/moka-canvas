@@ -70,7 +70,6 @@ async function persistedBoard(page: Page): Promise<{
   bridges: Array<{
     prompt?: string;
     durationMs?: number;
-    frameSource?: string;
   }>;
 }> {
   return page.evaluate(async () => {
@@ -84,7 +83,6 @@ async function persistedBoard(page: Page): Promise<{
               transition?: {
                 prompt?: string;
                 durationMs?: number;
-                frameSource?: string;
               };
               keyframes?: { content?: string; art?: { takes?: unknown[] } }[];
               video?: { takes?: unknown[] };
@@ -711,17 +709,12 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
       transition.getByTestId("story-transition-missing-1"),
     ).toContainText("ending frame");
 
-    // The ends may come from the neighbouring clips instead, and this telling
-    // has filmed none: the card says which end it is short of rather than
-    // offering a bridge it cannot take.
-    await transition.getByTestId("story-transition-source-video-1").click();
+    // The ends are the neighbours' own clips, and this telling has filmed
+    // none: the card says which end it is short of rather than offering a
+    // bridge it cannot take.
     await expect(
       transition.getByTestId("story-transition-missing-1"),
     ).toContainText("no clip");
-    await expect(
-      transition.getByTestId("story-transition-video-go-1"),
-    ).toBeDisabled();
-    await transition.getByTestId("story-transition-source-keyframes-1").click();
 
     await transition
       .getByTestId("story-transition-prompt-1")
@@ -735,7 +728,6 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
         {
           prompt: "Fade through the dark",
           durationMs: 4_000,
-          frameSource: "keyframes",
         },
       ]);
 

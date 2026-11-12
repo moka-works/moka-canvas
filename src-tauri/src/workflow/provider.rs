@@ -545,6 +545,7 @@ mod tests {
                 role: InputRole::Reference,
                 asset_id: "asset-1".into(),
                 window: None,
+                frame: None,
             }],
             ..blank.clone()
         };

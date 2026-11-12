@@ -37,6 +37,10 @@ pub struct ApiState {
     /// Where the timeline exporter finds ffmpeg, and what it can do. Resolved
     /// once per process; a machine without one is not a failure to start.
     clip_probe: Arc<CapabilityProbe>,
+    /// The first and last pictures of a film, taken with that same renderer.
+    /// Held here so every preview can ask for one and every generated film can
+    /// have its ends kept without asking the cutting room.
+    frames: Arc<crate::assets::frames::Frames>,
     /// The one render this process may be running, and the handles it is
     /// polled with.
     pub exports: Arc<ExportRegistry>,
@@ -95,12 +99,16 @@ impl ApiState {
         // instead: a recognition request names a window of a recording, and a
         // window is made with the program this deployment already has.
         let clip_probe = Arc::new(CapabilityProbe::new(&config.clip));
+        let frames = Arc::new(crate::assets::frames::Frames::new(
+            clip_probe.program().map(Path::to_path_buf),
+        ));
         let gateway = Arc::new(Gateway::new(
             Arc::clone(&models),
             config.generate.clone(),
             Some(Arc::new(crate::clip::audio::Windows::new(Arc::clone(
                 &clip_probe,
             )))),
+            Some(Arc::clone(&frames)),
         ));
         let provider = Arc::new(ProviderExecutor::new(Arc::clone(&gateway)));
         let extensions = Arc::new(crate::extension::ExtensionExecutor::new(
@@ -117,8 +125,10 @@ impl ApiState {
             executors,
             config.active_executors(),
             config.generate.concurrent_runs(),
+            Some(Arc::clone(&frames)),
         );
-        let story_jobs = StoryJobManager::new(provider, config.story.clone());
+        let story_jobs =
+            StoryJobManager::new(provider, config.story.clone(), Some(Arc::clone(&frames)));
         Self {
             mode,
             store,
@@ -129,6 +139,7 @@ impl ApiState {
             runs,
             story_jobs,
             clip_probe,
+            frames,
             exports: Arc::new(ExportRegistry::new()),
             agent_sessions: Arc::new(crate::agent::sessions::AgentSessionStore::new()),
             agent_tasks: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
@@ -149,6 +160,11 @@ impl ApiState {
     /// not to be able runs nothing and the file is answered as it is.
     pub fn clip_program(&self) -> Option<std::path::PathBuf> {
         self.clip_probe.program().map(|path| path.to_path_buf())
+    }
+
+    /// The first and last pictures of a film, taken with that same renderer.
+    pub fn frames(&self) -> &Arc<crate::assets::frames::Frames> {
+        &self.frames
     }
 
     /// The models directory: where converter scripts live. Used during
@@ -282,13 +298,6 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/projects/current/assets/transcode",
             post(routes::transcode_asset),
         )
-        // One end of a clip as a picture: what a story bridge between two acts
-        // is filmed from when the reader asks for the clips rather than the
-        // shots beside it.
-        .route(
-            "/api/v1/projects/current/assets/frame",
-            post(routes::extract_asset_frame),
-        )
         // A node's own work goes on the shelf through a route of its own: the
         // words are read out of the document here rather than sent up again.
         .route(
@@ -313,6 +322,12 @@ pub fn router() -> axum::Router<ApiState> {
         .route(
             "/api/v1/projects/current/assets/{id}/audio",
             get(routes::stream_asset_audio),
+        )
+        // One end of a film as a picture, for the previews that lead with the
+        // first frame and the bridges filmed between two clips' ends.
+        .route(
+            "/api/v1/projects/current/assets/{id}/frame",
+            get(routes::stream_asset_frame),
         )
         .route(
             "/api/v1/projects/current/assets/{id}/reveal",

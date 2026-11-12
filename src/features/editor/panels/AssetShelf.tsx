@@ -143,9 +143,10 @@ function thumbOf(entry: ResourceEntry): string | null {
   if (entry.mime === "image/png" || entry.mime === "image/jpeg") {
     return assetThumbUrl(entry.id, ROW_THUMB_WIDTH);
   }
-  const poster = entry.probe?.posterAssetId;
-  return entry.mime === "video/mp4" && poster
-    ? assetThumbUrl(poster, ROW_THUMB_WIDTH)
+  // A film leads with its own first frame; the server draws one where the
+  // project has not kept it yet.
+  return entry.mime?.startsWith("video/")
+    ? assetThumbUrl(entry.id, ROW_THUMB_WIDTH)
     : null;
 }
 
@@ -266,6 +267,10 @@ function ResourceRow({
   const { t } = useTranslation();
   const moka = useProjectStore((state) => state.moka);
   const [editing, setEditing] = useState(false);
+  // A picture that could not be drawn is no picture: the row leads with its
+  // glyph instead of a broken frame. The address is held rather than a flag,
+  // so a file replaced under the same row is drawn again.
+  const [failedThumb, setFailedThumb] = useState<string | null>(null);
   const rowRef = useRef<HTMLLIElement | null>(null);
   // Followed here from elsewhere, which is a row among however many: brought
   // into view rather than left to be found somewhere below the fold. Asked of
@@ -283,7 +288,9 @@ function ResourceRow({
   const uses = moka === null ? 0 : assetHolders(moka, entry.id).length;
   const maker = makerOf(moka, entry.provenance?.operationNodeId);
   const keeper = entry.favorite === true;
-  const thumb = thumbOf(entry);
+  const candidate = thumbOf(entry);
+  const thumb =
+    candidate !== null && candidate !== failedThumb ? candidate : null;
   const shelf = shelfOf(entry);
   const where = shelfWhere(entry);
   return (
@@ -302,7 +309,7 @@ function ResourceRow({
     >
       <span className="resource-thumb" data-testid="resource-thumb">
         {thumb ? (
-          <img alt="" src={thumb} />
+          <img alt="" onError={() => setFailedThumb(candidate)} src={thumb} />
         ) : (
           <span aria-hidden="true">{shelf ? SHELF_GLYPHS[shelf] : "▪"}</span>
         )}

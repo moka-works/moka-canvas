@@ -736,8 +736,9 @@ impl FsProjectStore {
         let verified = jobs.is_empty();
         let token = self.opens.fetch_add(1, Ordering::Relaxed) + 1;
         // Whatever was drawn of files this project no longer holds has nothing
-        // left to be asked for.
+        // left to be asked for. Attachments of a video that is gone go with it.
         crate::assets::thumbs::prune(&root, &moka);
+        crate::assets::frames::prune(&root, &moka);
         {
             let mut guard = self.state.lock().expect("store poisoned");
             *guard = Some(OpenState {
@@ -1292,6 +1293,9 @@ impl ProjectStore for FsProjectStore {
             .ok_or_else(|| ProjectError::domain("NOT_FOUND", "Asset not found"))?;
         let path = Self::resolve_in_root(&state.root, &entry.path)?;
         let _ = std::fs::remove_file(path);
+        // The pictures taken out of the film belong to the film and leave with
+        // it, rather than waiting for the next open to collect them.
+        crate::assets::frames::forget(&state.root, id);
         self.commit(state, next)
     }
 
@@ -1318,6 +1322,8 @@ impl ProjectStore for FsProjectStore {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::rename(&staged.tmp_path, &target)?;
+        // New bytes are new pictures; the old ones named the digest that left.
+        crate::assets::frames::forget(&state.root, id);
 
         let mut next = state.moka.clone();
         let entry = next.resources.find_mut(id).expect("entry checked above");

@@ -57,6 +57,10 @@ pub struct Gateway {
     /// answered about audio it never asked about, so a window with nothing to
     /// cut it is refused.
     audio: Option<Arc<dyn AudioWindow>>,
+    /// What takes a picture out of a film, where the deployment has one. A
+    /// reference that names one end of a clip is that picture, and a request
+    /// without the renderer is refused rather than sent a whole video.
+    frames: Option<Arc<crate::assets::frames::Frames>>,
     tasks: TaskRegistry,
 }
 
@@ -65,13 +69,20 @@ impl Gateway {
         models: Arc<ModelRepo>,
         budgets: GenerateConfig,
         audio: Option<Arc<dyn AudioWindow>>,
+        frames: Option<Arc<crate::assets::frames::Frames>>,
     ) -> Self {
         Self {
             models,
             budgets,
             audio,
+            frames,
             tasks: TaskRegistry::new(),
         }
+    }
+
+    /// The frame cutter this process sends references with, where it has one.
+    pub fn frames(&self) -> Option<&Arc<crate::assets::frames::Frames>> {
+        self.frames.as_ref()
     }
 
     /// Written text.
@@ -498,6 +509,7 @@ impl Gateway {
             &request,
             &self.budgets,
             self.audio.as_deref(),
+            self.frames.as_deref(),
         )
         .await?;
         let call = self.address(&resolved).await?;
@@ -1050,6 +1062,7 @@ mod tests {
                     role: *role,
                     asset_id: format!("asset-{at}"),
                     window: None,
+                    frame: None,
                 })
                 .collect();
             held

@@ -1,23 +1,22 @@
 use super::dto::{
     ApplyCommandsRequest, AssetChangeResponse, AssetShelfRequest, CapabilitiesResponse,
-    ClipExportRequest, CreateProjectRequest, DefaultsPatch, ExportRequest, ExtractFrameRequest,
-    FileNodeRequest, FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
-    FilesystemWriteResponse, FrameEdge, GenerateResponse, GenerationPreviewRequest,
-    GenerationPreviewResponse, ImportProjectRequest, ModelKeyRequest, OpenProjectRequest,
-    OpenProjectResponse, PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse,
-    RevealRequest, RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest,
-    SelfCheckResponse, StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery,
-    UpsertModelRequest,
+    ClipExportRequest, CreateProjectRequest, DefaultsPatch, ExportRequest, FileNodeRequest,
+    FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
+    FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
+    ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
+    PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, RevealRequest,
+    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
+    StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState, ProjectSession};
+use crate::assets::frames::FrameEdge;
 use crate::clip::jobs::{drive, ExportRun, ExportTask};
 use crate::clip::locate::ClipCapabilities;
 use crate::clip::plan::build_plan;
 use crate::config::RuntimeMode;
 use crate::domain::{
-    now_iso, AssetProvenance, DocumentCommand, ResourceRegistry, RunRecord, RunStatus,
-    ValidationIssue,
+    now_iso, DocumentCommand, ResourceRegistry, RunRecord, RunStatus, ValidationIssue,
 };
 use crate::generate::models::ModelsView;
 use crate::generate::{
@@ -471,6 +470,30 @@ async fn read_upload(
     })
 }
 
+/// Has the first and last pictures of a newly arrived film taken in the
+/// background.
+///
+/// A film is previewed from one of them, and a machine's first look should not
+/// pay for two seeks into a file it has not watched yet. Nothing waits for
+/// this: a preview asked for before the pictures are ready takes them itself,
+/// and a transition that needs one waits where it can say why.
+async fn warm_frames(
+    state: &ApiState,
+    session: &ProjectSession,
+    entry: &crate::domain::ResourceEntry,
+) {
+    if !entry
+        .mime
+        .as_deref()
+        .is_some_and(|mime| mime.starts_with("video/"))
+    {
+        return;
+    }
+    if let Ok(root) = session.0.project_root().await {
+        state.frames().keep_in_background(root, vec![entry.clone()]);
+    }
+}
+
 pub async fn upload_asset(
     State(state): State<ApiState>,
     session: ProjectSession,
@@ -489,6 +512,7 @@ pub async fn upload_asset(
             provenance: None,
         })
         .await?;
+    warm_frames(&state, &session, &change.entry).await;
     Ok((
         StatusCode::CREATED,
         Json(AssetChangeResponse {
@@ -621,6 +645,7 @@ pub async fn transcode_asset(
         })
         .await?;
     cleanup(&[&upload.tmp_path]);
+    warm_frames(&state, &session, &change.entry).await;
     Ok((
         StatusCode::CREATED,
         Json(AssetChangeResponse {
@@ -631,172 +656,91 @@ pub async fn transcode_asset(
     ))
 }
 
-/// Cuts the first or last frame out of a clip and files it as a picture.
+/// What a caller asks of a film's frame: which end, and how wide.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetFrameQuery {
+    pub edge: Option<FrameEdge>,
+    pub w: Option<u32>,
+}
+
+/// One end of a film as a picture, taken now if it is not there yet.
 ///
-/// A bridge between two story acts is filmed between the frames the acts meet
-/// at. Those are the neighbouring shots' drawings, or — where the reader asked
-/// for them — the actual ends of the neighbours' clips, which only the
-/// machine's renderer can pull out of a video. The picture is filed like any
-/// other, so the video ask that follows can name it.
-pub async fn extract_asset_frame(
+/// The first frame is what every preview leads with, and the last is what a
+/// bridge is filmed from. Neither is an asset: the picture is taken out of the
+/// film when it is asked for, and kept among the project's derived bytes.
+pub async fn stream_asset_frame(
     State(state): State<ApiState>,
     session: ProjectSession,
-    Json(request): Json<ExtractFrameRequest>,
-) -> Result<(StatusCode, Json<AssetChangeResponse>), Problem> {
-    let file = session.0.asset_file(&request.asset_id, None).await?;
-    let mime = file.entry.mime.clone().unwrap_or_default();
+    Path(id): Path<String>,
+    Query(query): Query<AssetFrameQuery>,
+) -> Result<Response, Problem> {
+    let asset = session.0.asset_file(&id, None).await?;
+    let mime = asset.entry.mime.clone().unwrap_or_default();
     if !mime.starts_with("video/") {
         return Err(Problem::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "ASSET_INVALID",
             format!(
-                "The frame cutter only takes video; \"{}\" is {}",
-                file.entry.name, mime
+                "The frame cutter only takes video; \"{}\" is {mime}",
+                asset.entry.name
             ),
         ));
     }
-    let Some(program) = state.clip_program() else {
-        return Err(Problem::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "FFMPEG_UNAVAILABLE",
-            crate::clip::locate::UNAVAILABLE_REASON,
-        ));
-    };
+    frame_response(
+        &state,
+        &session,
+        &asset.entry,
+        &asset.path,
+        query.edge.unwrap_or(FrameEdge::First),
+        query.w,
+    )
+    .await
+}
+
+/// The picture of one end, made if missing, at the width asked for.
+async fn frame_response(
+    state: &ApiState,
+    session: &ProjectSession,
+    entry: &crate::domain::ResourceEntry,
+    source: &FsPath,
+    edge: FrameEdge,
+    width: Option<u32>,
+) -> Result<Response, Problem> {
     let root = session.0.project_root().await?;
-    let output = crate::assets::new_tmp_path(&root).map_err(problem_from_io)?;
-    let cleanup = || {
-        let _ = std::fs::remove_file(&output);
-    };
-
-    let mut command = tokio::process::Command::new(&program);
-    command
-        .arg("-y")
-        .arg("-hide_banner")
-        .arg("-loglevel")
-        .arg("error");
-    if request.edge == FrameEdge::Last {
-        // The end of a clip is reached from a little before it: seeking to the
-        // exact duration lands past the last frame in most muxers. A clip whose
-        // length was never measured is told to read from its tail instead.
-        match file
-            .entry
-            .probe
-            .as_ref()
-            .and_then(|probe| probe.duration_ms)
-            .filter(|ms| *ms > 150)
-        {
-            Some(ms) => {
-                command
-                    .arg("-ss")
-                    .arg(format!("{:.3}", (ms - 100) as f64 / 1000.0));
-            }
-            None => {
-                command.arg("-sseof").arg("-0.15");
-            }
+    let path = state.frames().ensure(&root, entry, source, edge).await?;
+    let (bytes, mime) = match width {
+        Some(width) => {
+            let drawn =
+                tokio::task::spawn_blocking(move || crate::assets::frames::picture(&path, width))
+                    .await
+                    .map_err(|error| {
+                        Problem::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "INTERNAL",
+                            error.to_string(),
+                        )
+                    })??;
+            drawn
         }
-    }
-    command
-        .arg("-i")
-        .arg(&file.path)
-        .arg("-frames:v")
-        .arg("1")
-        .arg("-c:v")
-        .arg("png")
-        .arg("-f")
-        .arg("image2")
-        .arg("-update")
-        .arg("1")
-        .arg(&output)
-        .kill_on_drop(true);
-    let completed = tokio::time::timeout(Duration::from_secs(30), command.output()).await;
-    let result = match completed {
-        Err(_) => {
-            cleanup();
-            return Err(Problem::new(
-                StatusCode::GATEWAY_TIMEOUT,
-                "STORY_TRANSITION_FRAMES_FAILED",
-                "ffmpeg did not cut a frame out of the clip within 30 seconds",
-            ));
-        }
-        Ok(Err(error)) => {
-            cleanup();
-            return Err(Problem::new(
-                StatusCode::BAD_GATEWAY,
-                "STORY_TRANSITION_FRAMES_FAILED",
-                format!("ffmpeg could not be run: {error}"),
-            ));
-        }
-        Ok(Ok(output)) => output,
+        None => (
+            tokio::fs::read(&path).await.map_err(problem_from_io)?,
+            "image/png",
+        ),
     };
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        let tail: String = stderr
-            .chars()
-            .rev()
-            .take(2_000)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        cleanup();
-        return Err(Problem::new(
-            StatusCode::BAD_GATEWAY,
-            "STORY_TRANSITION_FRAMES_FAILED",
-            format!("ffmpeg exited with {}: {tail}", result.status),
-        ));
-    }
-    let written = tokio::fs::metadata(&output)
-        .await
-        .map(|meta| meta.len())
-        .unwrap_or(0);
-    if written == 0 {
-        cleanup();
-        return Err(Problem::new(
-            StatusCode::BAD_GATEWAY,
-            "STORY_TRANSITION_FRAMES_FAILED",
-            format!(
-                "ffmpeg finished without writing a frame out of \"{}\"",
-                file.entry.name
-            ),
-        ));
-    }
-
-    let stem = FsPath::new(&file.entry.name)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("clip");
-    let edge = match request.edge {
-        FrameEdge::First => "first",
-        FrameEdge::Last => "last",
-    };
-    let change = session
-        .0
-        .add_asset(StagedAsset {
-            name: format!("{stem}-{edge}-frame.png"),
-            tmp_path: output,
-            declared_mime: Some("image/png".to_string()),
-            category_hint: Some("images".to_string()),
-            provenance: Some(AssetProvenance {
-                run_id: None,
-                canvas_id: None,
-                operation_node_id: None,
-                assistant_session_id: None,
-                story_job_id: None,
-                story_id: None,
-                input_asset_ids: Some(vec![file.entry.id.clone()]),
-                parameter_snapshot: Some(serde_json::json!({ "frame": edge })),
-                created_at: now_iso(),
-            }),
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CACHE_CONTROL, DRAWN_CACHE_CONTROL)
+        .body(Body::from(bytes))
+        .map_err(|error| {
+            Problem::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL",
+                error.to_string(),
+            )
         })
-        .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(AssetChangeResponse {
-            entry: change.entry,
-            revision: change.revision,
-            updated_at: change.updated_at,
-        }),
-    ))
 }
 
 pub async fn replace_asset(
@@ -821,6 +765,7 @@ pub async fn replace_asset(
             },
         )
         .await?;
+    warm_frames(&state, &session, &change.entry).await;
     Ok(Json(AssetChangeResponse {
         entry: change.entry,
         revision: change.revision,
@@ -1028,8 +973,9 @@ fn parse_range_header(value: Option<&str>, total: u64) -> Result<Option<ByteRang
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetStreamQuery {
-    /// A width in pixels: the picture is answered at that size, drawn from the
-    /// project's own cache of drawings. Absent means the file itself.
+    /// A width in pixels: a picture is answered at that size, drawn from the
+    /// project's own cache of drawings, and a film is answered with its own
+    /// first frame at that size. Absent means the file itself.
     pub w: Option<u32>,
 }
 
@@ -1038,6 +984,7 @@ pub struct AssetStreamQuery {
 const DRAWN_CACHE_CONTROL: &str = "private, max-age=31536000, immutable";
 
 pub async fn stream_asset(
+    State(state): State<ApiState>,
     session: ProjectSession,
     Path(id): Path<String>,
     Query(query): Query<AssetStreamQuery>,
@@ -1046,11 +993,27 @@ pub async fn stream_asset(
     let asset = session.0.asset_file(&id, None).await?;
 
     // A picture asked for at a width is answered from the drawings the project
-    // keeps beside it; everything else, and anything that cannot be drawn, is
-    // the file itself. Decoding and resizing is CPU work, so it is done off the
-    // runtime's own threads.
+    // keeps beside it; a film is answered with its own first frame, taken now
+    // where none has been; everything else, and anything that cannot be drawn,
+    // is the file itself. Decoding and resizing is CPU work, so it is done off
+    // the runtime's own threads.
     if let (Some(width), Some(mime)) = (query.w, asset.entry.mime.as_deref()) {
-        if mime.starts_with("image/") {
+        if mime.starts_with("video/") {
+            if let Ok(response) = frame_response(
+                &state,
+                &session,
+                &asset.entry,
+                &asset.path,
+                FrameEdge::First,
+                Some(width),
+            )
+            .await
+            {
+                return Ok(response);
+            }
+            // A frame the machine cannot take leaves the file answering as it
+            // always did, so a player is not broken by a missing preview.
+        } else if mime.starts_with("image/") {
             let root = session.0.project_root().await?;
             let entry = asset.entry.clone();
             let source = asset.path.clone();

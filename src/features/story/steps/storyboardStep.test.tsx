@@ -38,8 +38,6 @@ const T0 = "2026-01-01T00:00:00.000Z";
 
 /** What the room handed the server, in the order it handed it over. */
 let starts: Array<{ kind: StoryJobKind; items: StoryJobItemDraft[] }> = [];
-/** The end of each clip the room asked the server to cut a frame out of. */
-let frameCalls: Array<{ assetId: string; edge: string }> = [];
 /** The batches the server is holding, newest first. */
 let held: StoryJobRecord[] = [];
 /** What each piece of the next batch is answered with, by the piece's id. */
@@ -103,29 +101,6 @@ function serving(): void {
           return json(home);
         }
         return json(held);
-      }
-      if (url.includes("/assets/frame")) {
-        const body = JSON.parse(String(init?.body ?? "{}")) as {
-          assetId: string;
-          edge: string;
-        };
-        frameCalls.push({ assetId: body.assetId, edge: body.edge });
-        const id = body.edge === "last" ? "frame-from" : "frame-to";
-        return json(
-          {
-            entry: {
-              id,
-              name: `${body.assetId}-${body.edge}-frame.png`,
-              path: `assets/images/${id}.png`,
-              mime: "image/png",
-              createdAt: T0,
-              updatedAt: T0,
-            },
-            revision: frameCalls.length,
-            updatedAt: T0,
-          },
-          201,
-        );
       }
       if (url.includes("/assets/")) {
         return Promise.resolve(new Response(""));
@@ -514,7 +489,6 @@ function filmingWithCeiling(maxSeconds: number): void {
 
 beforeEach(() => {
   starts = [];
-  frameCalls = [];
   held = [];
   answers = {};
   landed = {};
@@ -615,14 +589,16 @@ describe("writing an episode's board", () => {
     const preview = screen
       .getByTestId("story-act-video-0")
       .querySelector("img");
-    expect(preview?.getAttribute("src")).toContain("asset-frame-new");
+    // The clip leads with its own first frame, not with the frame that was
+    // drawn after it was made.
+    expect(preview?.getAttribute("src")).toContain("asset-act-video");
     expect(preview?.style.aspectRatio).toBe("16 / 9");
 
     // The same picture stands under the clip as it is watched large, so the
     // window is not empty before the file has a frame to be painted.
     fireEvent.click(screen.getByTestId("story-act-video-0"));
     const watched = screen.getByTestId("story-lightbox").querySelector("video");
-    expect(watched?.getAttribute("poster")).toContain("asset-frame-new");
+    expect(watched?.getAttribute("poster")).toContain("asset-act-video");
   });
 
   it("carries a picture beside the cast that the shot's words do not name", async () => {
@@ -1295,7 +1271,7 @@ describe("writing an episode's board", () => {
     // holding nothing, still asks for its first.
     const preview = within(first).getByTestId("story-kf-video-0");
     expect(preview.querySelector("img")?.getAttribute("src")).toContain(
-      "asset-frame",
+      "asset-first-shot-clip",
     );
     fireEvent.click(preview);
     expect(
@@ -1595,10 +1571,12 @@ describe("writing an episode's board", () => {
     expect(acts()).toHaveLength(2);
   });
 
-  it("bridges two acts with a transition filmed between their frames", async () => {
-    openAtBoard(withTwoDrawnActs());
-    const from = acts()[0]!.keyframes.at(-1)!.art.takes[0]!.assetIds[0];
-    const to = acts()[1]!.keyframes[0]!.art.takes[0]!.assetIds[0];
+  it("waits for the neighbouring clips before a bridge can be filmed", async () => {
+    const moka = withTwoDrawnActs();
+    // Neither neighbour has been filmed: the fixture's first act is cleared
+    // of its clip so both ends are missing.
+    moka.stories![0]!.chapters[0]!.acts[0]!.video = { takes: [] };
+    openAtBoard(moka);
 
     fireEvent.click(screen.getByTestId("story-act-transition-1"));
     await waitFor(() => expect(acts()).toHaveLength(3));
@@ -1607,15 +1585,23 @@ describe("writing an episode's board", () => {
     expect(bridge.keyframes).toHaveLength(0);
     expect(screen.getByTestId("story-transition-1")).toBeDefined();
 
-    // Both ends of the move are shown where they come from: the act before's
-    // last drawn frame and the act after's first.
+    // Neither neighbour has been filmed, so neither end has a picture and the
+    // bridge says what it is waiting for rather than offering an ask.
     expect(
       screen.getByTestId("story-transition-from-1").querySelector("img"),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       screen.getByTestId("story-transition-to-1").querySelector("img"),
-    ).not.toBeNull();
+    ).toBeNull();
+    expect(
+      screen.getByTestId("story-transition-missing-1").textContent,
+    ).toContain("no clip");
+    expect(
+      (screen.getByTestId("story-transition-video-go-1") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
 
+    // The words and the length are still the reader's while it waits.
     fireEvent.change(screen.getByTestId("story-transition-prompt-1"), {
       target: { value: "灯管闪成一条白线" },
     });
@@ -1629,17 +1615,6 @@ describe("writing an episode's board", () => {
     fireEvent.blur(screen.getByTestId("story-transition-seconds-1"));
     await waitFor(() => expect(acts()[1]?.transition?.durationMs).toBe(5_000));
 
-    fireEvent.click(screen.getByTestId("story-transition-video-go-1"));
-    await waitFor(() => expect(starts).toHaveLength(1));
-    const [item] = starts[0]!.items;
-    expect(starts[0]!.kind).toBe("actVideo");
-    expect(item?.inputs?.map((input) => [input.role, input.assetId])).toEqual([
-      ["firstFrame", from],
-      ["lastFrame", to],
-    ]);
-    expect(item?.params?.seconds).toBe(5);
-    expect(item?.prompt).toContain("灯管闪成一条白线");
-
     // One step each for the bridge, its words and its length.
     act(() => {
       undo();
@@ -1649,55 +1624,49 @@ describe("writing an episode's board", () => {
     expect(acts()).toHaveLength(2);
   });
 
-  it("cuts the bridge's ends out of the neighbouring clips when asked", async () => {
+  it("films a bridge between the neighbouring clips' ends", async () => {
     openAtBoard(withTwoFilmedActs());
     fireEvent.click(screen.getByTestId("story-act-transition-1"));
     await waitFor(() => expect(acts()).toHaveLength(3));
 
-    fireEvent.click(screen.getByTestId("story-transition-source-video-1"));
     // The clip before the bridge is filmed in two pieces, so its tail is the
-    // end of the second piece; the clip after begins at its first.
-    await waitFor(() => expect(frameCalls).toHaveLength(2));
-    expect(frameCalls).toEqual([
-      { assetId: "asset-first-clip-two", edge: "last" },
-      { assetId: "asset-second-clip", edge: "first" },
-    ]);
-    await waitFor(() =>
-      expect(acts()[1]?.transition?.cached).toEqual({
-        from: { assetId: "frame-from", videoAssetId: "asset-first-clip-two" },
-        to: { assetId: "frame-to", videoAssetId: "asset-second-clip" },
-      }),
-    );
-    expect(acts()[1]?.transition?.frameSource).toBe("video");
-
-    // The ends shown are the pictures cut out of the clips rather than the
-    // board's own frames.
-    expect(
-      screen
-        .getByTestId("story-transition-from-1")
-        .querySelector("img")
-        ?.getAttribute("src"),
-    ).toContain("frame-from");
-    expect(
-      screen
-        .getByTestId("story-transition-to-1")
-        .querySelector("img")
-        ?.getAttribute("src"),
-    ).toContain("frame-to");
+    // end of the second piece; the clip after begins at its first. Each end is
+    // its own clip's picture, taken when the move is made.
+    const from = screen
+      .getByTestId("story-transition-from-1")
+      .querySelector("img")
+      ?.getAttribute("src");
+    expect(from).toContain("asset-first-clip-two/frame");
+    expect(from).toContain("edge=last");
+    const to = screen
+      .getByTestId("story-transition-to-1")
+      .querySelector("img")
+      ?.getAttribute("src");
+    expect(to).toContain("asset-second-clip/frame");
+    expect(to).toContain("edge=first");
 
     fireEvent.click(screen.getByTestId("story-transition-video-go-1"));
     await waitFor(() => expect(starts).toHaveLength(1));
     const [item] = starts[0]!.items;
-    expect(item?.inputs?.map((input) => [input.role, input.assetId])).toEqual([
-      ["firstFrame", "frame-from"],
-      ["lastFrame", "frame-to"],
+    expect(item?.inputs).toEqual([
+      {
+        role: "firstFrame",
+        assetId: "asset-first-clip-two",
+        frame: "last",
+      },
+      {
+        role: "lastFrame",
+        assetId: "asset-second-clip",
+        frame: "first",
+      },
     ]);
 
     await comesBack();
+    // The bridge, once made, leads with its own first frame.
     const preview = screen
       .getByTestId("story-transition-video-1")
       .querySelector("img");
-    expect(preview?.getAttribute("src")).toContain("frame-from");
+    expect(preview?.getAttribute("src")).toContain("asset-actVideo");
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

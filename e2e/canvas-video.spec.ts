@@ -65,15 +65,20 @@ test("a video node shows its first frame and plays where it stands", async ({
     buffer: readFileSync(join(HERE, "fixtures", "clip.mp4")),
   });
 
-  // The import lands the file as a card, and the card wears the file itself
-  // as far as its header: no poster is made for it anywhere, so what shows is
-  // the picture the browser draws on its own.
+  // The import lands the file as a card, and the card leads with the film's
+  // own first frame: the poster address names the frame the server takes out
+  // of it. (This harness points the renderer at nothing, so the still itself
+  // falls back to whatever the browser paints.)
   const face = page.getByTestId("video-card-face");
   await expect(face).toBeVisible({ timeout: 10_000 });
   const video = face.locator("video");
   await expect(video).toHaveAttribute(
     "src",
     /\/api\/v1\/projects\/current\/assets\//,
+  );
+  await expect(video).toHaveAttribute(
+    "poster",
+    /\/api\/v1\/projects\/current\/assets\/.+\?w=/,
   );
   await expect(video).toHaveAttribute("preload", "metadata");
   await expect(face.getByText("160×120 · 0:03")).toBeVisible();

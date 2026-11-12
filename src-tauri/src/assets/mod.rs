@@ -4,6 +4,7 @@ use sha2::Digest;
 use std::path::{Path, PathBuf};
 
 pub mod audio;
+pub mod frames;
 pub mod probe;
 pub mod thumbs;
 

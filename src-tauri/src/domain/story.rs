@@ -444,49 +444,17 @@ pub struct StoryActSound {
     pub ambience: Option<String>,
 }
 
-/// Where a bridge's two ends come from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum StoryTransitionSource {
-    Keyframes,
-    Video,
-}
-
-/// One end of a bridge cut out of a neighbouring clip.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StoryTransitionFrame {
-    pub asset_id: AssetId,
-    pub video_asset_id: AssetId,
-}
-
-/// The pictures cut out of the neighbouring clips, while they still match.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StoryTransitionCache {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<StoryTransitionFrame>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<StoryTransitionFrame>,
-}
-
 /// A bridge between two acts: the words of the move and how long it runs.
 ///
-/// It holds no shots of its own — the pictures it is filmed between belong to
-/// the acts either side of it — so a transition is an act of a special shape
-/// rather than a second kind of board.
+/// It holds no shots of its own — the pictures it is filmed between are the
+/// last frame of the clip before it and the first frame of the clip after,
+/// taken out of those clips when the move is made — so a transition is an act
+/// of a special shape rather than a second kind of board.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryTransition {
     pub prompt: String,
     pub duration_ms: i64,
-    /// Where the two ends are read from; absent means the neighbouring
-    /// shots' frames, which is what every bridge written before the choice
-    /// meant.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame_source: Option<StoryTransitionSource>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cached: Option<StoryTransitionCache>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -898,21 +866,6 @@ impl StoryDocument {
                     for take in keyframe.voices.iter().flatten() {
                         slot(&take.slot);
                     }
-                }
-            }
-        }
-        // A bridge's cached ends are pictures of their own, filed on the shelf
-        // like any other; the clips they were cut from are already named by the
-        // acts beside them.
-        for transition in self
-            .chapters
-            .iter()
-            .flat_map(|chapter| chapter.acts.iter())
-            .filter_map(|act| act.transition.as_ref())
-        {
-            if let Some(cached) = &transition.cached {
-                for frame in cached.from.iter().chain(cached.to.iter()) {
-                    found.push(frame.asset_id.clone());
                 }
             }
         }

@@ -9,7 +9,7 @@ import {
   ASSET_CATEGORY_LABELS,
   ASSET_KIND_LABELS,
 } from "../../../shared/domain";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import { i18n } from "../../../shared/i18n";
 import {
   buildIssueIndex,
@@ -258,6 +258,7 @@ export function AssetPreview({
       <video
         controls
         data-testid="asset-preview-video"
+        poster={assetThumbUrl(entry.id, 768)}
         preload="metadata"
         src={url}
       />

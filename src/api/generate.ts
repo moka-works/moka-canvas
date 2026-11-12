@@ -24,6 +24,11 @@ export interface GenerateInput {
    * for one of its minutes was asked for.
    */
   window?: { startMs: number; durationMs: number };
+  /**
+   * One end of a film, when the reference means a picture taken out of a clip
+   * rather than the clip itself.
+   */
+  frame?: "first" | "last";
 }
 
 /**

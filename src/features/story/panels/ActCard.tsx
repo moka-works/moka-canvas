@@ -143,6 +143,10 @@ export function ActCard({
       ? null
       : (story.elements.find((held) => held.id === inspectingId) ?? null);
   const [sound, setSound] = useState<StoryActSound>(act.sound);
+  // A preview the server could not draw steps back to the frame the act was
+  // drawn with, rather than leaving a broken picture. The address is held
+  // rather than a flag, so a new take is tried even after an older one failed.
+  const [failedPoster, setFailedPoster] = useState<string | undefined>();
   /** The granularity a switch is waiting on, where the act has clips to keep. */
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
@@ -164,14 +168,24 @@ export function ActCard({
     chapterId,
     actId: act.id,
   };
-  // The clip opens on the act's first drawn frame.
+  // The clip leads with its own first frame, and falls back to the act's
+  // first drawn frame where the machine cannot take one out of the film.
   const opening = drawnFrames(act)[0];
   const openingFrame =
     opening === undefined ? undefined : takeFile(currentTake(opening.art));
-  const clipPoster =
+  const drawnPoster =
     openingFrame === undefined
       ? undefined
       : assetThumbUrl(openingFrame, CLIP_POSTER_WIDTH);
+  const clipFrame = clip?.assetIds[0];
+  const framePoster =
+    clipFrame === undefined
+      ? undefined
+      : assetThumbUrl(clipFrame, CLIP_POSTER_WIDTH);
+  const clipPoster =
+    framePoster === undefined || failedPoster === framePoster
+      ? drawnPoster
+      : framePoster;
   const clipStale = actClipStale(act);
   const voice = act.voice === undefined ? undefined : currentTake(act.voice);
   const music = act.music === undefined ? undefined : currentTake(act.music);
@@ -700,6 +714,7 @@ export function ActCard({
               <img
                 alt=""
                 decoding="async"
+                onError={() => setFailedPoster(framePoster)}
                 src={clipPoster}
                 style={{ aspectRatio: frameRatio(story) }}
               />
@@ -903,7 +918,6 @@ export function ActCard({
           }}
           onClose={() => setPickingClip(false)}
           onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
-          poster={clipPoster}
           takes={act.video.takes}
         />
       )}

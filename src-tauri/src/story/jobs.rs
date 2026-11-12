@@ -519,15 +519,23 @@ pub struct StoryJobManager {
     /// two batches against one model wait in the same queue rather than two.
     gates: Mutex<HashMap<String, Arc<ModelGate>>>,
     limits: StoryConfig,
+    /// What takes the first and last pictures out of a filmed act, where the
+    /// deployment has a renderer. Best effort, as every preview is.
+    frames: Option<Arc<crate::assets::frames::Frames>>,
 }
 
 impl StoryJobManager {
-    pub fn new(provider: Arc<ProviderExecutor>, limits: StoryConfig) -> Arc<Self> {
+    pub fn new(
+        provider: Arc<ProviderExecutor>,
+        limits: StoryConfig,
+        frames: Option<Arc<crate::assets::frames::Frames>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             provider,
             active: Mutex::new(HashMap::new()),
             gates: Mutex::new(HashMap::new()),
             limits,
+            frames,
         })
     }
 
@@ -1084,6 +1092,13 @@ impl StoryJobManager {
             retryable: false,
             cancelled: false,
         })?;
+        // A filmed act's first and last pictures are taken now, off the batch's
+        // clock, so its card has a still before anybody presses play.
+        if let Some(frames) = &self.frames {
+            if let Ok(root) = store.project_root().await {
+                frames.keep_in_background(root, entries.clone());
+            }
+        }
         let ids = entries.into_iter().map(|entry| entry.id).collect();
         Ok(ItemOutcome::answered(result.text, ids))
     }

@@ -329,6 +329,7 @@ fn finish(
                     role,
                     asset_id,
                     window: None,
+                    frame: None,
                 });
                 input_sources.push(node_id.clone());
             }

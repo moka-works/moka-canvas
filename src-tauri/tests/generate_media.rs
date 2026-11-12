@@ -82,7 +82,24 @@ fn reference(asset_id: &str, role: InputRole) -> GenerateInput {
         role,
         asset_id: asset_id.into(),
         window: None,
+        frame: None,
     }
+}
+
+/// The program this machine's renderer is, by the variable the server reads
+/// first and then by the search path.
+fn renderer_program() -> Option<std::path::PathBuf> {
+    if let Some(program) = std::env::var_os("MOKA_FFMPEG") {
+        return Some(program.into());
+    }
+    let path = std::env::var_os("PATH")?;
+    for folder in std::env::split_paths(&path) {
+        let candidate = folder.join("ffmpeg");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[tokio::test]
@@ -98,9 +115,15 @@ async fn references_come_back_in_the_order_the_request_names_them() {
         reference(&mask_id, InputRole::Mask),
         reference(&poster_id, InputRole::Reference),
     ]);
-    let loaded = load_inputs(store.as_ref(), &request, &GenerateConfig::default(), None)
-        .await
-        .expect("both assets are in the project");
+    let loaded = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect("both assets are in the project");
 
     // The request's own order, because an adapter relies on position where a
     // role does not tell two inputs apart.
@@ -123,9 +146,15 @@ async fn a_format_a_provider_cannot_read_is_converted_on_the_way_out() {
     let asset_id = upload(&store, &root, "scan.tiff", "image/tiff", &tiff).await;
 
     let request = request_for(vec![reference(&asset_id, InputRole::Reference)]);
-    let loaded = load_inputs(store.as_ref(), &request, &GenerateConfig::default(), None)
-        .await
-        .expect("the asset is in the project");
+    let loaded = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect("the asset is in the project");
     assert_eq!(loaded[0].mime, "image/png");
     assert_ne!(loaded[0].bytes, tiff);
 }
@@ -142,7 +171,7 @@ async fn an_oversized_reference_is_refused_by_the_ceiling_for_its_family() {
         ..GenerateConfig::default()
     };
     let request = request_for(vec![reference(&asset_id, InputRole::Reference)]);
-    let error = load_inputs(store.as_ref(), &request, &budgets, None)
+    let error = load_inputs(store.as_ref(), &request, &budgets, None, None)
         .await
         .expect_err("four bytes of ceiling cannot hold a png");
     assert_eq!(error.code(), "PROVIDER_BAD_REQUEST");
@@ -157,9 +186,15 @@ async fn a_reference_that_is_not_in_the_project_keeps_the_storage_code() {
         "asset-that-was-never-added",
         InputRole::Mask,
     )]);
-    let error = load_inputs(store.as_ref(), &request, &GenerateConfig::default(), None)
-        .await
-        .expect_err("nothing is registered under that identifier");
+    let error = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect_err("nothing is registered under that identifier");
     assert_eq!(error.code(), "NOT_FOUND");
 }
 
@@ -168,9 +203,15 @@ async fn a_reference_with_no_project_open_is_not_a_provider_failure() {
     let tmp = TempDir::new().unwrap();
     let store = Arc::new(FsProjectStore::new(Arc::new(parse_test_config(tmp.path()))));
     let request = request_for(vec![reference("asset-1", InputRole::Reference)]);
-    let error = load_inputs(store.as_ref(), &request, &GenerateConfig::default(), None)
-        .await
-        .expect_err("no project is open");
+    let error = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect_err("no project is open");
     // The code every other route gives for this, so a client reacts the same
     // way it does to a failed save.
     assert_eq!(error.code(), "PROJECT_NOT_OPEN");
@@ -232,6 +273,7 @@ async fn a_window_travels_as_the_cut_rather_than_the_whole_file() {
                 start_ms: 1_500,
                 duration_ms: 30_000,
             }),
+            frame: None,
         }],
         ..GenerateRequest::default()
     };
@@ -241,7 +283,7 @@ async fn a_window_travels_as_the_cut_rather_than_the_whole_file() {
         max_media_input_bytes: 20,
         ..GenerateConfig::default()
     };
-    let loaded = load_inputs(store.as_ref(), &request, &budgets, Some(&cutter))
+    let loaded = load_inputs(store.as_ref(), &request, &budgets, Some(&cutter), None)
         .await
         .expect("the cut is small enough where the file is not");
     assert_eq!(
@@ -286,12 +328,19 @@ async fn a_window_with_no_cutter_is_refused_rather_than_guessed_at() {
                 start_ms: 0,
                 duration_ms: 1_000,
             }),
+            frame: None,
         }],
         ..GenerateRequest::default()
     };
-    let error = load_inputs(store.as_ref(), &request, &GenerateConfig::default(), None)
-        .await
-        .expect_err("nothing can cut that window");
+    let error = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect_err("nothing can cut that window");
     assert!(error.to_string().contains("take-1.wav"), "{error}");
 }
 
@@ -401,4 +450,114 @@ async fn a_window_of_a_real_recording_comes_back_as_mono_sixteen_kilohertz() {
             .len()
             > bytes.len() as u64
     );
+}
+
+/// One end of a clip travels as its own picture, not as the whole film.
+#[tokio::test]
+async fn a_films_end_travels_as_a_picture() {
+    let Some(program) = renderer_program() else {
+        eprintln!("skipped: this machine has no ffmpeg");
+        return;
+    };
+    let tmp = TempDir::new().unwrap();
+    let (store, root) = open_project(&tmp).await;
+    let video = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/tiny.mp4"));
+    let clip = upload(&store, &root, "clip.mp4", "video/mp4", video).await;
+    let frames = moka_canvas::assets::frames::Frames::new(Some(program));
+
+    let request = request_for(vec![GenerateInput {
+        role: InputRole::FirstFrame,
+        asset_id: clip,
+        window: None,
+        frame: Some(moka_canvas::assets::frames::FrameEdge::Last),
+    }]);
+    let loaded = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        Some(&frames),
+    )
+    .await
+    .expect("a frame is taken out of the clip");
+
+    assert_eq!(loaded[0].mime, "image/png");
+    assert!(loaded[0].name.contains("last"), "{}", loaded[0].name);
+    assert_eq!(&loaded[0].bytes[..4], b"\x89PNG");
+    assert!(
+        loaded[0].bytes.len() < video.len(),
+        "the picture is not the film"
+    );
+}
+
+/// A reference that names a frame on something that is not a film is refused
+/// by name rather than sent as a whole file.
+#[tokio::test]
+async fn a_frame_on_something_that_is_not_a_film_is_refused() {
+    let tmp = TempDir::new().unwrap();
+    let (store, root) = open_project(&tmp).await;
+    let picture = upload(
+        &store,
+        &root,
+        "poster.png",
+        "image/png",
+        &encoded(image::ImageFormat::Png, 2, 2),
+    )
+    .await;
+
+    let request = request_for(vec![GenerateInput {
+        role: InputRole::FirstFrame,
+        asset_id: picture,
+        window: None,
+        frame: Some(moka_canvas::assets::frames::FrameEdge::First),
+    }]);
+    let error = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect_err("a picture has no frame to take");
+    assert_eq!(error.code(), "PROVIDER_BAD_REQUEST");
+    let message = error.to_string();
+    assert!(message.contains("poster.png"), "{message}");
+    assert!(message.contains("only a film"), "{message}");
+}
+
+/// A reference cannot mean both a stretch of a file and one end of it.
+#[tokio::test]
+async fn a_window_and_a_frame_at_once_are_refused() {
+    let tmp = TempDir::new().unwrap();
+    let (store, root) = open_project(&tmp).await;
+    let picture = upload(
+        &store,
+        &root,
+        "poster.png",
+        "image/png",
+        &encoded(image::ImageFormat::Png, 2, 2),
+    )
+    .await;
+
+    let request = request_for(vec![GenerateInput {
+        role: InputRole::FirstFrame,
+        asset_id: picture,
+        window: Some(moka_canvas::generate::InputWindow {
+            start_ms: 0,
+            duration_ms: 1_000,
+        }),
+        frame: Some(moka_canvas::assets::frames::FrameEdge::Last),
+    }]);
+    let error = load_inputs(
+        store.as_ref(),
+        &request,
+        &GenerateConfig::default(),
+        None,
+        None,
+    )
+    .await
+    .expect_err("one reference cannot mean two parts of a file");
+    assert_eq!(error.code(), "PROVIDER_BAD_REQUEST");
+    assert!(error.to_string().contains("both a window"));
 }

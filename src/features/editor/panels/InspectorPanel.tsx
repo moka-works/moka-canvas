@@ -27,7 +27,7 @@ import {
   executorKeyForNode,
   generationSpecFromSnapshot,
 } from "../../../shared/domain";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../commands/execute";
 import { openDirector } from "../../director/stores/directorStore";
@@ -1034,6 +1034,7 @@ function DirectorSection({
             <video
               className="inspector-director-blocking"
               controls
+              poster={assetThumbUrl(state.blockingAssetId, 768)}
               preload="metadata"
               src={assetUrl(state.blockingAssetId)}
             />

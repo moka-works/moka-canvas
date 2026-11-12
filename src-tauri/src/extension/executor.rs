@@ -1077,6 +1077,7 @@ impl ExtensionExecutor {
                 return Err(model_timeout());
             }
             let gateway = Arc::clone(&gateway);
+            let frames = gateway.frames().cloned();
             let session = Arc::clone(&session);
             let cancel = cancel.clone();
             let node_title = node_title.clone();
@@ -1118,6 +1119,7 @@ impl ExtensionExecutor {
                             &binding,
                             &inputs,
                             &result,
+                            frames,
                         )
                         .await;
                         match filed {
@@ -1269,6 +1271,7 @@ fn lua_inputs(inputs: &[serde_json::Value]) -> Result<Vec<GenerateInput>, String
             role,
             asset_id: asset_id.to_string(),
             window,
+            frame: None,
         });
     }
     Ok(read)
@@ -1353,6 +1356,7 @@ async fn file_answers(
     model: &str,
     input_ids: &[AssetId],
     result: &GenerateResult,
+    frames: Option<Arc<crate::assets::frames::Frames>>,
 ) -> Result<Vec<ModelItem>, ProviderError> {
     let count = result.items.len();
     let mut incoming = Vec::with_capacity(count);
@@ -1390,6 +1394,13 @@ async fn file_answers(
         });
     }
     let entries = file_incoming(session.as_ref(), incoming).await?;
+    // A film's first and last pictures are kept beside it, off this call's
+    // clock, so every preview of it has a still waiting.
+    if let Some(frames) = &frames {
+        if let Ok(root) = session.project_root().await {
+            frames.keep_in_background(root, entries.clone());
+        }
+    }
     Ok(entries
         .into_iter()
         .zip(result.items.iter())

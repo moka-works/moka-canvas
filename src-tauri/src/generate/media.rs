@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use crate::assets::frames::Frames;
 use crate::config::GenerateConfig;
 use crate::domain::{AssetId, Capability, ResourceEntry};
 use crate::project::ProjectStore;
@@ -156,10 +157,15 @@ pub async fn load_inputs(
     request: &GenerateRequest,
     budgets: &GenerateConfig,
     audio: Option<&dyn AudioWindow>,
+    frames: Option<&Frames>,
 ) -> Result<Vec<MediaInput>, ProviderError> {
     let mut loaded = Vec::with_capacity(request.inputs.len());
     for input in &request.inputs {
         let file = store.asset_file(&input.asset_id, None).await?;
+        if input.frame.is_some() {
+            loaded.push(cut_frame(store, input, &file.entry, &file.path, budgets, frames).await?);
+            continue;
+        }
         if let Some(window) = input.window {
             loaded.push(cut(input, &file.entry, &file.path, window, budgets, audio).await?);
             continue;
@@ -204,6 +210,59 @@ async fn cut(
         name: entry.name.clone(),
         bytes,
         mime,
+    };
+    refuse_if_over(&media.name, &media.mime, media.bytes.len() as u64, budgets)?;
+    Ok(media)
+}
+
+/// One reference that names one end of a film: that picture is what travels.
+///
+/// The frame is taken when the request is sent rather than filed as an asset
+/// beforehand: the ends of a clip are its own pictures, not things the reader
+/// put on the shelf, and a neighbour refilmed asks for the new clip's end
+/// without anything cached needing to be invalidated.
+async fn cut_frame(
+    store: &dyn ProjectStore,
+    input: &GenerateInput,
+    entry: &ResourceEntry,
+    source: &Path,
+    budgets: &GenerateConfig,
+    frames: Option<&Frames>,
+) -> Result<MediaInput, ProviderError> {
+    let edge = input
+        .frame
+        .expect("the caller only asks for a frame when it names one");
+    if input.window.is_some() {
+        return Err(ProviderError::Rejected(format!(
+            "{} is asked for as both a window and one end of the file",
+            entry.name
+        )));
+    }
+    let mime = recorded_mime(entry).unwrap_or_default();
+    if !mime.starts_with("video/") {
+        return Err(ProviderError::Rejected(format!(
+            "\"{}\" is {mime}, and only a film has a {} frame",
+            entry.name,
+            edge.as_str()
+        )));
+    }
+    let frames = frames.ok_or_else(|| {
+        ProviderError::Rejected(format!(
+            "{} has to have its {} frame taken out of it, and this machine has \
+             no renderer to take it — install ffmpeg, or pick a whole file",
+            entry.name,
+            edge.as_str()
+        ))
+    })?;
+    let root = store.project_root().await?;
+    let path = frames.ensure(&root, entry, source, edge).await?;
+    let bytes = tokio::fs::read(&path).await?;
+    let media = MediaInput {
+        role: input.role,
+        asset_id: input.asset_id.clone(),
+        name: format!("{} {}", entry.name, edge.as_str()),
+        bytes,
+        mime: "image/png".to_string(),
     };
     refuse_if_over(&media.name, &media.mime, media.bytes.len() as u64, budgets)?;
     Ok(media)
@@ -363,6 +422,7 @@ mod tests {
             role,
             asset_id: asset_id.into(),
             window: None,
+            frame: None,
         }
     }
 

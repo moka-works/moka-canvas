@@ -1,25 +1,19 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { assetsApi, assetThumbUrl } from "../../../api/assets";
-import { errorText } from "../../../api/client";
+import { assetFrameUrl, assetThumbUrl } from "../../../api/assets";
 import {
   DEFAULT_STORY_TRANSITION_MS,
-  STORY_TRANSITION_SOURCES,
   currentTake,
   neighbourVideos,
   takeFile,
-  transitionFrames,
   type StoryTransition,
-  type StoryTransitionSource,
 } from "../../../shared/domain";
 import type {
   StoryAct,
   StoryChapter,
   StoryDocument,
 } from "../../../shared/domain/types";
-import { useAppStore } from "../../editor/stores/appStore";
-import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { RunningBar } from "../components/RunningBar";
 import { planActVideos, videoCeiling } from "../jobs/plan";
 import { useStoryRun, type ActRun } from "../stores/storyJobStore";
@@ -43,10 +37,10 @@ const TRANSITION_POSTER_WIDTH = 320;
  *
  * It is not a board: there are no shots to write and no pictures to draw. What
  * the card holds is the move and its length, and the two pictures it is filmed
- * between — the frame the act before ends on and the frame the act after begins
- * on, read from those acts rather than copied here. A bridge cannot be filmed
- * until both neighbours have been drawn, and the card says which end it is
- * waiting for rather than offering an ask that would be refused.
+ * between — the last frame of the act before it and the first frame of the act
+ * after it, taken out of their own clips. A bridge cannot be filmed until both
+ * neighbours have been filmed, and the card says which end it is waiting for
+ * rather than offering an ask that would be refused.
  */
 export function TransitionCard({
   story,
@@ -70,7 +64,6 @@ export function TransitionCard({
   const run = useStoryRun();
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
-  const [fetching, setFetching] = useState(false);
   // The card is only handed a bridge, but the fallback keeps the hooks below
   // unconditional.
   const transition = act.transition ?? {
@@ -103,55 +96,14 @@ export function TransitionCard({
     );
   };
 
-  const source = transition.frameSource ?? "keyframes";
   const videos = neighbourVideos(story, chapter, index);
-  const cached = transition.cached;
-  // A cached pair is the ends only while the clips it was cut from are the
-  // clips standing beside the bridge now.
-  const cacheFresh =
-    source !== "video" ||
-    (videos.from !== undefined &&
-      videos.to !== undefined &&
-      cached?.from !== undefined &&
-      cached.to !== undefined &&
-      cached.from.videoAssetId === videos.from.assetId &&
-      cached.to.videoAssetId === videos.to.assetId);
-  const shotEnds = transitionFrames(chapter, index);
-  const frames =
-    source === "video"
-      ? {
-          from: cacheFresh ? cached?.from : undefined,
-          to: cacheFresh ? cached?.to : undefined,
-        }
-      : shotEnds;
-  const ready = frames.from !== undefined && frames.to !== undefined;
-  const videosReady = videos.from !== undefined && videos.to !== undefined;
-  const canFilm = source === "video" ? videosReady : ready;
+  const ready = videos.from !== undefined && videos.to !== undefined;
   const missing =
-    source === "video"
-      ? videos.from === undefined
-        ? t("story:storyboard.transitionVideoMissingFrom")
-        : videos.to === undefined
-          ? t("story:storyboard.transitionVideoMissingTo")
-          : cacheFresh
-            ? undefined
-            : t("story:storyboard.transitionFramesPending")
-      : shotEnds.from === undefined
-        ? t("story:storyboard.transitionMissingFrom")
-        : shotEnds.to === undefined
-          ? t("story:storyboard.transitionMissingTo")
-          : undefined;
-
-  const fromCaption = t(
-    source === "video"
-      ? "story:storyboard.transitionFromVideo"
-      : "story:storyboard.transitionFrom",
-  );
-  const toCaption = t(
-    source === "video"
-      ? "story:storyboard.transitionToVideo"
-      : "story:storyboard.transitionTo",
-  );
+    videos.from === undefined
+      ? t("story:storyboard.transitionVideoMissingFrom")
+      : videos.to === undefined
+        ? t("story:storyboard.transitionVideoMissingTo")
+        : undefined;
 
   const clip = currentTake(act.video);
   const clipPlace: TakePlace = {
@@ -159,11 +111,14 @@ export function TransitionCard({
     chapterId: chapter.id,
     actId: act.id,
   };
-  // The bridge is filmed from the picture it starts at.
+  // The bridge is filmed from the picture it starts at: its own first frame
+  // once it is made, and the neighbour's last until then.
   const clipPoster =
-    frames.from === undefined
-      ? undefined
-      : assetThumbUrl(frames.from.assetId, TRANSITION_POSTER_WIDTH);
+    clip?.assetIds[0] !== undefined
+      ? assetThumbUrl(clip.assetIds[0], TRANSITION_POSTER_WIDTH)
+      : videos.from === undefined
+        ? undefined
+        : assetFrameUrl(videos.from.assetId, "last", TRANSITION_POSTER_WIDTH);
   const ceiling = videoCeiling();
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
@@ -184,101 +139,13 @@ export function TransitionCard({
     if (ms !== transition.durationMs) writeTransition({ durationMs: ms });
   });
 
-  /**
-   * The neighbouring clips' ends, cut out and filed as pictures.
-   *
-   * The request is one clip at a time rather than both at once because the
-   * filed pictures come back with the document revision each one moved, and
-   * folding them in out of order would leave the window behind the server.
-   */
-  const takeFrames = async (): Promise<boolean> => {
-    // The pictures are filed on the server, which names them in the document
-    // it holds: what the room has open but not saved goes first, the way every
-    // picture from this computer does.
-    await useProjectStore.getState().flush();
-    const after = useProjectStore.getState();
-    if (after.pending.length > 0 || after.saveStatus === "conflicted") {
-      const blocked = saveTrouble();
-      useAppStore
-        .getState()
-        .pushToast("error", blocked.message, undefined, blocked.detail);
-      return false;
-    }
-    const held = readLive();
-    if (held === undefined) return false;
-    const ends = neighbourVideos(held.doc, held.chapter, held.at);
-    if (ends.from === undefined || ends.to === undefined) return false;
-    setFetching(true);
-    try {
-      const from = await assetsApi.extractFrame(ends.from.assetId, "last");
-      useProjectStore.getState().integrateAssetEntry(from.entry, {
-        revision: from.revision,
-        updatedAt: from.updatedAt,
-      });
-      const to = await assetsApi.extractFrame(ends.to.assetId, "first");
-      useProjectStore.getState().integrateAssetEntry(to.entry, {
-        revision: to.revision,
-        updatedAt: to.updatedAt,
-      });
-      // The reader may have put the bridge back on its shots' frames while the
-      // clips were being read: the pictures are still filed, but a choice made
-      // after the request is the one that stands.
-      const latest = readLive();
-      const chosen =
-        latest?.chapter.acts[latest.at]?.transition?.frameSource ?? "keyframes";
-      if (latest === undefined || chosen !== "video") return true;
-      writeTransition({
-        frameSource: "video",
-        cached: {
-          from: { assetId: from.entry.id, videoAssetId: ends.from.assetId },
-          to: { assetId: to.entry.id, videoAssetId: ends.to.assetId },
-        },
-      });
-      return true;
-    } catch (problem) {
-      const trouble = errorText(problem);
-      useAppStore
-        .getState()
-        .pushToast(
-          "error",
-          t("story:storyboard.transitionFramesFailed"),
-          undefined,
-          trouble.detail ?? trouble.message,
-        );
-      return false;
-    } finally {
-      setFetching(false);
-    }
-  };
-
-  const chooseSource = (next: StoryTransitionSource) => {
-    if (next === source) return;
-    writeTransition({ frameSource: next });
-    if (next === "video") void takeFrames();
-  };
-
   const film = () => {
-    void (async () => {
-      const held = readLive();
-      if (held === undefined) return;
-      const current = held.chapter.acts[held.at]?.transition;
-      if (current === undefined) return;
-      if ((current.frameSource ?? "keyframes") === "video") {
-        const ends = neighbourVideos(held.doc, held.chapter, held.at);
-        const fresh =
-          ends.from !== undefined &&
-          ends.to !== undefined &&
-          current.cached?.from?.videoAssetId === ends.from.assetId &&
-          current.cached?.to?.videoAssetId === ends.to.assetId;
-        if (!fresh && !(await takeFrames())) return;
-      }
-      // The words just typed are written when the field is left, which the
-      // press itself may be doing: the ask is planned from the document as it
-      // stands.
-      const live = liveStory(story.id) ?? story;
-      const items = planActVideos(live, chapter.id, [act.id]);
-      if (items.length > 0) void run(story.id, "actVideo", items);
-    })();
+    // The words just typed are written when the field is left, which the
+    // press itself may be doing: the ask is planned from the document as it
+    // stands.
+    const live = liveStory(story.id) ?? story;
+    const items = planActVideos(live, chapter.id, [act.id]);
+    if (items.length > 0) void run(story.id, "actVideo", items);
   };
   const remove = () =>
     writeActs(
@@ -343,55 +210,29 @@ export function TransitionCard({
       )}
 
       {/*
-        Where the two ends come from. The shots' own frames are the default and
-        need nothing made first; the clips' ends are read from the neighbours'
-        finished takes, which the machine's renderer cuts out of a video.
+        The two ends are the neighbours' own clips: the last frame of the act
+        before and the first frame of the act after, taken out of the clips
+        when the move is made. A neighbour that has not been filmed has no end
+        to offer, and the card says which one it is waiting for.
       */}
-      <span
-        className="story-transition-source"
-        role="radiogroup"
-        aria-label={t("story:storyboard.transitionSource")}
-      >
-        <span className="story-field-label">
-          {t("story:storyboard.transitionSource")}
-        </span>
-        {STORY_TRANSITION_SOURCES.map((option) => (
-          <button
-            aria-checked={source === option}
-            className={`story-choice${source === option ? " is-on" : ""}`}
-            data-testid={`story-transition-source-${option}-${index}`}
-            key={option}
-            onClick={() => chooseSource(option)}
-            role="radio"
-            type="button"
-          >
-            {t(
-              option === "keyframes"
-                ? "story:storyboard.transitionSourceKeyframes"
-                : "story:storyboard.transitionSourceVideo",
-            )}
-          </button>
-        ))}
-      </span>
-
       <div className="story-transition-ends">
         <TransitionEnd
-          caption={fromCaption}
-          frame={frames.from}
-          ready={
-            source === "video"
-              ? t("story:storyboard.transitionFramesPending")
-              : t("story:storyboard.transitionMissingFrom")
+          caption={t("story:storyboard.transitionFromVideo")}
+          ready={t("story:storyboard.transitionVideoMissingFrom")}
+          src={
+            videos.from === undefined
+              ? undefined
+              : assetFrameUrl(videos.from.assetId, "last", 160)
           }
           testId={`story-transition-from-${index}`}
         />
         <TransitionEnd
-          caption={toCaption}
-          frame={frames.to}
-          ready={
-            source === "video"
-              ? t("story:storyboard.transitionFramesPending")
-              : t("story:storyboard.transitionMissingTo")
+          caption={t("story:storyboard.transitionToVideo")}
+          ready={t("story:storyboard.transitionVideoMissingTo")}
+          src={
+            videos.to === undefined
+              ? undefined
+              : assetFrameUrl(videos.to.assetId, "first", 160)
           }
           testId={`story-transition-to-${index}`}
         />
@@ -438,18 +279,14 @@ export function TransitionCard({
           <button
             className="primary"
             data-testid={`story-transition-video-go-${index}`}
-            disabled={!canFilm || videoBusy || fetching}
+            disabled={!ready || videoBusy}
             onClick={film}
             title={missing}
             type="button"
           >
             {videoBusy
               ? t("story:panels.drawing")
-              : fetching
-                ? t("story:storyboard.transitionFetching")
-                : source === "video" && !cacheFresh
-                  ? t("story:storyboard.transitionFetchAndFilm")
-                  : t("story:storyboard.transitionFilm")}
+              : t("story:storyboard.transitionFilm")}
           </button>
         ) : (
           <span className="story-act-clip">
@@ -470,18 +307,14 @@ export function TransitionCard({
             <button
               className="link"
               data-testid={`story-transition-video-again-${index}`}
-              disabled={!canFilm || videoBusy || fetching}
+              disabled={!ready || videoBusy}
               onClick={film}
               title={missing}
               type="button"
             >
               {videoBusy
                 ? t("story:panels.drawing")
-                : fetching
-                  ? t("story:storyboard.transitionFetching")
-                  : source === "video" && !cacheFresh
-                    ? t("story:storyboard.transitionFetchAndFilm")
-                    : t("story:storyboard.transitionAgain")}
+                : t("story:storyboard.transitionAgain")}
             </button>
             {act.video.takes.length > 1 && (
               <button
@@ -526,7 +359,6 @@ export function TransitionCard({
           }}
           onClose={() => setPickingClip(false)}
           onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
-          poster={clipPoster}
           takes={act.video.takes}
         />
       )}
@@ -534,24 +366,24 @@ export function TransitionCard({
   );
 }
 
-/** One end of a bridge: the neighbour's frame, or what it is waiting for. */
+/** One end of a bridge: the neighbour's picture, or what it is waiting for. */
 function TransitionEnd({
-  frame,
+  src,
   caption,
   ready,
   testId,
 }: {
-  frame: { assetId: string } | undefined;
+  src: string | undefined;
   caption: string;
   ready: string;
   testId: string;
 }) {
   return (
     <figure className="story-transition-end" data-testid={testId}>
-      {frame === undefined ? (
+      {src === undefined ? (
         <span className="story-transition-end-empty">{ready}</span>
       ) : (
-        <img alt="" src={assetThumbUrl(frame.assetId, 160)} />
+        <img alt="" src={src} />
       )}
       <figcaption className="story-hint">{caption}</figcaption>
     </figure>

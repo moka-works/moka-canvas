@@ -31,7 +31,6 @@ export function StoryPicks({
   current,
   label,
   kind = "picture",
-  poster,
   onChoose,
   onRemove,
   onClose,
@@ -47,8 +46,6 @@ export function StoryPicks({
    * beside it.
    */
   kind?: "picture" | "clip" | "audio";
-  /** The still a clip's player stands on before it is played. */
-  poster?: string;
   onChoose: (assetId: string) => void;
   /** Throws an old take away, and answers the line to say under the list. */
   onRemove: (assetId: string) => Promise<string | undefined>;
@@ -168,7 +165,7 @@ export function StoryPicks({
                       <video
                         aria-label={label}
                         controls
-                        poster={poster}
+                        poster={assetThumbUrl(file, PICK_THUMB_WIDTH)}
                         preload="metadata"
                         src={assetUrl(file)}
                       />

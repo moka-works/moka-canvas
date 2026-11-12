@@ -221,7 +221,9 @@ async fn rig_under_text_budget(text_timeout_seconds: u64) -> Rig {
         Arc::clone(&models),
         budgets,
         // No cutter: a request that names a window is refused here, and a test
-        // that transcribes places its own.
+        // that transcribes places its own. No frames either, for the same
+        // reason: a clip's ends are taken only where a renderer is resolved.
+        None,
         None,
     ));
     Rig {
@@ -579,6 +581,7 @@ async fn a_reference_is_read_out_of_the_project_and_sent_along() {
         role: InputRole::Reference,
         asset_id: asset,
         window: None,
+        frame: None,
     }];
     let result = rig
         .gateway
@@ -1143,6 +1146,7 @@ async fn a_speech_model_that_copies_a_recording_is_refused_without_one() {
         role: InputRole::Reference,
         asset_id,
         window: None,
+        frame: None,
     }];
     let answer = rig
         .gateway
@@ -1764,6 +1768,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
         role: InputRole::Reference,
         asset_id: picture,
         window: None,
+        frame: None,
     }];
     let task = rig
         .gateway
@@ -2045,6 +2050,7 @@ async fn a_recognition_script_runs_its_whole_conversation_and_answers_with_words
             role: InputRole::ControlAudio,
             asset_id: recording,
             window: None,
+            frame: None,
         }],
         params: json!({ "language": "zh" })
             .as_object()

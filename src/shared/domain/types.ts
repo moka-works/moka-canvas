@@ -913,43 +913,19 @@ export interface StoryActSound {
   ambience?: string;
 }
 
-/** Where a bridge's two ends come from. */
-export const STORY_TRANSITION_SOURCES = ["keyframes", "video"] as const;
-export type StoryTransitionSource = (typeof STORY_TRANSITION_SOURCES)[number];
-
-/**
- * One end of a bridge cut out of a neighbouring clip.
- *
- * The clip it came from is kept beside the picture so the cache can say when
- * it no longer matches: a neighbour refilmed leaves the old picture behind
- * rather than filming the new bridge from a frame that has nothing to do with
- * the act beside it.
- */
-export interface StoryTransitionFrame {
-  assetId: AssetId;
-  videoAssetId: AssetId;
-}
-
 /**
  * A bridge between two acts, made to join what a video model could not keep in
  * one take.
  *
  * A transition is an act of a special shape: it holds no shots of its own, and
- * its clip is filmed from the frame the act before it ends on and the frame the
- * act after it begins on. The prompt says how the picture should move between
- * the two, and the length is the reader's rather than the board's.
+ * its clip is filmed from the last frame of the act before it and the first
+ * frame of the act after it, taken out of their own clips when it is asked for.
+ * The prompt says how the picture should move between the two, and the length
+ * is the reader's rather than the board's.
  */
 export interface StoryTransition {
   prompt: string;
   durationMs: number;
-  /**
-   * Where the two ends are read from: the neighbouring shots' frames (absent,
-   * which is what every bridge written before the choice meant) or frames cut
-   * out of the neighbouring clips themselves.
-   */
-  frameSource?: StoryTransitionSource;
-  /** The pictures cut out of the neighbouring clips, while they still match. */
-  cached?: { from?: StoryTransitionFrame; to?: StoryTransitionFrame };
 }
 
 /**

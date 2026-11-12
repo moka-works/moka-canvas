@@ -86,26 +86,6 @@ export const assetsApi = {
   },
 
   /**
-   * Cuts one frame out of a clip and files it as a picture.
-   *
-   * The first or the last frame of the clip travels as a picture of its own,
-   * which is what a bridge between two acts is filmed between. A machine
-   * without ffmpeg answers with FFMPEG_UNAVAILABLE and its own reason, which
-   * the caller shows rather than pretending the clip had no frames.
-   */
-  extractFrame(
-    id: AssetId,
-    edge: "first" | "last",
-    options: { signal?: AbortSignal } = {},
-  ): Promise<AssetChange> {
-    return http.request<AssetChange>("/api/v1/projects/current/assets/frame", {
-      method: "POST",
-      body: { assetId: id, edge },
-      signal: options.signal,
-    });
-  },
-
-  /**
    * Writes down what a reader says about an asset. Only the parts given are
    * touched, and the file underneath is left as it was — saying a picture is a
    * keeper costs nothing of the picture's.
@@ -158,12 +138,31 @@ export function assetUrl(id: AssetId): string {
  * The same file, drawn by the server at the width a list shows it.
  *
  * For the surfaces that draw a file small — a shelf row, a card, a reference
- * thumbnail — rather than the ones that show it as itself. The server clamps
- * the width and answers with the file itself when it cannot draw one, so a
- * caller has nothing to check.
+ * thumbnail — rather than the ones that show it as itself. A film is answered
+ * with its own first frame, taken out of it where the project has not kept one
+ * yet. The server clamps the width and answers with the file itself when it
+ * cannot draw a picture, so a caller has nothing to check.
  */
 export function assetThumbUrl(id: AssetId, width: number): string {
   return withProject(`/api/v1/projects/current/assets/${id}?w=${width}`);
+}
+
+/**
+ * One end of a film, as a picture taken out of it.
+ *
+ * The first end is what a preview leads with; the last is what a bridge between
+ * two acts is filmed from. Both are taken when the film is imported or made,
+ * and this address is what a reader looks them up by. A machine without ffmpeg
+ * answers with the reason it could not take one.
+ */
+export function assetFrameUrl(
+  id: AssetId,
+  edge: "first" | "last",
+  width: number,
+): string {
+  return withProject(
+    `/api/v1/projects/current/assets/${id}/frame?edge=${edge}&w=${width}`,
+  );
 }
 
 /**

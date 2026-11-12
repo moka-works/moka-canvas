@@ -1146,7 +1146,7 @@ describe("planning the clips", () => {
     expect(items[0].prompt).toContain("It covers:");
   });
 
-  it("bridges two acts from their frames, or from the ends of their clips", () => {
+  it("bridges two acts from the ends of their clips", () => {
     const base = drawnStory();
     const chapter = base.chapters[0];
     const before = chapter.acts[0];
@@ -1206,75 +1206,30 @@ describe("planning the clips", () => {
       ],
     };
 
-    // By default the ends are the neighbouring shots' own frames.
-    const [frameAsk] = planActVideos(board, chapter.id, [bridge.id]);
-    expect(frameAsk.inputs).toEqual([
-      { role: "firstFrame", assetId: "asset-frame-second" },
-      { role: "lastFrame", assetId: "art-after" },
+    // The clip before is filmed in pieces, so its end is the last piece's; the
+    // clip after opens at its first. Both travel as the pictures taken out of
+    // those ends when the request is sent.
+    const [ask] = planActVideos(board, chapter.id, [bridge.id]);
+    expect(ask.inputs).toEqual([
+      { role: "firstFrame", assetId: "clip-before-b", frame: "last" },
+      { role: "lastFrame", assetId: "clip-after", frame: "first" },
     ]);
-    expect(frameAsk.params?.seconds).toBe(4);
+    expect(ask.params?.seconds).toBe(4);
 
-    // Asked for the clips, the cached pictures travel while they still name
-    // the clips standing beside the bridge: the clip before is filmed in
-    // pieces, so its end is the last piece's.
-    const videoBoard: StoryDocument = {
+    // A neighbour with no clip has no end to give, so the bridge is not asked
+    // for at all rather than being filmed between something else.
+    const unfilmed: StoryDocument = {
       ...board,
       chapters: [
         {
-          ...board.chapters[0],
-          acts: board.chapters[0].acts.map((act) =>
-            act.id !== bridge.id
-              ? act
-              : {
-                  ...act,
-                  transition: {
-                    ...act.transition!,
-                    frameSource: "video" as const,
-                    cached: {
-                      from: {
-                        assetId: "frame-from",
-                        videoAssetId: "clip-before-b",
-                      },
-                      to: { assetId: "frame-to", videoAssetId: "clip-after" },
-                    },
-                  },
-                },
+          ...chapter,
+          acts: chapter.acts.map((act) =>
+            act.id === after.id ? { ...act, video: { takes: [] } } : act,
           ),
         },
       ],
     };
-    const [clipAsk] = planActVideos(videoBoard, chapter.id, [bridge.id]);
-    expect(clipAsk.inputs).toEqual([
-      { role: "firstFrame", assetId: "frame-from" },
-      { role: "lastFrame", assetId: "frame-to" },
-    ]);
-
-    // A neighbour refilmed leaves the cached pictures behind: the bridge is not
-    // filmed from frames that belong to a clip no longer beside it.
-    const refilmed: StoryDocument = {
-      ...videoBoard,
-      chapters: [
-        {
-          ...videoBoard.chapters[0],
-          acts: videoBoard.chapters[0].acts.map((act) =>
-            act.id !== before.id
-              ? act
-              : {
-                  ...act,
-                  video: {
-                    takes: [
-                      {
-                        assetIds: ["clip-refilmed"],
-                        createdAt: "2026-01-01T00:00:00Z",
-                      },
-                    ],
-                  },
-                },
-          ),
-        },
-      ],
-    };
-    expect(planActVideos(refilmed, chapter.id, [bridge.id])).toEqual([]);
+    expect(planActVideos(unfilmed, chapter.id, [bridge.id])).toEqual([]);
   });
 });
 

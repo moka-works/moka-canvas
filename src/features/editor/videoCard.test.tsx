@@ -112,6 +112,11 @@ describe("a video on the canvas", () => {
       `/api/v1/projects/current/assets/${SHOT.id}`,
     );
     expect(video?.getAttribute("preload")).toBe("metadata");
+    // The still before playing is the film's own first frame, drawn by the
+    // server rather than left to whatever the browser paints.
+    expect(video?.getAttribute("poster")).toContain(
+      `/api/v1/projects/current/assets/${SHOT.id}?w=`,
+    );
     // What the project measured about it, where the drawn card cannot say it.
     expect(face.textContent).toContain("640×360 · 0:04");
     expect(

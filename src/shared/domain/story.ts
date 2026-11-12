@@ -115,41 +115,6 @@ export function actHasShots(act: StoryAct): boolean {
   return act.keyframes.length > 0;
 }
 
-/** One end of a transition: the picture and the shot's words. */
-export interface StoryTransitionEnd {
-  assetId: AssetId;
-  content: string;
-}
-
-/**
- * The pictures a transition is filmed between: the last drawn frame of the act
- * before it and the first drawn frame of the act after it.
- *
- * A clip is made from these pictures, and the frame a clip ends on is the last
- * picture its act was drawn with, so these are the ends the two neighbouring
- * videos meet at. A neighbour that is itself a bridge, or has no drawn frame
- * yet, leaves its end of the move unspoken.
- */
-export function transitionFrames(
-  chapter: StoryChapter,
-  at: number,
-): { from?: StoryTransitionEnd; to?: StoryTransitionEnd } {
-  const before = chapter.acts[at - 1];
-  const after = chapter.acts[at + 1];
-  const endOf = (act: StoryAct | undefined, tail: boolean) => {
-    if (act === undefined || act.transition !== undefined) return undefined;
-    const drawn = act.keyframes.filter(
-      (keyframe) => currentTake(keyframe.art) !== undefined,
-    );
-    const frame = tail ? drawn[drawn.length - 1] : drawn[0];
-    if (frame === undefined) return undefined;
-    const assetId = currentTake(frame.art)?.assetIds[0];
-    if (assetId === undefined) return undefined;
-    return { assetId, content: frame.content };
-  };
-  return { from: endOf(before, true), to: endOf(after, false) };
-}
-
 /** One neighbouring clip's end, where a bridge's picture is cut out of it. */
 export interface StoryNeighbourVideo {
   assetId: AssetId;

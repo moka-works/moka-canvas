@@ -105,7 +105,7 @@ pub fn thumb_for(
 /// nothing anybody chose — drawn straight it comes out black. White is what a
 /// page and this interface's panels are; a drawing that is put over something
 /// else is not what a list asks for.
-fn encode(picture: &image::DynamicImage) -> Option<Vec<u8>> {
+pub(crate) fn encode(picture: &image::DynamicImage) -> Option<Vec<u8>> {
     let subject = picture.to_rgba8();
     let mut canvas = image::RgbImage::new(subject.width(), subject.height());
     for (x, y, pixel) in subject.enumerate_pixels() {

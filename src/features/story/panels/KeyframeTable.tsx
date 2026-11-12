@@ -299,6 +299,10 @@ function KeyframeRow({
   const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
   const [playing, setPlaying] = useState(false);
+  // A preview the server could not draw steps back to the shot's drawn frame,
+  // rather than leaving a broken picture. The address is held rather than a
+  // flag, so a new take is tried even after an older one failed.
+  const [failedPoster, setFailedPoster] = useState<string | undefined>();
   const at = index + 1;
   const cell = (name: string) => t("story:storyboard.cell", { at, name });
   const clip = currentTake(keyframe.video);
@@ -308,11 +312,22 @@ function KeyframeRow({
     actId: act.id,
     keyframeId: keyframe.id,
   };
-  const clipPoster = takeFile(currentTake(keyframe.art));
-  const clipPosterUrl =
-    clipPoster === undefined
+  // The clip leads with its own first frame, and falls back to the frame the
+  // shot was drawn with where the machine cannot take one out of the film.
+  const drawnPoster = takeFile(currentTake(keyframe.art));
+  const drawnPosterUrl =
+    drawnPoster === undefined
       ? undefined
-      : assetThumbUrl(clipPoster, CLIP_POSTER_WIDTH);
+      : assetThumbUrl(drawnPoster, CLIP_POSTER_WIDTH);
+  const clipFrame = clip?.assetIds[0];
+  const framePoster =
+    clipFrame === undefined
+      ? undefined
+      : assetThumbUrl(clipFrame, CLIP_POSTER_WIDTH);
+  const clipPosterUrl =
+    framePoster === undefined || failedPoster === framePoster
+      ? drawnPosterUrl
+      : framePoster;
   const clipStale = shotClipStale(keyframe);
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
@@ -611,6 +626,7 @@ function KeyframeRow({
                   <img
                     alt=""
                     decoding="async"
+                    onError={() => setFailedPoster(framePoster)}
                     src={clipPosterUrl}
                     style={{ aspectRatio: frameRatio(story) }}
                   />
@@ -756,7 +772,6 @@ function KeyframeRow({
           }}
           onClose={() => setPickingClip(false)}
           onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
-          poster={clipPosterUrl}
           takes={keyframe.video.takes}
         />
       )}

@@ -1817,9 +1817,10 @@ fn machine_ffmpeg() -> Option<PathBuf> {
     None
 }
 
-/// One end of a clip is cut out and filed as a picture of its own.
+/// A film's two ends are taken out of it and served as pictures, without
+/// becoming entries on the shelf.
 #[tokio::test]
-async fn a_frame_is_cut_out_of_a_clip_and_filed_as_a_picture() {
+async fn a_films_frames_are_served_as_pictures() {
     let Some(program) = machine_ffmpeg() else {
         eprintln!("skipped: this machine has no ffmpeg");
         return;
@@ -1844,32 +1845,74 @@ async fn a_frame_is_cut_out_of_a_clip_and_filed_as_a_picture() {
     let uploaded = body_json(response).await;
     let clip = uploaded["entry"]["id"].as_str().expect("an asset id");
 
+    // A film asked for at a width is answered with its own first frame, which
+    // is what every preview leads with.
     let response = app
         .clone()
-        .oneshot(json_request(
-            "POST",
-            "/api/v1/projects/current/assets/frame",
-            json!({ "assetId": clip, "edge": "last" }),
-        ))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let body = body_json(response).await;
-    assert_eq!(body["entry"]["mime"], "image/png");
-    assert_eq!(body["entry"]["name"], "clip-last-frame.png");
-
-    // The filed picture is readable from the asset route, not merely described.
-    let frame = body["entry"]["id"].as_str().expect("a frame id");
-    let response = app
         .oneshot(
             Request::builder()
-                .uri(format!("/api/v1/projects/current/assets/{frame}"))
+                .uri(format!("/api/v1/projects/current/assets/{clip}?w=32"))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap_or_default(),
+        "image/jpeg"
+    );
+
+    // Either end may be asked for on its own; the last is cut near the end of
+    // the film, the first at its head.
+    for edge in ["first", "last"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/v1/projects/current/assets/{clip}/frame?edge={edge}&w=32"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{edge}");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap_or_default(),
+            "image/jpeg"
+        );
+    }
+
+    // The pictures are the film's own, not files on the shelf: the registry
+    // still holds the one video and no pictures.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/current")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let project = body_json(response).await;
+    assert_eq!(
+        project["moka"]["resources"]["videos"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        project["moka"]["resources"]["images"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 }
 
 /// A machine without the renderer says so when a frame is asked for.
@@ -1896,11 +1939,14 @@ async fn a_frame_without_ffmpeg_names_the_missing_renderer() {
     let clip = uploaded["entry"]["id"].as_str().expect("an asset id");
 
     let response = app
-        .oneshot(json_request(
-            "POST",
-            "/api/v1/projects/current/assets/frame",
-            json!({ "assetId": clip, "edge": "first" }),
-        ))
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/projects/current/assets/{clip}/frame?edge=first&w=32"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);

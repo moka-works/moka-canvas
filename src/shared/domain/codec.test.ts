@@ -78,27 +78,43 @@ describe("moka codec", () => {
     act.transition = {
       prompt: "Fade through the dark",
       durationMs: 4_000,
+    };
+    const back = decodeMokaFile(encodeMokaFile(moka));
+    expect(back.stories![0]!.chapters[0]!.acts[0]!.transition).toEqual({
+      prompt: "Fade through the dark",
+      durationMs: 4_000,
+    });
+
+    // A bridge written while the ends could be chosen still reads: the words
+    // and the length are the bridge, and the ends now come from the clips
+    // beside it. What it said about its old cache is ignored.
+    const encoded = encodeMokaFile(moka);
+    const raw = deserialize(encoded.subarray(4)) as {
+      stories: { chapters: { acts: { transition?: unknown }[] }[] }[];
+    };
+    raw.stories[0]!.chapters[0]!.acts[0]!.transition = {
+      prompt: "Through the dark",
+      durationMs: 2_500,
       frameSource: "video",
       cached: {
         from: { assetId: "frame-a", videoAssetId: "clip-a" },
         to: { assetId: "frame-b", videoAssetId: "clip-b" },
       },
     };
-    const back = decodeMokaFile(encodeMokaFile(moka));
-    expect(back.stories![0]!.chapters[0]!.acts[0]!.transition).toEqual({
-      prompt: "Fade through the dark",
-      durationMs: 4_000,
-      frameSource: "video",
-      cached: {
-        from: { assetId: "frame-a", videoAssetId: "clip-a" },
-        to: { assetId: "frame-b", videoAssetId: "clip-b" },
-      },
+    const body = serialize(raw as never);
+    const withLegacy = new Uint8Array(4 + body.length);
+    withLegacy.set(MOKA_MAGIC, 0);
+    withLegacy.set(body, 4);
+    const read = decodeMokaFile(withLegacy);
+    expect(read.stories![0]!.chapters[0]!.acts[0]!.transition).toEqual({
+      prompt: "Through the dark",
+      durationMs: 2_500,
     });
 
     // A document written before bridges existed holds ordinary acts only.
     const old = buildStoryMokaFile();
-    const read = decodeMokaFile(encodeMokaFile(old));
-    expect(read.stories![0]!.chapters[0]!.acts[0]!.transition).toBeUndefined();
+    const older = decodeMokaFile(encodeMokaFile(old));
+    expect(older.stories![0]!.chapters[0]!.acts[0]!.transition).toBeUndefined();
   });
 
   it("carries the picture model and frame an element was given", () => {

@@ -106,6 +106,8 @@ pub struct StoryJobItemDraft {
 pub struct StoryJobInput {
     pub role: InputRole,
     pub asset_id: String,
+    #[serde(default)]
+    pub frame: Option<crate::assets::frames::FrameEdge>,
 }
 
 impl StoryJobInput {
@@ -116,6 +118,7 @@ impl StoryJobInput {
             role: self.role,
             asset_id: self.asset_id,
             window: None,
+            frame: self.frame,
         }
     }
 }
@@ -263,22 +266,6 @@ pub struct AssetChangeResponse {
     pub entry: ResourceEntry,
     pub revision: i32,
     pub updated_at: String,
-}
-
-/// One end of a clip, as a frame a bridge can be filmed from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum FrameEdge {
-    First,
-    Last,
-}
-
-/// Which clip a frame is cut out of, and which end of it.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtractFrameRequest {
-    pub asset_id: String,
-    pub edge: FrameEdge,
 }
 
 /// What a reader says about an asset, put right on its own.

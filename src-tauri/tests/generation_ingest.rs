@@ -198,6 +198,7 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
             role: InputRole::Reference,
             asset_id: "asset-sketch".into(),
             window: None,
+            frame: None,
         }],
         used_node_ids: vec!["node-sketch".into()],
         ..ResolvedInputs::default()

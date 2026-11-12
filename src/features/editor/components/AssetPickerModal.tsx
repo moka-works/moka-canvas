@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import {
   ASSET_KIND_LABELS,
   PROJECT_ASSET_CATEGORIES,
@@ -44,8 +44,35 @@ function kindOf(entry: ResourceEntry): AssetKind {
 function thumbOf(entry: ResourceEntry): string | null {
   const mime = entry.mime ?? entry.probe?.mime ?? "";
   if (mime.startsWith("image/")) return assetUrl(entry.id);
-  const poster = entry.probe?.posterAssetId;
-  return mime.startsWith("video/") && poster ? assetUrl(poster) : null;
+  // A film leads with its own first frame, drawn by the server at the size
+  // the row uses.
+  return mime.startsWith("video/") ? assetThumbUrl(entry.id, 320) : null;
+}
+
+/** One row's taste of the file: its picture, or its words where it has none. */
+function PickLead({
+  entry,
+  kind,
+  glyph,
+  thumb,
+}: {
+  entry: ResourceEntry;
+  kind: AssetKind;
+  glyph: string;
+  thumb: string | null;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (thumb !== null && failed !== thumb) {
+    return (
+      <img
+        alt=""
+        className="asset-pick-thumb"
+        onError={() => setFailed(thumb)}
+        src={thumb}
+      />
+    );
+  }
+  return <RowWords entry={entry} glyph={glyph} kind={kind} />;
 }
 
 /**
@@ -428,15 +455,12 @@ export function AssetPickerModal() {
                     >
                       {t(ASSET_KIND_LABELS[kind])}
                     </span>
-                    {thumb ? (
-                      <img alt="" className="asset-pick-thumb" src={thumb} />
-                    ) : (
-                      <RowWords
-                        entry={entry}
-                        glyph={shelf ? SHELF_GLYPHS[shelf] : "▪"}
-                        kind={kind}
-                      />
-                    )}
+                    <PickLead
+                      entry={entry}
+                      glyph={shelf ? SHELF_GLYPHS[shelf] : "▪"}
+                      kind={kind}
+                      thumb={thumb}
+                    />
                     <span className="asset-pick-name">{entry.name}</span>
                   </label>
                 </li>

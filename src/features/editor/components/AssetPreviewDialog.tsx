@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import { buildResourceIndex, formatBytes } from "../canvas/mediaCards";
 import { useEditorStore } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
@@ -50,7 +50,13 @@ export function AssetPreviewDialog() {
           <img alt={entry.name} className="preview-media" src={url} />
         )}
         {mime.startsWith("video/") && (
-          <video autoPlay className="preview-media" controls src={url} />
+          <video
+            autoPlay
+            className="preview-media"
+            controls
+            poster={assetThumbUrl(entry.id, 1024)}
+            src={url}
+          />
         )}
         {mime.startsWith("audio/") && <audio autoPlay controls src={url} />}
         {!/^(image|video|audio)\//.test(mime) && (

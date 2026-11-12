@@ -274,6 +274,13 @@ pub struct GenerateInput {
     /// here rather than sending hours nobody asked about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<InputWindow>,
+    /// Which end of a film this reference means, when it means one end of one.
+    ///
+    /// A bridge between two acts is filmed between the previous clip's last
+    /// picture and the next clip's first, and neither is an asset of its own:
+    /// the frame is taken when the request is sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<crate::assets::frames::FrameEdge>,
 }
 
 /// A stretch of an asset, measured from its own beginning.
@@ -676,16 +683,19 @@ mod tests {
                 role: InputRole::FirstFrame,
                 asset_id: "a1".into(),
                 window: None,
+                frame: None,
             },
             GenerateInput {
                 role: InputRole::Reference,
                 asset_id: "a2".into(),
                 window: None,
+                frame: None,
             },
             GenerateInput {
                 role: InputRole::FirstFrame,
                 asset_id: "a3".into(),
                 window: None,
+                frame: None,
             },
         ];
         let frames: Vec<&str> = request

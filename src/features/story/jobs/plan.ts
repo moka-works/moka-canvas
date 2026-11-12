@@ -46,7 +46,6 @@ import {
   stripStoryMentions,
   takeFile,
   targetKey,
-  transitionFrames,
   voiceFor,
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
@@ -1067,61 +1066,42 @@ export function planActVideos(
     if (chapter === undefined || act === undefined) return [];
     const target: StoryTarget = { kind: "actVideo", chapterId, actId };
     const base = jobKey(target);
-    // A bridge is filmed between the frames its neighbours end and begin on,
-    // rather than between pictures of its own: it has none. Where the reader
-    // asked for the neighbours' clips rather than their shots, the frames cut
-    // out of those clips travel instead — and only while the cache still names
-    // the clips standing beside the bridge now.
+    // A bridge is filmed between its neighbours' own clips: the last frame of
+    // the act before and the first frame of the act after, taken out of those
+    // clips at the moment the request is sent. It has no pictures of its own,
+    // and a neighbour that has not been filmed yet leaves the move unasked.
     if (act.transition !== undefined) {
       const at = chapter.acts.indexOf(act);
+      const videos = neighbourVideos(story, chapter, at);
+      if (videos.from === undefined || videos.to === undefined) return [];
       const seconds = clampSeconds(act.transition.durationMs, ceiling);
-      const ask = (
-        from: { assetId: string; content: string },
-        to: { assetId: string; content: string },
-      ): StoryJobItemDraft => ({
-        id: base,
-        target,
-        capability: "video" as const,
-        prompt: storyTransitionVideoPrompt({
-          ...look,
-          from: stripStoryMentions(from.content),
-          to: stripStoryMentions(to.content),
-          move: act.transition?.prompt ?? "",
-          seconds,
-        }),
-        inputs: [
-          { role: "firstFrame" as const, assetId: from.assetId },
-          { role: "lastFrame" as const, assetId: to.assetId },
-        ],
-        params: videoParams(story.brief.aspect, seconds, "auto"),
-      });
-      if (act.transition.frameSource === "video") {
-        const videos = neighbourVideos(story, chapter, at);
-        const cached = act.transition.cached;
-        if (
-          videos.from === undefined ||
-          videos.to === undefined ||
-          cached?.from === undefined ||
-          cached.to === undefined
-        ) {
-          return [];
-        }
-        if (
-          cached.from.videoAssetId !== videos.from.assetId ||
-          cached.to.videoAssetId !== videos.to.assetId
-        ) {
-          return [];
-        }
-        return [
-          ask(
-            { assetId: cached.from.assetId, content: videos.from.content },
-            { assetId: cached.to.assetId, content: videos.to.content },
-          ),
-        ];
-      }
-      const ends = transitionFrames(chapter, at);
-      if (ends.from === undefined || ends.to === undefined) return [];
-      return [ask(ends.from, ends.to)];
+      return [
+        {
+          id: base,
+          target,
+          capability: "video" as const,
+          prompt: storyTransitionVideoPrompt({
+            ...look,
+            from: stripStoryMentions(videos.from.content),
+            to: stripStoryMentions(videos.to.content),
+            move: act.transition.prompt,
+            seconds,
+          }),
+          inputs: [
+            {
+              role: "firstFrame" as const,
+              assetId: videos.from.assetId,
+              frame: "last" as const,
+            },
+            {
+              role: "lastFrame" as const,
+              assetId: videos.to.assetId,
+              frame: "first" as const,
+            },
+          ],
+          params: videoParams(story.brief.aspect, seconds, "auto"),
+        },
+      ];
     }
     if (act.keyframes.length === 0) return [];
     const pieces = actClipPieces(act, ceiling);

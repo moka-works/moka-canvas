@@ -71,6 +71,8 @@ export type StoryTarget =
 export interface StoryJobInput {
   role: InputRole;
   assetId: AssetId;
+  /** One end of a film, when this input is a picture taken out of a clip. */
+  frame?: "first" | "last";
 }
 
 export interface StoryJobItem {

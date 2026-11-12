@@ -5046,6 +5046,7 @@ async fn anthropic_messages_carry_their_version_key_tools_and_picture() {
             role: InputRole::Reference,
             asset_id: "plate".into(),
             window: None,
+            frame: None,
         }],
         tools: vec![moka_canvas::generate::ToolDef {
             name: "canvas.get".into(),

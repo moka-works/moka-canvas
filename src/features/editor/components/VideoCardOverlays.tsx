@@ -88,6 +88,7 @@ function VideoFace({
         onPause={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
         playsInline
+        poster={media.posterUrl}
         preload="metadata"
         ref={face}
         src={media.playable}

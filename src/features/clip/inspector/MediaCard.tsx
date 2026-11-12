@@ -8,7 +8,7 @@ import {
   type ResourceEntry,
   type TimelineDocument,
 } from "../../../shared/domain";
-import { assetUrl } from "../../../api";
+import { assetThumbUrl, assetUrl } from "../../../api";
 import { formatBytes, formatDuration } from "../../editor/canvas/mediaCards";
 import {
   editShelfEntry,
@@ -46,8 +46,9 @@ import { downsample } from "../timeline/waveform";
 function stillUrl(entry: ResourceEntry): string | null {
   if (entry.mime === "image/png" || entry.mime === "image/jpeg")
     return assetUrl(entry.id);
-  const poster = entry.probe?.posterAssetId;
-  return entry.mime === "video/mp4" && poster ? assetUrl(poster) : null;
+  // A film leads with its own first frame; the server draws one where the
+  // project has not kept it yet.
+  return entry.mime?.startsWith("video/") ? assetThumbUrl(entry.id, 768) : null;
 }
 
 /**

@@ -23,6 +23,11 @@ export interface MediaCardInfo {
    * picture, and handing it to an image is a decode nobody gets back.
    */
   url?: string;
+  /**
+   * The still a video leads with: its poster when one was filed, and otherwise
+   * its own first frame, taken out of the film by the server.
+   */
+  posterUrl?: string;
   /** The file a video plays from. Videos only. */
   playable?: string;
   /** Compact label for the card body: dimensions, duration, sample rate. */
@@ -112,7 +117,7 @@ export function generationSummary(node: WorkflowNode): string {
 /** Change signature for a node's media card; compared by renderer and scene differ. */
 export function mediaSignature(media: MediaCardInfo | null): string {
   if (!media) return "";
-  return `${media.state}|${media.url ?? ""}|${media.playable ?? ""}|${media.label}`;
+  return `${media.state}|${media.url ?? ""}|${media.posterUrl ?? ""}|${media.playable ?? ""}|${media.label}`;
 }
 
 /**
@@ -185,14 +190,21 @@ export function mediaInfoForNode(
     kind === "video"
       ? (data.posterAssetId ?? entry.probe?.posterAssetId)
       : undefined;
+  const posterUrl =
+    kind === "video"
+      ? posterId
+        ? assetThumbUrl(posterId, CARD_THUMB_WIDTH)
+        : assetThumbUrl(assetId, CARD_THUMB_WIDTH)
+      : undefined;
   return {
     state: "ready",
     url:
       kind === "video"
-        ? posterId
-          ? assetThumbUrl(posterId, CARD_THUMB_WIDTH)
-          : undefined
+        ? posterId === undefined
+          ? undefined
+          : posterUrl
         : assetThumbUrl(assetId, CARD_THUMB_WIDTH),
+    posterUrl,
     // What a video card plays is the film, not a picture of it: the element
     // gets the file itself.
     playable: kind === "video" ? assetUrl(assetId) : undefined,

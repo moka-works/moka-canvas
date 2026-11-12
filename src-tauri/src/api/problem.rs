@@ -108,7 +108,7 @@ pub fn status_for_code(code: &str) -> StatusCode {
         "PROVIDER_UNAVAILABLE"
         | "PROVIDER_NO_OUTPUT"
         | "GENERATION_OUTPUT_TOO_LARGE"
-        | "STORY_TRANSITION_FRAMES_FAILED" => StatusCode::BAD_GATEWAY,
+        | "FRAME_EXTRACTION_FAILED" => StatusCode::BAD_GATEWAY,
         "PROVIDER_TIMEOUT" => StatusCode::GATEWAY_TIMEOUT,
         // Unregistered, but the established name for "the client went away
         // mid-request"; 4xx keeps it out of the server-failure counts.

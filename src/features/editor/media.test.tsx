@@ -192,9 +192,10 @@ describe("mediaCards", () => {
     expect(bare?.state).toBe("ready");
     expect(bare?.label).toBe("640×360 · 0:04");
     expect(bare?.playable).toContain("/assets/asset-shot");
-    // Nothing has made a poster, and the file itself is not a picture: the
-    // card has no image to draw, only a file to play.
+    // The card's still is the film's own first frame, which the server draws;
+    // the general picture URL stays empty because the file itself is not one.
     expect(bare?.url).toBeUndefined();
+    expect(bare?.posterUrl).toContain("/assets/asset-shot?w=");
 
     moka.resources.images.push({
       id: "asset-poster",
@@ -216,6 +217,7 @@ describe("mediaCards", () => {
       new Map(),
     );
     expect(drawn?.url).toContain("/assets/asset-poster");
+    expect(drawn?.posterUrl).toContain("/assets/asset-poster");
     expect(drawn?.playable).toContain("/assets/asset-shot");
   });
 

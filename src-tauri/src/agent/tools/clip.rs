@@ -1586,6 +1586,7 @@ pub async fn effect(
                         start_ms: clip.in_point_ms.max(0) as u64,
                         duration_ms: (clip.out_point_ms - clip.in_point_ms).max(0) as u64,
                     }),
+                    frame: None,
                 }],
                 params: args
                     .opt_str("language")

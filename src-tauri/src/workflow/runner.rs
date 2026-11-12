@@ -40,6 +40,10 @@ pub struct RunManager {
     cancel_requests: Mutex<HashSet<RunId>>,
     /// What the runs being driven are saying, to anybody listening.
     events: RunEvents,
+    /// What takes the first and last pictures out of a generated film, where
+    /// the deployment has a renderer. Best effort: a preview the machine
+    /// cannot make is a preview drawn another way.
+    frames: Option<Arc<crate::assets::frames::Frames>>,
 }
 
 #[derive(Debug)]
@@ -473,6 +477,7 @@ impl RunManager {
         executors: Vec<Arc<dyn WorkflowExecutor>>,
         enabled_executors: Vec<String>,
         concurrent_runs: usize,
+        frames: Option<Arc<crate::assets::frames::Frames>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             executors,
@@ -481,6 +486,7 @@ impl RunManager {
             transitions: tokio::sync::Mutex::new(()),
             cancel_requests: Mutex::new(HashSet::new()),
             events: RunEvents::default(),
+            frames,
         })
     }
 
@@ -1428,6 +1434,13 @@ impl RunManager {
                 retryable: false,
                 cancelled: false,
             })?;
+        // A film's first and last pictures are taken now, off this step's
+        // clock, so every preview of it has a still waiting.
+        if let Some(frames) = &self.frames {
+            if let Ok(root) = store.project_root().await {
+                frames.keep_in_background(root, entries.clone());
+            }
+        }
         let assets: Vec<AssetId> = entries.into_iter().map(|entry| entry.id).collect();
         let value = match assets.first() {
             // A picture, a voice or a shot travels as the asset it became.
@@ -2501,7 +2514,7 @@ mod tests {
             )
             .await
             .expect("the project opens");
-        let manager = RunManager::new(Vec::new(), Vec::new(), 1);
+        let manager = RunManager::new(Vec::new(), Vec::new(), 1, None);
         (manager, store)
     }
 
