@@ -95,6 +95,26 @@
 | 火山方舟      | `volcengineVideo` | —                                                                                           |
 | MiniMax       | `minimaxVideo`    | —                                                                                           |
 
+### 提示词契约
+
+视频协议可以在 `model.json` 里声明 `promptRewrite`：
+
+```json
+"promptRewrite": {
+  "guide": "prompt-guide.md",
+  "checks": { "bodyLanguage": "en", "dialogueTag": "d", "negativeBait": true },
+  "version": 1
+}
+```
+
+`guide` 是放在转换器目录里的契约正文（内置转换器会连同脚本一起嵌入、部署）；
+`checks` 列出客户端能机器校验的部分；`version` 在契约改动时递增。
+
+声明之后，点「生成视频」会先弹出提示词对话框：可以按原样「直接发送」，也可以让
+故事的文字模型按 `guide` 改写，改写结果回填编辑区、由用户确认后才开拍。客户端会检查
+台词是否逐字保留、`<d>` 是否成对、`<d>` 外是否还有中文、是否出现招字幕的否定说法。
+没有声明 `promptRewrite` 的协议保持直接生成；「编辑提示词」按钮始终可用。
+
 ## 音乐
 
 站点不单列音乐；画布保留 `bailianMusic` 与 `minimaxMusic` 两种协议。
