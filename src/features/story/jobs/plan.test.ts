@@ -853,6 +853,18 @@ describe("planning the clips", () => {
     );
     expect(items[0].prompt).toContain("references the shots are drawn from");
     expect(items[0].prompt).not.toContain("frames it moves between");
+
+    // The material a rewrite reads says how many pictures travel, so the
+    // contract can number them rather than guess.
+    expect(items[0].promptContext?.ends).toEqual({
+      first: false,
+      last: false,
+      references: true,
+      referenceCount: 2,
+    });
+    expect(items[0].promptContext?.dialogue).toEqual([
+      { speaker: "林", ref: "S1", text: "车已经停运了。", tone: "平静" },
+    ]);
   });
 
   it("asks with the words a reader wrote for the act's clip", () => {

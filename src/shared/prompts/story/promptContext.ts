@@ -50,7 +50,13 @@ export interface StoryPromptContext {
   style: string;
   seconds: number;
   /** The pictures the ask travels with, and what they are for. */
-  ends: { first: boolean; last: boolean; references: boolean };
+  ends: {
+    first: boolean;
+    last: boolean;
+    references: boolean;
+    /** How many pictures travel as references, when any do. */
+    referenceCount?: number;
+  };
   shots: PromptContextShot[];
   /** How a bridge moves from one act to the next. */
   transition?: { from: string; to: string; move: string };

@@ -1193,6 +1193,7 @@ export function planActVideos(
             first: !references,
             last: piece.kind === "pair",
             references,
+            ...(references ? { referenceCount: held.length } : {}),
           },
           shots: shotsFor(piece.keyframes),
           cast: castFor(story, act.characterIds, lines),
