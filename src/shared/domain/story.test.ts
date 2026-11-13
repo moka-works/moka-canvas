@@ -5,6 +5,7 @@ import {
   MAX_CHAPTERS_PER_STORY,
   MAX_ELEMENTS_PER_STORY,
   MAX_KEYFRAMES_PER_ACT,
+  MAX_PROMPT_LENGTH,
   MAX_STORIES_PER_PROJECT,
   MAX_TAKES_PER_SLOT,
   REFERENCE_IMAGES_DEFAULT,
@@ -1631,6 +1632,54 @@ describe("the board commands", () => {
       ids.hero,
       "gone",
     ]);
+  });
+
+  it("keeps hand-written clip prompts, takes them away, and survives undo", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const ask = `actVideo:${ids.chapterFirst}:${ids.act}`;
+    const written = expectRoundTrip(moka, {
+      type: "setStoryVideoPromptOverrides",
+      storyId: ids.story,
+      prompts: {
+        [ask]: { prompt: "Only the lantern moves.", auto: "0badcafe" },
+      },
+    });
+    expect(storyOfFile(written).videoPromptOverrides).toEqual({
+      [ask]: { prompt: "Only the lantern moves.", auto: "0badcafe" },
+    });
+
+    const gone = expectRoundTrip(written, {
+      type: "setStoryVideoPromptOverrides",
+      storyId: ids.story,
+      prompts: { [ask]: null },
+    });
+    // A telling with no hand-written words says so by holding no map at all.
+    expect("videoPromptOverrides" in storyOfFile(gone)).toBe(false);
+
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "setStoryVideoPromptOverrides",
+          storyId: ids.story,
+          prompts: { [ask]: { prompt: "   ", auto: "0badcafe" } },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "setStoryVideoPromptOverrides",
+          storyId: ids.story,
+          prompts: {
+            [ask]: {
+              prompt: "x".repeat(MAX_PROMPT_LENGTH + 1),
+              auto: "0badcafe",
+            },
+          },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
   });
 
   it("moves only the fields an act patch names, replacing a sound whole", () => {

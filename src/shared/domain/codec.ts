@@ -61,6 +61,7 @@ import type {
   StoryKeyframe,
   StorySlot,
   StoryTake,
+  StoryVideoPromptOverride,
   StoryVoiceProfile,
   StoryVoiceTake,
   TextClipStyle,
@@ -617,6 +618,21 @@ function encodeStory(story: StoryDocument): Record<string, unknown> {
   };
   if (story.narrator !== undefined)
     doc.narrator = encodeStoryVoiceProfile(story.narrator);
+  if (
+    story.videoPromptOverrides !== undefined &&
+    Object.keys(story.videoPromptOverrides).length > 0
+  ) {
+    // Keys are written in order so the same telling gives the same bytes.
+    const overrides: Record<string, Record<string, unknown>> = {};
+    for (const askId of Object.keys(story.videoPromptOverrides).sort()) {
+      const override = story.videoPromptOverrides[askId]!;
+      overrides[askId] = {
+        prompt: override.prompt,
+        auto: override.auto,
+      };
+    }
+    doc.videoPromptOverrides = overrides;
+  }
   return doc;
 }
 
@@ -1892,6 +1908,22 @@ function decodeSteps(
   return steps;
 }
 
+function decodeVideoPromptOverrides(
+  value: unknown,
+): Record<string, StoryVideoPromptOverride> {
+  const doc = asRecord(value, "stories[].videoPromptOverrides");
+  const overrides: Record<string, StoryVideoPromptOverride> = {};
+  for (const [askId, held] of Object.entries(doc)) {
+    const at = `stories[].videoPromptOverrides.${askId}`;
+    const entry = asRecord(held, at);
+    overrides[askId] = {
+      prompt: asString(entry.prompt, `${at}.prompt`),
+      auto: asString(entry.auto, `${at}.auto`),
+    };
+  }
+  return overrides;
+}
+
 function decodeStory(value: unknown): StoryDocument {
   const doc = asRecord(value, "stories[]");
   const schemaVersion = Math.trunc(
@@ -1929,6 +1961,10 @@ function decodeStory(value: unknown): StoryDocument {
     story.narrator = decodeStoryVoiceProfile(
       doc.narrator,
       "stories[].narrator",
+    );
+  if (doc.videoPromptOverrides !== undefined)
+    story.videoPromptOverrides = decodeVideoPromptOverrides(
+      doc.videoPromptOverrides,
     );
   return story;
 }

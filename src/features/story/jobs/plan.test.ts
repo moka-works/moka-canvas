@@ -855,6 +855,56 @@ describe("planning the clips", () => {
     expect(items[0].prompt).not.toContain("frames it moves between");
   });
 
+  it("asks with the words a reader wrote for the act's clip", () => {
+    const held: StoryDocument = {
+      ...drawnStory(),
+      videoPromptOverrides: {
+        [`actVideo:${ids.chapterFirst}:${ids.act}`]: {
+          prompt: "A slow push through the rain.",
+          auto: "0badcafe",
+        },
+      },
+    };
+
+    const [item] = planActVideos(held, ids.chapterFirst, [ids.act]);
+    expect(item.prompt).toBe("A slow push through the rain.");
+  });
+
+  it("asks a shot with the words a reader wrote for it", () => {
+    const held: StoryDocument = {
+      ...drawnStory(),
+      videoPromptOverrides: {
+        [`keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`]: {
+          prompt: "Hold on the lantern, then turn.",
+          auto: "0badcafe",
+        },
+      },
+    };
+
+    const [item] = planKeyframeVideos(held, ids.chapterFirst, ids.act, [
+      ids.frameFirst,
+    ]);
+    expect(item.prompt).toBe("Hold on the lantern, then turn.");
+  });
+
+  it("keeps hand-written words on the piece they were written for", () => {
+    const base = roled({ [ids.frameFirst]: "firstFrame" });
+    const firstPiece = `actVideo:${ids.chapterFirst}:${ids.act}:1`;
+    const held: StoryDocument = {
+      ...base,
+      videoPromptOverrides: {
+        [firstPiece]: { prompt: "Only the opening piece.", auto: "0badcafe" },
+      },
+    };
+
+    const items = planActVideos(held, ids.chapterFirst, [ids.act]);
+    expect(items).toHaveLength(2);
+    expect(items[0].prompt).toBe("Only the opening piece.");
+    // The piece nobody wrote for keeps the board's own words.
+    expect(items[1].prompt).not.toBe("Only the opening piece.");
+    expect(items[1].prompt).toContain("Shoot");
+  });
+
   it("plans no act video while none of its shots is drawn", () => {
     const unfilmed: StoryDocument = {
       ...story(),
@@ -1230,6 +1280,19 @@ describe("planning the clips", () => {
       ],
     };
     expect(planActVideos(unfilmed, chapter.id, [bridge.id])).toEqual([]);
+
+    // A bridge is asked for in the reader's own words too, when they wrote any.
+    const written: StoryDocument = {
+      ...board,
+      videoPromptOverrides: {
+        [`actVideo:${chapter.id}:${bridge.id}`]: {
+          prompt: "Dissolve through the dark.",
+          auto: "0badcafe",
+        },
+      },
+    };
+    const [writtenAsk] = planActVideos(written, chapter.id, [bridge.id]);
+    expect(writtenAsk.prompt).toBe("Dissolve through the dark.");
   });
 });
 
@@ -1276,6 +1339,23 @@ describe("asking again for what did not come back", () => {
       `actVideo:${ids.chapterFirst}:${ids.act}`,
       `keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`,
     ]);
+  });
+
+  it("asks again with the words a reader wrote, not the board's own", () => {
+    const held: StoryDocument = {
+      ...drawnStory(),
+      videoPromptOverrides: {
+        [`actVideo:${ids.chapterFirst}:${ids.act}`]: {
+          prompt: "Keep the station empty this time.",
+          auto: "0badcafe",
+        },
+      },
+    };
+
+    const [item] = itemsForTargets(held, [
+      { kind: "actVideo", chapterId: ids.chapterFirst, actId: ids.act },
+    ]);
+    expect(item.prompt).toBe("Keep the station empty this time.");
   });
 });
 

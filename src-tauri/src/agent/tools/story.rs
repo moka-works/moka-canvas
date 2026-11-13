@@ -157,6 +157,7 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
                 confirmed_steps: Vec::new(),
                 edit: StoryEdit::default(),
                 narrator: None,
+                video_prompt_overrides: None,
                 created_at: now.clone(),
                 updated_at: now,
             };

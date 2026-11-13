@@ -408,6 +408,50 @@ h2 {
   font-weight: 600;
 }
 
+/* One clip's words, whole and editable: the pieces scroll inside the dialog so
+   the buttons stay where the reader put them. */
+.story-video-prompt {
+  max-height: calc(100vh - 96px);
+  max-width: 760px;
+  overflow-y: auto;
+}
+
+.story-video-prompt-piece {
+  display: grid;
+  gap: 8px;
+}
+
+.story-video-prompt-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.story-video-prompt-text {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  min-height: 160px;
+  padding: 10px 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.story-video-prompt-foot {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.story-video-prompt-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
 /* The room a new project opens onto
 
    A card keeps its one-line purpose on the face. The longer scene it fits is

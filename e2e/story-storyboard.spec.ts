@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "./fixtures";
+import { providerCalls } from "./mock-provider";
 import {
   configureTheWholeStudio,
   createProject,
@@ -451,11 +452,50 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     ).toBeVisible({ timeout: 60_000 });
     await expect(firstAct.getByTestId("story-act-video-go-0")).toBeEnabled();
 
-    // And the clip itself, which the stand-in's job hands back at once.
-    await firstAct.getByTestId("story-act-video-go-0").click();
+    // And the clip itself, which the stand-in's job hands back at once — but
+    // not before the reader has seen, and may change, the whole ask that makes
+    // it. What is written here is what the model is handed.
+    const written = "A hand-written act: hold on the empty platform.";
+    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    const askDialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(askDialog).toBeVisible();
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(/Shoot this act/);
+    await askDialog.getByTestId("story-video-prompt-text-0").fill(written);
+    await askDialog.getByTestId("story-video-prompt-film").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path === "/v1/videos")
+            .at(-1)?.prompt,
+        { timeout: 30_000 },
+      )
+      .toBe(written);
+    // The words are kept with the telling rather than only sent once.
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                videoPromptOverrides?: Record<string, { prompt?: string }>;
+              }[];
+            };
+          };
+          return Object.values(
+            body.moka?.stories?.[0]?.videoPromptOverrides ?? {},
+          )
+            .map((override) => override.prompt ?? "")
+            .join("|");
+        }),
+      )
+      .toBe(written);
 
     // A clip is not the last word: the ask that made it stands beside the
     // take, and asking again plays a fresh one in its place.
@@ -514,6 +554,32 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       archive.getByTestId(`story-clip-pick-remove-${firstTake}`),
     ).toHaveCount(0);
     await archive.getByRole("button", { name: "Close" }).click();
+
+    // Handing the ask back to the board is a press too: the hand-written words
+    // go with the tell, and the board's own words stand again.
+    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(written);
+    await askDialog.getByTestId("story-video-prompt-reset-0").click();
+    await askDialog.getByTestId("story-video-prompt-save").click();
+    await expect(askDialog).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: { stories?: { videoPromptOverrides?: unknown }[] };
+          };
+          return Object.keys(
+            (body.moka?.stories?.[0]?.videoPromptOverrides ?? {}) as Record<
+              string,
+              unknown
+            >,
+          ).length;
+        }),
+      )
+      .toBe(0);
 
     // One act can be filmed its own way: the choice stands on its own card,
     // and switching over clips already made is a question scoped to this act.

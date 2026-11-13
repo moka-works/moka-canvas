@@ -340,6 +340,29 @@ describe("moka codec", () => {
     ).toBe(false);
   });
 
+  it("keeps the words a reader wrote for a clip's prompt", () => {
+    const story = buildStoryMokaFile();
+    story.stories![0].videoPromptOverrides = {
+      "actVideo:chapter:act": {
+        prompt: "A slow push through the rain.",
+        auto: "0badcafe",
+      },
+    };
+    expect(
+      decodeMokaFile(encodeMokaFile(story)).stories![0].videoPromptOverrides,
+    ).toEqual({
+      "actVideo:chapter:act": {
+        prompt: "A slow push through the rain.",
+        auto: "0badcafe",
+      },
+    });
+    // A telling nobody wrote for keeps the absence, not an empty map.
+    expect(
+      "videoPromptOverrides" in
+        decodeMokaFile(encodeMokaFile(buildStoryMokaFile())).stories![0]!,
+    ).toBe(false);
+  });
+
   it("reads a story's reference limit whole, and one beyond the bound as the bound", () => {
     const story = buildStoryMokaFile();
     story.stories![0].maxReferenceImages = 7;

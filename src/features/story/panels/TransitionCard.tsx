@@ -15,7 +15,7 @@ import type {
   StoryDocument,
 } from "../../../shared/domain/types";
 import { RunningBar } from "../components/RunningBar";
-import { planActVideos, videoCeiling } from "../jobs/plan";
+import { planActVideos, jobKey, videoCeiling } from "../jobs/plan";
 import { useStoryRun, type ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
@@ -23,6 +23,7 @@ import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { useField } from "./useField";
+import { VideoPromptDialog } from "./VideoPromptDialog";
 import { writeActs } from "./writeBoard";
 
 /** The shortest and longest a bridge may be, in seconds. */
@@ -64,6 +65,7 @@ export function TransitionCard({
   const run = useStoryRun();
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
   // The card is only handed a bridge, but the fallback keeps the hooks below
   // unconditional.
   const transition = act.transition ?? {
@@ -106,6 +108,12 @@ export function TransitionCard({
         : undefined;
 
   const clip = currentTake(act.video);
+  const promptId = jobKey({
+    kind: "actVideo",
+    chapterId: chapter.id,
+    actId: act.id,
+  });
+  const promptEdited = story.videoPromptOverrides?.[promptId] !== undefined;
   const clipPlace: TakePlace = {
     kind: "actVideo",
     chapterId: chapter.id,
@@ -328,6 +336,19 @@ export function TransitionCard({
             )}
           </span>
         )}
+        {ready && (
+          <button
+            className="link"
+            data-testid={`story-transition-video-prompt-${index}`}
+            onClick={() => setEditingPrompt(true)}
+            type="button"
+          >
+            {t("story:storyboard.videoPromptEdit")}
+            {promptEdited
+              ? ` · ${t("story:storyboard.videoPromptEdited")}`
+              : ""}
+          </button>
+        )}
         {missing !== undefined && (
           <span
             className="story-hint"
@@ -360,6 +381,20 @@ export function TransitionCard({
           onClose={() => setPickingClip(false)}
           onRemove={(assetId) => removeTake(story.id, clipPlace, assetId)}
           takes={act.video.takes}
+        />
+      )}
+      {editingPrompt && (
+        <VideoPromptDialog
+          onClose={() => setEditingPrompt(false)}
+          place={{
+            kind: "act",
+            chapterId: chapter.id,
+            actId: act.id,
+            name: t("story:storyboard.videoPromptTransition", {
+              index: index + 1,
+            }),
+          }}
+          story={story}
         />
       )}
     </li>

@@ -27,6 +27,7 @@ import { RunningBar } from "../components/RunningBar";
 import {
   actClipPieces,
   drawnFrames,
+  jobKey,
   planActMusic,
   planActVideos,
   planElementArtWaves,
@@ -55,6 +56,7 @@ import { staleFrames } from "./stalePictures";
 import { StoryLightbox } from "./StoryLightbox";
 import { secondsOf } from "./takes";
 import { useField } from "./useField";
+import { VideoPromptDialog } from "./VideoPromptDialog";
 import { moved, writeActs } from "./writeBoard";
 
 /** The longest an act and a shot may be edited to, in seconds. */
@@ -132,6 +134,7 @@ export function ActCard({
   const [pickingVoice, setPickingVoice] = useState(false);
   const [pickingMusic, setPickingMusic] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
   // The element whose picture the reader asked to look at, if any. Held by
   // name rather than by the object: a drawing that lands while the inspector
   // stands is the same element with one more take.
@@ -201,6 +204,20 @@ export function ActCard({
   const askedSeconds = pieces.reduce((sum, piece) => sum + piece.seconds, 0);
   const split = pieces.length > 1;
   const adjusted = pieces.length > 0 && askedSeconds * 1000 !== plannedMs;
+  // The asks this act's clip is made of, which is also where hand-written
+  // words are kept: a piece that is no longer planned simply has none.
+  const promptBase = jobKey({
+    kind: "actVideo",
+    chapterId,
+    actId: act.id,
+  });
+  const promptIds =
+    pieces.length <= 1
+      ? [promptBase]
+      : pieces.map((_, at) => `${promptBase}:${at + 1}`);
+  const promptEdited = promptIds.some(
+    (askId) => story.videoPromptOverrides?.[askId] !== undefined,
+  );
 
   const write = (patch: StoryActPatch) =>
     writeAct(story, chapterId, act, patch);
@@ -686,6 +703,20 @@ export function ActCard({
           </button>
         )}
 
+        {!perShot && everyFrameDrawn && (
+          <button
+            className="link"
+            data-testid={`story-act-video-prompt-${index}`}
+            onClick={() => setEditingPrompt(true)}
+            type="button"
+          >
+            {t("story:storyboard.videoPromptEdit")}
+            {promptEdited
+              ? ` · ${t("story:storyboard.videoPromptEdited")}`
+              : ""}
+          </button>
+        )}
+
         {!perShot && clip === undefined && (
           <button
             data-testid={`story-act-video-go-${index}`}
@@ -893,6 +924,19 @@ export function ActCard({
         <ElementPictureInspector
           element={inspecting}
           onClose={() => setInspectingId(null)}
+          story={story}
+        />
+      )}
+
+      {editingPrompt && (
+        <VideoPromptDialog
+          onClose={() => setEditingPrompt(false)}
+          place={{
+            kind: "act",
+            chapterId,
+            actId: act.id,
+            name: act.title,
+          }}
           story={story}
         />
       )}

@@ -36,6 +36,7 @@ import type {
   StorySlotTarget,
   StoryShotSize,
   StoryTake,
+  StoryVideoPromptOverride,
   StoryVoiceProfile,
   StoryVoiceTake,
 } from "./types";
@@ -1273,6 +1274,29 @@ export function targetKey(target: StorySlotTarget): string {
     case "keyframeVideo":
       return `keyframeVideo:${target.chapterId}:${target.actId}:${target.keyframeId}`;
   }
+}
+
+/** The words a reader wrote for one clip's ask, where they wrote any. */
+export function videoPromptOverride(
+  story: StoryDocument,
+  askId: string,
+): StoryVideoPromptOverride | undefined {
+  return story.videoPromptOverrides?.[askId];
+}
+
+/**
+ * The same telling with every hand-written clip prompt taken away.
+ *
+ * What a clip would be asked for in the board's own words is read from this:
+ * planning against the telling as it stands reads the words the reader wrote.
+ */
+export function withoutVideoPromptOverrides(
+  story: StoryDocument,
+): StoryDocument {
+  if (story.videoPromptOverrides === undefined) return story;
+  const next = { ...story };
+  delete next.videoPromptOverrides;
+  return next;
 }
 
 /** The act a target names, if the story still holds it. */
