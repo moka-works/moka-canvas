@@ -61,6 +61,7 @@ function withView(room: AgentRoom, changes: Partial<RoomView>): void {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -106,6 +107,30 @@ describe("AgentDock", () => {
     });
     fireEvent.click(screen.getByText("Send"));
     expect(send).toHaveBeenCalledWith("canvas");
+  });
+
+  it("follows new messages inside the transcript's own scroller", () => {
+    vi.spyOn(HTMLOListElement.prototype, "scrollHeight", "get").mockReturnValue(
+      480,
+    );
+    render(<AgentDock room="story" />);
+    const messages = screen.getByTestId("agent-messages");
+    expect(messages.scrollTop).toBe(480);
+
+    messages.scrollTop = 120;
+    act(() => {
+      withView("story", {
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            text: "The board is ready.",
+            createdAt: "2026-10-21T09:00:00Z",
+          },
+        ],
+      });
+    });
+    expect(messages.scrollTop).toBe(480);
   });
 
   it("draws a tool record and says how it can be undone", () => {

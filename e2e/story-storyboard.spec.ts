@@ -17,6 +17,7 @@ import {
   forgetHome,
   forgetProjects,
   newStory,
+  openAssetsRoom,
   openStoryRoom,
   projectHome,
 } from "./helpers";
@@ -676,6 +677,35 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     expect(board.acts).toBe(2);
     expect(board.frames).toBe(3);
     expect(board.drawn).toBe(3);
+
+    // Returning from another room remounts the assistant below whichever step
+    // is open. Following its transcript must not carry any of the five steps
+    // to its end.
+    for (const step of [
+      "idea",
+      "outline",
+      "elements",
+      "storyboard",
+      "edit",
+    ] as const) {
+      await page.getByTestId(`story-step-${step}`).click();
+      const body = page.getByTestId(`story-step-body-${step}`);
+      await expect(body).toBeVisible();
+      await body.evaluate((element) => {
+        (element as unknown as { scrollTop: number }).scrollTop = 0;
+      });
+      await openAssetsRoom(page);
+      await openStoryRoom(page);
+      await expect(body).toBeVisible();
+      await expect
+        .poll(async () =>
+          body.evaluate(
+            (element) =>
+              (element as unknown as { scrollTop: number }).scrollTop,
+          ),
+        )
+        .toBe(0);
+    }
   } finally {
     forgetHome(home);
   }

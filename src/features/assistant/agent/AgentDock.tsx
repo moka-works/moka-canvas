@@ -303,7 +303,7 @@ export function AgentDock({
     (option) => option.reference === effectiveDefaultId(modelsView, "text"),
   );
   const [other, setOther] = useState("");
-  const end = useRef<HTMLLIElement | null>(null);
+  const transcript = useRef<HTMLOListElement | null>(null);
 
   useEffect(() => {
     useAgentStore.getState().setRoom(room);
@@ -323,9 +323,8 @@ export function AgentDock({
   }, [room]);
 
   useEffect(() => {
-    if (typeof end.current?.scrollIntoView === "function") {
-      end.current.scrollIntoView({ block: "end" });
-    }
+    const list = transcript.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
   }, [messages, busy, approval, question]);
 
   const send = () => {
@@ -401,7 +400,11 @@ export function AgentDock({
       )}
       {notice && <p className="agent-warning">{notice}</p>}
 
-      <ol className="agent-messages" data-testid="agent-messages">
+      <ol
+        className="agent-messages"
+        data-testid="agent-messages"
+        ref={transcript}
+      >
         {messages.length === 0 && (
           <li className="agent-empty">
             <p>{t("agent:empty")}</p>
@@ -411,7 +414,6 @@ export function AgentDock({
         {messages.map((message) => (
           <Line key={message.id} message={message} />
         ))}
-        <li ref={end} />
       </ol>
 
       {plan && plan.length > 0 && (
