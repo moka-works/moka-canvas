@@ -538,6 +538,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
         : (new URL(url, "http://localhost").pathname.split("/").pop() ?? "");
     const firstTake = takeOf(wasPlaying);
     const secondTake = takeOf(nowPlaying);
+    const actActions = firstAct.locator(
+      ".story-act-foot .story-act-clip-actions",
+    );
+    await expect(actActions).toHaveCSS("flex-direction", "column");
+    await expect(actActions.locator("button")).toHaveCount(3);
     await firstAct.getByTestId("story-act-video-pick-0").click();
     const archive = page.getByTestId("story-clip-picks");
     await expect(archive).toBeVisible();

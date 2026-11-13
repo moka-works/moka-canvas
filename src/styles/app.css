@@ -9386,6 +9386,17 @@ button > .story-spin {
   gap: 6px;
 }
 
+.story-act-clip-actions {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-act-clip-actions .link {
+  white-space: nowrap;
+}
+
 .story-act-play {
   background: none;
   border: none;

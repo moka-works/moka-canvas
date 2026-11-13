@@ -712,7 +712,7 @@ export function ActCard({
           </button>
         )}
 
-        {!perShot && everyFrameDrawn && (
+        {!perShot && everyFrameDrawn && clip === undefined && (
           <button
             className="link"
             data-testid={`story-act-video-prompt-${index}`}
@@ -760,35 +760,52 @@ export function ActCard({
               />
             </button>
             {!perShot && (
-              /*
-                A clip already made is not the end of the ask that made it:
-                the row that plays it keeps the ask beside it, so a take the
-                reader does not like is asked over from where it stands.
-              */
-              <button
-                className="link"
-                data-testid={`story-act-video-again-${index}`}
-                disabled={videoBusy}
-                onClick={filmAct}
-                type="button"
-              >
-                {videoBusy ? t("story:panels.drawing") : t("story:voice.again")}
-              </button>
-            )}
-            {!perShot && act.video.takes.length > 1 && (
-              /*
-                Every ask made another take and none of them was thrown away,
-                so the row that plays one is also where the reader says which
-                one the act is filmed by — and where an unwanted one leaves.
-              */
-              <button
-                className="link"
-                data-testid={`story-act-video-pick-${index}`}
-                onClick={() => setPickingClip(true)}
-                type="button"
-              >
-                {t("story:panels.pickClip")}
-              </button>
+              <span className="story-act-clip-actions">
+                {everyFrameDrawn && (
+                  <button
+                    className="link"
+                    data-testid={`story-act-video-prompt-${index}`}
+                    onClick={() => setEditingPrompt("edit")}
+                    type="button"
+                  >
+                    {t("story:storyboard.videoPromptEdit")}
+                    {promptEdited
+                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                      : ""}
+                  </button>
+                )}
+                {/*
+                  A clip already made is not the end of the ask that made it:
+                  the row that plays it keeps the ask beside it, so a take the
+                  reader does not like is asked over from where it stands.
+                */}
+                <button
+                  className="link"
+                  data-testid={`story-act-video-again-${index}`}
+                  disabled={videoBusy}
+                  onClick={filmAct}
+                  type="button"
+                >
+                  {videoBusy
+                    ? t("story:panels.drawing")
+                    : t("story:voice.again")}
+                </button>
+                {act.video.takes.length > 1 && (
+                  /*
+                    Every ask made another take and none of them was thrown away,
+                    so the row that plays one is also where the reader says which
+                    one the act is filmed by — and where an unwanted one leaves.
+                  */
+                  <button
+                    className="link"
+                    data-testid={`story-act-video-pick-${index}`}
+                    onClick={() => setPickingClip(true)}
+                    type="button"
+                  >
+                    {t("story:panels.pickClip")}
+                  </button>
+                )}
+              </span>
             )}
             {clipStale && (
               <span
