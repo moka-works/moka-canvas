@@ -243,6 +243,19 @@ export interface ProtocolEntry {
    * instance.
    */
   features?: Record<string, boolean>;
+  /**
+   * The model's own contract for a prompt, where the protocol declares one.
+   *
+   * `guide` is the contract's words rather than a filename: the server reads
+   * the file beside the converter, so a client never has to know where the
+   * converters are kept. `checks` names the parts of the contract a client can
+   * verify without understanding the model.
+   */
+  promptRewrite?: {
+    guide: string;
+    checks?: Record<string, unknown>;
+    version: number;
+  };
 }
 
 /** The registry's protocols: capability → protocol id → entry. */

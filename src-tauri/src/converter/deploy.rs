@@ -23,6 +23,9 @@ pub struct ScriptDef {
     pub config: &'static str,
     /// The Lua source of the protocol adapter the document names.
     pub script: &'static str,
+    /// The other files the document names — a prompt guide, for a protocol
+    /// that declares one — embedded under the names they travel by.
+    pub extras: &'static [(&'static str, &'static str)],
 }
 
 impl ScriptDef {
@@ -50,6 +53,23 @@ impl ScriptDef {
                 ),
                 self.id,
             ));
+        }
+        if let Some(rewrite) = &config.prompt_rewrite {
+            if !script_name_beside(&rewrite.guide) {
+                return Err(invalid(
+                    &format!(
+                        "prompt guide '{}' is not a filename beside model.json",
+                        rewrite.guide
+                    ),
+                    self.id,
+                ));
+            }
+            if !self.extras.iter().any(|(name, _)| *name == rewrite.guide) {
+                return Err(invalid(
+                    &format!("prompt guide '{}' was not embedded", rewrite.guide),
+                    self.id,
+                ));
+            }
         }
         Ok(config)
     }
@@ -93,6 +113,12 @@ pub async fn ensure_deployed(root: &Path) -> Result<(), Box<dyn std::error::Erro
         }
         tokio::fs::create_dir_all(&dir).await?;
         tokio::fs::write(dir.join(&config.script), def.script).await?;
+        // Everything the document names travels beside it, and the document
+        // itself is written last: a deployment that stops halfway leaves the
+        // old version in place and is asked for again next time.
+        for (name, text) in def.extras {
+            tokio::fs::write(dir.join(name), text).await?;
+        }
         tokio::fs::write(dir.join("model.json"), def.config).await?;
     }
     set_converter_root(root.to_path_buf());
@@ -131,6 +157,20 @@ mod tests {
                 def.id,
                 config.features.extra
             );
+            for (name, text) in def.extras {
+                assert!(
+                    script_name_beside(name) && !text.trim().is_empty(),
+                    "{} carries an extra file '{name}' that is not a usable filename beside it",
+                    def.id
+                );
+            }
+            if let Some(rewrite) = &config.prompt_rewrite {
+                assert!(
+                    def.extras.iter().any(|(name, _)| *name == rewrite.guide),
+                    "{} declares a prompt guide that is not embedded beside its document",
+                    def.id
+                );
+            }
             // Every embedded script is one a runtime can load: a syntax error
             // here would only surface when somebody configured that converter.
             LuaRuntime::new()
@@ -203,6 +243,15 @@ mod tests {
                     def.model().unwrap().script
                 )
             );
+            // Every file the document names reached the directory beside it.
+            for (name, text) in def.extras {
+                let path = dir.path().join(def.subdir()).join(name);
+                assert_eq!(
+                    std::fs::read_to_string(&path)
+                        .unwrap_or_else(|e| panic!("{} was not deployed: {e}", path.display())),
+                    *text
+                );
+            }
         }
     }
 

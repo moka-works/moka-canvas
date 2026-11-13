@@ -204,6 +204,24 @@ fn converter_definition(capability: &Path, converter: &Path) -> String {
     println!("cargo:rerun-if-changed={}", document.display());
     println!("cargo:rerun-if-changed={}", script_path.display());
 
+    // A prompt guide is the other file a converter may name, and it ships the
+    // same way the script does: a converter is the whole of its directory.
+    let mut extras = String::new();
+    if let Some(guide) = guide_beside(&text, &document) {
+        let guide_path = converter.join(&guide);
+        assert!(
+            guide_path.is_file(),
+            "{}: the document names guide '{guide}', which is not beside it",
+            document.display()
+        );
+        println!("cargo:rerun-if-changed={}", guide_path.display());
+        let path = absolute(&guide_path);
+        extras.push_str(&format!(
+            "            ({guide:?}, include_str!({path:?})),\n",
+            path = path.display().to_string(),
+        ));
+    }
+
     let capability = name_of(capability);
     let id = name_of(converter);
     let document = absolute(&document);
@@ -214,6 +232,7 @@ fn converter_definition(capability: &Path, converter: &Path) -> String {
          \x20       id: {id:?},\n\
          \x20       config: include_str!({document:?}),\n\
          \x20       script: include_str!({script:?}),\n\
+         \x20       extras: &[\n{extras}        ],\n\
          \x20   }},\n",
         document = document.display().to_string(),
         script = script_path.display().to_string(),
@@ -244,6 +263,24 @@ fn script_beside(text: &str, document: &Path) -> String {
         document.display()
     );
     script.to_string()
+}
+
+/// The prompt guide a document names, under the same rule as its script: a
+/// bare filename beside the document, and not the document itself.
+fn guide_beside(text: &str, document: &Path) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("{} does not parse: {e}", document.display()));
+    let guide = parsed
+        .get("promptRewrite")
+        .and_then(|rewrite| rewrite.get("guide"))
+        .and_then(serde_json::Value::as_str)?;
+    let bare = Path::new(guide).file_name() == Some(std::ffi::OsStr::new(guide));
+    assert!(
+        bare && !guide.is_empty() && guide != "model.json",
+        "{}: prompt guide '{guide}' is not a filename beside the document",
+        document.display()
+    );
+    Some(guide.to_string())
 }
 
 /// The subdirectories of `dir`, by name, ignoring everything else. A directory

@@ -74,6 +74,44 @@ fn default_order() -> u32 {
     1000
 }
 
+/// The version a prompt contract starts at, which is what a cache of rewrites
+/// keys its answers by: a document that changes its rules and does not say so
+/// would otherwise keep serving words written under the old ones.
+fn default_prompt_rewrite_version() -> u32 {
+    1
+}
+
+/// What a converter's `model.json` declares about rewriting a prompt before
+/// it is sent: the file beside it that holds the model's own contract, the
+/// parts of that contract this build can check, and the version of both.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptRewriteDecl {
+    /// The guide's filename, bare and beside the document — the same rule a
+    /// script follows, for the same reason.
+    pub guide: String,
+    /// What can be checked without reading the guide: the language the body
+    /// is written in, the tag that marks spoken words, whether negative
+    /// instructions bait the model. Read by whichever part of the program
+    /// knows the feature, so a check this build does not know is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checks: Option<serde_json::Value>,
+    #[serde(default = "default_prompt_rewrite_version")]
+    pub version: u32,
+}
+
+/// One protocol's prompt contract as the rest of the program reads it: the
+/// guide's words rather than the name of a file, so a caller does not have to
+/// know where converters are kept on this machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptRewrite {
+    pub guide: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checks: Option<serde_json::Value>,
+    pub version: u32,
+}
+
 /// What a converter declares about itself beyond speaking its protocol.
 ///
 /// These are read by whichever part of the program knows the feature, so a
@@ -163,6 +201,11 @@ pub struct ModelConfig {
     /// read by whichever part of the program knows that feature.
     #[serde(default)]
     pub features: Features,
+    /// The model's own contract for a prompt, where the protocol has one: a
+    /// prompt written for it may have to be rewritten into a shape the model
+    /// reads rather than one a provider's wire format suggests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_rewrite: Option<PromptRewriteDecl>,
     /// The version of the built-in converter this document was deployed
     /// from, written for a built-in and absent for a directory a reader
     /// wrote by hand. Zero when absent, so any built-in version may take the
@@ -184,6 +227,9 @@ pub struct ProtocolEntry {
     pub order: u32,
     pub auth: AuthSpec,
     pub features: Features,
+    /// The protocol's prompt contract, with the guide's words already read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_rewrite: Option<PromptRewrite>,
 }
 
 /// Protocols grouped by capability: `text`, `image`, `audio`, `video`, `asr`.
@@ -194,6 +240,20 @@ pub type ProtocolGroups = HashMap<String, HashMap<String, ProtocolEntry>>;
 pub fn script_name_beside(script: &str) -> bool {
     let file_name = Path::new(script).file_name();
     file_name == Some(std::ffi::OsStr::new(script)) && !script.is_empty() && script != "model.json"
+}
+
+/// A prompt guide's words, when the document names one that sits beside it.
+///
+/// A guide that is missing, empty, or named with a path that climbs out of the
+/// converter's directory is no contract at all: the protocol still speaks its
+/// wire shape, and the rewrite step is simply not offered for it.
+fn read_guide(dir: &Path, name: &str) -> Option<String> {
+    if !script_name_beside(name) {
+        return None;
+    }
+    let text = std::fs::read_to_string(dir.join(name)).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Whether a document says anything unusable about itself: a label with
@@ -267,6 +327,21 @@ impl ConverterRegistry {
         }
         let capability = capability_dir.file_name()?.to_str()?;
         let id = dir.file_name()?.to_str()?;
+        let prompt_rewrite = config.prompt_rewrite.as_ref().and_then(|declared| {
+            let guide = read_guide(dir, &declared.guide);
+            if guide.is_none() {
+                tracing::warn!(
+                    converter = id,
+                    guide = %declared.guide,
+                    "converter declares a prompt guide this build cannot read"
+                );
+            }
+            guide.map(|guide| PromptRewrite {
+                guide,
+                checks: declared.checks.clone(),
+                version: declared.version,
+            })
+        });
         if !config.features.extra.is_empty() {
             let mut unknown: Vec<&String> = config.features.extra.keys().collect();
             unknown.sort();
@@ -284,6 +359,7 @@ impl ConverterRegistry {
             order: config.order,
             auth: config.auth,
             features: config.features,
+            prompt_rewrite,
         })
     }
 
@@ -453,6 +529,77 @@ mod tests {
         );
         assert!(entry.features.mask);
         assert!(entry.features.image_input);
+    }
+
+    #[test]
+    fn a_declared_prompt_guide_is_read_into_the_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("video"),
+            "openaiH3",
+            r#"{
+              "displayName": "OpenAI H3",
+              "urlExample": "https://example.com/v1/videos",
+              "script": "openai-h3.lua",
+              "promptRewrite": {
+                "guide": "prompt-guide.md",
+                "checks": {"bodyLanguage": "en", "dialogueTag": "d"},
+                "version": 3
+              }
+            }"#,
+            Some("openai-h3.lua"),
+        );
+        std::fs::write(
+            dir.path().join("video/openaiH3/prompt-guide.md"),
+            "Write the body in English.\n",
+        )
+        .unwrap();
+
+        let registry = ConverterRegistry::load(dir.path());
+        let declared = registry.find("openaiH3").unwrap().prompt_rewrite.as_ref();
+        let declared = declared.expect("the guide was declared and sits beside the document");
+        assert_eq!(declared.guide, "Write the body in English.");
+        assert_eq!(declared.version, 3);
+        assert_eq!(
+            declared
+                .checks
+                .as_ref()
+                .and_then(|checks| checks.get("dialogueTag"))
+                .and_then(serde_json::Value::as_str),
+            Some("d")
+        );
+    }
+
+    #[test]
+    fn a_guide_that_cannot_be_read_leaves_the_protocol_without_a_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("video");
+        for (id, guide) in [
+            ("missing", "prompt-guide.md"),
+            ("climbing", "../../../etc/passwd"),
+            ("empty", "prompt-guide.md"),
+        ] {
+            write(
+                &video,
+                id,
+                &format!(
+                    r#"{{"displayName": "{id}", "urlExample": "https://example.com", "script": "{id}.lua",
+                        "promptRewrite": {{"guide": "{guide}"}}}}"#
+                ),
+                Some(&format!("{id}.lua")),
+            );
+        }
+        std::fs::write(video.join("empty/prompt-guide.md"), "   \n").unwrap();
+
+        let registry = ConverterRegistry::load(dir.path());
+        // Every protocol is still offered: the wire shape is sound, and only
+        // the rewrite step is missing from the ones without a usable guide.
+        for id in ["missing", "climbing", "empty"] {
+            assert!(
+                registry.find(id).unwrap().prompt_rewrite.is_none(),
+                "{id} should offer no prompt contract"
+            );
+        }
     }
 
     #[test]
