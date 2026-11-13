@@ -1,4 +1,5 @@
 import type { AssetId, Capability, IsoTimestamp } from "../shared/domain";
+import type { StoryPromptContext } from "../shared/prompts/story/promptContext";
 import type { InputRole } from "./generate";
 import { http } from "./client";
 
@@ -80,6 +81,14 @@ export interface StoryJobItem {
   target: StoryTarget;
   capability: Capability;
   prompt: string;
+  /**
+   * The material the prompt was written from, when the client has it.
+   *
+   * It travels with the ask so a rewrite can keep every fact the words
+   * carried. The server does not read it and does not store it: reading the
+   * document is the client's business.
+   */
+  promptContext?: StoryPromptContext;
   /** The standing instruction a written answer is asked under. */
   system?: string;
   inputs: StoryJobInput[];
@@ -143,7 +152,7 @@ export type StoryJobItemDraft = Pick<
   StoryJobItem,
   "id" | "target" | "capability" | "prompt"
 > &
-  Partial<Pick<StoryJobItem, "inputs" | "params" | "system">>;
+  Partial<Pick<StoryJobItem, "inputs" | "params" | "system" | "promptContext">>;
 
 const jobsPath = "/api/v1/projects/current/story/jobs";
 

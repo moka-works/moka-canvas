@@ -46,6 +46,9 @@ import storyActVideo from "./story/act-video.tmpl?raw";
 import storyActMusic from "./story/act-music.tmpl?raw";
 import storyKeyframeVideo from "./story/keyframe-video.tmpl?raw";
 import storyTransitionVideo from "./story/transition-video.tmpl?raw";
+import promptRewrite from "./story/prompt-rewrite.tmpl?raw";
+import promptRewriteSystem from "./story/prompt-rewrite-system.tmpl?raw";
+import type { StoryPromptContext } from "./story/promptContext";
 
 /**
  * The engine, configured once.
@@ -475,6 +478,31 @@ export function storyTransitionVideoPrompt(
   },
 ): string {
   return render(storyTransitionVideo, input);
+}
+
+/**
+ * The instruction one clip's prompt is rewritten under.
+ *
+ * The contract's own words travel in the middle of it: a protocol that
+ * declares how its model reads a prompt brings the guide, and the rules
+ * around it are what holds whatever that guide says — the lines stay as they
+ * were written, the ids stay the ones the material gave, and nothing is
+ * invented to fill a gap.
+ */
+export function storyPromptRewriteSystem(guide: string): string {
+  return render(promptRewriteSystem, { guide: guide.trim() });
+}
+
+/** One clip's rewrite ask: the material it is written from, and the words as they stand. */
+export function storyPromptRewriteAsk(input: {
+  prompt: string;
+  context?: StoryPromptContext;
+}): string {
+  return render(promptRewrite, {
+    prompt: input.prompt,
+    context:
+      input.context === undefined ? "" : JSON.stringify(input.context, null, 2),
+  });
 }
 
 /** One shot filmed, starting from the frame that was drawn for it. */

@@ -84,6 +84,13 @@ import {
   type StoryFacts,
   type StoryLook,
 } from "../../../shared/prompts";
+import {
+  castFor,
+  characterRefs,
+  linesFor,
+  shotsFor,
+  soundFor,
+} from "../../../shared/prompts/story/promptContext";
 import { i18n } from "../../../shared/i18n";
 import {
   effectiveDefaultId,
@@ -1061,7 +1068,7 @@ export function planActVideos(
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
   const ceiling = videoCeiling();
-  return actIds.flatMap((actId) => {
+  return actIds.flatMap((actId): StoryJobItemDraft[] => {
     const chapter = story.chapters.find((held) => held.id === chapterId);
     const act = actAt(story, chapterId, actId);
     if (chapter === undefined || act === undefined) return [];
@@ -1102,6 +1109,23 @@ export function planActVideos(
               frame: "first" as const,
             },
           ],
+          promptContext: {
+            kind: "transition" as const,
+            ...look,
+            seconds,
+            ends: { first: true, last: true, references: false },
+            shots: [],
+            transition: {
+              from: stripStoryMentions(videos.from.content),
+              to: stripStoryMentions(videos.to.content),
+              move: act.transition.prompt,
+            },
+            cast: castFor(story, act.characterIds, []),
+            dialogue: [],
+            ...(soundFor(act.sound) === undefined
+              ? {}
+              : { sound: soundFor(act.sound) }),
+          },
           params: videoParams(story.brief.aspect, seconds, "auto"),
         },
       ];
@@ -1138,6 +1162,8 @@ export function planActVideos(
               : []),
           ];
       const id = several ? `${base}:${at + 1}` : base;
+      const lines = piece.keyframes.flatMap((keyframe) => keyframe.dialogue);
+      const sound = soundFor(act.sound);
       return {
         id,
         target,
@@ -1155,10 +1181,25 @@ export function planActVideos(
               .join("; "),
             mode: references ? "references" : "frames",
             seconds: piece.seconds,
-            dialogue: piece.keyframes.flatMap((keyframe) => keyframe.dialogue),
+            dialogue: lines,
             ...(several ? { part: at + 1, total: pieces.length } : {}),
           }),
         inputs,
+        promptContext: {
+          kind: "act" as const,
+          ...look,
+          seconds: piece.seconds,
+          ends: {
+            first: !references,
+            last: piece.kind === "pair",
+            references,
+          },
+          shots: shotsFor(piece.keyframes),
+          cast: castFor(story, act.characterIds, lines),
+          dialogue: linesFor(story, characterRefs(story), lines),
+          ...(sound === undefined ? {} : { sound }),
+          ...(several ? { part: at + 1, total: pieces.length } : {}),
+        },
         params: videoParams(
           story.brief.aspect,
           piece.seconds,
@@ -1205,6 +1246,7 @@ export function planKeyframeVideos(
       inputs.push({ role: "lastFrame", assetId: lastFrame });
     }
     const id = jobKey(target);
+    const sound = soundFor(act.sound);
     return [
       {
         id,
@@ -1220,6 +1262,20 @@ export function planKeyframeVideos(
             dialogue: keyframe.dialogue,
           }),
         inputs,
+        promptContext: {
+          kind: "shot" as const,
+          ...look,
+          seconds,
+          ends: {
+            first: true,
+            last: inputs.some((input) => input.role === "lastFrame"),
+            references: false,
+          },
+          shots: shotsFor([keyframe]),
+          cast: castFor(story, act.characterIds, keyframe.dialogue),
+          dialogue: linesFor(story, characterRefs(story), keyframe.dialogue),
+          ...(sound === undefined ? {} : { sound }),
+        },
         params: videoParams(story.brief.aspect, seconds),
       },
     ];

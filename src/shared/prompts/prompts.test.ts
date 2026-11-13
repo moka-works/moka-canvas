@@ -26,6 +26,8 @@ import {
   storySplitSystemPrompt,
   storyStoryboardPrompt,
   storySystemPrompt,
+  storyPromptRewriteAsk,
+  storyPromptRewriteSystem,
   type StoryFacts,
 } from "./index";
 
@@ -736,5 +738,38 @@ describe("story prompts", () => {
       expect(words.endsWith("\n")).toBe(false);
       expect(words).not.toContain("{{");
     }
+  });
+
+  it("asks a rewrite under the model's own contract and the rules that hold whatever it says", () => {
+    const system = storyPromptRewriteSystem("Write the body in English.");
+    expect(system).toContain("Write the body in English.");
+    expect(system).toContain("Keep every spoken line exactly as written");
+    expect(system).toContain("Output the rewritten prompt alone");
+    expect(system.endsWith("\n")).toBe(false);
+  });
+
+  it("hands a rewrite the material and the words as they stand", () => {
+    const prompt = storyPromptRewriteAsk({
+      prompt: "Shoot this shot.",
+      context: {
+        kind: "shot",
+        aspect: "9:16",
+        style: "live action",
+        seconds: 5,
+        ends: { first: true, last: false, references: false },
+        shots: [{ text: "A bus stop." }],
+        cast: [{ name: "林", ref: "S1", kind: "character", description: "…" }],
+        dialogue: [{ speaker: "林", ref: "S1", text: "车已经停运了。" }],
+      },
+    });
+    expect(prompt).toContain("Shoot this shot.");
+    expect(prompt).toContain('"ref": "S1"');
+    expect(prompt).toContain("车已经停运了。");
+    expect(prompt).not.toContain("{{");
+  });
+
+  it("says the material is absent rather than leaving a hole", () => {
+    const prompt = storyPromptRewriteAsk({ prompt: "Shoot this shot." });
+    expect(prompt).toContain("(none)");
   });
 });

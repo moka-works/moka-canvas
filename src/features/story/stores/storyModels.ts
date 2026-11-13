@@ -102,3 +102,13 @@ export const useStoryModels = create<StoryModelsState>()((set, get) => ({
 export function storyAskModel(kind: StoryJobKind): string | null {
   return useStoryModels.getState().choices[askPlaceOfKind(kind)] ?? null;
 }
+
+/**
+ * The model the room's own words are written by.
+ *
+ * A rewrite of a clip's prompt is a text ask like the outline and the board,
+ * so it is asked of the same model rather than of one chosen separately.
+ */
+export function storyTextModel(): string | null {
+  return useStoryModels.getState().choices.text ?? null;
+}
