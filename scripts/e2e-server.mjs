@@ -83,6 +83,19 @@ for (const name of ["model.json", "clone-speech.lua"]) {
 }
 log(`fixture converter: e2eCloneSpeech deployed under ${modelsRoot}`);
 
+// A video converter that declares a prompt contract: the suite films one act
+// through it to show the words are confirmed, and may be rewritten, before
+// anything is sent.
+const videoModelsRoot = join(home, "models", "video", "openaiH3");
+mkdirSync(videoModelsRoot, { recursive: true });
+for (const name of ["model.json", "transform.lua", "prompt-guide.md"]) {
+  copyFileSync(
+    join(repoRoot, "e2e", "fixtures", "openaiH3", name),
+    join(videoModelsRoot, name),
+  );
+}
+log(`fixture converter: openaiH3 deployed under ${videoModelsRoot}`);
+
 // Server mode will not invent a master key, so without one a channel could
 // hold no credential and nothing could reach a provider. Generated per boot
 // and never printed: it protects a directory that is thrown away anyway.

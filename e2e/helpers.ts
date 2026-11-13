@@ -435,6 +435,7 @@ function endpoint(capability: Capability): string {
 const CONVERTER_ENDPOINTS: Record<string, string> = {
   bailianMusic: "/api/v1/services/audio/music/generation",
   e2eCloneSpeech: "/v1/audio/speech",
+  openaiH3: "/v1/videos",
 };
 
 /**

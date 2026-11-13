@@ -1,8 +1,17 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { providerCalls } from "./mock-provider";
 import {
+  MUSICIAN,
+  PAINTER,
+  SENTENCE,
+  SPEAKER,
+  STORYTELLER,
+  VIDEOGRAPHER,
+  providerCalls,
+} from "./mock-provider";
+import {
+  configureModels,
   configureTheWholeStudio,
   createProject,
   forgetHome,
@@ -801,6 +810,87 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
     await transition.getByTestId("story-transition-remove-1").click();
     await expect(page.getByTestId("story-transition-1")).toHaveCount(0);
     await expect.poll(async () => (await persistedBoard(page)).acts).toBe(2);
+  } finally {
+    forgetHome(home);
+  }
+});
+
+/**
+ * A clip's words, rewritten for the model's contract before they are sent.
+ *
+ * The video model speaks a protocol that declares a prompt contract, so the
+ * press that films stands behind the dialog: the words as the board wrote
+ * them are shown whole, the text model may be asked to rewrite them, what it
+ * writes lands back in the field, and only the reader's own press sends.
+ */
+test("a clip's words are rewritten for the model's contract before it is filmed", async ({
+  page,
+}) => {
+  const home = projectHome("story-prompt-rewrite");
+  await forgetProjects();
+  await configureModels([
+    { id: PAINTER, capability: "image", alias: "Painter" },
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+    {
+      id: VIDEOGRAPHER,
+      capability: "video",
+      alias: "Videographer",
+      converter: "openaiH3",
+    },
+    { id: SPEAKER, capability: "speech", alias: "Speaker" },
+    {
+      id: MUSICIAN,
+      capability: "music",
+      alias: "Musician",
+      converter: "bailianMusic",
+    },
+  ]);
+  try {
+    await toTheBoard(page, home, "Rewritten Ask");
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await firstAct.getByTestId("story-act-draw-0").click();
+    await expect(
+      firstAct.getByTestId("story-kf-slot-1").locator("img"),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(firstAct.getByTestId("story-act-video-go-0")).toBeEnabled();
+
+    // The press films nothing yet: the words stand in front of it.
+    await firstAct.getByTestId("story-act-video-go-0").click();
+    const askDialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(askDialog).toBeVisible();
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(/Shoot this act/);
+
+    // One ask of the stand-in's text model, and what it wrote is in the field.
+    await askDialog.getByTestId("story-video-prompt-rewrite").click();
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(SENTENCE, { timeout: 30_000 });
+    // The stand-in's answer dropped both lines the act says, and the dialog
+    // names them rather than letting the loss travel.
+    await expect(
+      askDialog.getByTestId("story-video-prompt-issues"),
+    ).toContainText("It stopped running years ago.");
+
+    // The reader's own press is what sends, and it sends the words shown.
+    await askDialog.getByTestId("story-video-prompt-send").click();
+    await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path === "/v1/videos")
+            .at(-1)?.prompt,
+        { timeout: 30_000 },
+      )
+      .toBe(SENTENCE);
   } finally {
     forgetHome(home);
   }

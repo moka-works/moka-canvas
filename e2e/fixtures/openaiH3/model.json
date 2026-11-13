@@ -1,0 +1,14 @@
+{
+  "displayName": "E2E · OpenAI H3",
+  "labels": { "zh": "E2E · OpenAI H3" },
+  "urlExample": "http://127.0.0.1:8982/v1/videos",
+  "script": "transform.lua",
+  "order": 50,
+  "auth": { "header": "Authorization", "scheme": "Bearer" },
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "bodyLanguage": "en", "dialogueTag": "d", "negativeBait": true },
+    "version": 1
+  },
+  "version": 1
+}
