@@ -452,6 +452,27 @@ h2 {
   font-size: 13px;
 }
 
+.story-video-prompt-error pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.story-video-prompt-issues {
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  padding: 8px 12px;
+}
+
+.story-video-prompt-issues-title {
+  color: var(--danger);
+}
+
+.story-video-prompt-issues ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 /* The room a new project opens onto
 
    A card keeps its one-line purpose on the face. The longer scene it fits is

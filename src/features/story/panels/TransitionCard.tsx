@@ -23,6 +23,7 @@ import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { useField } from "./useField";
+import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 import { writeActs } from "./writeBoard";
 
@@ -65,7 +66,9 @@ export function TransitionCard({
   const run = useStoryRun();
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
+    null,
+  );
   // The card is only handed a bridge, but the fallback keeps the hooks below
   // unconditional.
   const transition = act.transition ?? {
@@ -148,6 +151,11 @@ export function TransitionCard({
   });
 
   const film = () => {
+    // A model with a prompt contract is asked over words the reader has seen.
+    if (videoPromptRewrite("actVideo") !== null) {
+      setEditingPrompt("film");
+      return;
+    }
     // The words just typed are written when the field is left, which the
     // press itself may be doing: the ask is planned from the document as it
     // stands.
@@ -340,7 +348,7 @@ export function TransitionCard({
           <button
             className="link"
             data-testid={`story-transition-video-prompt-${index}`}
-            onClick={() => setEditingPrompt(true)}
+            onClick={() => setEditingPrompt("edit")}
             type="button"
           >
             {t("story:storyboard.videoPromptEdit")}
@@ -383,9 +391,10 @@ export function TransitionCard({
           takes={act.video.takes}
         />
       )}
-      {editingPrompt && (
+      {editingPrompt !== null && (
         <VideoPromptDialog
-          onClose={() => setEditingPrompt(false)}
+          mode={editingPrompt}
+          onClose={() => setEditingPrompt(null)}
           place={{
             kind: "act",
             chapterId: chapter.id,

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
+import { errorText } from "../../../api/client";
 import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
 import {
@@ -15,6 +16,8 @@ import type {
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { planActVideos, planKeyframeVideos } from "../jobs/plan";
+import type { PromptContractIssue } from "../jobs/promptContract";
+import { rewriteVideoPrompt, videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "./removeOldTake";
 import { useStoryRun } from "../stores/storyJobStore";
 
@@ -53,14 +56,23 @@ function secondsOf(params: Record<string, unknown> | undefined): number {
  * a light falls, what a camera leaves out — can be said before the ask is
  * made. What is written here is kept with the telling and stands for every ask
  * that follows, until the reader hands the piece back to the board.
+ *
+ * In `film` mode the dialog stands in front of the press that would have
+ * filmed the place: the words may be sent as they are, or rewritten for the
+ * model first. A rewrite is one ask of the room's own text model, and what it
+ * writes goes back into the field — nothing is sent until the reader presses
+ * send over words they have seen.
  */
 export function VideoPromptDialog({
   story,
   place,
+  mode = "edit",
   onClose,
 }: {
   story: StoryDocument;
   place: VideoPromptPlace;
+  /** Whether the dialog was opened to film the place or only to edit its words. */
+  mode?: "edit" | "film";
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -77,6 +89,19 @@ export function VideoPromptDialog({
     opened.shown.map((ask) => ask.prompt),
   );
   const [error, setError] = useState<string | null>(null);
+  const [rewriting, setRewriting] = useState(false);
+  const [issues, setIssues] = useState<PromptContractIssue[]>([]);
+  const [rewriteError, setRewriteError] = useState<{
+    message: string;
+    detail?: string;
+  } | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
+  const guide = videoPromptRewrite(kind);
+
+  useEffect(() => {
+    return () => abort.current?.abort();
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -159,6 +184,71 @@ export function VideoPromptDialog({
     onClose();
   };
 
+  const rewriteAll = async () => {
+    if (guide === null || rewriting) return;
+    setRewriting(true);
+    setRewriteError(null);
+    setIssues([]);
+    const controller = new AbortController();
+    abort.current = controller;
+    const next = [...values];
+    const found: PromptContractIssue[] = [];
+    try {
+      for (const [at, ask] of opened.shown.entries()) {
+        const rewritten = await rewriteVideoPrompt({
+          prompt: values[at] ?? "",
+          ...(ask.promptContext === undefined
+            ? {}
+            : { context: ask.promptContext }),
+          guide,
+          signal: controller.signal,
+        });
+        next[at] = rewritten.prompt;
+        found.push(...rewritten.issues);
+      }
+      setValues(next);
+      setIssues(found);
+    } catch (problem) {
+      if (!controller.signal.aborted) {
+        // The pieces already rewritten stay written: a reader who saw two of
+        // three answers keeps them and is told what the third said.
+        setValues(next);
+        setIssues(found);
+        setRewriteError(errorText(problem));
+      }
+    } finally {
+      abort.current = null;
+      setRewriting(false);
+    }
+  };
+
+  const issueText = (issue: PromptContractIssue): string => {
+    switch (issue.code) {
+      case "empty":
+        return t("story:storyboard.videoPromptIssueEmpty");
+      case "tooLong":
+        return t("story:storyboard.videoPromptIssueTooLong", {
+          max: issue.max,
+        });
+      case "unbalancedTags":
+        return t("story:storyboard.videoPromptIssueTags", { tag: issue.tag });
+      case "dialogueMissing":
+        return t("story:storyboard.videoPromptIssueLine", { line: issue.line });
+      case "unknownSpeaker":
+        return t("story:storyboard.videoPromptIssueSpeaker", {
+          ref: issue.ref,
+        });
+      case "bodyNotEnglish":
+        return t("story:storyboard.videoPromptIssueLanguage", {
+          sample: issue.sample,
+        });
+      case "negativeInstruction":
+        return t("story:storyboard.videoPromptIssueNegative", {
+          phrase: issue.phrase,
+        });
+    }
+  };
+
   return createPortal(
     <div
       className="dialog-backdrop"
@@ -177,7 +267,11 @@ export function VideoPromptDialog({
         <h2 id="story-video-prompt-title">
           {t("story:storyboard.videoPromptTitle")} · {place.name}
         </h2>
-        <p className="dialog-note">{t("story:storyboard.videoPromptHint")}</p>
+        <p className="dialog-note">
+          {mode === "film"
+            ? t("story:storyboard.videoPromptFilmHint")
+            : t("story:storyboard.videoPromptHint")}
+        </p>
 
         {opened.shown.length === 0 ? (
           <p className="story-hint">
@@ -215,6 +309,10 @@ export function VideoPromptDialog({
                       ),
                     );
                     setError(null);
+                    // The checks belong to the words the model wrote; once
+                    // the reader changes them they are no longer about these.
+                    setIssues([]);
+                    setRewriteError(null);
                   }}
                   rows={8}
                   value={values[at] ?? ""}
@@ -260,31 +358,95 @@ export function VideoPromptDialog({
           </p>
         )}
 
+        {issues.length > 0 && (
+          <div
+            className="story-video-prompt-issues"
+            data-testid="story-video-prompt-issues"
+            role="status"
+          >
+            <span className="story-video-prompt-issues-title">
+              {t("story:storyboard.videoPromptIssueTitle")}
+            </span>
+            <ul>
+              {issues.map((issue, at) => (
+                <li key={`${issue.code}-${at}`}>{issueText(issue)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {rewriteError !== null && (
+          <div
+            className="story-video-prompt-error"
+            data-testid="story-video-prompt-rewrite-error"
+            role="alert"
+          >
+            <p>{rewriteError.message}</p>
+            {rewriteError.detail !== undefined && (
+              <details>
+                <summary>
+                  {t("story:storyboard.videoPromptErrorDetail")}
+                </summary>
+                <pre>{rewriteError.detail}</pre>
+              </details>
+            )}
+          </div>
+        )}
+
         <div className="dialog-actions">
           <button
             data-testid="story-video-prompt-cancel"
+            disabled={rewriting}
             onClick={onClose}
             type="button"
           >
             {t("story:panels.cancel")}
           </button>
-          <button
-            data-testid="story-video-prompt-save"
-            disabled={opened.shown.length === 0}
-            onClick={() => save(false)}
-            type="button"
-          >
-            {t("story:storyboard.videoPromptSave")}
-          </button>
-          <button
-            className="primary"
-            data-testid="story-video-prompt-film"
-            disabled={opened.shown.length === 0}
-            onClick={() => save(true)}
-            type="button"
-          >
-            {t("story:storyboard.videoPromptSaveAndFilm")}
-          </button>
+          {mode === "film" ? (
+            <>
+              {guide !== null && (
+                <button
+                  data-testid="story-video-prompt-rewrite"
+                  disabled={rewriting || opened.shown.length === 0}
+                  onClick={() => void rewriteAll()}
+                  type="button"
+                >
+                  {rewriting
+                    ? t("story:storyboard.videoPromptRewriting")
+                    : t("story:storyboard.videoPromptRewrite")}
+                </button>
+              )}
+              <button
+                className="primary"
+                data-testid="story-video-prompt-send"
+                disabled={rewriting || opened.shown.length === 0}
+                onClick={() => save(true)}
+                type="button"
+              >
+                {t("story:storyboard.videoPromptSend")}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                data-testid="story-video-prompt-save"
+                disabled={opened.shown.length === 0}
+                onClick={() => save(false)}
+                type="button"
+              >
+                {t("story:storyboard.videoPromptSave")}
+              </button>
+              <button
+                className="primary"
+                data-testid="story-video-prompt-film"
+                disabled={opened.shown.length === 0}
+                onClick={() => save(true)}
+                type="button"
+              >
+                {t("story:storyboard.videoPromptSaveAndFilm")}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>,

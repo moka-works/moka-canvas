@@ -35,6 +35,7 @@ import {
   planLineVoiceAsks,
   videoCeiling,
 } from "../jobs/plan";
+import { videoPromptRewrite } from "../jobs/promptRewrite";
 import {
   useStoryBulkRun,
   useStoryRun,
@@ -134,7 +135,9 @@ export function ActCard({
   const [pickingVoice, setPickingVoice] = useState(false);
   const [pickingMusic, setPickingMusic] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
+    null,
+  );
   // The element whose picture the reader asked to look at, if any. Held by
   // name rather than by the object: a drawing that lands while the inspector
   // stands is the same element with one more take.
@@ -296,6 +299,12 @@ export function ActCard({
   };
 
   const filmAct = () => {
+    // A model with a prompt contract is asked over words the reader has seen:
+    // the dialog stands in front of the press, and its send button films.
+    if (videoPromptRewrite("actVideo") !== null) {
+      setEditingPrompt("film");
+      return;
+    }
     const items = planActVideos(story, chapterId, [act.id]);
     void run(story.id, "actVideo", items);
   };
@@ -707,7 +716,7 @@ export function ActCard({
           <button
             className="link"
             data-testid={`story-act-video-prompt-${index}`}
-            onClick={() => setEditingPrompt(true)}
+            onClick={() => setEditingPrompt("edit")}
             type="button"
           >
             {t("story:storyboard.videoPromptEdit")}
@@ -928,9 +937,10 @@ export function ActCard({
         />
       )}
 
-      {editingPrompt && (
+      {editingPrompt !== null && (
         <VideoPromptDialog
-          onClose={() => setEditingPrompt(false)}
+          mode={editingPrompt}
+          onClose={() => setEditingPrompt(null)}
           place={{
             kind: "act",
             chapterId,

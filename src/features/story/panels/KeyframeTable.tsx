@@ -79,6 +79,7 @@ import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
+import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 
 /** How wide the little references beside a frame's ask are asked for: they are
@@ -300,7 +301,9 @@ function KeyframeRow({
   const [picking, setPicking] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
+    null,
+  );
   const [playing, setPlaying] = useState(false);
   // A preview the server could not draw steps back to the shot's drawn frame,
   // rather than leaving a broken picture. The address is held rather than a
@@ -363,6 +366,11 @@ function KeyframeRow({
   };
 
   const film = () => {
+    // A model with a prompt contract is asked over words the reader has seen.
+    if (videoPromptRewrite("keyframeVideo") !== null) {
+      setEditingPrompt("film");
+      return;
+    }
     const [item] = planKeyframeVideos(story, chapterId, act.id, [keyframe.id]);
     if (item !== undefined) void run(story.id, "keyframeVideo", [item]);
   };
@@ -629,7 +637,7 @@ function KeyframeRow({
                   <button
                     className="link"
                     data-testid={`story-kf-video-prompt-${index}`}
-                    onClick={() => setEditingPrompt(true)}
+                    onClick={() => setEditingPrompt("edit")}
                     type="button"
                   >
                     {t("story:storyboard.videoPromptEdit")}
@@ -675,7 +683,7 @@ function KeyframeRow({
                   <button
                     className="link"
                     data-testid={`story-kf-video-prompt-${index}`}
-                    onClick={() => setEditingPrompt(true)}
+                    onClick={() => setEditingPrompt("edit")}
                     type="button"
                   >
                     {t("story:storyboard.videoPromptEdit")}
@@ -820,9 +828,10 @@ function KeyframeRow({
           story={story}
         />
       )}
-      {editingPrompt && (
+      {editingPrompt !== null && (
         <VideoPromptDialog
-          onClose={() => setEditingPrompt(false)}
+          mode={editingPrompt}
+          onClose={() => setEditingPrompt(null)}
           place={{
             kind: "shot",
             chapterId,
