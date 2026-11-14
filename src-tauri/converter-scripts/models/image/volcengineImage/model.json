@@ -5,5 +5,5 @@
   "script": "volcengine-image.lua",
   "order": 30,
   "features": { "imageInput": true },
-  "version": 1
+  "version": 2
 }

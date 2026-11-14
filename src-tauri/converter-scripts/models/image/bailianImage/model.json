@@ -6,5 +6,5 @@
   "order": 20,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
   "features": { "imageInput": true },
-  "version": 1
+  "version": 2
 }

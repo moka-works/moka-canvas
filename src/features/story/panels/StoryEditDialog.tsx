@@ -121,6 +121,19 @@ export function StoryEditDialog({
   const canInput = unknown || features.imageInput === true;
   const canMask = !unknown && canInput && features.mask === true;
   const painting = mode === "mask" && canMask;
+  // The image models that say they take a picture as input. Nothing is
+  // filtered while the registry has not been read: the note says a
+  // whole-picture edit can still be tried there, and a list with nothing in it
+  // would take that away. A model whose protocol left the tree is left out
+  // with the ones that take no picture.
+  const inputModels = modelOptionsFor(view, "image").filter((option) => {
+    if (unknown) return true;
+    const found = view?.models.find((each) => each.id === option.reference);
+    return (
+      found !== undefined &&
+      protocolFeatures(protocols, found.protocol).imageInput === true
+    );
+  });
   // One picture, fitted into the dialog; the mask is written at the picture's
   // own size so that what is filed is the shape of the thing it covers.
   const shown = useMemo(
@@ -347,29 +360,13 @@ export function StoryEditDialog({
               value={model ?? ""}
             >
               <option value="">{t("story:pictureEdit.pickModel")}</option>
-              {(view === null ? [] : modelOptionsFor(view, "image")).flatMap(
-                (option) => {
-                  const found = view?.models.find(
-                    (each) => each.id === option.reference,
-                  );
-                  if (
-                    found === undefined ||
-                    protocolFeatures(protocols, found.protocol).imageInput !==
-                      true
-                  ) {
-                    return [];
-                  }
-                  return [
-                    <option key={option.reference} value={option.reference}>
-                      {option.label}
-                    </option>,
-                  ];
-                },
-              )}
+              {inputModels.map((option) => (
+                <option key={option.reference} value={option.reference}>
+                  {option.label}
+                </option>
+              ))}
               {model !== null &&
-                !modelOptionsFor(view, "image").some(
-                  (option) => option.reference === model,
-                ) && (
+                !inputModels.some((option) => option.reference === model) && (
                   <option value={model}>
                     {t("story:pictureEdit.unsupportedModel", { model })}
                   </option>
