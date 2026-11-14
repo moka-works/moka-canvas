@@ -35,6 +35,7 @@ pub use types::{
 };
 
 use crate::config::{MetadataConfig, RuntimeMode};
+use crate::domain::Capability;
 
 /// The only implemented backend.
 pub const FILE_STORE: &str = "file";
@@ -183,6 +184,16 @@ pub trait MetadataStore: Send + Sync {
     async fn delete_model(
         &self,
         id: &str,
+        expected_revision: Option<u64>,
+    ) -> Result<(), MetadataError>;
+
+    /// Arranges one category's configurations in the given order, leaving
+    /// every other category exactly where it was. The list must name every
+    /// model of the category exactly once.
+    async fn reorder_models(
+        &self,
+        category: Capability,
+        ids: &[String],
         expected_revision: Option<u64>,
     ) -> Result<(), MetadataError>;
 

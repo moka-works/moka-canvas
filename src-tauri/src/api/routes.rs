@@ -4,9 +4,10 @@ use super::dto::{
     FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
     FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
     ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
-    PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, RevealRequest,
-    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
-    StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
+    PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, ReorderModelsRequest,
+    RevealRequest, RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest,
+    SelfCheckResponse, StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery,
+    UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState, ProjectSession};
@@ -1754,6 +1755,18 @@ pub async fn delete_model(
     Query(revision): Query<RevisionQuery>,
 ) -> Result<Json<ModelsView>, Problem> {
     state.models.delete(&id, revision.revision).await?;
+    models_view(&state).await
+}
+
+pub async fn reorder_models(
+    State(state): State<ApiState>,
+    json: Result<Json<ReorderModelsRequest>, JsonRejection>,
+) -> Result<Json<ModelsView>, Problem> {
+    let Json(request) = json_or_problem(json)?;
+    state
+        .models
+        .reorder(request.category, request.ids, request.expected_revision)
+        .await?;
     models_view(&state).await
 }
 

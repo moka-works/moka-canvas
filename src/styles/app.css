@@ -1049,6 +1049,25 @@ button.room-choice:hover .room-choice-arrow,
   opacity: 0.6;
 }
 
+.model-card.is-dragging {
+  opacity: 0.4;
+}
+
+.model-card.is-over-before {
+  box-shadow: 0 -2px 0 var(--primary);
+}
+
+.model-card.is-over-after {
+  box-shadow: 0 2px 0 var(--primary);
+}
+
+.model-card-handle {
+  color: var(--muted);
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .model-card-head {
   align-items: center;
   display: flex;

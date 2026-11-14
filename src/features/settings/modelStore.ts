@@ -234,6 +234,8 @@ interface ModelState {
   loadProtocols: (force?: boolean) => Promise<void>;
   saveModel: (draft: ModelDraft) => Promise<boolean>;
   removeModel: (id: string) => Promise<boolean>;
+  /** Arranges one capability's models in the order they should be offered. */
+  reorderModels: (category: Capability, ids: string[]) => Promise<boolean>;
   /** Opens a new-model editor pre-filled as a copy of one configuration. */
   duplicateModel: (id: string) => void;
   setKey: (id: string, apiKey: string | null) => Promise<boolean>;
@@ -403,6 +405,12 @@ export const useModelStore = create<ModelState>()((set, get) => {
     removeModel(id) {
       return write(i18n.t("settings:errors.removeModel"), (revision) =>
         modelsApi.remove(id, revision ?? undefined),
+      );
+    },
+
+    reorderModels(category, ids) {
+      return write(i18n.t("settings:errors.reorderModels"), (revision) =>
+        modelsApi.reorder({ category, ids, expectedRevision: revision }),
       );
     },
 

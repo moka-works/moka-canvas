@@ -482,6 +482,102 @@ async fn a_preference_outside_its_bounds_is_refused() {
 }
 
 #[tokio::test]
+async fn a_category_reorders_without_moving_the_others() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("alpha", None)).await;
+    let mut painter = model_body("painter", None);
+    painter["category"] = json!("image");
+    painter["protocol"] = json!("openaiImages");
+    painter["url"] = json!("https://provider.test/v1/images/generations");
+    put_model(&harness.app, painter).await;
+    put_model(&harness.app, model_body("beta", None)).await;
+    put_model(&harness.app, model_body("gamma", None)).await;
+
+    let (status, view) = send(
+        &harness.app,
+        json_request(
+            "PUT",
+            "/api/v1/models/order",
+            json!({ "category": "text", "ids": ["gamma", "alpha", "beta"] }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    // The image model keeps the slot it had: arranging one category never
+    // rearranges another.
+    assert_eq!(
+        model_ids(&view),
+        ["gamma", "painter", "alpha", "beta"],
+        "the category is in the order it was given"
+    );
+
+    // And the order is the stored one, not a view the server just built.
+    let (_, reloaded) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
+    assert_eq!(model_ids(&reloaded), ["gamma", "painter", "alpha", "beta"]);
+}
+
+#[tokio::test]
+async fn an_order_has_to_name_every_model_of_the_category_once() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("alpha", None)).await;
+    put_model(&harness.app, model_body("beta", None)).await;
+    let mut painter = model_body("painter", None);
+    painter["category"] = json!("image");
+    painter["protocol"] = json!("openaiImages");
+    painter["url"] = json!("https://provider.test/v1/images/generations");
+    put_model(&harness.app, painter).await;
+
+    // One left out, one named twice, and one from another category are all
+    // orders that would silently lose a model if they were taken.
+    for ids in [
+        json!(["alpha"]),
+        json!(["alpha", "alpha"]),
+        json!(["alpha", "painter"]),
+    ] {
+        let (status, problem) = send(
+            &harness.app,
+            json_request(
+                "PUT",
+                "/api/v1/models/order",
+                json!({ "category": "text", "ids": ids }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+        assert_eq!(problem["code"], "VALIDATION_FAILED");
+    }
+
+    // The list the client read is what a rearrangement is checked against.
+    let (status, problem) = send(
+        &harness.app,
+        json_request(
+            "PUT",
+            "/api/v1/models/order",
+            json!({
+                "category": "text",
+                "ids": ["beta", "alpha"],
+                "expectedRevision": 0,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{problem}");
+    assert_eq!(problem["code"], "METADATA_CONFLICT");
+}
+
+/// The identifiers of a view's models, in the order it presents them.
+fn model_ids(view: &Value) -> Vec<&str> {
+    view["models"]
+        .as_array()
+        .expect("the view holds a model list")
+        .iter()
+        .map(|model| model["id"].as_str().expect("every model has an id"))
+        .collect()
+}
+
+#[tokio::test]
 async fn a_configuration_write_is_capped_well_below_an_upload() {
     let root = tempfile::tempdir().unwrap();
     let harness = harness(root.path());

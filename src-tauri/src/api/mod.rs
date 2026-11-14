@@ -497,6 +497,7 @@ fn model_router() -> axum::Router<ApiState> {
             get(routes::list_models).put(routes::upsert_model),
         )
         .route("/api/v1/models/{id}", delete(routes::delete_model))
+        .route("/api/v1/models/order", put(routes::reorder_models))
         .route("/api/v1/models/{id}/key", post(routes::set_model_key))
         .route("/api/v1/models/defaults", patch(routes::patch_defaults))
         .route(

@@ -355,6 +355,17 @@ pub struct UpsertModelRequest {
     pub copy_key_from: Option<String>,
 }
 
+/// One category's configurations in the order a reader arranged them. The
+/// list is the whole category, so a stale client cannot silently drop one.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderModelsRequest {
+    pub category: Capability,
+    pub ids: Vec<String>,
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
+}
+
 /// Where the master key protecting the stored credentials should live.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

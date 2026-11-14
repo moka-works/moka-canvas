@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "./fixtures";
 
 import {
+  APP,
   CHANNEL_KEY,
   configureModels,
   configureTheWholeStudio,
@@ -447,6 +448,103 @@ test("speech recognition offers the script that serves it", async ({
   await expect(dialog.getByLabel("Endpoint URL")).toHaveValue(
     asr[0].urlExample,
   );
+});
+
+/**
+ * A category's order is the reader's, and every picker offers it.
+ *
+ * The drag is the arrangement; what it changes is the stored order that all
+ * the pickers read, so the check is that it outlives the page.
+ */
+test("models are arranged by dragging and the order is kept", async ({
+  page,
+}) => {
+  const ours = ["order-a", "order-b", "order-c"];
+  const put = async (id: string, name: string) => {
+    const response = await fetch(`${APP}/api/v1/models`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        category: "text",
+        protocol: "openaiChat",
+        url: `${PROVIDER_ORIGIN}/v1/chat/completions`,
+        model: id,
+        displayName: name,
+        enabled: true,
+        apiKey: CHANNEL_KEY,
+      }),
+    });
+    expect(response.ok, await response.text()).toBe(true);
+  };
+  const remove = async (id: string) => {
+    await fetch(`${APP}/api/v1/models/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  };
+  const storedOrder = async () => {
+    const view = (await (await fetch(`${APP}/api/v1/models`)).json()) as {
+      models: { id: string; category: string }[];
+    };
+    return view.models
+      .filter((model) => model.category === "text")
+      .map((model) => model.id)
+      .filter((id) => ours.includes(id));
+  };
+
+  // A clean start: the suite shares one metadata store, and models are
+  // appended when they are created.
+  for (const id of ours) await remove(id);
+  await put("order-a", "Order A");
+  await put("order-b", "Order B");
+  await put("order-c", "Order C");
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const card = (name: string) =>
+    dialog.locator("li.model-card").filter({
+      has: page.locator("strong", { hasText: new RegExp(`^${name}$`) }),
+    });
+
+  // Only the handle moves a card: the card itself is a form. The move is
+  // spelled out because a native HTML5 drag is only begun by a pointer that
+  // has actually travelled a little while pressed. The card being moved is
+  // the one below, so both the handle and the spot it lands on are on screen
+  // however long the category's list has grown.
+  await card("Order A").scrollIntoViewIfNeeded();
+  const source = await card("Order B")
+    .locator(".model-card-handle")
+    .boundingBox();
+  const target = await card("Order A").boundingBox();
+  if (!source || !target) throw new Error("the order cards are not on screen");
+  await page.mouse.move(
+    source.x + source.width / 2,
+    source.y + source.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    source.x + source.width / 2 + 12,
+    source.y + source.height / 2 + 12,
+    { steps: 4 },
+  );
+  await page.mouse.move(target.x + 20, target.y + target.height / 4, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect.poll(storedOrder).toEqual(["order-b", "order-a", "order-c"]);
+
+  // The stored order is what the page is drawn from.
+  await page.reload();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const names = await dialog.locator("li.model-card strong").allTextContents();
+  expect(names.filter((name) => name.startsWith("Order "))).toEqual([
+    "Order B",
+    "Order A",
+    "Order C",
+  ]);
+
+  for (const id of ours) await remove(id);
 });
 
 /**

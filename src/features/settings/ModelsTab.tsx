@@ -1,3 +1,4 @@
+import { useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelView } from "../../api";
 import { CAPABILITY_LABELS, type Capability } from "../../shared/domain";
@@ -10,14 +11,26 @@ import {
 } from "./modelStore";
 import { SecretStorageNote } from "./SecretStorageNote";
 
+/** What a card needs to take part in arranging its category's list. */
+interface CardDrag {
+  dragging: boolean;
+  over: "before" | "after" | null;
+  onStart: (event: DragEvent<HTMLSpanElement>) => void;
+  onOver: (event: DragEvent<HTMLLIElement>) => void;
+  onDrop: (event: DragEvent<HTMLLIElement>) => void;
+  onEnd: () => void;
+}
+
 function ModelCard({
   model,
   category,
   isDefault,
+  drag,
 }: {
   model: ModelView;
   category: Capability;
   isDefault: boolean;
+  drag?: CardDrag;
 }) {
   const { t } = useTranslation();
   const saving = useModelStore((state) => state.saving);
@@ -35,9 +48,26 @@ function ModelCard({
     void useModelStore.getState().removeModel(model.id);
   };
 
+  const side = drag?.over ?? "";
   return (
-    <li className={`model-card${model.enabled ? "" : " is-off"}`}>
+    <li
+      className={`model-card${model.enabled ? "" : " is-off"}${drag?.dragging ? " is-dragging" : ""}${side === "" ? "" : ` is-over-${side}`}`}
+      onDragEnd={drag?.onEnd}
+      onDragOver={drag?.onOver}
+      onDrop={drag?.onDrop}
+    >
       <div className="model-card-head">
+        {drag && (
+          <span
+            aria-hidden="true"
+            className="model-card-handle"
+            draggable
+            onDragStart={drag.onStart}
+            title={t("settings:card.reorderHandle")}
+          >
+            ⠿
+          </span>
+        )}
         <strong>{model.displayName}</strong>
         <span className="model-card-tag">
           {protocolLabel(protocols, model.protocol)}
@@ -101,6 +131,90 @@ function ModelCard({
         </button>
       </div>
     </li>
+  );
+}
+
+/**
+ * A category's models in the order they are offered.
+ *
+ * The stored order is the order every picker shows, so arranging the list
+ * here is arranging it everywhere. A card is a form and a form is not a thing
+ * to drag, which is why only the handle starts a move.
+ */
+function ModelOrderList({
+  models,
+  category,
+  defaultId,
+}: {
+  models: ModelView[];
+  category: Capability;
+  defaultId: string | null;
+}) {
+  const { t } = useTranslation();
+  const saving = useModelStore((state) => state.saving);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
+
+  const finish = () => {
+    setDragging(null);
+    setOver(null);
+  };
+
+  /** Whether the pointer is past the middle of the card it is over. */
+  const dropsAfter = (event: DragEvent<HTMLLIElement>): boolean => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientY > box.top + box.height / 2;
+  };
+
+  const move = (id: string, targetId: string, after: boolean) => {
+    const ids = models.map((model) => model.id);
+    const from = ids.indexOf(id);
+    if (from < 0) return;
+    ids.splice(from, 1);
+    const to = ids.indexOf(targetId);
+    if (to < 0) return;
+    ids.splice(after ? to + 1 : to, 0, id);
+    void useModelStore.getState().reorderModels(category, ids);
+  };
+
+  return (
+    <ul aria-label={t("settings:card.reorderList")} className="model-card-list">
+      {models.map((model) => (
+        <ModelCard
+          category={category}
+          drag={{
+            dragging: dragging === model.id,
+            over:
+              over?.id === model.id ? (over.after ? "after" : "before") : null,
+            onStart: (event) => {
+              if (saving) {
+                event.preventDefault();
+                return;
+              }
+              setDragging(model.id);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", model.id);
+            },
+            onOver: (event) => {
+              if (dragging === null || dragging === model.id) return;
+              event.preventDefault();
+              setOver({ id: model.id, after: dropsAfter(event) });
+            },
+            onDrop: (event) => {
+              event.preventDefault();
+              if (!saving && dragging !== null && dragging !== model.id) {
+                move(dragging, model.id, dropsAfter(event));
+              }
+              finish();
+            },
+            onEnd: finish,
+          }}
+          isDefault={model.id === defaultId}
+          key={model.id}
+          model={model}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -180,16 +294,11 @@ export function ModelsTab({ category }: { category: Capability }) {
         </p>
       ) : (
         <>
-          <ul className="model-card-list">
-            {models.map((model) => (
-              <ModelCard
-                category={category}
-                isDefault={model.id === defaultId}
-                key={model.id}
-                model={model}
-              />
-            ))}
-          </ul>
+          <ModelOrderList
+            category={category}
+            defaultId={defaultId}
+            models={models}
+          />
           {defaultId === null && (
             <p className="settings-hint" data-testid={`${category}-gap`}>
               {t("settings:models.gap", { category: lower })}

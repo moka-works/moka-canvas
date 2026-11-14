@@ -8,7 +8,7 @@
 //! therefore leaves memory exactly as it was, which is what makes "the disk is
 //! read-only" a reportable condition instead of silent data loss.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -34,7 +34,7 @@ use super::types::{
 };
 use super::{MetadataError, MetadataStore, FILE_STORE, SCHEMA_VERSION};
 use crate::config::{MetadataConfig, RuntimeMode};
-use crate::domain::now_iso;
+use crate::domain::{now_iso, Capability};
 
 /// How many prompt entry caches stay resident. Entries can number in the
 /// thousands per source, so they are the one document loaded on demand.
@@ -424,6 +424,49 @@ impl MetadataStore for FileMetadataStore {
         let target = id;
         self.mutate_secrets(move |secrets| {
             secrets.entries.remove(&target);
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
+    async fn reorder_models(
+        &self,
+        category: Capability,
+        ids: &[String],
+        expected_revision: Option<u64>,
+    ) -> Result<(), MetadataError> {
+        let ordered = ids.to_vec();
+        self.mutate_models(expected_revision, move |models| {
+            // The category's models keep the slots they occupy, so a
+            // rearrangement here never moves another category's models
+            // relative to each other or to this one.
+            let slots: Vec<usize> = models
+                .models
+                .iter()
+                .enumerate()
+                .filter(|(_, model)| model.category == category)
+                .map(|(index, _)| index)
+                .collect();
+            let named: HashSet<&str> = ordered.iter().map(String::as_str).collect();
+            let current: HashSet<&str> = slots
+                .iter()
+                .map(|&index| models.models[index].id.as_str())
+                .collect();
+            if named.len() != ordered.len() || named != current {
+                return Err(MetadataError::invalid(format!(
+                    "an order must name every {} model exactly once",
+                    category.as_str()
+                )));
+            }
+            let rearranged: Vec<ModelConfig> = ordered
+                .iter()
+                .filter_map(|id| models.models.iter().find(|model| model.id == *id))
+                .cloned()
+                .collect();
+            for (index, model) in slots.into_iter().zip(rearranged) {
+                models.models[index] = model;
+            }
             Ok(())
         })
         .await?;

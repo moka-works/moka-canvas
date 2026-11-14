@@ -318,6 +318,23 @@ impl ModelRepo {
         Ok(())
     }
 
+    /// Arranges one category's configurations in the order a reader set.
+    ///
+    /// The stored order is the order every picker offers, and the first
+    /// enabled model is what a capability falls back to, so this is the one
+    /// place that decides both.
+    pub async fn reorder(
+        &self,
+        category: Capability,
+        ids: Vec<String>,
+        expected_revision: Option<u64>,
+    ) -> Result<(), ProviderError> {
+        Ok(self
+            .metadata
+            .reorder_models(category, &ids, expected_revision)
+            .await?)
+    }
+
     /// Stores or clears a credential. An empty value means "clear", so the
     /// client never has to distinguish between a blank field and a removal.
     pub async fn set_key(&self, id: &str, key: Option<&str>) -> Result<ApiKeyView, ProviderError> {

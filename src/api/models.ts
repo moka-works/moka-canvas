@@ -206,6 +206,13 @@ export interface DefaultsPatch {
   expectedRevision?: number | null;
 }
 
+/** The order one category's models are arranged in, as a whole list. */
+export interface ReorderModelsRequest {
+  category: Capability;
+  ids: string[];
+  expectedRevision?: number | null;
+}
+
 /** A group is replaced whole; a field left out keeps its stored value. */
 export interface PreferencesPatch {
   systemPrompt?: string;
@@ -283,6 +290,17 @@ export const modelsApi = {
     const query = revision === undefined ? "" : `?revision=${revision}`;
     return http.request<ModelsView>(`${modelPath(id)}${query}`, {
       method: "DELETE",
+    });
+  },
+
+  /**
+   * Arranges one category's models. The stored order is what every picker
+   * offers, so this is the same order a reader sees everywhere else.
+   */
+  reorder(request: ReorderModelsRequest): Promise<ModelsView> {
+    return http.request<ModelsView>("/api/v1/models/order", {
+      method: "PUT",
+      body: request,
     });
   },
 
