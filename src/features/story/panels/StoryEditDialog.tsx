@@ -28,10 +28,21 @@ import {
   protocolFeatures,
   useModelStore,
 } from "../../settings/modelStore";
-import { editSource, planPictureEdit, type EditPlace } from "../jobs/editPlan";
+import {
+  editSource,
+  editTarget,
+  planPictureEdit,
+  type EditPlace,
+} from "../jobs/editPlan";
+import { jobKey } from "../jobs/plan";
 import { filePictureFromComputer } from "../panels/elementPictures";
-import { useStoryJobStore } from "../stores/storyJobStore";
+import {
+  targetRunning,
+  useStoryJobStore,
+  useStoryJobs,
+} from "../stores/storyJobStore";
 import { storyAskModel } from "../stores/storyModels";
+import { useEditStarts } from "./editStarts";
 
 const START_RADIUS = 24;
 const START_SOFTNESS = 40;
@@ -101,11 +112,27 @@ export function StoryEditDialog({
   const [tool, setTool] = useState<MarkTool>("brush");
   const [radius, setRadius] = useState(START_RADIUS);
   const [softness, setSoftness] = useState(START_SOFTNESS);
-  const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const surface = useRef<HTMLCanvasElement | null>(null);
   const open = useRef<Mark | null>(null);
   open.current = draft;
+
+  // The place this edit is for, named the way the room's records name it: what
+  // says whether the edit is still being handed over, and whether the place is
+  // already being made by the batch a hand-over before it started.
+  const placeKey = jobKey(editTarget(place));
+  const startKey = `${story.id}:${placeKey}`;
+  const starting = useEditStarts((state) => state.starting[startKey] === true);
+  const refused = useEditStarts((state) => state.refused[startKey] ?? null);
+  const beginStart = useEditStarts((state) => state.begin);
+  const settleStart = useEditStarts((state) => state.settle);
+  const refuseStart = useEditStarts((state) => state.refuse);
+  const clearRefusal = useEditStarts((state) => state.clear);
+  const jobs = useStoryJobs(story.id);
+  // A batch already making this place stops the dialog offering to ask again:
+  // the dialog may have been closed and opened while it was on its way.
+  const making = targetRunning(jobs, story.id, placeKey);
+  const busy = starting || making;
 
   useEffect(() => {
     void loadProtocols();
@@ -245,8 +272,9 @@ export function StoryEditDialog({
 
   const submit = async () => {
     if (busy || refusal !== null || source === undefined) return;
-    setBusy(true);
     setFailed(null);
+    clearRefusal(startKey);
+    beginStart(startKey);
     try {
       let maskAssetId: string | undefined;
       if (painting) {
@@ -296,14 +324,17 @@ export function StoryEditDialog({
           model,
         );
       if (record === null) {
-        setFailed(
+        // Kept beside the dialog rather than in it: the reason a place's edit
+        // did not go out outlives the dialog being closed on it.
+        refuseStart(
+          startKey,
           useStoryJobStore.getState().error ?? t("story:pictureEdit.failed"),
         );
         return;
       }
       onClose();
     } finally {
-      setBusy(false);
+      settleStart(startKey);
     }
   };
 
@@ -532,11 +563,13 @@ export function StoryEditDialog({
           />
         </label>
 
-        {failed !== null && <p className="dialog-error">{failed}</p>}
+        {(failed ?? refused) !== null && (
+          <p className="dialog-error">{failed ?? refused}</p>
+        )}
         {refusal !== null && <p className="dialog-error">{refusal}</p>}
 
         <div className="dialog-actions">
-          <button disabled={busy} onClick={onClose} type="button">
+          <button onClick={onClose} type="button">
             {t("editor:action.cancel")}
           </button>
           <button
@@ -546,7 +579,9 @@ export function StoryEditDialog({
             type="submit"
           >
             {busy
-              ? t("story:pictureEdit.filing")
+              ? making
+                ? t("story:pictureEdit.generating")
+                : t("story:pictureEdit.filing")
               : t("story:pictureEdit.submit")}
           </button>
         </div>

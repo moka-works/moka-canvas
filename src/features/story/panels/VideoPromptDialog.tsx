@@ -1,14 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import { errorText } from "../../../api/client";
 import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
-import {
-  withoutVideoPromptOverrides,
-  videoPromptOverride,
-} from "../../../shared/domain/story";
+import { videoPromptOverride } from "../../../shared/domain/story";
 import type {
   StoryDocument,
   StoryVideoPromptOverride,
@@ -17,21 +13,15 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { planActVideos, planKeyframeVideos } from "../jobs/plan";
 import type { PromptContractIssue } from "../jobs/promptContract";
-import { rewriteVideoPrompt, videoPromptRewrite } from "../jobs/promptRewrite";
+import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "./removeOldTake";
+import {
+  useVideoPromptSessions,
+  type VideoPromptPlace,
+} from "./videoPromptSessions";
 import { useStoryRun } from "../stores/storyJobStore";
 
-/** The place whose clip prompts are being edited. */
-export interface VideoPromptPlace {
-  /** An act filmed whole, a bridge, or one shot filmed on its own. */
-  kind: "act" | "shot";
-  chapterId: string;
-  actId: string;
-  /** The shot, where the place is one. */
-  keyframeId?: string;
-  /** What the card calls this place, for the dialog's title. */
-  name: string;
-}
+export type { VideoPromptPlace };
 
 function planFor(story: StoryDocument, place: VideoPromptPlace) {
   return place.kind === "act"
@@ -62,6 +52,11 @@ function secondsOf(params: Record<string, unknown> | undefined): number {
  * model first. A rewrite is one ask of the room's own text model, and what it
  * writes goes back into the field — nothing is sent until the reader presses
  * send over words they have seen.
+ *
+ * What the dialog holds lives beside it rather than inside it, by the place it
+ * was opened on: closing the dialog puts the words aside without taking back a
+ * rewrite they were sent on, and opening it again reads the same session —
+ * including a rewrite still on its way.
  */
 export function VideoPromptDialog({
   story,
@@ -77,31 +72,13 @@ export function VideoPromptDialog({
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
-  // The telling as it stands at the moment the dialog opens: what the asks are
-  // planned from, and the words the reader has already written.
-  const [opened] = useState(() => {
-    const live = liveStory(story.id) ?? story;
-    const auto = planFor(withoutVideoPromptOverrides(live), place);
-    const shown = planFor(live, place);
-    return { live, auto: new Map(auto.map((ask) => [ask.id, ask])), shown };
-  });
-  const [values, setValues] = useState(() =>
-    opened.shown.map((ask) => ask.prompt),
+  const [key] = useState(() =>
+    useVideoPromptSessions.getState().open(story, place),
   );
-  const [error, setError] = useState<string | null>(null);
-  const [rewriting, setRewriting] = useState(false);
-  const [issues, setIssues] = useState<PromptContractIssue[]>([]);
-  const [rewriteError, setRewriteError] = useState<{
-    message: string;
-    detail?: string;
-  } | null>(null);
-  const abort = useRef<AbortController | null>(null);
-  const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
-  const guide = videoPromptRewrite(kind);
-
-  useEffect(() => {
-    return () => abort.current?.abort();
-  }, []);
+  const session = useVideoPromptSessions((state) => state.sessions[key]);
+  const patch = useVideoPromptSessions((state) => state.patch);
+  const drop = useVideoPromptSessions((state) => state.drop);
+  const rewrite = useVideoPromptSessions((state) => state.rewrite);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -111,9 +88,16 @@ export function VideoPromptDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const overrides = opened.live.videoPromptOverrides ?? {};
+  // Only while the save that drops the session is closing the dialog.
+  if (session === undefined) return null;
+  const { live, shown, auto, values, error, rewriting, issues, rewriteError } =
+    session;
+  const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
+  const guide = videoPromptRewrite(kind);
+
+  const overrides = live.videoPromptOverrides ?? {};
   /** Keys written for the asks this place used to have, and no longer has. */
-  const liveIds = new Set(opened.shown.map((ask) => ask.id));
+  const liveIds = new Set(shown.map((ask) => ask.id));
   const prefix =
     place.kind === "act"
       ? `actVideo:${place.chapterId}:${place.actId}`
@@ -124,28 +108,35 @@ export function VideoPromptDialog({
       !liveIds.has(askId),
   );
 
-  const autoPrompt = (askId: string, shown: string) =>
-    opened.auto.get(askId)?.prompt ?? shown;
+  const autoPrompt = (askId: string, shownWords: string) =>
+    auto[askId] ?? shownWords;
+
+  const setValue = (at: number, next: string) => {
+    patch(key, {
+      values: values.map((value, index) => (index === at ? next : value)),
+      error: null,
+      // The checks belong to the words the model wrote; once the reader
+      // changes them they are no longer about these.
+      issues: [],
+      rewriteError: null,
+    });
+  };
 
   const reset = (at: number) => {
-    const ask = opened.shown[at];
+    const ask = shown[at];
     if (ask === undefined) return;
-    const auto = autoPrompt(ask.id, ask.prompt);
-    setValues((held) =>
-      held.map((value, index) => (index === at ? auto : value)),
-    );
-    setError(null);
+    setValue(at, autoPrompt(ask.id, ask.prompt));
   };
 
   const save = (film: boolean) => {
     for (const value of values) {
       if (value.trim() === "") {
-        setError(t("story:storyboard.videoPromptEmpty"));
+        patch(key, { error: t("story:storyboard.videoPromptEmpty") });
         return;
       }
     }
     const prompts: Record<string, StoryVideoPromptOverride | null> = {};
-    opened.shown.forEach((ask, at) => {
+    shown.forEach((ask, at) => {
       const text = values[at] ?? "";
       const auto = autoPrompt(ask.id, ask.prompt);
       const held = overrides[ask.id];
@@ -171,55 +162,21 @@ export function VideoPromptDialog({
       ]);
     }
     if (film) {
-      // The document as it stands after the write, not the render this dialog
-      // was opened from.
-      const live = liveStory(story.id) ?? story;
-      const items = planFor(live, place);
+      // The document as it stands after the write, not the telling this
+      // dialog was opened from.
+      const fresh = liveStory(story.id) ?? story;
+      const items = planFor(fresh, place);
       void run(
         story.id,
         place.kind === "act" ? "actVideo" : "keyframeVideo",
         items,
       );
     }
+    // The telling holds the words now, so the session has nothing left to
+    // keep — and a rewrite still on its way is let go rather than written
+    // over words that were just saved.
+    drop(key);
     onClose();
-  };
-
-  const rewriteAll = async () => {
-    if (guide === null || rewriting) return;
-    setRewriting(true);
-    setRewriteError(null);
-    setIssues([]);
-    const controller = new AbortController();
-    abort.current = controller;
-    const next = [...values];
-    const found: PromptContractIssue[] = [];
-    try {
-      for (const [at, ask] of opened.shown.entries()) {
-        const rewritten = await rewriteVideoPrompt({
-          prompt: values[at] ?? "",
-          ...(ask.promptContext === undefined
-            ? {}
-            : { context: ask.promptContext }),
-          guide,
-          signal: controller.signal,
-        });
-        next[at] = rewritten.prompt;
-        found.push(...rewritten.issues);
-      }
-      setValues(next);
-      setIssues(found);
-    } catch (problem) {
-      if (!controller.signal.aborted) {
-        // The pieces already rewritten stay written: a reader who saw two of
-        // three answers keeps them and is told what the third said.
-        setValues(next);
-        setIssues(found);
-        setRewriteError(errorText(problem));
-      }
-    } finally {
-      abort.current = null;
-      setRewriting(false);
-    }
   };
 
   const issueText = (issue: PromptContractIssue): string => {
@@ -273,22 +230,22 @@ export function VideoPromptDialog({
             : t("story:storyboard.videoPromptHint")}
         </p>
 
-        {opened.shown.length === 0 ? (
+        {shown.length === 0 ? (
           <p className="story-hint">
             {t("story:storyboard.videoPromptNothing")}
           </p>
         ) : (
-          opened.shown.map((ask, at) => {
-            const auto = autoPrompt(ask.id, ask.prompt);
-            const held = videoPromptOverride(opened.live, ask.id);
-            const moved = held !== undefined && held.auto !== fnv1a(auto);
+          shown.map((ask, at) => {
+            const automatic = autoPrompt(ask.id, ask.prompt);
+            const held = videoPromptOverride(live, ask.id);
+            const moved = held !== undefined && held.auto !== fnv1a(automatic);
             return (
               <div className="story-video-prompt-piece" key={ask.id}>
                 <span className="story-video-prompt-caption">
-                  {opened.shown.length > 1
+                  {shown.length > 1
                     ? t("story:storyboard.videoPromptPiece", {
                         index: at + 1,
-                        total: opened.shown.length,
+                        total: shown.length,
                         seconds: secondsOf(ask.params),
                       })
                     : t("story:storyboard.videoPromptSeconds", {
@@ -301,19 +258,7 @@ export function VideoPromptDialog({
                   className="story-video-prompt-text"
                   data-testid={`story-video-prompt-text-${at}`}
                   maxLength={MAX_PROMPT_LENGTH}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setValues((heldValues) =>
-                      heldValues.map((value, index) =>
-                        index === at ? next : value,
-                      ),
-                    );
-                    setError(null);
-                    // The checks belong to the words the model wrote; once
-                    // the reader changes them they are no longer about these.
-                    setIssues([]);
-                    setRewriteError(null);
-                  }}
+                  onChange={(event) => setValue(at, event.target.value)}
                   rows={8}
                   value={values[at] ?? ""}
                 />
@@ -396,7 +341,6 @@ export function VideoPromptDialog({
         <div className="dialog-actions">
           <button
             data-testid="story-video-prompt-cancel"
-            disabled={rewriting}
             onClick={onClose}
             type="button"
           >
@@ -407,8 +351,8 @@ export function VideoPromptDialog({
               {guide !== null && (
                 <button
                   data-testid="story-video-prompt-rewrite"
-                  disabled={rewriting || opened.shown.length === 0}
-                  onClick={() => void rewriteAll()}
+                  disabled={rewriting || shown.length === 0}
+                  onClick={() => rewrite(key)}
                   type="button"
                 >
                   {rewriting
@@ -419,7 +363,7 @@ export function VideoPromptDialog({
               <button
                 className="primary"
                 data-testid="story-video-prompt-send"
-                disabled={rewriting || opened.shown.length === 0}
+                disabled={rewriting || shown.length === 0}
                 onClick={() => save(true)}
                 type="button"
               >
@@ -430,7 +374,7 @@ export function VideoPromptDialog({
             <>
               <button
                 data-testid="story-video-prompt-save"
-                disabled={opened.shown.length === 0}
+                disabled={shown.length === 0}
                 onClick={() => save(false)}
                 type="button"
               >
@@ -439,7 +383,7 @@ export function VideoPromptDialog({
               <button
                 className="primary"
                 data-testid="story-video-prompt-film"
-                disabled={opened.shown.length === 0}
+                disabled={shown.length === 0}
                 onClick={() => save(true)}
                 type="button"
               >

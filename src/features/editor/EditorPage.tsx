@@ -21,6 +21,7 @@ import { usePanelFolds } from "./stores/panelFolds";
 import { usePanelWidths } from "./stores/panelWidths";
 import { useActiveCanvas, useProjectStore } from "./stores/projectStore";
 import { useRunStore, useRunsInFlight } from "./stores/runStore";
+import { useDescribeSessions } from "./stores/describeSessions";
 import { ContextMenu } from "./panels/ContextMenu";
 import { NodeMenu } from "./panels/NodeMenu";
 import { RightPanel } from "./panels/RightPanel";
@@ -131,6 +132,8 @@ export function EditorPage() {
   const finishClose = () => {
     useProjectStore.getState().close();
     useRunStore.getState().reset();
+    // Nothing a picture's description could still be filed into.
+    useDescribeSessions.getState().reset();
     useAppStore.getState().setPhase("launcher");
   };
 

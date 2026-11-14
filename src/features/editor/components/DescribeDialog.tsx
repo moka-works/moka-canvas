@@ -1,40 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { assetUrl, generateApi } from "../../../api";
+import { assetUrl } from "../../../api";
 import { CAPABILITY_LABELS } from "../../../shared/domain";
-import {
-  describeDefaultPrompt,
-  describeFramingPrompt,
-} from "../../../shared/prompts";
 import { useModelStore } from "../../settings/modelStore";
 import { buildResourceIndex } from "../canvas/mediaCards";
-import { fileDescription } from "../interactions/actions";
 import {
   generationUnavailable,
   useGenerationAvailable,
 } from "../stores/appStore";
+import {
+  describeKey,
+  START_QUESTION,
+  useDescribeSessions,
+} from "../stores/describeSessions";
 import { useEditorStore } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
 import { TOOL_LABELS } from "../stores/toolPrefs";
-
-/**
- * What is asked before anybody has said otherwise.
- *
- * The words live in `shared/prompts/editor/describe-default.tmpl`.
- */
-const START_QUESTION = describeDefaultPrompt();
-
-/**
- * How the answer is framed.
- *
- * Sent rather than left to the standing instruction for written answers, which
- * says how to be answered in general: this ask wants one particular thing, words
- * a picture could be made from and nothing around them. A description that
- * arrives wrapped in an announcement of itself has to be unwrapped by hand before
- * it is any use as a prompt. The words live in
- * `shared/prompts/editor/describe-framing.tmpl`.
- */
-const FRAMING = describeFramingPrompt();
 
 /**
  * Asks a model to read a picture back as the words that would make it.
@@ -50,6 +31,10 @@ const FRAMING = describeFramingPrompt();
  * is shown as it arrives so that a model answering about nothing — one that
  * cannot see — is caught here rather than after a second generation spent on its
  * guess.
+ *
+ * The answer belongs to the picture rather than to this dialog: closing the
+ * dialog puts it aside, and opening the dialog again on the same picture shows
+ * the same answer — still arriving, or whole and already filed.
  */
 export function DescribeDialog() {
   const { t } = useTranslation();
@@ -57,31 +42,28 @@ export function DescribeDialog() {
   const moka = useProjectStore((state) => state.moka);
   const view = useModelStore((state) => state.view);
   const reachable = useGenerationAvailable();
-  const [question, setQuestion] = useState(START_QUESTION);
-  const [said, setSaid] = useState("");
   const [unread, setUnread] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Held so an answer still arriving can be let go of, from a key or from the
-  // dialog going away: a stream nobody is going to read still costs what
-  // finishing it costs.
-  const asking = useRef<AbortController | null>(null);
 
   const reading = asked?.tool === "describe" ? asked : null;
-  const key = reading ? `${reading.nodeId}:${reading.assetId}` : null;
+  const key =
+    reading === null ? null : describeKey(reading.nodeId, reading.assetId);
+  const session = useDescribeSessions((state) =>
+    key === null ? undefined : state.sessions[key],
+  );
+  const patch = useDescribeSessions((state) => state.patch);
+  const ask = useDescribeSessions((state) => state.ask);
 
+  // The picture this dialog came up for has its own words; one opened on it
+  // again reads them rather than starting them over.
   useEffect(() => {
-    if (!reading) return;
-    setQuestion(START_QUESTION);
-    setSaid("");
+    if (reading !== null) {
+      useDescribeSessions.getState().open(reading.nodeId, reading.assetId);
+    }
+    // Whether this picture could be drawn is about the picture the dialog is
+    // on now, not the one before it.
     setUnread(false);
-    setFailed(null);
-    setBusy(false);
-    // Let go on the way out as well: the dialog is closed, or open for a
-    // different picture, and either way the answer belongs to nobody now.
-    return () => asking.current?.abort();
-    // The key is the ask: what was said belongs to the picture this dialog came
-    // up for, and not to the one before it.
+    // The key is the picture: what was asked belongs to it, not to the one
+    // before it, and closing the dialog takes nothing back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
@@ -89,23 +71,22 @@ export function DescribeDialog() {
   // one key, and the nearer thing first. Letting go is not closing, because the
   // words that got that far are worth reading.
   useEffect(() => {
-    if (!reading) return;
+    if (key === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      const running = asking.current;
-      if (running) {
-        running.abort();
+      const sessions = useDescribeSessions.getState();
+      if (sessions.sessions[key]?.busy === true) {
+        sessions.abort(key);
         return;
       }
       useEditorStore.getState().closePictureTool();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  if (!reading) return null;
+  if (reading === null || key === null) return null;
   const entry = moka
     ? buildResourceIndex(moka).get(reading.assetId)
     : undefined;
@@ -117,6 +98,10 @@ export function DescribeDialog() {
     (reference !== null
       ? view?.models.find((one) => one.id === reference)
       : null) ?? null;
+  const question = session?.question ?? START_QUESTION;
+  const said = session?.said ?? "";
+  const failed = session?.failed ?? null;
+  const busy = session?.busy === true;
   const refusal = !reachable
     ? generationUnavailable()
     : reference === null
@@ -127,59 +112,14 @@ export function DescribeDialog() {
         ? t("editor:describe.sayWhatToAsk")
         : null;
 
-  const submit = async () => {
-    if (busy || refusal || !reference) return;
-    setBusy(true);
-    setFailed(null);
-    setSaid("");
-    const stop = new AbortController();
-    asking.current = stop;
-    // Gathered beside the state rather than read out of it: what a closure sees
-    // of a state variable is what it was when the closure was made, and an answer
-    // arrives in pieces.
-    let gathered = "";
-    try {
-      const answer = await generateApi.textStream(
-        {
-          capability: "text",
-          model: reference,
-          prompt: question.trim(),
-          system: FRAMING,
-          inputs: [{ role: "reference", assetId: reading.assetId }],
-        },
-        (piece) => {
-          gathered += piece;
-          setSaid(gathered);
-        },
-        stop.signal,
-      );
-      // The whole answer rather than the pieces shown: what gets filed is what
-      // the server settled on, which is the aggregate of the stream.
-      const words = (answer.text ?? gathered).trim();
-      if (words === "") {
-        setFailed(t("editor:describe.nothingCameBack"));
-        return;
-      }
-      const filed = fileDescription({
-        nodeId: reading.nodeId,
-        sourceName: entry.name,
-        words,
-      });
-      if (filed) close();
-      else setFailed(t("editor:describe.wordsNotFiled"));
-    } catch (error) {
-      // Let go of on purpose: nothing to report, and the words that arrived stay
-      // on screen to be read.
-      if ((error as Error).name === "AbortError") return;
-      setFailed(
-        error instanceof Error
-          ? error.message
-          : t("editor:describe.pictureNotRead"),
-      );
-    } finally {
-      asking.current = null;
-      setBusy(false);
-    }
+  const submit = () => {
+    if (busy || refusal !== null || reference === null) return;
+    ask(key, {
+      nodeId: reading.nodeId,
+      assetId: reading.assetId,
+      sourceName: entry.name,
+      model: reference,
+    });
   };
 
   return (
@@ -192,7 +132,7 @@ export function DescribeDialog() {
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
-          void submit();
+          submit();
         }}
         role="dialog"
       >
@@ -215,7 +155,7 @@ export function DescribeDialog() {
           <label className="dialog-field">
             <span>{t("editor:describe.whatToAsk")}</span>
             <textarea
-              onChange={(event) => setQuestion(event.target.value)}
+              onChange={(event) => patch(key, { question: event.target.value })}
               rows={3}
               value={question}
             />
@@ -254,11 +194,11 @@ export function DescribeDialog() {
           </div>
         )}
 
-        {failed && <p className="dialog-error">{failed}</p>}
-        {refusal && <p className="dialog-error">{refusal}</p>}
+        {failed !== null && <p className="dialog-error">{failed}</p>}
+        {refusal !== null && <p className="dialog-error">{refusal}</p>}
 
         <div className="dialog-actions">
-          <button disabled={busy} onClick={close} type="button">
+          <button onClick={close} type="button">
             {t("editor:action.cancel")}
           </button>
           <button

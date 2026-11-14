@@ -344,6 +344,7 @@
     "failed": "The edit was not sent",
     "sourceSize": "The picture is {{width}}×{{height}}",
     "filing": "Sending…",
+    "generating": "Generating…",
     "submit": "Draw a new version"
   },
   "elements": {

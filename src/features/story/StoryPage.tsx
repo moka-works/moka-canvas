@@ -15,6 +15,8 @@ import { StoryIcon } from "./components/StoryIcons";
 import { StoryTopBar } from "./components/StoryTopBar";
 import { StorySide } from "./panels/StorySide";
 import { forgetTextAssets } from "./readText";
+import { useEditStarts } from "./panels/editStarts";
+import { useVideoPromptSessions } from "./panels/videoPromptSessions";
 import { useStoryJobStore } from "./stores/storyJobStore";
 import { useActiveStory, useStoryStore } from "./stores/storyStore";
 
@@ -137,6 +139,10 @@ export function StoryPage() {
       // The batches were that project's: a reader who put the project down is
       // not waited on for anything, and the records are read again on opening.
       useStoryJobStore.getState().reset();
+      // The dialogs' own holds went with it: a rewrite still arriving, a word
+      // not yet saved, a refusal nobody is looking at any more.
+      useEditStarts.getState().reset();
+      useVideoPromptSessions.getState().reset();
       forgetTextAssets();
     }
     useAppStore.getState().setPhase("launcher");

@@ -344,6 +344,7 @@
     "failed": "编辑没有发出去",
     "sourceSize": "原图 {{width}}×{{height}}",
     "filing": "发出中…",
+    "generating": "生成中…",
     "submit": "生成新版本"
   },
   "elements": {

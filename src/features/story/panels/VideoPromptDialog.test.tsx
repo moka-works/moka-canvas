@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -19,6 +20,7 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import { useStoryModels } from "../stores/storyModels";
 import { VideoPromptDialog } from "./VideoPromptDialog";
+import { useVideoPromptSessions } from "./videoPromptSessions";
 
 const ids = storyIds();
 const ASK = `keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`;
@@ -61,6 +63,7 @@ beforeEach(() => {
   useModelStore.setState({ view: null, protocols: null });
   useStoryModels.setState({ choices: {} });
   useHistoryStore.getState().clear();
+  useVideoPromptSessions.getState().reset();
 });
 
 afterEach(() => {
@@ -220,6 +223,51 @@ describe("a clip's prompt before it is filmed", () => {
       expect(
         screen.getByTestId("story-video-prompt-rewrite-error").textContent,
       ).toContain("the text model is not configured"),
+    );
+    text.mockRestore();
+  });
+
+  it("keeps a rewrite going after the dialog is closed, and reads it again on return", async () => {
+    filmWithContract();
+    let answer: (value: GenerateResponse) => void = () => {};
+    const pending = new Promise<GenerateResponse>((resolve) => {
+      answer = resolve;
+    });
+    const text = vi.spyOn(generateApi, "text").mockReturnValue(pending);
+
+    open(undefined, "film");
+    fireEvent.click(screen.getByTestId("story-video-prompt-rewrite"));
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    const signal = text.mock.calls[0]![1] as AbortSignal;
+
+    // The reader clicks outside the dialog: the dialog goes, the ask does not.
+    cleanup();
+    expect(signal.aborted).toBe(false);
+
+    // Opened again on the same shot with the ask still out, the dialog says so
+    // rather than offering to ask a second time.
+    open(undefined, "film");
+    const again = screen.getByTestId("story-video-prompt-rewrite");
+    expect(again.textContent).toBe("Rewriting…");
+    expect(again).toHaveProperty("disabled", true);
+
+    // The answer lands with nothing on screen, and the dialog opened after it
+    // reads the words the ask wrote.
+    await act(async () => {
+      answer({
+        status: "succeeded",
+        outputs: [],
+        text: "integrated_multimodal_description: [Shot 1] She waits.",
+      } as GenerateResponse);
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement)
+          .value,
+      ).toContain("She waits."),
+    );
+    expect(screen.getByTestId("story-video-prompt-rewrite").textContent).toBe(
+      "Rewrite prompt",
     );
     text.mockRestore();
   });

@@ -24,6 +24,7 @@ import { useModelStore } from "../settings/modelStore";
 import { useAppStore } from "./stores/appStore";
 import { useEditorStore } from "./stores/editorStore";
 import { useHistoryStore } from "./stores/historyStore";
+import { useDescribeSessions } from "./stores/describeSessions";
 import { useProjectStore } from "./stores/projectStore";
 import { BAR_ENTRIES, useToolPrefs } from "./stores/toolPrefs";
 
@@ -132,6 +133,10 @@ let answer: { pieces: string[]; closing: Record<string, unknown> } = {
 };
 /** Set when an ask should never finish, the way a slow answer does not. */
 let hangs = false;
+/** Set when the stream holds its ending until the test lets it go. */
+let holding: { release: () => void } | null = null;
+/** The signal the last ask was sent with, for what closing does to it. */
+let streamSignal: AbortSignal | undefined;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -152,6 +157,18 @@ function streaming(signal?: AbortSignal | null): Response {
       for (const piece of answer.pieces) {
         controller.enqueue(encoder.encode(frame("delta", { text: piece })));
       }
+      const end = () => {
+        controller.enqueue(
+          encoder.encode(
+            frame("done", {
+              status: "succeeded",
+              outputs: [],
+              ...answer.closing,
+            }),
+          ),
+        );
+        controller.close();
+      };
       if (hangs) {
         // Let go of the way a connection is: the reader sees the stream fail
         // rather than end, which is what an abort looks like from inside it.
@@ -162,16 +179,11 @@ function streaming(signal?: AbortSignal | null): Response {
         });
         return;
       }
-      controller.enqueue(
-        encoder.encode(
-          frame("done", {
-            status: "succeeded",
-            outputs: [],
-            ...answer.closing,
-          }),
-        ),
-      );
-      controller.close();
+      if (holding !== null) {
+        holding.release = end;
+        return;
+      }
+      end();
     },
   });
   return new Response(body, {
@@ -207,6 +219,7 @@ function route(url: string, init?: RequestInit): Response {
   }
   if (url === "/api/v1/generate/text" && init?.method === "POST") {
     asks.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+    streamSignal = init.signal ?? undefined;
     return streaming(init.signal);
   }
   return json({ code: "NOT_FOUND", message: url, status: 404 }, 404);
@@ -218,6 +231,8 @@ beforeEach(() => {
   asks.length = 0;
   answer = { pieces: [], closing: {} };
   hangs = false;
+  holding = null;
+  streamSignal = undefined;
   executors = ["provider"];
   offersText = true;
   fetchMock.mockReset();
@@ -233,6 +248,7 @@ beforeEach(() => {
   });
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
+  useDescribeSessions.getState().reset();
   useAppStore.setState({ toasts: [], config: null });
   useModelStore.setState({ view: null, error: null });
   useEditorStore.setState({
@@ -546,6 +562,66 @@ describe("reading a picture back as words", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     await act(async () => {});
     expect(screen.queryByTestId("describe-dialog")).toBeNull();
+  });
+
+  it("keeps reading after the dialog is closed, and files the words anyway", async () => {
+    holding = { release: () => {} };
+    answer = {
+      pieces: ["A stone jetty"],
+      closing: { text: "A stone jetty at dusk" },
+    };
+    const dialog = await openDescribe();
+    await act(async () => {
+      fireEvent.submit(dialog);
+    });
+    await settle();
+    expect(screen.getByTestId("describe-answer").textContent).toBe(
+      "A stone jetty",
+    );
+
+    // The reader clicks outside: the dialog goes, the ask does not.
+    fireEvent.click(dialog.parentElement!);
+    await settle();
+    expect(screen.queryByTestId("describe-dialog")).toBeNull();
+    expect(streamSignal?.aborted).toBe(false);
+
+    // The answer finishes with nothing on screen, and is filed all the same.
+    act(() => holding!.release());
+    await settle();
+    expect(contentOf(filedWords()[0])).toBe("A stone jetty at dusk");
+  });
+
+  it("shows an answer still arriving when the dialog is opened again", async () => {
+    hangs = true;
+    answer = { pieces: ["A stone jetty"], closing: {} };
+    const dialog = await openDescribe();
+    await act(async () => {
+      fireEvent.submit(dialog);
+    });
+    await settle();
+    fireEvent.click(dialog.parentElement!);
+    await settle();
+    expect(screen.queryByTestId("describe-dialog")).toBeNull();
+
+    // Opened again on the same picture, the words that arrived are still there
+    // and the answer is still being read.
+    fireEvent.click(
+      within(await screen.findByTestId("node-action-bar")).getByRole("button", {
+        name: "Describe",
+      }),
+    );
+    const again = screen.getByTestId("describe-dialog");
+    expect(within(again).getByTestId("describe-answer").textContent).toBe(
+      "A stone jetty",
+    );
+    expect(askButton(again)).toHaveProperty("disabled", true);
+    expect(streamSignal?.aborted).toBe(false);
+
+    // Escape still lets go of the answer rather than closing over it.
+    fireEvent.keyDown(window, { key: "Escape" });
+    await settle();
+    expect(screen.getByTestId("describe-dialog")).toBeTruthy();
+    expect(askButton(again)).toHaveProperty("disabled", false);
   });
 
   it("refuses an empty question rather than asking one", async () => {
