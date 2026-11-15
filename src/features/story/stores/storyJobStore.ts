@@ -52,6 +52,7 @@ import {
   jobKey,
   planChapterRewrite,
   planElementArtWaves,
+  planKeyframeArtWaves,
 } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { storyParallel } from "./storyBatch";
@@ -933,6 +934,22 @@ export async function retryFailed(
     }
     return;
   }
+  // A frame is drawn by the model its row names, so a batch that lost several
+  // of them is handed over as one ask per model rather than all of them to the
+  // step's own.
+  if (job.kind === "keyframeArt") {
+    const targets = failed.flatMap((item) =>
+      item.target.kind === "keyframeArt" ? [item.target] : [],
+    );
+    const waves = planKeyframeArtWaves(story, targets);
+    for (const wave of waves) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "keyframeArt", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
   const planned = failed.flatMap((item) => againFor(story, item));
   const items = [...new Map(planned.map((item) => [item.id, item])).values()];
   if (items.length === 0) return;
@@ -1029,6 +1046,16 @@ export async function redoTarget(
       const record = await useStoryJobStore
         .getState()
         .start(story.id, "elementArt", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
+  if (target.kind === "keyframeArt") {
+    const waves = planKeyframeArtWaves(story, [target]);
+    for (const wave of waves) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "keyframeArt", wave.items, wave.model);
       if (record === null) return;
     }
     return;

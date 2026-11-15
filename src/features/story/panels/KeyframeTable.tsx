@@ -55,13 +55,17 @@ import {
   filmRoleOf,
   jobKey,
   keyframeCast,
-  planKeyframeArt,
+  planKeyframeArtWaves,
   planKeyframeVideos,
   settledRoleFrames,
 } from "../jobs/plan";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
-import { useStoryRun, useStoryWavesRun } from "../stores/storyJobStore";
+import {
+  useStoryRun,
+  useStoryWavesAsk,
+  useStoryWavesRun,
+} from "../stores/storyJobStore";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { storyMentionOptions } from "./storyMentions";
@@ -81,6 +85,7 @@ import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { VideoPromptDialog } from "./VideoPromptDialog";
+import { ModelPicker } from "../../settings/ModelPicker";
 
 /** How wide the little references beside a frame's ask are asked for: they are
     drawn 44 px square, and the inspector shows the file itself. */
@@ -298,6 +303,7 @@ function KeyframeRow({
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
+  const runArt = useStoryWavesAsk();
   const [picking, setPicking] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -349,10 +355,10 @@ function KeyframeRow({
     writeKeyframe(story, chapterId, act, keyframe.id, patch);
 
   const draw = () => {
-    const [item] = planKeyframeArt(story, [
+    const waves = planKeyframeArtWaves(story, [
       { chapterId, actId: act.id, keyframeId: keyframe.id },
     ]);
-    if (item !== undefined) void run(story.id, "keyframeArt", [item]);
+    void runArt(story.id, "keyframeArt", waves);
   };
 
   // A frame may be taken from the shelf or from this computer as well as
@@ -548,6 +554,20 @@ function KeyframeRow({
                 step={0.1}
                 type="number"
                 value={Math.round((keyframe.durationMs / 1000) * 10) / 10}
+              />
+            </span>
+            <span className="story-kf-attr-label">
+              {t("story:storyboard.imageModel")}
+            </span>
+            <span className="story-kf-attr-control story-kf-model">
+              <ModelPicker
+                ariaLabel={cell(t("story:storyboard.imageModel"))}
+                capability="image"
+                label={null}
+                noneLabel={t("story:storyboard.modelGlobal")}
+                onChange={(reference) => write({ imageModel: reference })}
+                testId={`story-kf-image-model-${index}`}
+                value={keyframe.imageModel ?? null}
               />
             </span>
           </div>

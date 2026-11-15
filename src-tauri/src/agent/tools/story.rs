@@ -592,6 +592,7 @@ fn keyframe_from(
             video: empty_slot(),
             voices: None,
             variant_choices: Default::default(),
+            image_model: None,
         });
     if let Some(title) = value.get("title").and_then(Value::as_str) {
         keyframe.title = title.to_string();

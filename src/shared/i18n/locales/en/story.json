@@ -611,6 +611,8 @@
     "content": "What is shown",
     "dialogue": "Lines",
     "duration": "Length",
+    "imageModel": "Image model",
+    "modelGlobal": "Use the step's model",
     "frame": "Frame",
     "clip": "Clip",
     "rowActions": "",

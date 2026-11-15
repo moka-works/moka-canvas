@@ -903,6 +903,11 @@ export interface StoryKeyframe {
    * story reads as the default one, so a stale choice is harmless.
    */
   variantChoices?: Record<string, string>;
+  /**
+   * The picture model this one frame is drawn by, where the reader has named
+   * one of its own rather than leaving the step's model to draw it.
+   */
+  imageModel?: string;
 }
 
 /** One picture a shot carries outside its cast, and what it is for. */
@@ -1342,6 +1347,8 @@ export interface StoryKeyframePatch {
   extraReferences?: StoryExtraReference[];
   /** Which form each mentioned element travels as; an empty map clears them. */
   variantChoices?: Record<string, string>;
+  /** The picture model drawn of this frame; a null hands it to the step's own. */
+  imageModel?: string | null;
 }
 
 /**

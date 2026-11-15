@@ -135,6 +135,7 @@ fn frame(index: usize) -> StoryKeyframe {
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
+        image_model: None,
     }
 }
 
@@ -255,6 +256,7 @@ fn story_document() -> MokaFile {
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
+        image_model: None,
     };
     let second = StoryKeyframe {
         id: FRAME_SECOND.into(),
@@ -270,6 +272,7 @@ fn story_document() -> MokaFile {
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
+        image_model: None,
     };
 
     moka.stories = Some(vec![StoryDocument {
@@ -1367,6 +1370,46 @@ fn keeps_a_shots_role_in_filming_on_the_side_of_the_plain_word() {
     assert!(!serde_json::to_string(&keyframes[1])
         .unwrap()
         .contains("filmRole"));
+}
+
+#[test]
+fn names_the_picture_model_one_frame_is_drawn_by() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_FIRST.into(),
+            patch: StoryKeyframePatch {
+                image_model: Some(Some("paint-2".into())),
+                ..Default::default()
+            },
+        }],
+    );
+    let frames = &story_of(&set).chapters[0].acts[0].keyframes;
+    assert_eq!(frames[0].image_model.as_deref(), Some("paint-2"));
+    // The shot beside it was never named, so it stays with the step's model.
+    assert_eq!(frames[1].image_model, None);
+
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_FIRST.into(),
+            patch: StoryKeyframePatch {
+                image_model: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        story_of(&cleared).chapters[0].acts[0].keyframes[0].image_model,
+        None
+    );
 }
 
 #[test]

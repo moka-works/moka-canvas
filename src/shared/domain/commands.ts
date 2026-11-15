@@ -2747,14 +2747,28 @@ function applyOne(
             );
         }
       }
+      if (
+        command.patch.imageModel !== undefined &&
+        command.patch.imageModel !== null
+      ) {
+        const model = command.patch.imageModel.trim();
+        if (model === "" || model.length > VOICE_MODEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyElementModelInvalid"),
+          );
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
       ) as (keyof typeof command.patch)[]) {
-        (previous as Record<string, unknown>)[key] = keyframe[key];
+        (previous as Record<string, unknown>)[key] = keyframe[key] ?? null;
       }
       if (command.patch.variantChoices !== undefined) {
         previous.variantChoices = { ...(keyframe.variantChoices ?? {}) };
+      }
+      if (command.patch.imageModel !== undefined) {
+        previous.imageModel = keyframe.imageModel ?? null;
       }
       const chapters = story.chapters.map((held) =>
         held.id === command.chapterId
@@ -2773,6 +2787,8 @@ function applyOne(
                           Object.keys(command.patch.variantChoices).length === 0
                         )
                           delete merged.variantChoices;
+                        if (command.patch.imageModel === null)
+                          delete merged.imageModel;
                         return merged;
                       }),
                     }

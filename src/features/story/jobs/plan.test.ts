@@ -24,6 +24,7 @@ import {
   planElementMergeWaves,
   planElements,
   planKeyframeArt,
+  planKeyframeArtWaves,
   planKeyframeVideos,
   planLineVoiceAsks,
   planOutline,
@@ -489,6 +490,32 @@ describe("planning the drawings", () => {
     ]);
     expect(waves[1]?.items.map((item) => item.id)).toEqual([
       `element:main:${ids.prop}`,
+    ]);
+  });
+
+  it("gathers a board's frames by the picture model each row names", () => {
+    const held = story();
+    held.chapters[0]!.acts[0]!.keyframes[0]!.imageModel = "paint-2";
+
+    const waves = planKeyframeArtWaves(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameSecond,
+      },
+    ]);
+
+    expect(waves.map((wave) => wave.model)).toEqual(["paint-2", null]);
+    expect(waves[0]?.items.map((item) => item.id)).toEqual([
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`,
+    ]);
+    expect(waves[1]?.items.map((item) => item.id)).toEqual([
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`,
     ]);
   });
 

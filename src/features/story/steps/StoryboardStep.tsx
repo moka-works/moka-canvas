@@ -29,15 +29,15 @@ import { ActCard } from "../panels/ActCard";
 import { TransitionCard } from "../panels/TransitionCard";
 import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
 import { chapterGuesses } from "../jobs/apply";
-import { jobKey, planKeyframeArt, planStoryboard } from "../jobs/plan";
+import { jobKey, planKeyframeArtWaves, planStoryboard } from "../jobs/plan";
 import {
   actRuns,
   boardRuns,
   kindRunning,
-  useStoryBulkRun,
   useStoryJobs,
   useStoryJobStore,
   useStoryRun,
+  useStoryWavesAsk,
 } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 import { useField } from "../panels/useField";
@@ -69,7 +69,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const jobs = useStoryJobs(story.id);
   const failure = useStoryJobStore((state) => state.error);
   const run = useStoryRun();
-  const runBulk = useStoryBulkRun();
+  const runArt = useStoryWavesAsk();
   const openChapterId = useStoryStore((state) => state.openChapterId);
   const [asking, setAsking] = useState(false);
   const [granularityTo, setGranularityTo] =
@@ -288,10 +288,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
               <button
                 data-testid="story-board-draw-missing"
                 onClick={() =>
-                  void runBulk(
+                  void runArt(
                     story.id,
                     "keyframeArt",
-                    planKeyframeArt(story, missingFrames),
+                    planKeyframeArtWaves(story, missingFrames),
                   )
                 }
                 type="button"

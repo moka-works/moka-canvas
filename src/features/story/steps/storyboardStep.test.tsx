@@ -37,7 +37,11 @@ const ids = storyIds();
 const T0 = "2026-01-01T00:00:00.000Z";
 
 /** What the room handed the server, in the order it handed it over. */
-let starts: Array<{ kind: StoryJobKind; items: StoryJobItemDraft[] }> = [];
+let starts: Array<{
+  kind: StoryJobKind;
+  items: StoryJobItemDraft[];
+  model?: string | null;
+}> = [];
 /** The batches the server is holding, newest first. */
 let held: StoryJobRecord[] = [];
 /** What each piece of the next batch is answered with, by the piece's id. */
@@ -84,8 +88,13 @@ function serving(): void {
           const body = JSON.parse(String(init?.body ?? "{}")) as {
             kind: StoryJobKind;
             items: StoryJobItemDraft[];
+            model?: string | null;
           };
-          starts.push({ kind: body.kind, items: body.items });
+          starts.push({
+            kind: body.kind,
+            items: body.items,
+            model: body.model ?? null,
+          });
           const record = batchOf(starts.length, body.kind, body.items);
           held = [record, ...held];
           return json(record);
@@ -461,6 +470,41 @@ function filmingAt(seconds: number): void {
   });
 }
 
+/** The settings with two picture models, one of them the deployment's own. */
+function paintingWithTwoModels(): void {
+  filmingAt(6);
+  const view = useModelStore.getState().view;
+  if (view === null) throw new Error("the settings were just set");
+  useModelStore.setState({
+    view: {
+      ...view,
+      models: [
+        {
+          id: "paint-1",
+          category: "image",
+          protocol: "openaiImage",
+          url: "https://provider.test/images",
+          model: "paint-1",
+          displayName: "Paint One",
+          enabled: true,
+          apiKey: { set: false, masked: null },
+        },
+        {
+          id: "paint-2",
+          category: "image",
+          protocol: "openaiImage",
+          url: "https://provider.test/images",
+          model: "paint-2",
+          displayName: "Paint Two",
+          enabled: true,
+          apiKey: { set: false, masked: null },
+        },
+      ],
+      defaults: { ...view.defaults, image: "paint-1" },
+    },
+  });
+}
+
 /** The settings with a video model that films at most this long. */
 function filmingWithCeiling(maxSeconds: number): void {
   filmingAt(6);
@@ -500,6 +544,10 @@ beforeEach(() => {
   useProjectStore.getState().close();
   useStoryStore.getState().forget();
   useStoryJobStore.getState().reset();
+  // The history outlives a project being put down, and every test is a room
+  // entered afresh: without this, one test's edits stand under the next one's
+  // undo, and enough of them fill the stack with the doors between rooms.
+  useHistoryStore.getState().clear();
 });
 
 afterEach(() => {
@@ -544,6 +592,47 @@ describe("writing an episode's board", () => {
     expect(within(card(0)).getByTestId("story-table")).toBeDefined();
     expect(acts()).toHaveLength(1);
     expect(acts()[0]?.keyframes).toHaveLength(2);
+  });
+
+  it("names the picture model of one frame, and asks that frame of it", async () => {
+    paintingWithTwoModels();
+    openAtBoard(withUndrawnFrames());
+
+    const picker = screen.getByTestId(
+      "story-kf-image-model-0",
+    ) as HTMLSelectElement;
+    expect(picker.value).toBe("");
+    fireEvent.change(picker, { target: { value: "paint-2" } });
+    expect(acts()[0]?.keyframes[0]?.imageModel).toBe("paint-2");
+
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(2));
+    // Both asks are out before the test leaves: a start still settling is a
+    // batch of the last test landing in the next one.
+    await waitFor(() =>
+      expect(useStoryJobStore.getState().starting).toBe(false),
+    );
+    expect(starts.map((batch) => batch.model)).toEqual(["paint-2", null]);
+    expect(starts[0]?.items.map((item) => item.id)).toEqual([
+      "keyframe:chapter-first:act-1:frame-1",
+    ]);
+    expect(starts[1]?.items.map((item) => item.id)).toEqual([
+      "keyframe:chapter-first:act-1:frame-2",
+    ]);
+    await comesBack(1);
+    await comesBack(2);
+    await waitFor(() =>
+      expect(
+        acts()[0]?.keyframes.every((keyframe) => keyframe.art.takes.length > 0),
+      ).toBe(true),
+    );
+
+    // Clearing the choice hands the frame back to the step's own model.
+    fireEvent.change(
+      screen.getByTestId("story-kf-image-model-0") as HTMLSelectElement,
+      { target: { value: "" } },
+    );
+    expect(acts()[0]?.keyframes[0]?.imageModel).toBeUndefined();
   });
 
   it("marks a frame whose reference was redrawn, and draws it again from it", async () => {
@@ -1984,12 +2073,12 @@ describe("a telling at the stress ceilings", () => {
 
     // A budget per shot rather than one flat number: the board is a row of
     // cells with its slots and its words, and how many rows an episode holds
-    // is the telling's business. Measured at about fifty-five nodes a shot.
+    // is the telling's business. Measured at about eighty-five nodes a shot.
     const shots = standing.acts.reduce(
       (sum, act) => sum + act.keyframes.length,
       0,
     );
-    expect(document.querySelectorAll("body *").length).toBeLessThan(shots * 80);
+    expect(document.querySelectorAll("body *").length).toBeLessThan(shots * 90);
   });
 });
 

@@ -31,13 +31,12 @@ import {
   planActMusic,
   planActVideos,
   planElementArtWaves,
-  planKeyframeArt,
+  planKeyframeArtWaves,
   planLineVoiceAsks,
   videoCeiling,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import {
-  useStoryBulkRun,
   useStoryRun,
   useStoryWavesAsk,
   useStoryWavesRun,
@@ -126,7 +125,6 @@ export function ActCard({
 }) {
   const { t } = useTranslation();
   const run = useStoryRun();
-  const runBulk = useStoryBulkRun();
   const runWaves = useStoryWavesRun();
   const runArt = useStoryWavesAsk();
   const moka = useProjectStore((state) => state.moka);
@@ -287,7 +285,7 @@ export function ActCard({
   ).length;
 
   const drawMissing = () => {
-    const items = planKeyframeArt(
+    const waves = planKeyframeArtWaves(
       story,
       drawable.map((keyframe) => ({
         chapterId,
@@ -295,7 +293,7 @@ export function ActCard({
         keyframeId: keyframe.id,
       })),
     );
-    void runBulk(story.id, "keyframeArt", items);
+    void runArt(story.id, "keyframeArt", waves);
   };
 
   const filmAct = () => {
@@ -675,10 +673,10 @@ export function ActCard({
           <button
             data-testid={`story-act-redraw-stale-${index}`}
             onClick={() =>
-              void runBulk(
+              void runArt(
                 story.id,
                 "keyframeArt",
-                planKeyframeArt(
+                planKeyframeArtWaves(
                   story,
                   stale.map((keyframe) => ({
                     chapterId,

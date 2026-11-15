@@ -13,9 +13,14 @@ interface Props {
   /**
    * What the field is called here, when the capability's own name is not what
    * this place calls it: a telling's score and its voice are both asked of an
-   * audio model, and the two are not the same thing to ask for.
+   * audio model, and the two are not the same thing to ask for. Null stands
+   * the field in a row that carries its own label.
    */
-  label?: string;
+  label?: string | null;
+  /** What the select is called where it has no visible label of its own. */
+  ariaLabel?: string;
+  /** The name the select answers to in tests, where a place names one. */
+  testId?: string;
 }
 
 /**
@@ -33,6 +38,8 @@ export function ModelPicker({
   disabled = false,
   noneLabel,
   label,
+  ariaLabel,
+  testId,
 }: Props) {
   const { t } = useTranslation();
   const view = useModelStore((state) => state.view);
@@ -45,8 +52,12 @@ export function ModelPicker({
 
   return (
     <label className="dialog-field">
-      <span>{label ?? t(CAPABILITY_LABELS[capability])}</span>
+      {label !== null && (
+        <span>{label ?? t(CAPABILITY_LABELS[capability])}</span>
+      )}
       <select
+        aria-label={ariaLabel}
+        data-testid={testId}
         disabled={disabled}
         onChange={(event) =>
           onChange(event.target.value === "" ? null : event.target.value)

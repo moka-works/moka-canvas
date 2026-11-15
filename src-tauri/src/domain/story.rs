@@ -437,6 +437,10 @@ pub struct StoryKeyframe {
     /// element id. Absent for an element means its default form.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variant_choices: BTreeMap<String, String>,
+    /// The picture model this frame is drawn by, where the reader named one of
+    /// its own rather than leaving the step's model to draw it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -802,6 +806,14 @@ pub struct StoryKeyframePatch {
     /// The form each mentioned element travels as; an empty map clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_choices: Option<BTreeMap<String, String>>,
+    /// The picture model drawn of this frame; a null hands it back to the
+    /// step's own.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub image_model: Option<Option<String>>,
 }
 
 /// The fields a caller may move on an assembly, for `setStoryEdit`.
@@ -2410,6 +2422,15 @@ pub fn apply_story_command(
                     }
                 }
             }
+            if let Some(Some(model)) = &patch.image_model {
+                let model = model.trim();
+                if model.is_empty() || model.chars().count() > MODEL_REFERENCE_MAX {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The frame's picture model is not a model name",
+                    ));
+                }
+            }
             let previous = StoryKeyframePatch {
                 title: patch.title.as_ref().map(|_| keyframe.title.clone()),
                 shot_size: patch.shot_size.map(|_| keyframe.shot_size),
@@ -2423,6 +2444,10 @@ pub fn apply_story_command(
                     .variant_choices
                     .as_ref()
                     .map(|_| keyframe.variant_choices.clone()),
+                image_model: patch
+                    .image_model
+                    .as_ref()
+                    .map(|_| keyframe.image_model.clone()),
             };
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2463,6 +2488,9 @@ pub fn apply_story_command(
                         }
                         if let Some(choices) = &patch.variant_choices {
                             frame.variant_choices = choices.clone();
+                        }
+                        if let Some(model) = &patch.image_model {
+                            frame.image_model = model.clone();
                         }
                     }
                 }

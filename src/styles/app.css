@@ -8904,6 +8904,20 @@ button > .story-spin {
   min-width: 72px;
 }
 
+/* The frame's own picture model stands in the same rail as the framing fields:
+   the picker's wrapper is dropped so its select sits beside the label, and the
+   select is held narrow so a long model name does not widen the column. */
+.story-kf-model .dialog-field {
+  display: contents;
+}
+
+.story-kf-model select {
+  flex: 1 1 auto;
+  max-width: 150px;
+  min-width: 84px;
+  width: auto;
+}
+
 .story-kf-attr-control > .story-dialogue-toggle {
   flex: 1 1 auto;
   min-width: 0;

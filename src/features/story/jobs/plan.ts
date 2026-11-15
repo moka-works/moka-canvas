@@ -1047,6 +1047,52 @@ export function planKeyframeArt(
   });
 }
 
+/**
+ * The picture model a frame is drawn by: the one the reader named for it, and
+ * otherwise the one the step is set to draw its pictures with.
+ */
+export function keyframeArtModel(
+  story: StoryDocument,
+  target: { chapterId: string; actId: string; keyframeId: string },
+): string | null {
+  const keyframe = keyframeAt(story, target);
+  const own = (keyframe?.imageModel ?? "").trim();
+  return own === "" ? storyAskModel("keyframeArt") : own;
+}
+
+/**
+ * A board's frames, gathered by the model that will draw them.
+ *
+ * A batch is asked of one model, so a board whose frames name models of their
+ * own is handed over as several asks rather than quietly drawn by one model.
+ * Each ask is cut to what a batch may carry, as a whole board is.
+ */
+export function planKeyframeArtWaves(
+  story: StoryDocument,
+  targets: Array<{ chapterId: string; actId: string; keyframeId: string }>,
+): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
+  const groups = new Map<
+    string,
+    { model: string | null; items: StoryJobItemDraft[] }
+  >();
+  const seen = new Set<string>();
+  for (const item of planKeyframeArt(story, targets)) {
+    if (item.target.kind !== "keyframeArt" || seen.has(item.id)) continue;
+    seen.add(item.id);
+    const model = keyframeArtModel(story, item.target);
+    const key = model ?? "";
+    const group = groups.get(key) ?? { model, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap(({ model, items }) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model,
+      items: wave,
+    })),
+  );
+}
+
 // -----------------------------------------------------------------------------
 // Step four: the clips
 // -----------------------------------------------------------------------------
