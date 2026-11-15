@@ -39,6 +39,7 @@ import storyChapter from "./story/chapter.tmpl?raw";
 import storyElements from "./story/elements.tmpl?raw";
 import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
+import storyRevision from "./story/revise.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
 import storyKeyframe from "./story/keyframe.tmpl?raw";
@@ -343,6 +344,69 @@ function storyElementsList(
         `- ${element.name} (${element.kind}) — ${element.description}`,
     )
     .join("\n");
+}
+
+/** One shot of a board, as a revision of the outline reads it. */
+export interface StoryRevisionFrame {
+  id: string;
+  title: string;
+  shotSize: string;
+  cameraMove: string;
+  angle: string;
+  durationMs: number;
+  content: string;
+  dialogue: Array<{
+    id: string;
+    speaker: string;
+    text: string;
+    tone?: string;
+  }>;
+  /** What has already been made from this shot, in a reader's words. */
+  made: string;
+}
+
+/** One act of a board, with the shots a revision may touch. */
+export interface StoryRevisionAct {
+  id: string;
+  title: string;
+  summary: string;
+  frames: StoryRevisionFrame[];
+}
+
+/**
+ * A chapter's board revised from a newer outline.
+ *
+ * The two outlines travel whole rather than as a diff, because what the model
+ * is asked for is the meaning of the change and not the lines of it: a rewrite
+ * of one sentence may leave every shot standing, and a small aside may change
+ * three. The board travels with the ids every answer must use, which is what
+ * keeps the answer a patch rather than a board written again.
+ */
+export function storyRevisionPrompt(
+  input: StoryFacts & {
+    number: number;
+    before: { title: string; text: string };
+    after: { title: string; text: string };
+    targetDurationMs: number;
+    elements: Array<{
+      kind: StoryElementKind;
+      name: string;
+      description: string;
+    }>;
+    acts: StoryRevisionAct[];
+    shotSizes: readonly string[];
+    cameraMoves: readonly string[];
+    angles: readonly string[];
+  },
+): string {
+  return [
+    storyFactsPrompt(input),
+    render(storyRevision, {
+      ...input,
+      elements: storyElementsList(input.elements),
+      seconds: Math.round(input.targetDurationMs / 1000),
+    }),
+  ].join("\n\n");
 }
 
 /** A character, a place or a thing, drawn on its own. */

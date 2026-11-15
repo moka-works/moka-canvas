@@ -1,0 +1,71 @@
+Chapter {{ number }}: {{ after.title }}
+The chapter is meant to run about {{ seconds }} seconds.
+
+The outline the board was written from:
+--- OLD
+{{ before.text }}
+--- OLD END
+
+The outline as it stands now:
+--- NEW
+{{ after.text }}
+--- NEW END
+
+The board as it stands now, with the ids every answer must use:
+
+{% for act in acts %}
+Act {{ act.id }} — {{ act.title }}
+Summary: {{ act.summary }}
+{% for frame in act.frames %}
+Frame {{ frame.id }} — {{ frame.title }}
+  Shot: {{ frame.shotSize }}, {{ frame.cameraMove }}, {{ frame.angle }}, {{ frame.durationMs }} ms
+  Content: {{ frame.content }}
+{% if frame.dialogue.length > 0 %}
+  Dialogue:
+{% for line in frame.dialogue %}
+    [{{ line.id }}] {{ line.speaker }}: {{ line.text }}{% if line.tone %} ({{ line.tone }}){% endif %}
+{% endfor %}
+{% endif %}
+  Already made: {{ frame.made }}
+{% endfor %}
+{% endfor %}
+
+The cast, by the names the content must use:
+
+{{ elements }}
+
+Change only what the new outline makes wrong. A frame whose words still tell the truth is left out of the answer entirely.
+- Treat the difference between the old and the new outline as the whole change: do not rephrase what the outline did not change.
+- Keep every id exactly as given. Never add, remove or reorder acts or frames.
+- If the change needs an act or a frame added, removed or reordered, say so with "needsRebuild": true and change nothing.
+- If the change is a fact no shot's words can carry, put it in "unmapped" and change nothing about it.
+- Bridges between acts are not listed here; a change that belongs on one goes in "unmapped".
+- When a frame's content changes, name cast members in backticks as before, and only names from the cast list.
+- When a frame's dialogue changes, send the frame's whole list. Keep the id of every line that stays; leave the id off a new line.
+- Framing must come from these lists, written exactly as listed:
+  shotSize: {% for size in shotSizes %}{{ size }}{% if not loop.last %}, {% endif %}{% endfor %}
+  cameraMove: {% for move in cameraMoves %}{{ move }}{% if not loop.last %}, {% endif %}{% endfor %}
+  angle: {% for angle in angles %}{{ angle }}{% if not loop.last %}, {% endif %}{% endfor %}
+- A field an act or frame keeps unchanged is left off its answer, except dialogue: a dialogue list sent replaces the old one.
+- Write the words in the same language as the outline.
+
+Answer with a single fenced json block and nothing else:
+
+```json
+{
+  "summary": "…",
+  "needsRebuild": false,
+  "unmapped": [],
+  "acts": [
+    { "actId": "…", "title": "…", "summary": "…" }
+  ],
+  "keyframes": [
+    {
+      "actId": "…", "keyframeId": "…", "reason": "…",
+      "content": "…",
+      "dialogue": [ { "id": "…", "speaker": "…", "text": "…", "tone": "…" } ],
+      "shotSize": "…", "cameraMove": "…", "angle": "…"
+    }
+  ]
+}
+```

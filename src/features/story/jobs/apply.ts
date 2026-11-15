@@ -222,6 +222,7 @@ function slotTargetOf(item: StoryJobItem): StorySlotTarget | undefined {
     case "outline":
     case "elements":
     case "storyboard":
+    case "outlineRevision":
       return undefined;
   }
 }
@@ -828,6 +829,11 @@ export function applyJobResults(
   record: StoryJobRecord,
   context?: ApplyContext,
 ): ApplyReport {
+  // A revision is a proposal, not an answer: the reader applies it from its
+  // preview, so a look never writes it in.
+  if (record.kind === "outlineRevision") {
+    return { applied: 0, skipped: record.items.length, notes: [] };
+  }
   const story = storyOf(record);
   if (story === undefined) {
     return {

@@ -118,6 +118,7 @@ fn target_label(target: &StoryTarget) -> String {
         StoryTarget::Outline => "outline".to_string(),
         StoryTarget::Elements => "elements".to_string(),
         StoryTarget::Storyboard { .. } => "storyboard".to_string(),
+        StoryTarget::OutlineRevision { .. } => "outline revision".to_string(),
         StoryTarget::ElementArt { view, .. } => match view {
             StoryArtView::Main => "element art".to_string(),
             StoryArtView::Turnaround => "element sheet".to_string(),
@@ -137,6 +138,7 @@ fn kind_word(kind: StoryJobKind) -> &'static str {
         StoryJobKind::Outline => "outline",
         StoryJobKind::Elements => "elements",
         StoryJobKind::Storyboard => "storyboard",
+        StoryJobKind::OutlineRevision => "outlineRevision",
         StoryJobKind::ElementArt => "elementArt",
         StoryJobKind::KeyframeArt => "keyframeArt",
         StoryJobKind::ActVideo => "actVideo",

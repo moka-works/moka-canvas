@@ -17,6 +17,7 @@ export type StoryJobKind =
   | "outline"
   | "elements"
   | "storyboard"
+  | "outlineRevision"
   | "elementArt"
   | "keyframeArt"
   | "actVideo"
@@ -36,6 +37,8 @@ export type StoryTarget =
   | { kind: "outline" }
   | { kind: "elements" }
   | { kind: "storyboard"; chapterId: string }
+  /** A board revised from a newer outline, answered as a patch rather than a board. */
+  | { kind: "outlineRevision"; chapterId: string }
   | {
       kind: "elementArt";
       elementId: string;

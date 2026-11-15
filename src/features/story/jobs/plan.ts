@@ -32,6 +32,8 @@ import {
 import {
   actAt,
   actPlannedMs,
+  chapterOutlineAhead,
+  chapterRevision,
   chunkWaves,
   currentTake,
   elementForm,
@@ -79,11 +81,14 @@ import {
   storyKeyframeVideoPrompt,
   storyMergeElementsPrompt,
   storyOutlinePrompt,
+  storyRevisionPrompt,
   storyStoryboardPrompt,
   storySystemPrompt,
   storyTransitionVideoPrompt,
   type StoryFacts,
   type StoryLook,
+  type StoryRevisionAct,
+  type StoryRevisionFrame,
 } from "../../../shared/prompts";
 import {
   castFor,
@@ -117,6 +122,8 @@ export function jobKey(target: StoryTarget): string {
       return "elements";
     case "storyboard":
       return `storyboard:${target.chapterId}`;
+    case "outlineRevision":
+      return `outlineRevision:${target.chapterId}`;
     case "elementArt":
       return targetKey({
         kind: "element",
@@ -731,6 +738,110 @@ export function planStoryboard(
       },
     ];
   });
+}
+
+/**
+ * The revision of one chapter's board from an outline that has moved on.
+ *
+ * Both outlines travel, and the board as it stands named by the ids the answer
+ * must use. The item is stamped with the revision it was planned at, so an
+ * answer planned from v2 is never written onto a chapter that has moved on to
+ * v3: the room asks again rather than patching words that have moved.
+ */
+export function planOutlineRevision(
+  story: StoryDocument,
+  chapterId: string,
+): StoryJobItemDraft | undefined {
+  const number = story.chapters.findIndex((held) => held.id === chapterId);
+  const chapter = story.chapters[number];
+  if (chapter === undefined || !chapterOutlineAhead(chapter)) return undefined;
+  const before = chapter.boardOutline;
+  if (before === undefined) return undefined;
+  const revision = chapterRevision(chapter);
+  const target: StoryTarget = { kind: "outlineRevision", chapterId };
+  return {
+    id: `${jobKey(target)}:${revision}`,
+    target,
+    capability: "text",
+    system: storySystemPrompt(),
+    prompt: storyRevisionPrompt({
+      ...factsOf(story),
+      number: number + 1,
+      before: { title: before.title, text: before.synopsis },
+      after: { title: chapter.title, text: chapter.synopsis },
+      targetDurationMs: chapter.targetDurationMs,
+      elements: story.elements.map((element) => ({
+        kind: element.kind,
+        name: element.name,
+        description: element.description,
+      })),
+      acts: revisionActs(story, chapter),
+      shotSizes: STORY_SHOT_SIZES,
+      cameraMoves: STORY_CAMERA_MOVES,
+      angles: STORY_CAMERA_ANGLES,
+    }),
+  };
+}
+
+/** The acts and shots a revision may touch, as the ask reads them. */
+function revisionActs(
+  story: StoryDocument,
+  chapter: StoryChapter,
+): StoryRevisionAct[] {
+  return chapter.acts
+    .filter((act) => act.transition === undefined)
+    .map((act) => ({
+      id: act.id,
+      title: act.title,
+      summary: act.summary,
+      frames: act.keyframes.map((keyframe) =>
+        revisionFrame(story, chapter.id, act.id, keyframe),
+      ),
+    }));
+}
+
+/** One shot of the board, with what has already been made from it. */
+function revisionFrame(
+  story: StoryDocument,
+  chapterId: string,
+  actId: string,
+  keyframe: StoryKeyframe,
+): StoryRevisionFrame {
+  const made: string[] = [];
+  if (currentTake(keyframe.art) !== undefined) made.push("frame drawn");
+  if (currentTake(keyframe.video) !== undefined) made.push("shot filmed");
+  if (
+    (keyframe.voices ?? []).some(
+      (voice) => currentTake(voice.slot) !== undefined,
+    )
+  ) {
+    made.push("line read aloud");
+  }
+  const shotId = jobKey({
+    kind: "keyframeVideo",
+    chapterId,
+    actId,
+    keyframeId: keyframe.id,
+  });
+  if (videoPromptOverride(story, shotId) !== undefined) {
+    made.push("hand-written video prompt");
+  }
+  return {
+    id: keyframe.id,
+    title: keyframe.title,
+    shotSize: keyframe.shotSize,
+    cameraMove: keyframe.cameraMove,
+    angle: keyframe.angle,
+    durationMs: keyframe.durationMs,
+    content: keyframe.content,
+    dialogue: keyframe.dialogue.map((line) => ({
+      id: line.id,
+      speaker: line.speaker,
+      text: line.text,
+      ...(line.tone === undefined ? {} : { tone: line.tone }),
+    })),
+    made: made.length === 0 ? "nothing yet" : made.join(", "),
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -1711,6 +1822,10 @@ export function itemsForTargets(
         return planElements(story);
       case "storyboard":
         return planStoryboard(story, [target.chapterId]);
+      case "outlineRevision": {
+        const planned = planOutlineRevision(story, target.chapterId);
+        return planned === undefined ? [] : [planned];
+      }
       case "elementArt":
         return planElementArt(story, [
           { elementId: target.elementId, view: target.view },

@@ -55,6 +55,7 @@ import {
   planElementArtWaves,
   planKeyframeArtWaves,
   planKeyframeVideoWaves,
+  planOutlineRevision,
 } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { storyParallel } from "./storyBatch";
@@ -68,6 +69,7 @@ const STEP_OF_KIND: Record<StoryJobKind, StoryStep> = {
   outline: "outline",
   elements: "elements",
   storyboard: "storyboard",
+  outlineRevision: "storyboard",
   elementArt: "elements",
   keyframeArt: "storyboard",
   actVideo: "storyboard",
@@ -482,6 +484,15 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       // time, whatever it says: the reader has had it, and what they have said
       // to the story since — a description rewritten, an element added or
       // dropped — is what reading it again would write over.
+      // A revision is a proposal the reader applies from its own preview: a
+      // look never writes it in, and it stays unread until that preview is
+      // settled, so the proposal survives a reload.
+      if (
+        record.kind === "outlineRevision" &&
+        record.items.some((item) => item.status === "succeeded")
+      ) {
+        return [];
+      }
       if (record.readAt !== undefined) return [];
       const known = readIn.get(record.id) ?? {
         pieces: new Set<string>(),
@@ -917,6 +928,20 @@ export async function retryFailed(
     (item) => item.status === "failed" && !item.id.startsWith("outline:split:"),
   );
   if (failed.length === 0) return;
+  // A revision is planned from the outline as it stands now: a chapter that
+  // has moved on since the failed ask is revised against its latest words.
+  if (job.kind === "outlineRevision") {
+    for (const item of failed) {
+      if (item.target.kind !== "outlineRevision") continue;
+      const planned = planOutlineRevision(story, item.target.chapterId);
+      if (planned === undefined) continue;
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "outlineRevision", [planned]);
+      if (record === null) return;
+    }
+    return;
+  }
   // A place's ask is one piece per name however many of the old batch's pieces
   // failed: an act filmed in pieces that lost two of them is asked for again as
   // the act, and not as the same piece twice.

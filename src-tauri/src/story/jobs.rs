@@ -161,6 +161,9 @@ pub enum StoryJobKind {
     Elements,
     /// One episode's board: its acts and its shots. Words, one call an episode.
     Storyboard,
+    /// One episode's board revised from a newer outline. Words, one call: the
+    /// answer is a patch to the shots already on file, not a board again.
+    OutlineRevision,
     /// An element drawn: one view of a character, a place or a thing.
     ElementArt,
     /// One shot drawn.
@@ -179,9 +182,10 @@ impl StoryJobKind {
     /// What this batch asks of a provider.
     pub fn capability(self) -> Capability {
         match self {
-            StoryJobKind::Outline | StoryJobKind::Elements | StoryJobKind::Storyboard => {
-                Capability::Text
-            }
+            StoryJobKind::Outline
+            | StoryJobKind::Elements
+            | StoryJobKind::Storyboard
+            | StoryJobKind::OutlineRevision => Capability::Text,
             StoryJobKind::ElementArt | StoryJobKind::KeyframeArt => Capability::Image,
             StoryJobKind::ActVideo | StoryJobKind::KeyframeVideo => Capability::Video,
             StoryJobKind::Voice => Capability::Speech,
@@ -193,7 +197,10 @@ impl StoryJobKind {
     pub fn is_words(self) -> bool {
         matches!(
             self,
-            StoryJobKind::Outline | StoryJobKind::Elements | StoryJobKind::Storyboard
+            StoryJobKind::Outline
+                | StoryJobKind::Elements
+                | StoryJobKind::Storyboard
+                | StoryJobKind::OutlineRevision
         )
     }
 }
@@ -342,6 +349,11 @@ pub enum StoryTarget {
     Storyboard {
         chapter_id: String,
     },
+    /// A board revised from a newer outline, at one chapter.
+    #[serde(rename_all = "camelCase")]
+    OutlineRevision {
+        chapter_id: String,
+    },
     #[serde(rename_all = "camelCase")]
     ElementArt {
         element_id: String,
@@ -394,6 +406,7 @@ impl StoryTarget {
             StoryTarget::Outline => StoryJobKind::Outline,
             StoryTarget::Elements => StoryJobKind::Elements,
             StoryTarget::Storyboard { .. } => StoryJobKind::Storyboard,
+            StoryTarget::OutlineRevision { .. } => StoryJobKind::OutlineRevision,
             StoryTarget::ElementArt { .. } => StoryJobKind::ElementArt,
             StoryTarget::KeyframeArt { .. } => StoryJobKind::KeyframeArt,
             StoryTarget::ActVideo { .. } => StoryJobKind::ActVideo,

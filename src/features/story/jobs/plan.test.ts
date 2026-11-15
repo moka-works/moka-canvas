@@ -29,6 +29,7 @@ import {
   planKeyframeVideos,
   planLineVoiceAsks,
   planOutline,
+  planOutlineRevision,
   planStoryboard,
   settledRoleFrames,
   voiceParamsFor,
@@ -492,6 +493,37 @@ describe("planning the words", () => {
 
   it("asks for no board of a chapter the story does not have", () => {
     expect(planStoryboard(story(), ["chapter-gone"])).toEqual([]);
+  });
+
+  it("plans a revision only while the outline is ahead of the board", () => {
+    const held = story();
+    const chapter = held.chapters[0]!;
+    expect(chapter.acts.length).toBeGreaterThan(0);
+    expect(planOutlineRevision(held, chapter.id)).toBeUndefined();
+
+    chapter.revision = 2;
+    chapter.boardRevision = 1;
+    chapter.boardOutline = {
+      title: chapter.title,
+      synopsis: "The words the board was written from.",
+    };
+    chapter.synopsis = "The words the outline now holds.";
+    const item = planOutlineRevision(held, chapter.id);
+    expect(item).toBeDefined();
+    expect(item!.id).toBe(`outlineRevision:${chapter.id}:2`);
+    expect(item!.target).toEqual({
+      kind: "outlineRevision",
+      chapterId: chapter.id,
+    });
+    expect(item!.capability).toBe("text");
+    expect(item!.prompt).toContain("The words the board was written from.");
+    expect(item!.prompt).toContain("The words the outline now holds.");
+    for (const act of chapter.acts) {
+      expect(item!.prompt).toContain(act.id);
+      for (const frame of act.keyframes) {
+        expect(item!.prompt).toContain(frame.id);
+      }
+    }
   });
 });
 

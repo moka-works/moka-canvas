@@ -41,6 +41,7 @@ const PLACE_OF_KIND: Record<StoryJobKind, StoryAskPlace> = {
   outline: "text",
   elements: "text",
   storyboard: "text",
+  outlineRevision: "text",
   elementArt: "image",
   keyframeArt: "image",
   actVideo: "video",

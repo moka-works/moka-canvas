@@ -25,6 +25,7 @@ import {
   storySplitRepairPrompt,
   storySplitSystemPrompt,
   storyStoryboardPrompt,
+  storyRevisionPrompt,
   storySystemPrompt,
   storyPromptRewriteAsk,
   storyPromptRewriteSystem,
@@ -393,6 +394,52 @@ describe("story prompts", () => {
     expect(prompt).toContain("static, pushIn");
     expect(prompt).toContain("eyeLevel, high");
     expect(prompt).toContain('"keyframes"');
+    expect(prompt).not.toContain("{{");
+  });
+
+  it("revises a board from the two outlines, by the ids it was given", () => {
+    const prompt = storyRevisionPrompt({
+      ...facts,
+      number: 2,
+      before: { title: "第二章 车厢", text: "车厢比站台更暗。" },
+      after: { title: "第二章 车厢", text: "车厢的灯忽然全灭了。" },
+      targetDurationMs: 60_000,
+      elements: [
+        { kind: "character", name: "林", description: "四十岁上下。" },
+      ],
+      acts: [
+        {
+          id: "act-1",
+          title: "第 1 幕",
+          summary: "灯还亮着。",
+          frames: [
+            {
+              id: "frame-1",
+              title: "#1",
+              shotSize: "wide",
+              cameraMove: "static",
+              angle: "eyeLevel",
+              durationMs: 3_000,
+              content: "`林`坐在灯下。",
+              dialogue: [
+                { id: "line-1", speaker: "林", text: "车已经停运了。" },
+              ],
+              made: "frame drawn",
+            },
+          ],
+        },
+      ],
+      shotSizes: ["wide"],
+      cameraMoves: ["static"],
+      angles: ["eyeLevel"],
+    });
+    expect(prompt).toContain("车厢比站台更暗。");
+    expect(prompt).toContain("车厢的灯忽然全灭了。");
+    expect(prompt).toContain("Act act-1");
+    expect(prompt).toContain("Frame frame-1");
+    expect(prompt).toContain("[line-1] 林: 车已经停运了。");
+    expect(prompt).toContain("Already made: frame drawn");
+    expect(prompt).toContain('"needsRebuild"');
     expect(prompt).not.toContain("{{");
   });
 
