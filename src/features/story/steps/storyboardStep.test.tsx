@@ -635,6 +635,26 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.keyframes[0]?.imageModel).toBeUndefined();
   });
 
+  it("folds one shot down to its number and its words, and unfolds it again", () => {
+    openAtBoard(boarded());
+    const words = acts()[0]!.keyframes[0]!.content;
+    expect(screen.getByTestId("story-kf-size-0")).toBeDefined();
+
+    fireEvent.click(screen.getByTestId("story-kf-fold-0"));
+    // The folded row keeps the shot's place and its words, and gives up every
+    // cell that made it tall; the shot beside it is untouched.
+    const folded = screen.getByTestId("story-kf-0");
+    expect(folded.className).toContain("is-folded");
+    expect(folded.textContent).toContain(words);
+    expect(screen.queryByTestId("story-kf-size-0")).toBeNull();
+    expect(screen.queryByTestId("story-kf-slot-0")).toBeNull();
+    expect(screen.getByTestId("story-kf-size-1")).toBeDefined();
+
+    fireEvent.click(screen.getByTestId("story-kf-fold-0"));
+    expect(screen.getByTestId("story-kf-size-0")).toBeDefined();
+    expect(screen.getByTestId("story-kf-slot-0")).toBeDefined();
+  });
+
   it("marks a frame whose reference was redrawn, and draws it again from it", async () => {
     const moka = boarded();
     settle(moka.stories![0], "林", (element) => {

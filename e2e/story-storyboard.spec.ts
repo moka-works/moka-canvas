@@ -277,6 +277,16 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // A shot is folded at its top-left to take its height off the page: its
+    // number and its words stay, its cells go, and the shot beside it stays.
+    await firstAct.getByTestId("story-kf-fold-0").click();
+    await expect(firstAct.getByTestId("story-kf-size-0")).toHaveCount(0);
+    await expect(firstAct.getByTestId("story-kf-slot-0")).toHaveCount(0);
+    await expect(firstAct.getByTestId("story-kf-0")).toContainText("Keeper");
+    await expect(firstAct.getByTestId("story-kf-size-1")).toBeVisible();
+    await firstAct.getByTestId("story-kf-fold-0").click();
+    await expect(firstAct.getByTestId("story-kf-size-0")).toBeVisible();
+
     // The pictures a shot stands on are the board's to look at: an element's
     // reference opens over the board, and the kept picture can be changed
     // rather than only drawn again.

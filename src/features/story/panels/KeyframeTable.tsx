@@ -311,6 +311,10 @@ function KeyframeRow({
     null,
   );
   const [playing, setPlaying] = useState(false);
+  // Whether this one shot is folded down to its number and its words, which
+  // is the reader's way of taking height off a board they are reading rather
+  // than editing. It is a place on the page, not a thing the document keeps.
+  const [folded, setFolded] = useState(false);
   // A preview the server could not draw steps back to the shot's drawn frame,
   // rather than leaving a broken picture. The address is held rather than a
   // flag, so a new take is tried even after an older one failed.
@@ -411,11 +415,50 @@ function KeyframeRow({
   const filmed = keyframe.art.takes.length > 0;
   // The references this frame was drawn with that have been redrawn since.
   const stale = staleReferences(story, keyframe);
+  const columns = perShot ? 6 : 5;
+  // The top-left of the row: folding a shot takes its cells off the page and
+  // leaves its number and its words, which is how a board is read down to the
+  // shot a reader is working on without the height of all the others.
+  const fold = (
+    <button
+      aria-expanded={!folded}
+      aria-label={cell(
+        t(folded ? "story:storyboard.unfoldShot" : "story:storyboard.foldShot"),
+      )}
+      className="story-kf-fold"
+      data-testid={`story-kf-fold-${index}`}
+      onClick={() => setFolded(!folded)}
+      title={t(
+        folded ? "story:storyboard.unfoldShot" : "story:storyboard.foldShot",
+      )}
+      type="button"
+    >
+      {folded ? "▸" : "▾"}
+    </button>
+  );
+
+  if (folded) {
+    return (
+      <tr className="story-kf is-folded" data-testid={`story-kf-${index}`}>
+        <td className="story-col-index">
+          {fold}
+          <span className="story-kf-number">{at}</span>
+        </td>
+        <td className="story-kf-folded" colSpan={columns - 1}>
+          <span className="story-kf-folded-words" title={keyframe.content}>
+            {keyframe.content}
+          </span>
+          <span className="story-hint">{t("story:storyboard.folded")}</span>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <>
       <tr data-testid={`story-kf-${index}`}>
         <td className="story-col-index">
+          {fold}
           {/*
             A shot is inserted where the reader is looking rather than only at
             the end of the list: the button stands in the row it would go above,

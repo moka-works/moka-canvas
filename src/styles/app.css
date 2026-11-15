@@ -9249,6 +9249,43 @@ button > .story-spin {
   color: var(--primary);
 }
 
+/* The fold at the top-left of a shot: the row keeps its number and its words
+   and gives up its height, so a long board can be read down to the work. */
+.story-kf-fold {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 0 2px 0 0;
+}
+
+.story-kf-fold:hover {
+  color: var(--ink);
+}
+
+.story-kf.is-folded td {
+  padding-bottom: 4px;
+  padding-top: 4px;
+}
+
+.story-kf-folded {
+  color: var(--muted);
+}
+
+.story-kf-folded-words {
+  color: var(--ink);
+  display: inline-block;
+  max-width: min(70ch, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.story-kf-folded .story-hint {
+  margin-left: 8px;
+}
+
 .story-kf-number {
   font-variant-numeric: tabular-nums;
 }
