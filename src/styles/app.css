@@ -7239,6 +7239,17 @@ body.is-dragging-split {
   color: var(--ink);
 }
 
+.story-chapter-version {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.story-chapter-version.is-behind {
+  color: var(--primary);
+}
+
 .story-chapter-synopsis {
   background: var(--canvas);
   border: 1px solid var(--stroke);

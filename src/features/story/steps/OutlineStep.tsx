@@ -6,12 +6,16 @@ import {
   MAX_CHAPTERS_PER_STORY,
   MAX_TOTAL_DURATION_MS,
   MIN_TOTAL_DURATION_MS,
+  chapterBoardRevision,
+  chapterOutlineAhead,
   chapterRegenerationCost,
+  chapterRevision,
   chapterWritten,
   createChapter,
   defaultChapterCount,
   formatDuration,
   mergeChaptersAt,
+  reviseChapter,
   type StoryChapter,
   type StoryDocument,
 } from "../../../shared/domain";
@@ -27,6 +31,7 @@ import { planOutline, storySplitChars } from "../jobs/plan";
 import { SplitCancelled, runManuscriptSplit } from "../jobs/split";
 import { readTextAsset } from "../readText";
 import {
+  boardRuns,
   jobProgress,
   kindJob,
   pieceRunning,
@@ -274,6 +279,20 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
     setDeleting(null);
   };
 
+  /** Every chapter's outline locked, so an edit is an explicit revision. */
+  const lockAll = () => {
+    execute(t("story:history.lockChapters"), [
+      {
+        type: "setStoryChapters",
+        storyId: story.id,
+        chapters: story.chapters.map((chapter) => ({
+          ...chapter,
+          outlineLocked: true,
+        })),
+      },
+    ]);
+  };
+
   const busy = writing !== null || reading || splitting;
 
   return (
@@ -406,7 +425,35 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
                         ? t("story:outline.startSplit")
                         : t("story:outline.start")}
             </button>
-            <StepConfirm step="outline" story={story} />
+            {story.chapters.some(
+              (chapter) => chapter.outlineLocked !== true,
+            ) && (
+              <button
+                data-testid="story-outline-lock-all"
+                onClick={lockAll}
+                type="button"
+              >
+                {t("story:outline.lockAll")}
+              </button>
+            )}
+            <StepConfirm
+              settle={(held) =>
+                held.chapters.every((chapter) => chapter.outlineLocked === true)
+                  ? []
+                  : [
+                      {
+                        type: "setStoryChapters",
+                        storyId: story.id,
+                        chapters: held.chapters.map((chapter) => ({
+                          ...chapter,
+                          outlineLocked: true,
+                        })),
+                      },
+                    ]
+              }
+              step="outline"
+              story={story}
+            />
           </div>
         </div>
 
@@ -462,6 +509,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         <ol className="story-chapters">
           {story.chapters.map((chapter, index) => (
             <ChapterCard
+              busy={boardRuns(jobs, chapter.id).length > 0}
               chapter={chapter}
               index={index}
               key={chapter.id}
@@ -523,6 +571,7 @@ function ChapterCard({
   index,
   offerRedo,
   redoBusy,
+  busy,
   onInsert,
   onDelete,
 }: {
@@ -533,6 +582,8 @@ function ChapterCard({
   offerRedo: boolean;
   /** Whether this chapter's own ask for a new telling of it is out just now. */
   redoBusy: boolean;
+  /** Whether a board for this chapter is being written just now. */
+  busy: boolean;
   /** Adds an empty chapter after this one. */
   onInsert: () => void;
   /** Asks to take this chapter out of the story. */
@@ -558,6 +609,50 @@ function ChapterCard({
     if (value === chapter.synopsis) return;
     write({ synopsis: value });
   });
+  // A chapter with a board is not written into by typing alone: its words are
+  // the outline the board stands on, so an edit is opened, written, and
+  // confirmed as one revision. A chapter with no board yet is still being
+  // written, and takes typing directly.
+  const [draft, setDraft] = useState<{
+    title: string;
+    synopsis: string;
+  } | null>(null);
+  const boarded = chapter.acts.length > 0;
+  const locked = chapter.outlineLocked === true;
+  const gated = boarded || locked;
+  const editing = draft !== null;
+  const ahead = chapterOutlineAhead(chapter);
+  const titleValue = draft === null ? title.value : draft.title;
+  const contentValue = draft === null ? content.value : draft.synopsis;
+  const changeTitle = (value: string) => {
+    if (draft === null) title.set(value);
+    else setDraft({ ...draft, title: value });
+  };
+  const changeContent = (value: string) => {
+    if (draft === null) content.set(value);
+    else setDraft({ ...draft, synopsis: value });
+  };
+  const beginEdit = () => {
+    if (busy) return;
+    setDraft({ title: chapter.title, synopsis: chapter.synopsis });
+  };
+  const cancelEdit = () => setDraft(null);
+  const confirmEdit = () => {
+    if (draft === null) return;
+    const nextTitle =
+      draft.title.trim() === "" ? chapter.title : draft.title.trim();
+    const revised = reviseChapter(chapter, {
+      title: nextTitle,
+      synopsis: draft.synopsis,
+    });
+    const chapters = story.chapters.map((held, at) =>
+      at === index ? { ...revised, outlineLocked: true } : held,
+    );
+    execute(t("story:history.reviseChapter"), [
+      { type: "setStoryChapters", storyId: story.id, chapters },
+    ]);
+    setDraft(null);
+  };
   const minutes = Math.round((chapter.targetDurationMs / 60_000) * 10) / 10;
 
   return (
@@ -569,17 +664,33 @@ function ChapterCard({
           className="story-chapter-title"
           data-testid={`story-chapter-title-${index}`}
           maxLength={60}
-          onBlur={title.commit}
-          onChange={(event) => title.set(event.target.value)}
+          onBlur={() => {
+            if (draft === null) title.commit();
+          }}
+          onChange={(event) => changeTitle(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              title.commit();
+              if (draft === null) title.commit();
+              else confirmEdit();
             }
           }}
           placeholder={t("story:outline.untitled", { number: index + 1 })}
-          value={title.value}
+          readOnly={gated && !editing}
+          value={titleValue}
         />
+        <span
+          className={`story-chapter-version${ahead ? " is-behind" : ""}`}
+          data-testid={`story-chapter-version-${index}`}
+        >
+          {t("story:outline.version", { revision: chapterRevision(chapter) })}
+          {ahead
+            ? ` · ${t("story:outline.versionBehind", {
+                board: chapterBoardRevision(chapter),
+              })}`
+            : ""}
+          {locked ? ` · ${t("story:outline.locked")}` : ""}
+        </span>
         {chapter.acts.length > 0 && (
           <button
             className="story-chapter-acts"
@@ -599,10 +710,13 @@ function ChapterCard({
           aria-label={t("story:outline.chapterSource")}
           className="story-chapter-synopsis"
           data-testid={`story-chapter-source-${index}`}
-          onBlur={content.commit}
-          onChange={(event) => content.set(event.target.value)}
+          onBlur={() => {
+            if (draft === null) content.commit();
+          }}
+          onChange={(event) => changeContent(event.target.value)}
+          readOnly={gated && !editing}
           rows={6}
-          value={content.value}
+          value={contentValue}
         />
       ) : (
         <textarea
@@ -610,11 +724,22 @@ function ChapterCard({
           className="story-chapter-synopsis"
           data-testid={`story-chapter-synopsis-${index}`}
           maxLength={2000}
-          onBlur={content.commit}
-          onChange={(event) => content.set(event.target.value)}
+          onBlur={() => {
+            if (draft === null) content.commit();
+          }}
+          onChange={(event) => changeContent(event.target.value)}
+          readOnly={gated && !editing}
           rows={3}
-          value={content.value}
+          value={contentValue}
         />
+      )}
+      {editing && gated && (
+        <span
+          className="story-hint"
+          data-testid={`story-chapter-edit-hint-${index}`}
+        >
+          {t("story:outline.editBoardHint")}
+        </span>
       )}
       <div className="story-chapter-foot">
         <span
@@ -673,11 +798,44 @@ function ChapterCard({
           <span className="story-hint">{t("story:outline.durationBoard")}</span>
         )}
         <span className="story-chapter-actions">
+          {editing ? (
+            <>
+              <button
+                className="link"
+                data-testid={`story-chapter-cancel-${index}`}
+                onClick={cancelEdit}
+                type="button"
+              >
+                {t("story:outline.cancelEdit")}
+              </button>
+              <button
+                className="primary"
+                data-testid={`story-chapter-confirm-${index}`}
+                onClick={confirmEdit}
+                type="button"
+              >
+                {t("story:outline.confirmEdit")}
+              </button>
+            </>
+          ) : (
+            gated && (
+              <button
+                className="link"
+                data-testid={`story-chapter-edit-${index}`}
+                disabled={busy}
+                onClick={beginEdit}
+                title={t("story:outline.editHint")}
+                type="button"
+              >
+                {t("story:outline.edit")}
+              </button>
+            )
+          )}
           {offerRedo && (
             <button
               className="link"
               data-testid={`story-chapter-redo-${index}`}
-              disabled={redoBusy}
+              disabled={redoBusy || editing}
               onClick={() => void redoGeneratedChapter(story, index)}
               type="button"
             >
@@ -687,7 +845,9 @@ function ChapterCard({
           <button
             className="link"
             data-testid={`story-chapter-insert-${index}`}
-            disabled={story.chapters.length >= MAX_CHAPTERS_PER_STORY}
+            disabled={
+              editing || story.chapters.length >= MAX_CHAPTERS_PER_STORY
+            }
             onClick={onInsert}
             type="button"
           >
@@ -696,6 +856,7 @@ function ChapterCard({
           <button
             className="link"
             data-testid={`story-chapter-delete-${index}`}
+            disabled={editing}
             onClick={onDelete}
             type="button"
           >

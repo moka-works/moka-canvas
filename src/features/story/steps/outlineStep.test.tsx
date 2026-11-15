@@ -522,11 +522,18 @@ describe("writing a premise into chapters", () => {
 
     expect(screen.queryByTestId("story-confirm-gaps-outline")).toBeNull();
     expect(story().confirmedSteps).toContain("outline");
+    // Settling the outline locks every chapter, so a later edit is a revision.
+    expect(
+      story().chapters.every((chapter) => chapter.outlineLocked === true),
+    ).toBe(true);
 
     act(() => {
       undo();
     });
     expect(story().confirmedSteps).not.toContain("outline");
+    expect(
+      story().chapters.every((chapter) => chapter.outlineLocked !== true),
+    ).toBe(true);
   });
 
   it("writes the words of a chapter when the reader looks away from them", () => {
@@ -705,20 +712,74 @@ describe("splitting again", () => {
 });
 
 describe("editing the chapter table", () => {
-  it("writes an edited manuscript chapter back as its own text", () => {
+  it("writes a boarded chapter as one revision when the reader confirms it", () => {
     openAtOutline(buildStoryMokaFile());
+    const old = "他在站台上等一班已经停运的列车。";
 
     const content = screen.getByTestId(
       "story-chapter-source-0",
     ) as HTMLTextAreaElement;
-    expect(content.value).toBe("他在站台上等一班已经停运的列车。");
-    fireEvent.change(content, {
+    expect(content.value).toBe(old);
+    expect(content.readOnly).toBe(true);
+    expect(screen.getByTestId("story-chapter-version-0").textContent).toBe(
+      "v1",
+    );
+
+    fireEvent.click(screen.getByTestId("story-chapter-edit-0"));
+    const editing = screen.getByTestId(
+      "story-chapter-source-0",
+    ) as HTMLTextAreaElement;
+    expect(editing.readOnly).toBe(false);
+    fireEvent.change(editing, {
       target: { value: "他在站台上等到天亮，车始终没有来。" },
     });
-    expect(chapters()[0]?.synopsis).not.toContain("等到天亮");
+    fireEvent.blur(editing);
+    // Nothing is written until the revision is confirmed.
+    expect(chapters()[0]?.synopsis).toBe(old);
 
-    fireEvent.blur(content);
+    fireEvent.click(screen.getByTestId("story-chapter-confirm-0"));
     expect(chapters()[0]?.synopsis).toBe("他在站台上等到天亮，车始终没有来。");
+    expect(chapters()[0]?.revision).toBe(2);
+    expect(chapters()[0]?.boardRevision).toBe(1);
+    expect(chapters()[0]?.boardOutline?.synopsis).toBe(old);
+    expect(chapters()[0]?.outlineLocked).toBe(true);
+    expect(screen.getByTestId("story-chapter-version-0").textContent).toContain(
+      "board on v1",
+    );
+
+    act(() => {
+      undo();
+    });
+    expect(chapters()[0]?.synopsis).toBe(old);
+    expect(chapters()[0]?.revision).toBeUndefined();
+  });
+
+  it("leaves the outline alone when an edit is cancelled", () => {
+    openAtOutline(buildStoryMokaFile());
+    fireEvent.click(screen.getByTestId("story-chapter-edit-0"));
+    fireEvent.change(screen.getByTestId("story-chapter-source-0"), {
+      target: { value: "改了一半又反悔。" },
+    });
+    fireEvent.click(screen.getByTestId("story-chapter-cancel-0"));
+
+    expect(chapters()[0]?.synopsis).toBe("他在站台上等一班已经停运的列车。");
+    expect(chapters()[0]?.revision).toBeUndefined();
+    expect(
+      (screen.getByTestId("story-chapter-source-0") as HTMLTextAreaElement)
+        .readOnly,
+    ).toBe(true);
+  });
+
+  it("locks every chapter at once from the step bar", () => {
+    openAtOutline(withChapters());
+    expect(chapters().every((chapter) => chapter.outlineLocked !== true)).toBe(
+      true,
+    );
+
+    fireEvent.click(screen.getByTestId("story-outline-lock-all"));
+    expect(chapters().every((chapter) => chapter.outlineLocked === true)).toBe(
+      true,
+    );
   });
 
   it("inserts a chapter between two, with the episode length it stood beside", () => {

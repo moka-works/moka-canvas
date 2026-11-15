@@ -10,6 +10,7 @@ import {
   type StoryStep,
   type StoryStepGap,
 } from "../../../shared/domain";
+import type { DocumentCommand } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -35,6 +36,7 @@ export function StepConfirm({
   story,
   step,
   prepare,
+  settle,
 }: {
   story: StoryDocument;
   step: StoryStep;
@@ -44,6 +46,11 @@ export function StepConfirm({
    * own typing would say the opposite of what is written on the screen.
    */
   prepare?: () => void;
+  /**
+   * What the press writes beside the confirmation itself, as the step it is
+   * settling has more to say: the outline locks its chapters once settled.
+   */
+  settle?: (held: StoryDocument) => DocumentCommand[];
 }) {
   const { t } = useTranslation();
   const [gaps, setGaps] = useState<StoryStepGap[]>([]);
@@ -72,10 +79,18 @@ export function StepConfirm({
       return;
     }
     setGaps([]);
+    const commands: DocumentCommand[] = [];
     if (!held.confirmedSteps.includes(step)) {
-      execute(i18n.t("story:history.confirm"), [
-        { type: "confirmStoryStep", storyId: story.id, step, confirmed: true },
-      ]);
+      commands.push({
+        type: "confirmStoryStep",
+        storyId: story.id,
+        step,
+        confirmed: true,
+      });
+    }
+    commands.push(...(settle?.(held) ?? []));
+    if (commands.length > 0) {
+      execute(i18n.t("story:history.confirm"), commands);
     }
     if (next !== undefined) useStoryStore.getState().goStep(next);
   };
