@@ -527,6 +527,26 @@ pub struct StoryAct {
     pub video_model: Option<String>,
 }
 
+/// The outline of a chapter as it stood when its board was written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryOutlineSnapshot {
+    pub title: String,
+    pub synopsis: String,
+}
+
+fn first_outline_revision() -> u32 {
+    1
+}
+
+fn is_first_outline_revision(revision: &u32) -> bool {
+    *revision == 1
+}
+
+fn is_unlocked(locked: &bool) -> bool {
+    !*locked
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryChapter {
@@ -537,6 +557,54 @@ pub struct StoryChapter {
     pub synopsis: String,
     pub target_duration_ms: i64,
     pub acts: Vec<StoryAct>,
+    /// The outline revision the reader last confirmed. Absent on a telling
+    /// written before versions existed, and reads as the first.
+    #[serde(
+        default = "first_outline_revision",
+        skip_serializing_if = "is_first_outline_revision"
+    )]
+    pub revision: u32,
+    /// The revision the current board was written from; absent means the
+    /// board is in step with the outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_revision: Option<u32>,
+    /// The title and words the board was written from, kept only while the
+    /// outline is ahead of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_outline: Option<StoryOutlineSnapshot>,
+    /// Whether the outline is locked against typing.
+    #[serde(default, skip_serializing_if = "is_unlocked")]
+    pub outline_locked: bool,
+}
+
+/// A chapter with the words an answer writes, as the revision they make.
+///
+/// The same rule the client keeps: only new words make a revision, a chapter
+/// with no board keeps its two revisions together, and a boarded chapter keeps
+/// the outline its board was written from as the second version.
+pub(crate) fn revise_chapter(held: &StoryChapter, incoming: &StoryChapter) -> StoryChapter {
+    let mut chapter = StoryChapter {
+        acts: held.acts.clone(),
+        ..incoming.clone()
+    };
+    if held.title == incoming.title && held.synopsis == incoming.synopsis {
+        return chapter;
+    }
+    let revision = held.revision.max(1) + 1;
+    chapter.revision = revision;
+    if held.acts.is_empty() {
+        chapter.board_revision = Some(revision);
+        chapter.board_outline = None;
+    } else {
+        chapter.board_revision = Some(held.board_revision.unwrap_or(held.revision).max(1));
+        chapter.board_outline = held.board_outline.clone().or_else(|| {
+            Some(StoryOutlineSnapshot {
+                title: held.title.clone(),
+                synopsis: held.synopsis.clone(),
+            })
+        });
+    }
+    chapter
 }
 
 /// A picture an element's main drawing is made from: another element's form,
@@ -2018,6 +2086,9 @@ pub fn apply_story_command(
                 .collect();
             // A chapter that keeps its id keeps its board: re-writing an
             // outline is not a reason to throw away what was shot from it.
+            // Versions are the writer's business, as they are on the client:
+            // the command keeps what it is given, so undoing it restores the
+            // revision the chapter held before.
             let merged: Vec<StoryChapter> = chapters
                 .iter()
                 .map(|chapter| StoryChapter {
@@ -2771,5 +2842,79 @@ pub fn apply_story_command(
             "VALIDATION_FAILED",
             "Not a story command",
         )),
+    }
+}
+
+#[cfg(test)]
+mod outline_revision_tests {
+    use super::*;
+
+    fn chapter(title: &str, synopsis: &str) -> StoryChapter {
+        StoryChapter {
+            id: "chapter-1".into(),
+            title: title.into(),
+            synopsis: synopsis.into(),
+            target_duration_ms: 60_000,
+            acts: Vec::new(),
+            revision: 1,
+            board_revision: None,
+            board_outline: None,
+            outline_locked: false,
+        }
+    }
+
+    fn act() -> StoryAct {
+        StoryAct {
+            id: "act-1".into(),
+            title: String::new(),
+            summary: String::new(),
+            character_ids: Vec::new(),
+            scene_id: None,
+            prop_ids: Vec::new(),
+            sound: StoryActSound {
+                music: String::new(),
+                sfx: String::new(),
+                ambience: None,
+            },
+            keyframes: Vec::new(),
+            video: StorySlot { takes: Vec::new() },
+            shot_granularity: None,
+            voice: None,
+            music: None,
+            video_model: None,
+            transition: None,
+        }
+    }
+
+    #[test]
+    fn counts_only_new_words_as_a_revision() {
+        let held = chapter("一", "旧");
+        assert_eq!(revise_chapter(&held, &chapter("一", "旧")).revision, 1);
+        let revised = revise_chapter(&held, &chapter("一", "新"));
+        assert_eq!(revised.revision, 2);
+        // A chapter with no board keeps its two revisions together.
+        assert_eq!(revised.board_revision, Some(2));
+        assert!(revised.board_outline.is_none());
+    }
+
+    #[test]
+    fn keeps_the_outline_a_board_was_written_from() {
+        let mut held = chapter("一", "旧");
+        held.acts = vec![act()];
+        let revised = revise_chapter(&held, &chapter("一", "新"));
+        assert_eq!(revised.revision, 2);
+        assert_eq!(revised.board_revision, Some(1));
+        assert_eq!(revised.board_outline.unwrap().synopsis, "旧");
+    }
+
+    #[test]
+    fn keeps_the_older_board_outline_across_later_revisions() {
+        let mut held = chapter("一", "旧");
+        held.acts = vec![act()];
+        let once = revise_chapter(&held, &chapter("一", "二稿"));
+        let twice = revise_chapter(&once, &chapter("一", "三稿"));
+        assert_eq!(twice.revision, 3);
+        assert_eq!(twice.board_revision, Some(1));
+        assert_eq!(twice.board_outline.unwrap().synopsis, "旧");
     }
 }

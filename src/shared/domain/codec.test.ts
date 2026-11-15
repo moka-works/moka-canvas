@@ -73,6 +73,31 @@ describe("moka codec", () => {
     expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
   });
 
+  it("carries an outline revision and the board it is ahead of, and reads a telling written before them", () => {
+    const old = buildStoryMokaFile();
+    expect(old.stories![0]!.chapters[0]!.revision).toBeUndefined();
+    const read = decodeMokaFile(encodeMokaFile(old)).stories![0]!.chapters[0]!;
+    expect(read.revision).toBeUndefined();
+    expect(read.boardRevision).toBeUndefined();
+    expect(read.boardOutline).toBeUndefined();
+    expect(read.outlineLocked).toBeUndefined();
+
+    const moka = buildStoryMokaFile();
+    const chapter = moka.stories![0]!.chapters[0]!;
+    chapter.revision = 3;
+    chapter.boardRevision = 1;
+    chapter.boardOutline = { title: "Episode one", synopsis: "The old words" };
+    chapter.outlineLocked = true;
+    const back = decodeMokaFile(encodeMokaFile(moka)).stories![0]!.chapters[0]!;
+    expect(back.revision).toBe(3);
+    expect(back.boardRevision).toBe(1);
+    expect(back.boardOutline).toEqual({
+      title: "Episode one",
+      synopsis: "The old words",
+    });
+    expect(back.outlineLocked).toBe(true);
+  });
+
   it("carries a bridge between two acts, and reads one written before bridges", () => {
     const moka = buildStoryMokaFile();
     const act = moka.stories![0]!.chapters[0]!.acts[0]!;

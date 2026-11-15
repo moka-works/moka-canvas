@@ -229,6 +229,79 @@ export function chapterWritten(chapter: StoryChapter): boolean {
   return chapter.title.trim() !== "" && chapterHasWords(chapter);
 }
 
+/** The outline revision a chapter holds; a telling written before versions is one. */
+export function chapterRevision(chapter: StoryChapter): number {
+  return chapter.revision ?? 1;
+}
+
+/** The revision the board was written from; absent means it is in step. */
+export function chapterBoardRevision(chapter: StoryChapter): number {
+  return chapter.boardRevision ?? chapterRevision(chapter);
+}
+
+/** Whether the outline has moved on since the board was written. */
+export function chapterOutlineAhead(chapter: StoryChapter): boolean {
+  return chapterBoardRevision(chapter) < chapterRevision(chapter);
+}
+
+/**
+ * A chapter holding new outline words, as the revision they make.
+ *
+ * A revision is confirmed words, not a keystroke: a chapter written with the
+ * words it already had is the chapter itself. A chapter with no board has
+ * nothing for the outline to be ahead of, so the two revisions follow each
+ * other; a boarded chapter keeps the outline its board was written from as
+ * the second version, because that is what a revision of the board is asked
+ * to change from.
+ */
+export function reviseChapter(
+  chapter: StoryChapter,
+  outline: { title: string; synopsis: string },
+): StoryChapter {
+  if (
+    chapter.title === outline.title &&
+    chapter.synopsis === outline.synopsis
+  ) {
+    return chapter;
+  }
+  const revision = chapterRevision(chapter) + 1;
+  const next: StoryChapter = {
+    ...chapter,
+    title: outline.title,
+    synopsis: outline.synopsis,
+    revision,
+  };
+  if (chapter.acts.length === 0) {
+    delete next.boardOutline;
+    return { ...next, boardRevision: revision };
+  }
+  return {
+    ...next,
+    boardRevision: chapterBoardRevision(chapter),
+    boardOutline: chapter.boardOutline ?? {
+      title: chapter.title,
+      synopsis: chapter.synopsis,
+    },
+  };
+}
+
+/**
+ * A chapter whose board now stands on its latest outline.
+ *
+ * The outline the board was written from is no longer a version worth
+ * keeping: the board has been made from the latest words, and the chapter
+ * holds one outline again.
+ */
+export function syncChapterBoard(chapter: StoryChapter): StoryChapter {
+  if (!chapterOutlineAhead(chapter)) return chapter;
+  const next: StoryChapter = {
+    ...chapter,
+    boardRevision: chapterRevision(chapter),
+  };
+  delete next.boardOutline;
+  return next;
+}
+
 /** Whether an element has the words every picture of it is made from. */
 export function elementDescribed(element: StoryElement): boolean {
   return element.name.trim() !== "" && element.description.trim() !== "";
@@ -709,10 +782,15 @@ export function mergeChaptersAt(
       table[place] = createChapter(draft.title, draft.synopsis);
       continue;
     }
-    table[place] = {
-      ...held,
+    // An answer that writes new words makes a revision of the chapter, which
+    // is what tells a board it no longer stands on the outline; one that
+    // repeats the words it already had is not a version.
+    const written = reviseChapter(held, {
       title: draft.title,
       synopsis: draft.synopsis,
+    });
+    table[place] = {
+      ...written,
       targetDurationMs: draft.targetDurationMs ?? held.targetDurationMs,
     };
   }

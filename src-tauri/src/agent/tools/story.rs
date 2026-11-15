@@ -365,6 +365,10 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
                 synopsis: String::new(),
                 target_duration_ms: 60_000,
                 acts: Vec::new(),
+                revision: 1,
+                board_revision: None,
+                board_outline: None,
+                outline_locked: false,
             },
         };
         if let Some(title) = entry.get("title").and_then(Value::as_str) {
@@ -375,6 +379,13 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
         }
         if let Some(duration) = entry.get("targetDurationMs").and_then(Value::as_i64) {
             chapter.target_duration_ms = duration;
+        }
+        // New outline words are a revision: the board is told it no longer
+        // stands on the outline it was written from.
+        if let Some(held) = existing {
+            if held.title != chapter.title || held.synopsis != chapter.synopsis {
+                chapter = crate::domain::story::revise_chapter(held, &chapter);
+            }
         }
         next.push(chapter);
     }

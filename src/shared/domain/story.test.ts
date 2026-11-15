@@ -31,8 +31,11 @@ import {
 import {
   actPlannedMs,
   actsRegenerationCost,
+  chapterBoardRevision,
+  chapterOutlineAhead,
   chapterReadingWaves,
   chapterRegenerationCost,
+  chapterRevision,
   chunkWaves,
   currentTake,
   elementComplete,
@@ -46,6 +49,7 @@ import {
   mergeChapters,
   mergeChaptersAt,
   mergeElements,
+  reviseChapter,
   slotWithoutTake,
   stepComplete,
   stepGaps,
@@ -54,6 +58,7 @@ import {
   STORY_STEPS,
   storyProgress,
   stripStoryMentions,
+  syncChapterBoard,
   targetKey,
   timelineSizeForAspect,
   voiceFor,
@@ -565,6 +570,11 @@ describe("mergeChapters", () => {
     expect(merged[0].synopsis).toBe("新梗概");
     expect(merged[0].targetDurationMs).toBe(30_000);
     expect(merged[0].acts).toHaveLength(1);
+    // The board keeps its pictures, and the words it was written from are
+    // kept as the second version until the board is brought up to date.
+    expect(merged[0].revision).toBe(2);
+    expect(merged[0].boardRevision).toBe(1);
+    expect(merged[0].boardOutline).toEqual({ title: "一", synopsis: "旧梗概" });
   });
 
   it("gives a chapter with no chapter in its place one of its own, and lets the chapters no longer told go", () => {
@@ -581,6 +591,63 @@ describe("mergeChapters", () => {
     // The second chapter is gone from the telling, and so is its board.
     const shortened = mergeChapters(existing, [{ title: "一", synopsis: "" }]);
     expect(shortened).toHaveLength(1);
+  });
+});
+
+describe("the outline a board was written from", () => {
+  it("reads a telling written before versions as the first revision, in step with its board", () => {
+    const chapter = createChapter("一", "旧梗概");
+    expect(chapterRevision(chapter)).toBe(1);
+    expect(chapterBoardRevision(chapter)).toBe(1);
+    expect(chapterOutlineAhead(chapter)).toBe(false);
+  });
+
+  it("counts only new words as a revision, and keeps the board's outline while it is behind", () => {
+    const chapter: StoryChapter = {
+      ...createChapter("一", "旧梗概"),
+      acts: [createActFor("chapter-1")],
+    };
+    expect(reviseChapter(chapter, { title: "一", synopsis: "旧梗概" })).toBe(
+      chapter,
+    );
+
+    const revised = reviseChapter(chapter, {
+      title: "一",
+      synopsis: "新梗概",
+    });
+    expect(chapterRevision(revised)).toBe(2);
+    expect(chapterBoardRevision(revised)).toBe(1);
+    expect(chapterOutlineAhead(revised)).toBe(true);
+    expect(revised.boardOutline).toEqual({ title: "一", synopsis: "旧梗概" });
+
+    const synced = syncChapterBoard(revised);
+    expect(chapterOutlineAhead(synced)).toBe(false);
+    expect(synced.revision).toBe(2);
+    expect(synced.boardRevision).toBe(2);
+    expect(synced.boardOutline).toBeUndefined();
+  });
+
+  it("keeps an outline and its board together until there is a board", () => {
+    const revised = reviseChapter(createChapter("一", "旧梗概"), {
+      title: "一",
+      synopsis: "新梗概",
+    });
+    expect(revised.revision).toBe(2);
+    expect(revised.boardRevision).toBe(2);
+    expect(chapterOutlineAhead(revised)).toBe(false);
+    expect(revised.boardOutline).toBeUndefined();
+  });
+
+  it("keeps the outline the board was written from across later revisions", () => {
+    const chapter: StoryChapter = {
+      ...createChapter("一", "旧梗概"),
+      acts: [createActFor("chapter-1")],
+    };
+    const once = reviseChapter(chapter, { title: "一", synopsis: "二稿" });
+    const twice = reviseChapter(once, { title: "一", synopsis: "三稿" });
+    expect(twice.revision).toBe(3);
+    expect(twice.boardRevision).toBe(1);
+    expect(twice.boardOutline).toEqual({ title: "一", synopsis: "旧梗概" });
   });
 });
 

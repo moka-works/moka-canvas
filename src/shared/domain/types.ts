@@ -992,6 +992,12 @@ export interface StoryAct {
   videoModel?: string;
 }
 
+/** The outline of a chapter as it stood when its board was written. */
+export interface StoryOutlineSnapshot {
+  title: string;
+  synopsis: string;
+}
+
 /** A chapter — one episode of the telling. */
 export interface StoryChapter {
   id: string;
@@ -1005,6 +1011,39 @@ export interface StoryChapter {
   targetDurationMs: number;
   /** The board for this episode, made in step four. */
   acts: StoryAct[];
+  /**
+   * The outline revision the reader last confirmed, counted from one.
+   *
+   * Absent on a telling written before versions existed and on a chapter
+   * that has never been confirmed; both read as the first revision. A
+   * chapter with no board needs no revision of its own: its board revision
+   * follows it, so the two never part before there is a board to part from.
+   */
+  revision?: number;
+  /**
+   * The revision of the outline the current board was written from.
+   *
+   * Absent means the board is in step with the outline. When it is behind,
+   * the chapter holds two outlines: the latest words and the ones the board
+   * was made from, which is what a revision of the board is asked to change
+   * from.
+   */
+  boardRevision?: number;
+  /**
+   * The title and words as they stood when the board was written.
+   *
+   * Kept only while the outline is ahead of the board. Syncing the board
+   * drops it, and the chapter holds one outline again.
+   */
+  boardOutline?: StoryOutlineSnapshot;
+  /**
+   * Whether the outline is locked against typing.
+   *
+   * A reader edits a locked chapter by unlocking it first, and the edit is
+   * written as one revision when it is confirmed. Absent on a telling
+   * written before locks existed, which reads as unlocked.
+   */
+  outlineLocked?: boolean;
 }
 
 /**

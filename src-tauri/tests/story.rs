@@ -328,6 +328,10 @@ fn story_document() -> MokaFile {
                     video_model: None,
                     transition: None,
                 }],
+                revision: 1,
+                board_revision: None,
+                board_outline: None,
+                outline_locked: false,
             },
             StoryChapter {
                 id: CHAPTER_SECOND.into(),
@@ -335,6 +339,10 @@ fn story_document() -> MokaFile {
                 synopsis: "车厢比站台更暗。".into(),
                 target_duration_ms: 60_000,
                 acts: Vec::new(),
+                revision: 1,
+                board_revision: None,
+                board_outline: None,
+                outline_locked: false,
             },
         ],
         elements: vec![
@@ -647,6 +655,10 @@ fn keeps_a_chapters_board_when_the_chapter_keeps_its_id() {
             synopsis: "重写的梗概".into(),
             target_duration_ms: 60_000,
             acts: Vec::new(),
+            revision: 1,
+            board_revision: None,
+            board_outline: None,
+            outline_locked: false,
         },
         StoryChapter {
             id: "chapter-third".into(),
@@ -654,6 +666,10 @@ fn keeps_a_chapters_board_when_the_chapter_keeps_its_id() {
             synopsis: "".into(),
             target_duration_ms: 60_000,
             acts: Vec::new(),
+            revision: 1,
+            board_revision: None,
+            board_outline: None,
+            outline_locked: false,
         },
     ];
     let next = round_trip(
@@ -680,6 +696,10 @@ fn refuses_more_chapters_than_a_story_holds() {
             synopsis: String::new(),
             target_duration_ms: 60_000,
             acts: Vec::new(),
+            revision: 1,
+            board_revision: None,
+            board_outline: None,
+            outline_locked: false,
         })
         .collect();
     assert_eq!(

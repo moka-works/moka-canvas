@@ -525,13 +525,31 @@ function encodeStoryAct(act: StoryAct): Record<string, unknown> {
 }
 
 function encodeStoryChapter(chapter: StoryChapter): Record<string, unknown> {
-  return {
+  const revision = chapter.revision ?? 1;
+  const doc: Record<string, unknown> = {
     id: chapter.id,
     title: chapter.title,
     synopsis: chapter.synopsis,
     targetDurationMs: asLong(chapter.targetDurationMs),
     acts: chapter.acts.map(encodeStoryAct),
   };
+  // A chapter with no version of its own is the outline a telling before
+  // versions held, and is written as it always was.
+  if (revision !== 1) doc.revision = revision;
+  if (
+    chapter.boardRevision !== undefined &&
+    chapter.boardRevision !== revision
+  ) {
+    doc.boardRevision = chapter.boardRevision;
+  }
+  if (chapter.boardOutline !== undefined) {
+    doc.boardOutline = {
+      title: chapter.boardOutline.title,
+      synopsis: chapter.boardOutline.synopsis,
+    };
+  }
+  if (chapter.outlineLocked === true) doc.outlineLocked = true;
+  return doc;
 }
 
 /**
@@ -1668,6 +1686,18 @@ function decodeStoryChapter(value: unknown): StoryChapter {
     ),
     acts: asArray(doc.acts ?? [], "chapters[].acts").map(decodeStoryAct),
   };
+  const revision = decodeLongField(doc.revision);
+  if (revision !== undefined) chapter.revision = revision;
+  const boardRevision = decodeLongField(doc.boardRevision);
+  if (boardRevision !== undefined) chapter.boardRevision = boardRevision;
+  if (doc.boardOutline !== undefined && doc.boardOutline !== null) {
+    const outline = asRecord(doc.boardOutline, "chapters[].boardOutline");
+    chapter.boardOutline = {
+      title: asString(outline.title, "chapters[].boardOutline.title"),
+      synopsis: asString(outline.synopsis, "chapters[].boardOutline.synopsis"),
+    };
+  }
+  if (doc.outlineLocked === true) chapter.outlineLocked = true;
   return chapter;
 }
 
