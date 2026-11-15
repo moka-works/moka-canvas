@@ -2776,7 +2776,7 @@ function applyOne(
       for (const key of Object.keys(
         command.patch,
       ) as (keyof typeof command.patch)[]) {
-        (previous as Record<string, unknown>)[key] = keyframe[key] ?? null;
+        (previous as Record<string, unknown>)[key] = keyframe[key];
       }
       if (command.patch.variantChoices !== undefined) {
         previous.variantChoices = { ...(keyframe.variantChoices ?? {}) };
@@ -2806,6 +2806,7 @@ function applyOne(
                             ? {}
                             : { imageModel }),
                         };
+                        if (imageModel === null) delete merged.imageModel;
                         if (
                           command.patch.variantChoices !== undefined &&
                           Object.keys(command.patch.variantChoices).length === 0
