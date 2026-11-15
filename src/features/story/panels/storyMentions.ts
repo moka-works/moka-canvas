@@ -3,17 +3,22 @@
  *
  * A shot's words name the pictures that travel with it by writing a name in
  * backticks; the field draws each as a chip. This is where the names come
- * from — the cast, every form of it, and the pictures the shot carries beside
- * it — and where what is being typed after an @ is read.
+ * from — the shot's own reference list: the cast names its words already use,
+ * every form of them, and the extra pictures kept beside it — and where what is
+ * being typed after an @ is read.
  */
 
 import {
   elementForms,
-  elementOf,
+  extraReferenceName,
   formName,
+  storyMentions,
   type StoryDocument,
 } from "../../../shared/domain";
-import type { StoryExtraReference } from "../../../shared/domain/types";
+import type {
+  StoryElement,
+  StoryExtraReference,
+} from "../../../shared/domain/types";
 
 /** One thing the @ may mention, and the name it is written as. */
 export interface StoryMentionOption {
@@ -23,68 +28,57 @@ export interface StoryMentionOption {
   label: string;
   /** What is written into the words: the name the cast reads the picture by. */
   name: string;
-  group: "cast" | "extra";
   /** The cast form this choice draws the shot in, where it is one. */
   elementId?: string;
   variantId?: string;
 }
 
-/** Every name a shot's words may mention: its cast, forms first, then extras. */
+/**
+ * Every name a shot's words may mention: the cast its words already name,
+ * forms first, then the pictures kept beside them.
+ *
+ * Nothing outside the shot's own reference list is offered: a picture the shot
+ * does not carry has no place in the words, and is added to the list first.
+ */
 export function storyMentionOptions(
   story: StoryDocument,
+  content: string,
   extras: StoryExtraReference[],
 ): StoryMentionOption[] {
   const options: StoryMentionOption[] = [];
   const named = new Set<string>();
+  const mentioned = new Set(
+    storyMentions(content).map((mention) => mention.name),
+  );
+  const byName = new Map<string, StoryElement>();
   for (const element of story.elements) {
+    if (!byName.has(element.name)) byName.set(element.name, element);
+  }
+  for (const name of mentioned) {
+    const element = byName.get(name);
+    if (element === undefined) continue;
     for (const form of elementForms(element)) {
-      const name = element.name;
-      if (named.has(`cast:${element.id}:${form?.id ?? ""}`)) continue;
-      named.add(`cast:${element.id}:${form?.id ?? ""}`);
+      const key = `cast:${element.id}:${form?.id ?? ""}`;
+      if (named.has(key)) continue;
+      named.add(key);
       named.add(`name:${name}`);
       options.push({
-        key: `cast:${element.id}:${form?.id ?? ""}`,
+        key,
         label: formName(element, form),
         name,
-        group: "cast",
         elementId: element.id,
         ...(form === undefined ? {} : { variantId: form.id }),
       });
     }
   }
   extras.forEach((extra, at) => {
-    if (extra.elementId === undefined) {
-      // An extra with no name is a file nobody has named: a mention of it
-      // would be prose the room cannot tell from any other word.
-      if (extra.name === undefined || extra.name.trim() === "") return;
-      const name = extra.name;
-      if (named.has(`name:${name}`)) return;
-      named.add(`name:${name}`);
-      options.push({
-        key: `extra:asset:${extra.assetId ?? at}`,
-        label: name,
-        name,
-        group: "extra",
-      });
-      return;
-    }
-    const element = elementOf(story, extra.elementId);
-    const form =
-      element === undefined
-        ? undefined
-        : elementForms(element).find(
-            (held) => (held?.id ?? "") === (extra.variantId ?? ""),
-          );
-    const name =
-      extra.name ??
-      (element === undefined ? undefined : formName(element, form));
+    const name = extraReferenceName(story, extra);
     if (name === undefined || named.has(`name:${name}`)) return;
     named.add(`name:${name}`);
     options.push({
-      key: `extra:element:${extra.elementId}:${extra.variantId ?? ""}:${at}`,
+      key: `extra:${extra.elementId ?? extra.assetId ?? at}`,
       label: name,
       name,
-      group: "extra",
     });
   });
   return options;

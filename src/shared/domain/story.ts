@@ -30,6 +30,7 @@ import type {
   StoryElement,
   StoryElementKind,
   StoryElementVariant,
+  StoryExtraReference,
   StoryKeyframe,
   StoryPictureReference,
   StorySlot,
@@ -1211,6 +1212,27 @@ export function actCast(
  * just now" and a job's "which place is this item for" are the same answer
  * without either of them having to read the document.
  */
+/**
+ * The name a shot's extra reference is known by in its own words.
+ *
+ * A reference to a story element is named as the form it draws is, and a file
+ * on the shelf is named by what the reader called it. A file nobody named has
+ * no name to write into the words, so it cannot be mentioned at all.
+ */
+export function extraReferenceName(
+  story: StoryDocument,
+  extra: StoryExtraReference,
+): string | undefined {
+  if (extra.elementId !== undefined) {
+    const element = elementOf(story, extra.elementId);
+    if (element === undefined) return extra.name;
+    const form = elementForm(element, extra.variantId);
+    return extra.name ?? formName(element, form);
+  }
+  const name = extra.name?.trim();
+  return name === undefined || name === "" ? undefined : name;
+}
+
 /**
  * The element names a shot's words mention, in the order they are written.
  *
