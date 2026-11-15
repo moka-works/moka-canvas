@@ -729,69 +729,17 @@ export function ActCard({
           </button>
         )}
 
-        {/* Which model films this act stands where the act is filmed from:
-            an act may want a model of its own whatever the step is set to. */}
+        {/*
+          The clip's ask gathers into one column beside the clip itself: the
+          words, the ask that made the take, the takes to choose from, and the
+          model that films it stand together in one place to the clip's left,
+          so what is asked for and what replies are read as one block.
+        */}
         <span
-          className="story-model story-act-model"
-          data-testid={`story-act-model-${index}`}
+          className="story-act-film"
+          data-testid={`story-act-film-${index}`}
         >
-          <ModelPicker
-            capability="video"
-            label={t("story:storyboard.videoModel")}
-            noneLabel={t("story:storyboard.modelGlobal")}
-            onChange={(reference) => write({ videoModel: reference })}
-            testId={`story-act-video-model-${index}`}
-            value={act.videoModel ?? null}
-          />
-        </span>
-
-        {!perShot && everyFrameDrawn && clip === undefined && (
-          <button
-            className="link"
-            data-testid={`story-act-video-prompt-${index}`}
-            onClick={() => setEditingPrompt("edit")}
-            type="button"
-          >
-            {t("story:storyboard.videoPromptEdit")}
-            {promptEdited
-              ? ` · ${t("story:storyboard.videoPromptEdited")}`
-              : ""}
-          </button>
-        )}
-
-        {!perShot && clip === undefined && (
-          <button
-            data-testid={`story-act-video-go-${index}`}
-            disabled={!everyFrameDrawn || videoBusy}
-            onClick={filmAct}
-            title={
-              everyFrameDrawn ? undefined : t("story:storyboard.drawEveryFrame")
-            }
-            type="button"
-          >
-            {videoBusy
-              ? t("story:panels.drawing")
-              : t("story:storyboard.filmAct")}
-          </button>
-        )}
-
-        {clip !== undefined && (
-          <span className="story-act-clip">
-            <button
-              aria-label={t("story:storyboard.playClip")}
-              className="story-act-play"
-              data-testid={`story-act-video-${index}`}
-              onClick={() => setPlaying(true)}
-              type="button"
-            >
-              <img
-                alt=""
-                decoding="async"
-                onError={() => setFailedPoster(framePoster)}
-                src={clipPoster}
-                style={{ aspectRatio: frameRatio(story) }}
-              />
-            </button>
+          <span className="story-act-film-side">
             {!perShot && (
               <span className="story-act-clip-actions">
                 {everyFrameDrawn && (
@@ -807,50 +755,106 @@ export function ActCard({
                       : ""}
                   </button>
                 )}
-                {/*
-                  A clip already made is not the end of the ask that made it:
-                  the row that plays it keeps the ask beside it, so a take the
-                  reader does not like is asked over from where it stands.
-                */}
-                <button
-                  className="link"
-                  data-testid={`story-act-video-again-${index}`}
-                  disabled={videoBusy}
-                  onClick={filmAct}
-                  type="button"
-                >
-                  {videoBusy
-                    ? t("story:panels.drawing")
-                    : t("story:voice.again")}
-                </button>
-                {act.video.takes.length > 1 && (
-                  /*
-                    Every ask made another take and none of them was thrown away,
-                    so the row that plays one is also where the reader says which
-                    one the act is filmed by — and where an unwanted one leaves.
-                  */
+                {clip === undefined ? (
                   <button
-                    className="link"
-                    data-testid={`story-act-video-pick-${index}`}
-                    onClick={() => setPickingClip(true)}
+                    data-testid={`story-act-video-go-${index}`}
+                    disabled={!everyFrameDrawn || videoBusy}
+                    onClick={filmAct}
+                    title={
+                      everyFrameDrawn
+                        ? undefined
+                        : t("story:storyboard.drawEveryFrame")
+                    }
                     type="button"
                   >
-                    {t("story:panels.pickClip")}
+                    {videoBusy
+                      ? t("story:panels.drawing")
+                      : t("story:storyboard.filmAct")}
                   </button>
+                ) : (
+                  <>
+                    {/*
+                      A clip already made is not the end of the ask that made
+                      it: the column that holds it keeps the ask beside the
+                      take, so a take the reader does not like is asked over
+                      from where it stands.
+                    */}
+                    <button
+                      className="link"
+                      data-testid={`story-act-video-again-${index}`}
+                      disabled={videoBusy}
+                      onClick={filmAct}
+                      type="button"
+                    >
+                      {videoBusy
+                        ? t("story:panels.drawing")
+                        : t("story:voice.again")}
+                    </button>
+                    {act.video.takes.length > 1 && (
+                      /*
+                        Every ask made another take and none of them was thrown
+                        away, so the column that plays one is also where the
+                        reader says which one the act is filmed by — and where
+                        an unwanted one leaves.
+                      */
+                      <button
+                        className="link"
+                        data-testid={`story-act-video-pick-${index}`}
+                        onClick={() => setPickingClip(true)}
+                        type="button"
+                      >
+                        {t("story:panels.pickClip")}
+                      </button>
+                    )}
+                  </>
                 )}
               </span>
             )}
-            {clipStale && (
-              <span
-                className="story-clip-stale"
-                data-testid={`story-act-video-stale-${index}`}
-                title={t("story:storyboard.clipStaleHint")}
-              >
-                {t("story:storyboard.clipStale")}
-              </span>
-            )}
+            {/* Which model films this act stands where the act is filmed from:
+                an act may want a model of its own whatever the step is set to. */}
+            <span
+              className="story-model story-act-model"
+              data-testid={`story-act-model-${index}`}
+            >
+              <ModelPicker
+                capability="video"
+                label={t("story:storyboard.videoModel")}
+                noneLabel={t("story:storyboard.modelGlobal")}
+                onChange={(reference) => write({ videoModel: reference })}
+                testId={`story-act-video-model-${index}`}
+                value={act.videoModel ?? null}
+              />
+            </span>
           </span>
-        )}
+          {clip !== undefined && (
+            <span className="story-act-clip">
+              <button
+                aria-label={t("story:storyboard.playClip")}
+                className="story-act-play"
+                data-testid={`story-act-video-${index}`}
+                onClick={() => setPlaying(true)}
+                type="button"
+              >
+                <img
+                  alt=""
+                  decoding="async"
+                  onError={() => setFailedPoster(framePoster)}
+                  src={clipPoster}
+                  style={{ aspectRatio: frameRatio(story) }}
+                />
+              </button>
+              {clipStale && (
+                <span
+                  className="story-clip-stale"
+                  data-testid={`story-act-video-stale-${index}`}
+                  title={t("story:storyboard.clipStaleHint")}
+                >
+                  {t("story:storyboard.clipStale")}
+                </span>
+              )}
+            </span>
+          )}
+        </span>
       </div>
 
       {/*

@@ -9189,10 +9189,12 @@ button > .story-spin {
   width: 92px;
 }
 
-/* The shoot role under a drawn frame, kept to the frame column's own width. */
-.story-kf-role {
+/* The shoot role, the last line of a shot's tools: wide enough to read the
+   role the frame is used as without opening the list. */
+.story-table .story-kf-role {
   font-size: 12px;
   max-width: 100%;
+  min-width: 128px;
 }
 
 /* The frame's short menu: replacing the picture, editing it, and the file it
@@ -9252,11 +9254,21 @@ button > .story-spin {
   color: var(--coral);
 }
 
-/* The shot's own row: where it goes, and the way to another place in it. */
+/*
+  The shot's own tools, in three lines of one kind each: the cut that begins a
+  new act, where the shot goes and how it leaves, and how its drawn frame is
+  used when the act is shot.
+*/
 .story-kf-tools {
   align-items: flex-start;
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-kf-tools-row {
+  align-items: center;
+  display: inline-flex;
   gap: 2px;
 }
 
@@ -9400,6 +9412,25 @@ button > .story-spin {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/*
+  The clip's ask on an act's foot: the words, the take it made and the model
+  that films it stand in one column, with the clip itself beside it — so the
+  ask and the video it makes are read as one block rather than scattered along
+  the foot.
+*/
+.story-act-film {
+  align-items: flex-start;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.story-act-film-side {
+  align-items: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* The model an act is filmed by stands on the act's own foot, beside the asks

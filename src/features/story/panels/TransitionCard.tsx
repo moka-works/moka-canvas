@@ -312,85 +312,99 @@ export function TransitionCard({
       </label>
 
       <div className="story-act-foot">
+        {/* A bridge's ask gathers beside its clip the way an act's does: the
+            words and another take above the model that films it, in one
+            column to the clip's left. */}
         <span
-          className="story-model story-act-model"
-          data-testid={`story-transition-model-${index}`}
+          className="story-act-film"
+          data-testid={`story-transition-film-${index}`}
         >
-          <ModelPicker
-            capability="video"
-            label={t("story:storyboard.videoModel")}
-            noneLabel={t("story:storyboard.modelGlobal")}
-            onChange={writeVideoModel}
-            testId={`story-transition-video-model-${index}`}
-            value={act.videoModel ?? null}
-          />
-        </span>
-        {clip === undefined ? (
-          <button
-            className="primary"
-            data-testid={`story-transition-video-go-${index}`}
-            disabled={!ready || videoBusy}
-            onClick={film}
-            title={missing}
-            type="button"
-          >
-            {videoBusy
-              ? t("story:panels.drawing")
-              : t("story:storyboard.transitionFilm")}
-          </button>
-        ) : (
-          <span className="story-act-clip">
-            <button
-              aria-label={t("story:storyboard.playClip")}
-              className="story-act-play"
-              data-testid={`story-transition-video-${index}`}
-              onClick={() => setPlaying(true)}
-              type="button"
-            >
-              <img
-                alt=""
-                decoding="async"
-                src={clipPoster}
-                style={{ aspectRatio: frameRatio(story) }}
-              />
-            </button>
-            <button
-              className="link"
-              data-testid={`story-transition-video-again-${index}`}
-              disabled={!ready || videoBusy}
-              onClick={film}
-              title={missing}
-              type="button"
-            >
-              {videoBusy
-                ? t("story:panels.drawing")
-                : t("story:storyboard.transitionAgain")}
-            </button>
-            {act.video.takes.length > 1 && (
+          <span className="story-act-film-side">
+            {ready && (
               <button
                 className="link"
-                data-testid={`story-transition-video-pick-${index}`}
-                onClick={() => setPickingClip(true)}
+                data-testid={`story-transition-video-prompt-${index}`}
+                onClick={() => setEditingPrompt("edit")}
                 type="button"
               >
-                {t("story:panels.pickClip")}
+                {t("story:storyboard.videoPromptEdit")}
+                {promptEdited
+                  ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                  : ""}
               </button>
             )}
+            {clip === undefined ? (
+              <button
+                className="primary"
+                data-testid={`story-transition-video-go-${index}`}
+                disabled={!ready || videoBusy}
+                onClick={film}
+                title={missing}
+                type="button"
+              >
+                {videoBusy
+                  ? t("story:panels.drawing")
+                  : t("story:storyboard.transitionFilm")}
+              </button>
+            ) : (
+              <span className="story-act-clip-actions">
+                <button
+                  className="link"
+                  data-testid={`story-transition-video-again-${index}`}
+                  disabled={!ready || videoBusy}
+                  onClick={film}
+                  title={missing}
+                  type="button"
+                >
+                  {videoBusy
+                    ? t("story:panels.drawing")
+                    : t("story:storyboard.transitionAgain")}
+                </button>
+                {act.video.takes.length > 1 && (
+                  <button
+                    className="link"
+                    data-testid={`story-transition-video-pick-${index}`}
+                    onClick={() => setPickingClip(true)}
+                    type="button"
+                  >
+                    {t("story:panels.pickClip")}
+                  </button>
+                )}
+              </span>
+            )}
+            <span
+              className="story-model story-act-model"
+              data-testid={`story-transition-model-${index}`}
+            >
+              <ModelPicker
+                capability="video"
+                label={t("story:storyboard.videoModel")}
+                noneLabel={t("story:storyboard.modelGlobal")}
+                onChange={writeVideoModel}
+                testId={`story-transition-video-model-${index}`}
+                value={act.videoModel ?? null}
+              />
+            </span>
           </span>
-        )}
-        {ready && (
-          <button
-            className="link"
-            data-testid={`story-transition-video-prompt-${index}`}
-            onClick={() => setEditingPrompt("edit")}
-            type="button"
-          >
-            {t("story:storyboard.videoPromptEdit")}
-            {promptEdited
-              ? ` · ${t("story:storyboard.videoPromptEdited")}`
-              : ""}
-          </button>
-        )}
+          {clip !== undefined && (
+            <span className="story-act-clip">
+              <button
+                aria-label={t("story:storyboard.playClip")}
+                className="story-act-play"
+                data-testid={`story-transition-video-${index}`}
+                onClick={() => setPlaying(true)}
+                type="button"
+              >
+                <img
+                  alt=""
+                  decoding="async"
+                  src={clipPoster}
+                  style={{ aspectRatio: frameRatio(story) }}
+                />
+              </button>
+            </span>
+          )}
+        </span>
         {missing !== undefined && (
           <span
             className="story-hint"

@@ -843,69 +843,80 @@ function KeyframeRow({
           </td>
         )}
         <td>
+          {/*
+            The row's own tools stand in three lines of one kind each: where an
+            act is cut, where the shot goes and how it leaves, and how its drawn
+            frame is used when the act is shot.
+          */}
           <span className="story-kf-tools">
-            {/*
-              How a drawn frame is used when the act is shot stands among the
-              row's own tools rather than under its picture, so the picture's
-              cell keeps one line of actions whatever the role says.
-            */}
-            {!perShot && (
-              <FilmRoleSelect
-                index={index}
-                locked={roleLocked}
-                onWrite={(role) => write({ filmRole: role })}
-                pairable={rolePairable}
-                role={filmRoleOf(keyframe)}
-              />
-            )}
             {/*
               A seam inside an act is where the act is cut in two: the row
               above the gap says so, and the shots keep the acts they were
               written into.
             */}
             {index > 0 && (
+              <span className="story-kf-tools-row">
+                <button
+                  aria-label={cell(t("story:storyboard.splitAct"))}
+                  className="story-kf-remove"
+                  data-testid={`story-kf-split-${index}`}
+                  onClick={() => splitAct(story, chapterId, act, index)}
+                  title={t("story:storyboard.splitActHint")}
+                  type="button"
+                >
+                  ✂
+                </button>
+              </span>
+            )}
+            <span className="story-kf-tools-row">
               <button
-                aria-label={cell(t("story:storyboard.splitAct"))}
+                aria-label={cell(t("story:storyboard.removeShot"))}
                 className="story-kf-remove"
-                data-testid={`story-kf-split-${index}`}
-                onClick={() => splitAct(story, chapterId, act, index)}
-                title={t("story:storyboard.splitActHint")}
+                data-testid={`story-kf-remove-${index}`}
+                onClick={remove}
                 type="button"
               >
-                ✂
+                ✕
               </button>
+              <button
+                aria-label={cell(t("story:storyboard.moveShotUp"))}
+                className="story-kf-move"
+                data-testid={`story-kf-up-${index}`}
+                disabled={first}
+                onClick={() => move(-1)}
+                title={t("story:storyboard.moveShotUp")}
+                type="button"
+              >
+                ↑
+              </button>
+              <button
+                aria-label={cell(t("story:storyboard.moveShotDown"))}
+                className="story-kf-move"
+                data-testid={`story-kf-down-${index}`}
+                disabled={last}
+                onClick={() => move(1)}
+                title={t("story:storyboard.moveShotDown")}
+                type="button"
+              >
+                ↓
+              </button>
+            </span>
+            {/*
+              How a drawn frame is used when the act is shot stands among the
+              row's own tools rather than under its picture, so the picture's
+              cell keeps one line of actions whatever the role says.
+            */}
+            {!perShot && (
+              <span className="story-kf-tools-row">
+                <FilmRoleSelect
+                  index={index}
+                  locked={roleLocked}
+                  onWrite={(role) => write({ filmRole: role })}
+                  pairable={rolePairable}
+                  role={filmRoleOf(keyframe)}
+                />
+              </span>
             )}
-            <button
-              aria-label={cell(t("story:storyboard.moveShotUp"))}
-              className="story-kf-move"
-              data-testid={`story-kf-up-${index}`}
-              disabled={first}
-              onClick={() => move(-1)}
-              title={t("story:storyboard.moveShotUp")}
-              type="button"
-            >
-              ↑
-            </button>
-            <button
-              aria-label={cell(t("story:storyboard.moveShotDown"))}
-              className="story-kf-move"
-              data-testid={`story-kf-down-${index}`}
-              disabled={last}
-              onClick={() => move(1)}
-              title={t("story:storyboard.moveShotDown")}
-              type="button"
-            >
-              ↓
-            </button>
-            <button
-              aria-label={cell(t("story:storyboard.removeShot"))}
-              className="story-kf-remove"
-              data-testid={`story-kf-remove-${index}`}
-              onClick={remove}
-              type="button"
-            >
-              ✕
-            </button>
           </span>
         </td>
       </tr>
