@@ -280,7 +280,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // The pictures a shot stands on are the board's to look at: an element's
     // reference opens over the board, and the kept picture can be changed
     // rather than only drawn again.
-    await expect(firstAct.getByTestId("story-kf-extras-0")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-refs-0")).toBeVisible();
     await firstAct.getByTestId("story-ref-view-Keeper").click();
     await expect(page.getByTestId("story-picture-inspector")).toBeVisible();
     await page.getByTestId("story-inspector-edit").click();

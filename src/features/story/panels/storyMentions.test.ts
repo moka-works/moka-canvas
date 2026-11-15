@@ -18,7 +18,7 @@ function story(): StoryDocument {
 }
 
 describe("the names an @ offers", () => {
-  it("offers every form of the cast and the shot's extras", () => {
+  it("offers the forms of the cast the words name and the shot's extras", () => {
     const held = story();
     const hero = held.elements.find((element) => element.id === ids.hero)!;
     hero.variants = [
@@ -29,7 +29,7 @@ describe("the names an @ offers", () => {
         main: { takes: [] },
       },
     ];
-    const options = storyMentionOptions(held, [
+    const options = storyMentionOptions(held, "雨中的站台，`林`立在灯下。", [
       { elementId: ids.scene, name: "车厢背面" },
       { assetId: "asset-extra", name: "傍晚的暖光" },
       { assetId: "asset-unnamed" },
@@ -40,18 +40,27 @@ describe("the names an @ offers", () => {
     // A file nobody named has no name to write into the words.
     expect(options.map((option) => option.name)).not.toContain("");
     // The cast's own name wins over an extra of the same name.
-    const repeated = storyMentionOptions(held, [
+    const repeated = storyMentionOptions(held, "雨中的站台，`林`立在灯下。", [
       { elementId: ids.scene, name: "林" },
     ]);
-    expect(
-      repeated.filter(
-        (option) => option.name === "林" && option.group === "extra",
-      ),
-    ).toEqual([]);
+    const castOnly = repeated.filter((option) => option.name === "林");
+    expect(castOnly.length).toBeGreaterThan(0);
+    expect(castOnly.every((option) => option.elementId === ids.hero)).toBe(
+      true,
+    );
+  });
+
+  it("offers nothing outside the shot's own reference list", () => {
+    const options = storyMentionOptions(story(), "雨下个不停。", []);
+    expect(options).toEqual([]);
   });
 
   it("narrows the offer by what has been typed", () => {
-    const options = storyMentionOptions(story(), []);
+    const options = storyMentionOptions(
+      story(),
+      "雨中的站台，`林`立在灯下。",
+      [],
+    );
     expect(
       narrowStoryMentions(options, "林").map((option) => option.name),
     ).toEqual(["林"]);

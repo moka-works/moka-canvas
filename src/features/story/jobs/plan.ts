@@ -36,6 +36,7 @@ import {
   currentTake,
   elementForm,
   elementOf,
+  extraReferenceName,
   formAspect,
   formDescription,
   formName,
@@ -870,8 +871,8 @@ export interface StoryReference {
   element?: StoryElement;
   /** The form of that element the picture is of, where one was chosen. */
   variant?: StoryElementVariant;
-  /** Whether the picture came from the shot's extras rather than a mention. */
-  fromExtra?: boolean;
+  /** The shot's reference list entry this picture is, where it is one. */
+  extraIndex?: number;
   /** How the ask names it: the element's name, or what an extra is for. */
   name: string;
   description: string;
@@ -882,15 +883,17 @@ export interface StoryReference {
  * The cast a frame travels with, as the frame's own words name it.
  *
  * The pictures are chosen by the mentions in a shot's content: each mentioned
- * name the story knows and has drawn is a reference, in the order it is first
- * named, and one nobody has drawn — or nobody has at all — is left to the
- * words. The order is the contract between the numbered references in the
- * prompt and the pictures that travel with it, so it is decided once, here.
+ * name the shot knows — a cast member, or a picture in its own reference list —
+ * is a reference, in the order it is first named, and one nobody has drawn — or
+ * nobody has at all — is left to the words. A picture the shot keeps but its
+ * words never name is not sent: what is not asked for is not drawn from. The
+ * order is the contract between the numbered references in the prompt and the
+ * pictures that travel with it, so it is decided once, here.
  *
  * The story's own limit decides how many of them fit: an image service refuses
  * a request over its bound whole rather than drawing with the first of the
- * pictures, so the first of the mentioned ones travel and the rest are left to
- * the words.
+ * pictures, so the first of the named ones travel and the rest are left to the
+ * words.
  */
 export function keyframeCast(
   story: StoryDocument,
@@ -909,6 +912,18 @@ export function keyframeCast(
   for (const element of story.elements) {
     if (!byName.has(element.name)) byName.set(element.name, element);
   }
+  // The shot's own reference list, by the name its words may use for each.
+  // An extra the words name stands as the picture it holds; extras the words
+  // never name stay on the board and out of the ask.
+  const extrasByName = new Map<
+    string,
+    { extra: StoryExtraReference; at: number }
+  >();
+  extras.forEach((extra, at) => {
+    const name = extraReferenceName(story, extra);
+    if (name === undefined || extrasByName.has(name)) return;
+    extrasByName.set(name, { extra, at });
+  });
   const seen = new Set<string>();
   const drawn: StoryReference[] = [];
   const undrawn: string[] = [];
@@ -927,7 +942,13 @@ export function keyframeCast(
         ? undefined
         : currentTake(variant === undefined ? element.main : variant.main);
     if (element === undefined || take === undefined) {
-      undrawn.push(mention.name);
+      const held = extrasByName.get(mention.name);
+      const reference =
+        element === undefined && held !== undefined
+          ? extraReference(story, held.extra, held.at)
+          : undefined;
+      if (reference === undefined) undrawn.push(mention.name);
+      else drawn.push(reference);
       continue;
     }
     drawn.push({
@@ -939,44 +960,8 @@ export function keyframeCast(
       assetId: take.assetIds[0],
     });
   }
-  // The pictures the shot carries beside its cast come after the ones its own
-  // words name: a mention is what the shot is about, and an extra is what the
-  // reader wants beside it.
-  const carried: StoryReference[] = extras.flatMap((extra, at) => {
-    if (extra.elementId !== undefined) {
-      const element = elementOf(story, extra.elementId);
-      if (element === undefined) return [];
-      const variant = elementForm(element, extra.variantId);
-      if (extra.variantId !== undefined && variant === undefined) return [];
-      const take = currentTake(
-        variant === undefined ? element.main : variant.main,
-      );
-      if (take === undefined) return [];
-      return [
-        {
-          element,
-          ...(variant === undefined ? {} : { variant }),
-          fromExtra: true,
-          name: extra.name ?? formName(element, variant),
-          description: extra.note ?? formDescription(element, variant),
-          assetId: take.assetIds[0],
-        },
-      ];
-    }
-    if (extra.assetId === undefined) return [];
-    return [
-      {
-        name: extra.name ?? `Additional reference ${at + 1}`,
-        description:
-          extra.note === undefined || extra.note.trim() === ""
-            ? "An extra picture this shot should take into account."
-            : extra.note.trim(),
-        assetId: extra.assetId,
-      },
-    ];
-  });
   const seenAssets = new Set<string>();
-  const all = [...drawn, ...carried].filter((reference) => {
+  const all = drawn.filter((reference) => {
     if (seenAssets.has(reference.assetId)) return false;
     seenAssets.add(reference.assetId);
     return true;
@@ -986,6 +971,45 @@ export function keyframeCast(
     carried: all.slice(0, limit),
     beyond: all.slice(limit),
     undrawn,
+  };
+}
+
+/** One picture the shot keeps beside its cast, as an ask reads it. */
+function extraReference(
+  story: StoryDocument,
+  extra: StoryExtraReference,
+  at: number,
+): StoryReference | undefined {
+  if (extra.elementId !== undefined) {
+    const element = elementOf(story, extra.elementId);
+    if (element === undefined) return undefined;
+    const variant = elementForm(element, extra.variantId);
+    if (extra.variantId !== undefined && variant === undefined)
+      return undefined;
+    const take = currentTake(
+      variant === undefined ? element.main : variant.main,
+    );
+    if (take === undefined) return undefined;
+    return {
+      element,
+      ...(variant === undefined ? {} : { variant }),
+      extraIndex: at,
+      name: extraReferenceName(story, extra) ?? formName(element, variant),
+      description: extra.note ?? formDescription(element, variant),
+      assetId: take.assetIds[0],
+    };
+  }
+  if (extra.assetId === undefined) return undefined;
+  const name = extraReferenceName(story, extra);
+  if (name === undefined) return undefined;
+  return {
+    extraIndex: at,
+    name,
+    description:
+      extra.note === undefined || extra.note.trim() === ""
+        ? "An extra picture this shot should take into account."
+        : extra.note.trim(),
+    assetId: extra.assetId,
   };
 }
 

@@ -228,7 +228,7 @@ export function KeyframeContentField({
   kinds: Record<string, MentionKind>;
   label: string;
   testId?: string;
-  /** The names an @ offers: the cast's forms, then the shot's extras. */
+  /** The names an @ offers: the shot's own reference list. */
   mentionOptions: StoryMentionOption[];
   /** A cast form was chosen, which is the form this shot now draws it in. */
   onChooseMention?: (option: StoryMentionOption) => void;
@@ -451,28 +451,18 @@ export function KeyframeContentField({
           role="listbox"
         >
           {rows.map((option, at) => (
-            <div key={option.key}>
-              {option.group !== rows[at - 1]?.group && (
-                <p className="story-mention-offer-label">
-                  {t(
-                    option.group === "cast"
-                      ? "story:storyboard.mentionCast"
-                      : "story:storyboard.mentionExtras",
-                  )}
-                </p>
-              )}
-              <button
-                aria-selected={at === chosen}
-                className={at === chosen ? "is-active" : ""}
-                id={testId === undefined ? undefined : `${testId}-offer-${at}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => choose(option)}
-                role="option"
-                type="button"
-              >
-                {option.label}
-              </button>
-            </div>
+            <button
+              aria-selected={at === chosen}
+              className={at === chosen ? "is-active" : ""}
+              id={testId === undefined ? undefined : `${testId}-offer-${at}`}
+              key={option.key}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(option)}
+              role="option"
+              type="button"
+            >
+              {option.label}
+            </button>
           ))}
         </div>
       )}

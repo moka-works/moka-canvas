@@ -9035,14 +9035,6 @@ button > .story-spin {
   color: var(--muted);
 }
 
-/* The pictures the words call in, in the order they are named. */
-.story-ref-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
 .story-ref-thumb {
   background: none;
   border: 1px solid var(--stroke);
@@ -9065,9 +9057,11 @@ button > .story-spin {
   opacity: 0.45;
 }
 
-/* The pictures a shot carries beside its cast: a little of the picture, what
-   it is there for, and the way to take it off. A reference past the story's
-   limit stays on the row, dimmed, because it is still the reader's. */
+/* A shot's reference list: the pictures its words call in, in the order they
+   are named, then the ones its words leave unnamed — a little of the picture,
+   what it is there for, and the way to take it off. A reference past the
+   story's limit or left unnamed stays on the row, dimmed, because it is still
+   the reader's. */
 .story-extra-refs {
   align-items: center;
   display: flex;
