@@ -568,6 +568,24 @@ describe("writing an episode's board", () => {
     }
   });
 
+  it("says on the act's clock what kind of work is out, and on which model", async () => {
+    openAtBoard(withUndrawnFrames());
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+
+    // The bar over the act names the work and the model serving it, beside
+    // the clock it keeps: a shot's picture is being drawn by the painter the
+    // batch was asked of, and the bar says so rather than only "generating".
+    const bar = await screen.findByTestId("story-act-running");
+    expect(bar.textContent).toContain("Generating pictures");
+    expect(bar.textContent).toContain("a-storyteller");
+
+    await comesBack();
+    await waitFor(() =>
+      expect(screen.queryByTestId("story-act-running")).toBeNull(),
+    );
+  });
+
   it("folds the episode strip down to the episode the board stands on", () => {
     const moka = boarded();
     openAtBoard(moka);

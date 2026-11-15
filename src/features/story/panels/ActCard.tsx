@@ -25,6 +25,8 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
 import { ModelPicker } from "../../settings/ModelPicker";
+import { modelNameOf, useModelStore } from "../../settings/modelStore";
+import { askPlaceOfKind, type StoryAskPlace } from "../stores/storyModels";
 import {
   actClipPieces,
   drawnFrames,
@@ -68,6 +70,15 @@ const CLIP_POSTER_WIDTH = 320;
 
 /** The two ways an act's clip may be made, in the order the room shows them. */
 const GRANULARITY_OPTIONS: StoryShotGranularity[] = ["act", "keyframe"];
+
+/** What a batch's work is called where its clock stands. */
+const ASK_PLACE_LABELS: Record<StoryAskPlace, string> = {
+  text: "story:jobs.kindText",
+  image: "story:jobs.kindImage",
+  video: "story:jobs.kindVideo",
+  audio: "story:jobs.kindVoice",
+  music: "story:jobs.kindMusic",
+};
 
 /**
  * One act of a board: who is in it, what happens, how it sounds, and the shots
@@ -129,6 +140,7 @@ export function ActCard({
   const runWaves = useStoryWavesRun();
   const runArt = useStoryWavesAsk();
   const moka = useProjectStore((state) => state.moka);
+  const models = useModelStore((state) => state.view);
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [pickingVoice, setPickingVoice] = useState(false);
@@ -536,7 +548,10 @@ export function ActCard({
             <RunningBar
               job={job}
               key={job.id}
-              label={t("story:jobs.generating")}
+              label={t("story:jobs.generatingKind", {
+                kind: t(ASK_PLACE_LABELS[askPlaceOfKind(job.kind)]),
+                model: modelNameOf(models, job.model),
+              })}
               pieces={items}
               testId="story-act-running"
             />

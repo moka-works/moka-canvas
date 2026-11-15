@@ -39,6 +39,21 @@ export function modelOptionsFor(
 }
 
 /**
+ * What a model is called by the reference a node or a batch stores.
+ *
+ * A model that has since been switched off or deleted keeps its name while the
+ * view still carries it; one the view has never heard of is named by the
+ * reference itself, which is still a truer answer than no name at all.
+ */
+export function modelNameOf(
+  view: ModelsView | null,
+  reference: string,
+): string {
+  const found = view?.models.find((model) => model.id === reference);
+  return found?.displayName ?? reference;
+}
+
+/**
  * The default a category actually generates with: the stored choice while it
  * still names an enabled model of the category, and the first enabled model
  * otherwise. This mirrors the server's own fallback, so what the list shows

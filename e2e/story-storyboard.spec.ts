@@ -475,8 +475,13 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     };
 
     // One frame of the act, drawn from the cast step three settled on, while
-    // its own ask is the only thing that waits on it.
+    // its own ask is the only thing that waits on it. The act's clock names
+    // the work and the model serving it, not only that something is running.
     await firstAct.getByTestId("story-kf-slot-0-generate").click();
+    const running = firstAct.getByTestId("story-act-running");
+    await expect(running).toBeVisible();
+    await expect(running).toContainText("Painter");
+    await expect(running).toContainText("pictures");
     await expect(
       firstAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
