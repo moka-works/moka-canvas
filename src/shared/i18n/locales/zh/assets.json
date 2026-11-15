@@ -35,7 +35,7 @@
     "open": "打开",
     "openAria": "打开 {{title}}",
     "none": "项目里还没有用到这个文件。导出时若只含已使用文件，它会被留在项目里。",
-    "oldTake": "旧 take",
+    "oldTake": "旧版",
     "boardCard": "{{board}} · {{card}}",
     "cutClip": "{{timeline}} · {{clip}}",
     "storyPlace": "{{story}} · {{place}}",

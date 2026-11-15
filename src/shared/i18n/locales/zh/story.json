@@ -563,7 +563,7 @@
     "syncPatchHint": "只重写受改动影响的镜头；已生成的帧图、片段和配音保留。",
     "syncPatchNote": "模型先比对改动并给出预览，确认后才会写入。",
     "syncRebuild": "重建这一集",
-    "syncRebuildHint": "按新大纲整集重写分镜；分镜文字会被替换，已有 take 在镜头对位时保留。",
+    "syncRebuildHint": "按新大纲整集重写分镜；镜头文字会换成新的，新分镜里位置对得上的镜头，之前生成的帧图和片段继续沿用。",
     "syncRebuildCost": "将重写 {{acts}} 幕、{{frames}} 个镜头；已有 {{drawn}} 张帧图、{{filmed}} 个片段留在素材架。",
     "syncStart": "开始",
     "syncCancel": "取消",
