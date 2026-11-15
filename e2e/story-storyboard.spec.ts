@@ -277,6 +277,19 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // The act's cast menu puts itself away when the page around it is pressed
+    // — including the blank tail of its own row, beside the names.
+    await firstAct.getByTestId("story-ref-add-character").click();
+    const castMenu = firstAct.getByTestId("story-ref-menu-character");
+    await expect(castMenu).toBeVisible();
+    const castRow = await firstAct.locator(".story-refs").first().boundingBox();
+    const castCard = await firstAct.boundingBox();
+    await page.mouse.click(
+      castCard!.x + castCard!.width - 12,
+      castRow!.y + castRow!.height / 2,
+    );
+    await expect(castMenu).toHaveCount(0);
+
     // The strip of episodes folds down to the episodes around the one being
     // boarded, so stepping to a neighbour never needs it opened again.
     await page.getByTestId("story-board-strip-fold").click();

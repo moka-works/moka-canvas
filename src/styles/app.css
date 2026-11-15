@@ -8780,6 +8780,9 @@ button > .story-spin {
 .story-refs-row {
   display: grid;
   gap: 6px;
+  /* Each row is only as wide as what it holds, so the blank space beside its
+     names is the page's — a press there puts a menu down like any other. */
+  justify-items: start;
 }
 
 .story-refs {

@@ -65,11 +65,11 @@ export function RefPicker({
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (event: MouseEvent) => {
+    const onDown = (event: PointerEvent) => {
       if (held.current?.contains(event.target as Node) !== true) setOpen(false);
     };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
   const pool = elements.filter((element) => element.kind === kind);
