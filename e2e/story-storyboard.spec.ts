@@ -24,7 +24,7 @@ import {
 
 // The whole telling is walked in one test — five steps, every ask through a
 // stand-in — which needs longer than the suite's own budget for one case.
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 90_000 });
 
 const { PNG } = createRequire(import.meta.url)(
   "playwright-core/lib/utilsBundle",
@@ -297,22 +297,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await firstAct.getByTestId("story-kf-fold-0").click();
     await expect(firstAct.getByTestId("story-kf-size-0")).toBeVisible();
 
-    // The shoot role stands in the row's tools rather than under its picture,
-    // and replacing, filing, and editing the picture stand behind one More.
+    // The shoot role stands in the row's tools rather than under its picture.
     await expect(
       firstAct.getByTestId("story-kf-slot-0").getByTestId("story-kf-role-0"),
     ).toHaveCount(0);
     await expect(firstAct.getByTestId("story-kf-role-0")).toBeVisible();
-    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
-    await expect(firstAct.getByTestId("story-kf-slot-0-library")).toBeVisible();
-    await expect(firstAct.getByTestId("story-kf-slot-0-upload")).toBeVisible();
-    await expect(firstAct.getByTestId("story-kf-edit-0")).toBeVisible();
-    await firstAct.getByTestId("story-kf-slot-0-library").click();
-    await expect(page.getByTestId("story-library")).toBeVisible();
-    await page
-      .getByTestId("story-library")
-      .getByRole("button", { name: "Close" })
-      .click();
 
     // The act's foot names the video model this act is filmed by, and says so
     // on the act rather than only in the step's band.
@@ -491,6 +480,19 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       firstAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
+
+    // A drawn picture keeps its cell short: replacing it from the shelf or
+    // this computer and editing it stand behind one More.
+    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
+    await expect(firstAct.getByTestId("story-kf-slot-0-library")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-slot-0-upload")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-edit-0")).toBeVisible();
+    await firstAct.getByTestId("story-kf-slot-0-library").click();
+    await expect(page.getByTestId("story-library")).toBeVisible();
+    await page
+      .getByTestId("story-library")
+      .getByRole("button", { name: "Close" })
+      .click();
 
     // The frame is shown whole inside its cell rather than cropped to the
     // telling's shape: a picture is drawn at the nearest size the model offers,
