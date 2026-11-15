@@ -289,6 +289,11 @@ interface StoryJobState {
   cancel: (id: string) => Promise<void>;
   /** Fetches one batch and reads it in, which is what a poll does. */
   adopt: (id: string) => Promise<void>;
+  /**
+   * Says a revision's proposal has been read — applied or left — so the room
+   * stops offering it as something waiting to be looked at.
+   */
+  markRevisionRead: (id: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -861,6 +866,17 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       const record = await storyApi.get(id);
       integrate(record);
       await readAnswers([record]);
+    },
+
+    async markRevisionRead(id) {
+      try {
+        integrate(await storyApi.readIn(id));
+        lookTrouble = null;
+      } catch (problem) {
+        // The next look retries the note; a revision that is not written down
+        // as read is offered again, which is better than a proposal lost.
+        sayLookProblem(problem);
+      }
     },
 
     reset() {
