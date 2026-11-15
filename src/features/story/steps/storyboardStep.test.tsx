@@ -918,6 +918,52 @@ describe("writing an episode's board", () => {
     expect(item?.prompt).not.toContain("旧车票");
   });
 
+  it("draws a shot whose words name nothing from the act's cast", async () => {
+    const moka = boarded();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.content = "雨下个不停。";
+    frame.references = undefined;
+    frame.art = { takes: [] };
+    openAtBoard(moka);
+
+    // The act's cast stands in the shot's own list, picture by picture.
+    expect(
+      screen.getByTestId("story-kf-refs-0").querySelectorAll(".story-ref-item"),
+    ).toHaveLength(4);
+
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    const item = starts[0]!.items.find((each) =>
+      each.id.includes(ids.frameFirst),
+    );
+    // The first pictures the story's limit allows, in the act's own order.
+    expect(item?.inputs?.map((input) => input.assetId)).toEqual([
+      ids.heroMain,
+      ids.partnerMain,
+      ids.sceneMain,
+    ]);
+    expect(item?.prompt).toContain("1. 林 —");
+  });
+
+  it("takes one of the act's pictures off a shot, keeping the rest", async () => {
+    const moka = boarded();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.content = "雨下个不停。";
+    frame.references = undefined;
+    openAtBoard(moka);
+
+    fireEvent.click(screen.getByTestId("story-kf-ref-remove-0-0"));
+    await waitFor(() =>
+      expect(
+        acts()[0]?.keyframes[0]?.references?.map((ref) => ref.elementId),
+      ).toEqual([ids.partner, ids.scene, ids.prop]),
+    );
+    // What is left stays on the shot as its own list.
+    expect(
+      screen.getByTestId("story-kf-refs-0").querySelectorAll(".story-ref-item"),
+    ).toHaveLength(3);
+  });
+
   it("shows the ask as it will be sent, with the mentioned names and their pictures", () => {
     openAtBoard(boarded());
     // The scaffolding the template writes — the episode, the framing, the look
@@ -940,7 +986,7 @@ describe("writing an episode's board", () => {
     );
   });
 
-  it("offers the shot's own references after an @ and adds nothing to the list", async () => {
+  it("offers the shot's own references and the act's cast after an @", async () => {
     const moka = boarded();
     moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.references = [
       { elementId: ids.hero, name: "林" },
@@ -953,10 +999,9 @@ describe("writing an episode's board", () => {
     const offered = within(offer)
       .getAllByRole("option")
       .map((option) => option.textContent);
-    expect(offered).toEqual(["林", "车厢背面"]);
-    // The rest of the story's cast is not on this shot's list, so an @ does
-    // not offer it: it is added to the list first.
-    expect(offered).not.toContain("周");
+    // The shot's own list first, then the elements the act keeps at its top,
+    // each name once: 林 is on both lists and is offered once.
+    expect(offered).toEqual(["林", "车厢背面", "周", "末班车车厢", "旧车票"]);
     fireEvent.click(within(offer).getByRole("option", { name: "车厢背面" }));
     await waitFor(() =>
       expect(field.querySelector("[data-mention-name]")?.textContent).toBe(

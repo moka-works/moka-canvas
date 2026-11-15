@@ -8,7 +8,10 @@
  */
 
 import { referenceName, type StoryDocument } from "../../../shared/domain";
-import type { StoryKeyframeReference } from "../../../shared/domain/types";
+import type {
+  StoryElement,
+  StoryKeyframeReference,
+} from "../../../shared/domain/types";
 
 /** One thing the @ may mention, and the name it is written as. */
 export interface StoryMentionOption {
@@ -21,15 +24,19 @@ export interface StoryMentionOption {
 }
 
 /**
- * Every name a shot's words may mention: the names its references are kept by.
+ * Every name a shot's words may mention: the names its references are kept by,
+ * and the elements the act keeps at its top.
  *
- * Nothing outside the shot's own reference list is offered: a picture the shot
- * does not keep has no place in the words, and is added to the list first. A
- * reference nobody named has no name to write, so it is not offered.
+ * The shot's own list comes first, in the order it was kept, so a name already
+ * recognized is offered as the reference it stands on. The act's elements
+ * follow, named as the story names them, so a name the shot has not kept yet
+ * can be written at once — the words take it into the list as they are saved.
+ * A name both lists use is offered once.
  */
 export function storyMentionOptions(
   story: StoryDocument,
   references: StoryKeyframeReference[],
+  cast: StoryElement[] = [],
 ): StoryMentionOption[] {
   const options: StoryMentionOption[] = [];
   const named = new Set<string>();
@@ -43,6 +50,12 @@ export function storyMentionOptions(
       name,
     });
   });
+  for (const element of cast) {
+    const name = element.name.trim();
+    if (name === "" || named.has(name)) continue;
+    named.add(name);
+    options.push({ key: `element:${element.id}`, label: name, name });
+  }
   return options;
 }
 

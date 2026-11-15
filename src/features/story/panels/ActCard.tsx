@@ -297,9 +297,7 @@ export function ActCard({
   // The shots drawn before one of their references changed: not missing, so
   // the draw button does not count them, but worth drawing again from the
   // pictures the story uses now.
-  const stale = staleFrames(story, act.keyframes, (id) =>
-    busyKeyframes.has(id),
-  );
+  const stale = staleFrames(story, act, (id) => busyKeyframes.has(id));
   const drawn = act.keyframes.length - missing.length;
   // A clip is made from the pictures of the act: every shot of it is drawn
   // first, since what a clip of half-drawn shots would be made from is the

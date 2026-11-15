@@ -713,8 +713,65 @@ describe("planning the drawings", () => {
     expect(items[0].prompt).toContain("旧车票攥在手里。");
   });
 
-  it("carries no picture for a frame whose words name none", () => {
-    const items = planKeyframeArt(withContent("雨下个不停。"), [
+  it("draws a frame whose words name none from the act's cast", () => {
+    const held = withContent("雨下个不停。");
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = undefined;
+    const items = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: ids.heroMain },
+      { role: "reference", assetId: ids.partnerMain },
+      { role: "reference", assetId: ids.sceneMain },
+    ]);
+    expect(items[0].prompt).toContain("1. 林 —");
+    expect(items[0].prompt).toContain("2. 周 —");
+    expect(items[0].prompt).toContain("3. 末班车车厢 —");
+    // The prop has no drawing, so it has no numbered reference to stand on.
+    expect(items[0].prompt).not.toContain("旧车票 —");
+  });
+
+  it("carries the first of the act's pictures its limit allows", () => {
+    const held = withContent("雨下个不停。");
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = undefined;
+    const limited: StoryDocument = { ...held, maxReferenceImages: 1 };
+    const [item] = planKeyframeArt(limited, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
+  });
+
+  it("draws a shot that names nothing from the list it still keeps", () => {
+    // The reader took one of the act's pictures off the shot: what is left is
+    // the shot's own list and stands in for the words it never wrote.
+    const held = withContent("雨下个不停。");
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = [
+      { elementId: ids.scene, name: "" },
+    ];
+    const [item] = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.sceneMain]);
+  });
+
+  it("leaves an emptied reference list with no pictures to stand in", () => {
+    // The reader took every reference out of the shot: the act's cast is not
+    // put back in its place.
+    const held = withContent("雨下个不停。");
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = [];
+    const items = planKeyframeArt(held, [
       {
         chapterId: ids.chapterFirst,
         actId: ids.act,
@@ -722,6 +779,19 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(items[0].inputs).toEqual([]);
+  });
+
+  it("does not add the act's cast to a shot whose words name a picture", () => {
+    const held = withContent("`林`立在灯下。");
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = undefined;
+    const [item] = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
   });
 
   it("numbers exactly the pictures that travel", () => {

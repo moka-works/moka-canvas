@@ -49,6 +49,7 @@ import { execute } from "../../editor/commands/execute";
 import { planAssembly } from "../assembly";
 import { planDubbing, type DubCue } from "../dubbing";
 import {
+  actDefaultReferences,
   drawnFrames,
   filmRoleOf,
   jobKey,
@@ -444,7 +445,7 @@ function KeyframeRow({
   // says the shot looks like.
   const filmed = keyframe.art.takes.length > 0;
   // The references this frame was drawn with that have been redrawn since.
-  const stale = staleReferences(story, keyframe);
+  const stale = staleReferences(story, act, keyframe);
 
   return (
     <>
@@ -1012,14 +1013,29 @@ function KeyframePromptCell({
     inspectingId === null
       ? undefined
       : story.elements.find((held) => held.id === inspectingId);
-  const references = keyframe.references ?? [];
+  // A shot that never kept a reference list of its own is drawn with the act's
+  // cast while its words name no picture: the row at the act's top is the
+  // default, and it is shown here as the shot's own so it can be taken away.
+  const heldReferences = keyframe.references;
+  const fallbackReferences = actDefaultReferences(act);
+  const usesCast =
+    heldReferences === undefined &&
+    storyMentions(keyframe.content).length === 0 &&
+    fallbackReferences.length > 0;
+  const references = heldReferences ?? (usesCast ? fallbackReferences : []);
   const content = useField(keyframe.content, (value) => {
     if (value === keyframe.content) return;
     // The words may name a cast member the list has not recognized yet; the
     // shot keeps its references in one list, so the name is taken in with them.
+    // A shot standing on the act's cast keeps it as its own from the moment its
+    // words name a picture, so the list and the ask go on saying one thing.
     const recognized = recognizeReferences(story.elements, value, references);
+    const standsIn =
+      keyframe.references === undefined &&
+      references.length > 0 &&
+      storyMentions(value).length > 0;
     write(
-      recognized === references
+      recognized === references && !standsIn
         ? { content: value }
         : { content: value, references: recognized },
     );
@@ -1027,8 +1043,21 @@ function KeyframePromptCell({
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
-  const cast = keyframeCast(story, content.value, references, variantChoices);
-  const mentionOptions = storyMentionOptions(story, references);
+  const cast = keyframeCast(
+    story,
+    content.value,
+    heldReferences,
+    variantChoices,
+    fallbackReferences,
+  );
+  // The names the words may mention: the shot's own references, and the
+  // elements the act keeps at its top — mentioning one takes it into the shot.
+  const actElements = actCast(story, act);
+  const mentionOptions = storyMentionOptions(story, references, [
+    ...actElements.characters,
+    ...actElements.scenes,
+    ...actElements.props,
+  ]);
 
   /** The picture a kept reference stands on right now, where it has one. */
   const referenceAsset = (

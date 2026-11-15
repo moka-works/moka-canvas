@@ -11,11 +11,12 @@
 
 import { currentTake } from "../../../shared/domain";
 import type {
+  StoryAct,
   StoryDocument,
   StoryElement,
   StoryKeyframe,
 } from "../../../shared/domain/types";
-import { keyframeCast } from "../jobs/plan";
+import { actDefaultReferences, keyframeCast } from "../jobs/plan";
 
 /**
  * The elements whose picture is newer than the frame that was drawn with it.
@@ -27,6 +28,7 @@ import { keyframeCast } from "../jobs/plan";
  */
 export function staleReferences(
   story: StoryDocument,
+  act: StoryAct,
   keyframe: StoryKeyframe,
 ): StoryElement[] {
   const frame = currentTake(keyframe.art);
@@ -34,8 +36,9 @@ export function staleReferences(
   return keyframeCast(
     story,
     keyframe.content,
-    keyframe.references ?? [],
+    keyframe.references,
     keyframe.variantChoices ?? {},
+    actDefaultReferences(act),
   ).carried.flatMap((reference) => {
     // A file reference has no newer version to be stale against.
     if (reference.element === undefined) return [];
@@ -52,13 +55,13 @@ export function staleReferences(
 /** The same, for every shot of a board that can be redrawn right now. */
 export function staleFrames(
   story: StoryDocument,
-  keyframes: StoryKeyframe[],
+  act: StoryAct,
   busy: (keyframeId: string) => boolean,
 ): StoryKeyframe[] {
-  return keyframes.filter(
+  return act.keyframes.filter(
     (keyframe) =>
       !busy(keyframe.id) &&
       currentTake(keyframe.art) !== undefined &&
-      staleReferences(story, keyframe).length > 0,
+      staleReferences(story, act, keyframe).length > 0,
   );
 }

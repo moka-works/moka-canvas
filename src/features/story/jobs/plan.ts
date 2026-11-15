@@ -999,15 +999,37 @@ export interface StoryReference {
 }
 
 /**
+ * The act's cast as the references a shot falls back on.
+ *
+ * A shot whose words name no picture of their own is drawn with what the act
+ * says stands in it — its characters, its place and its things, in the order
+ * the act's own row keeps them. The reference names are left empty so each
+ * picture is known by the form it draws, exactly as an unnamed element is.
+ */
+export function actDefaultReferences(act: StoryAct): StoryKeyframeReference[] {
+  return [
+    ...act.characterIds,
+    ...(act.sceneId === undefined ? [] : [act.sceneId]),
+    ...act.propIds,
+  ].map((elementId) => ({ elementId, name: "" }));
+}
+
+/**
  * The cast a frame travels with, as the frame's own words name it.
  *
  * The pictures are chosen by the mentions in a shot's content: each mentioned
  * name that is one of the shot's references is a reference here, in the order
  * it is first named, and a name the shot cannot draw is left to the words. A
- * picture the shot keeps but its words never name is not sent: what is not
- * asked for is not drawn from. The order is the contract between the numbered
- * references in the prompt and the pictures that travel with it, so it is
- * decided once, here.
+ * picture the shot keeps but its words never name is not sent when the words
+ * name other pictures: what is named decides. The order is the contract
+ * between the numbered references in the prompt and the pictures that travel
+ * with it, so it is decided once, here.
+ *
+ * A shot whose words name nothing is drawn from a list instead: the shot's own
+ * references where it keeps any, and the act's cast where it has never kept a
+ * list — the act's row is the default, and words that name pictures are how a
+ * shot says otherwise. An emptied list is not the same thing: the reader has
+ * taken every reference out of the shot, and nothing stands in for them.
  *
  * The story's own limit decides how many of them fit: an image service refuses
  * a request over its bound whole rather than drawing with the first of the
@@ -1017,8 +1039,9 @@ export interface StoryReference {
 export function keyframeCast(
   story: StoryDocument,
   content: string,
-  references: StoryKeyframeReference[] = [],
+  references?: StoryKeyframeReference[],
   variantChoices: Record<string, string> = {},
+  fallback: StoryKeyframeReference[] = [],
 ): {
   /** The pictures that travel, in the order the content names them. */
   carried: StoryReference[];
@@ -1027,32 +1050,46 @@ export function keyframeCast(
   /** The mentioned names no drawing could be sent for. */
   undrawn: string[];
 } {
-  // The shot's own reference list, by the name its words use for each. Two
-  // references of one name are one picture as far as the words are concerned.
-  const heldByName = new Map<string, StoryKeyframeReference>();
-  for (const reference of references) {
-    const name = referenceName(story, reference);
-    if (name === "" || heldByName.has(name)) continue;
-    heldByName.set(name, reference);
-  }
+  const mentions = storyMentions(content);
   const seen = new Set<string>();
   const drawn: StoryReference[] = [];
   const undrawn: string[] = [];
-  for (const mention of storyMentions(content)) {
-    if (seen.has(mention.name)) continue;
-    seen.add(mention.name);
-    const held = heldByName.get(mention.name);
-    if (held !== undefined) {
-      const reference = carriedReference(story, held, variantChoices);
+  if (mentions.length === 0) {
+    const whole = references === undefined ? fallback : references;
+    for (const reference of whole) {
+      const carried = carriedReference(story, reference, variantChoices);
+      if (carried !== undefined) {
+        drawn.push(carried);
+        continue;
+      }
+      const name = referenceName(story, reference);
+      if (name !== "" && !undrawn.includes(name)) undrawn.push(name);
+    }
+  } else {
+    // The shot's own reference list, by the name its words use for each. Two
+    // references of one name are one picture as far as the words are concerned.
+    const heldByName = new Map<string, StoryKeyframeReference>();
+    for (const reference of references ?? []) {
+      const name = referenceName(story, reference);
+      if (name === "" || heldByName.has(name)) continue;
+      heldByName.set(name, reference);
+    }
+    for (const mention of mentions) {
+      if (seen.has(mention.name)) continue;
+      seen.add(mention.name);
+      const held = heldByName.get(mention.name);
+      if (held !== undefined) {
+        const reference = carriedReference(story, held, variantChoices);
+        if (reference === undefined) undrawn.push(mention.name);
+        else drawn.push(reference);
+        continue;
+      }
+      // A name the list does not hold but the story can still draw is carried
+      // too, so a word typed ahead of the list is not silently dropped.
+      const reference = carriedElement(story, mention.name, variantChoices);
       if (reference === undefined) undrawn.push(mention.name);
       else drawn.push(reference);
-      continue;
     }
-    // A name the list does not hold but the story can still draw is carried
-    // too, so a word typed ahead of the list is not silently dropped.
-    const reference = carriedElement(story, mention.name, variantChoices);
-    if (reference === undefined) undrawn.push(mention.name);
-    else drawn.push(reference);
   }
   const seenAssets = new Set<string>();
   const all = drawn.filter((reference) => {
@@ -1145,8 +1182,9 @@ export function planKeyframeArt(
     const cast = keyframeCast(
       story,
       keyframe.content,
-      keyframe.references ?? [],
+      keyframe.references,
       keyframe.variantChoices ?? {},
+      actDefaultReferences(act),
     ).carried;
     const target: StoryTarget = {
       kind: "keyframeArt",
