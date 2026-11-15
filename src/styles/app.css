@@ -8471,16 +8471,44 @@ button > .story-spin {
   gap: 6px;
 }
 
-.story-strip-fold {
+/*
+  Folds stand as small controls rather than bare glyphs: a chevron drawn in
+  the room's own stroke, a hit area wider than the mark, and a hover that says
+  the mark can be pressed. The strip's fold and a shot's fold are the same
+  control in two places.
+*/
+.story-strip-fold,
+.story-kf-fold {
+  align-items: center;
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--muted);
-  font-size: 10px;
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  height: 18px;
+  justify-content: center;
   padding: 0 2px;
 }
 
-.story-strip-fold:hover {
+.story-strip-fold {
+  padding: 0;
+  width: 18px;
+}
+
+.story-strip-fold:hover,
+.story-kf-fold:hover {
+  border-color: var(--stroke);
   color: var(--ink);
+}
+
+.story-chevron {
+  transition: transform 120ms ease;
+}
+
+.story-chevron.is-folded {
+  transform: rotate(-90deg);
 }
 
 .story-granularity {
@@ -9260,18 +9288,6 @@ button > .story-spin {
 
 /* The fold at the top-left of a shot: the row keeps its number and its words
    and gives up its height, so a long board can be read down to the work. */
-.story-kf-fold {
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-size: 10px;
-  padding: 0 2px 0 0;
-}
-
-.story-kf-fold:hover {
-  color: var(--ink);
-}
-
 .story-kf.is-folded td {
   padding-bottom: 4px;
   padding-top: 4px;

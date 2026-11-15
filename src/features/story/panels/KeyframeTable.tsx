@@ -60,6 +60,7 @@ import {
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
 import { useStoryWavesAsk, useStoryWavesRun } from "../stores/storyJobStore";
+import { FoldChevron } from "../components/StoryIcons";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { storyMentionOptions } from "./storyMentions";
@@ -444,7 +445,9 @@ function KeyframeRow({
   const columns = perShot ? 6 : 5;
   // The top-left of the row: folding a shot takes its cells off the page and
   // leaves its number and its words, which is how a board is read down to the
-  // shot a reader is working on without the height of all the others.
+  // shot a reader is working on without the height of all the others. The
+  // number stands inside the fold's control, so the mark and the number share
+  // one line and the whole of it is the target.
   const fold = (
     <button
       aria-expanded={!folded}
@@ -459,17 +462,14 @@ function KeyframeRow({
       )}
       type="button"
     >
-      {folded ? "▸" : "▾"}
+      <FoldChevron open={!folded} />
+      <span className="story-kf-number">{at}</span>
     </button>
   );
-
   if (folded) {
     return (
       <tr className="story-kf is-folded" data-testid={`story-kf-${index}`}>
-        <td className="story-col-index">
-          {fold}
-          <span className="story-kf-number">{at}</span>
-        </td>
+        <td className="story-col-index">{fold}</td>
         <td className="story-kf-folded" colSpan={columns - 1}>
           <span className="story-kf-folded-words" title={keyframe.content}>
             {keyframe.content}
@@ -500,7 +500,6 @@ function KeyframeRow({
           >
             ＋
           </button>
-          <span className="story-kf-number">{at}</span>
         </td>
         <td className="story-col-attributes">
           <div className="story-kf-attributes">

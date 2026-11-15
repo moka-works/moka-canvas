@@ -24,3 +24,29 @@ export function StoryIcon({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+/**
+ * The mark a fold wears: it points down while the thing is open and right
+ * while it is folded.
+ *
+ * Drawn rather than set as text: a triangle character is missing from some
+ * system fonts, and a fold nobody can see is a fold nobody can press.
+ */
+export function FoldChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`story-chevron${open ? "" : " is-folded"}`}
+      fill="none"
+      height={14}
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width={14}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}

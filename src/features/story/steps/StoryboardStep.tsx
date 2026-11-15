@@ -23,6 +23,7 @@ import { execute } from "../../editor/commands/execute";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
 import { StoryModelPicks } from "../components/StoryModelPicks";
+import { FoldChevron } from "../components/StoryIcons";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { ActCard } from "../panels/ActCard";
@@ -361,7 +362,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             )}
             type="button"
           >
-            {stripOpen ? "▾" : "▸"}
+            <FoldChevron open={stripOpen} />
           </button>
           {stripOpen ? (
             <div className="story-chapter-strip" role="tablist">
