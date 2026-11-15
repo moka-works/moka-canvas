@@ -29,6 +29,7 @@ import {
   mergeActs,
   mergeChaptersAt,
   mergeElements,
+  recognizeKeyframeReferences,
   slotAt,
   withTake,
   type ActDraft,
@@ -615,12 +616,21 @@ export function applyParsedActs(
 ): DocumentCommand[] {
   const chapter = story.chapters.find((held) => held.id === chapterId);
   if (chapter === undefined || drafts.length === 0) return [];
+  // The names a board writes into a shot's words are that shot's references:
+  // they are recognized into its list as the board is written, so the list and
+  // the words are two views of one thing from the first moment.
+  const acts = mergeActs(chapter.acts, drafts).map((act) => ({
+    ...act,
+    keyframes: act.keyframes.map((keyframe) =>
+      recognizeKeyframeReferences(story, keyframe),
+    ),
+  }));
   return [
     {
       type: "setStoryActs",
       storyId: story.id,
       chapterId,
-      acts: mergeActs(chapter.acts, drafts),
+      acts,
     },
   ];
 }

@@ -12,8 +12,6 @@ import {
   MAX_CHAPTERS_PER_STORY,
   MAX_EDGES_PER_CANVAS,
   MAX_ELEMENTS_PER_STORY,
-  EXTRA_REFERENCE_NOTE_MAX,
-  MAX_EXTRA_REFERENCES_PER_SHOT,
   MAX_FOLDER_DEPTH,
   MAX_FOLDER_NAME_LENGTH,
   MAX_FOLDERS_PER_PROJECT,
@@ -408,8 +406,8 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
         for (const keyframe of act.keyframes) {
           for (const take of keyframe.art.takes) files(take, keyframe.id);
           for (const take of keyframe.video.takes) files(take, keyframe.id);
-          for (const extra of keyframe.extraReferences ?? []) {
-            add(extra.assetId, keyframe.id);
+          for (const reference of keyframe.references ?? []) {
+            add(reference.assetId, keyframe.id);
           }
         }
       }
@@ -1243,23 +1241,13 @@ export function validateStory(story: StoryDocument): ValidationIssue[] {
       for (const keyframe of act.keyframes) {
         slot(keyframe.art);
         slot(keyframe.video);
-        const extras = keyframe.extraReferences ?? [];
-        if (extras.length > MAX_EXTRA_REFERENCES_PER_SHOT)
-          at(
-            "VALIDATION_FAILED",
-            i18n.t("errors:validate.storyExtraReferenceLimit"),
-          );
-        for (const extra of extras) {
-          if (extra.assetId === "")
-            at(
-              "VALIDATION_FAILED",
-              i18n.t("errors:validate.storyExtraReference"),
-            );
-          if ((extra.note ?? "").length > EXTRA_REFERENCE_NOTE_MAX)
-            at(
-              "VALIDATION_FAILED",
-              i18n.t("errors:validate.storyExtraReferenceNote"),
-            );
+        for (const reference of keyframe.references ?? []) {
+          if (
+            reference.assetId === "" ||
+            (reference.assetId === undefined &&
+              (reference.elementId === undefined || reference.elementId === ""))
+          )
+            at("VALIDATION_FAILED", i18n.t("errors:validate.storyReference"));
         }
         if (
           !Number.isInteger(keyframe.durationMs) ||

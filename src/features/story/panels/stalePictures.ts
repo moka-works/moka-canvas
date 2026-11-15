@@ -34,11 +34,10 @@ export function staleReferences(
   return keyframeCast(
     story,
     keyframe.content,
-    keyframe.extraReferences ?? [],
+    keyframe.references ?? [],
     keyframe.variantChoices ?? {},
   ).carried.flatMap((reference) => {
-    // An extra reference is a file, not a take: it has no newer version to be
-    // stale against.
+    // A file reference has no newer version to be stale against.
     if (reference.element === undefined) return [];
     const held = currentTake(
       reference.variant === undefined

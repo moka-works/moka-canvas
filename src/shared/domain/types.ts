@@ -888,14 +888,14 @@ export interface StoryKeyframe {
    */
   voices?: StoryVoiceTake[];
   /**
-   * Pictures that ride with this shot's ask without naming an element.
+   * The pictures this shot is drawn from, in the order they are kept.
    *
-   * A reference is a file already on the shelf and, optionally, a line saying
-   * what it is for. They are not part of the cast: they are pictures the
-   * reader wants this one shot drawn with, and the note is how the ask says
-   * what each of them is there for.
+   * A reference is a picture the shot's words may name: the board reads one
+   * out of every cast name it writes, and the reader may add pictures of their
+   * own. They are all the same kind of thing, and only the ones the words
+   * actually name travel with the ask.
    */
-  extraReferences?: StoryExtraReference[];
+  references?: StoryKeyframeReference[];
   /**
    * Which form of each cast member this shot is drawn with, by element id.
    *
@@ -910,18 +910,16 @@ export interface StoryKeyframe {
   imageModel?: string;
 }
 
-/** One picture a shot carries outside its cast, and what it is for. */
-export interface StoryExtraReference {
+/** One picture a shot may be drawn from, and the name its words use for it. */
+export interface StoryKeyframeReference {
   /** The file that travels, where the reference is a file on the shelf. */
   assetId?: AssetId;
   /** The element whose current drawing travels, where it is not a file. */
   elementId?: string;
-  /** The element's form; absent means its default form. */
+  /** The element's form; absent falls back to the shot's chosen form. */
   variantId?: string;
-  /** The name the words and the prompt use for it. */
-  name?: string;
-  /** What the picture is for, as the ask reads it. */
-  note?: string;
+  /** The name the shot's words use for it, and the ask reads it by. */
+  name: string;
 }
 
 /** What an act sounds like. */
@@ -1351,7 +1349,8 @@ export interface StoryKeyframePatch {
   content?: string;
   dialogue?: StoryDialogueLine[];
   durationMs?: number;
-  extraReferences?: StoryExtraReference[];
+  /** The shot's reference pictures; an empty list clears them. */
+  references?: StoryKeyframeReference[];
   /** Which form each mentioned element travels as; an empty map clears them. */
   variantChoices?: Record<string, string>;
   /** The picture model drawn of this frame; a null hands it to the step's own. */

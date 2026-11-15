@@ -798,33 +798,30 @@ describe("writing an episode's board", () => {
     expect(watched?.getAttribute("poster")).toContain("asset-act-video");
   });
 
-  it("keeps a picture added to the shot's references, and sends it only once the words name it", async () => {
+  it("adds a picture to the shot's own reference list", async () => {
     openAtBoard(boarded());
     const image = useProjectStore.getState().moka?.resources.images[0];
     expect(image).toBeDefined();
 
-    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
-    fireEvent.click(screen.getByTestId("story-kf-extra-library-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-library-0"));
     fireEvent.click(screen.getByTestId(`story-library-${image!.id}`));
 
     await waitFor(() =>
-      expect(screen.getByTestId("story-kf-extra-0-0")).toBeDefined(),
+      expect(screen.getByTestId("story-kf-ref-0-1")).toBeDefined(),
     );
-    expect(acts()[0]?.keyframes[0]?.extraReferences).toEqual([
+    // The picture stands beside the one the board recognized, in one list.
+    expect(acts()[0]?.keyframes[0]?.references).toEqual([
+      { elementId: ids.hero, name: "林" },
       { assetId: image!.id, name: image!.name },
     ]);
-    // It stands on the shot's list, but the words do not name it, so the ask
-    // does not send it.
-    expect(screen.getByTestId("story-kf-extra-0-0").className).toContain(
-      "is-beyond",
-    );
   });
 
   it("narrows the shelf and the elements while a picture is looked for", () => {
     openAtBoard(boarded());
 
-    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
-    fireEvent.click(screen.getByTestId("story-kf-extra-library-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-library-0"));
     const shelf = screen.getByTestId("story-library");
     expect(shelf.querySelectorAll(".story-pick")).toHaveLength(6);
     fireEvent.change(screen.getByTestId("story-library-search"), {
@@ -839,8 +836,8 @@ describe("writing an episode's board", () => {
     );
     fireEvent.click(within(shelf).getByRole("button", { name: "Close" }));
 
-    fireEvent.click(screen.getByTestId("story-kf-extra-add-0"));
-    fireEvent.click(screen.getByTestId("story-kf-extra-element-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-add-0"));
+    fireEvent.click(screen.getByTestId("story-kf-ref-element-0"));
     const picker = screen.getByTestId("story-element-picker");
     expect(picker.querySelectorAll(".story-pick")).toHaveLength(4);
     fireEvent.change(screen.getByTestId("story-element-search"), {
@@ -924,72 +921,47 @@ describe("writing an episode's board", () => {
     );
   });
 
-  it("offers the shot's own references after an @ and writes the choice as a mention", async () => {
+  it("offers the shot's own references after an @ and adds nothing to the list", async () => {
     const moka = boarded();
-    moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.extraReferences = [
+    moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.references = [
+      { elementId: ids.hero, name: "林" },
       { elementId: ids.scene, name: "车厢背面" },
     ];
     openAtBoard(moka);
     const field = screen.getByTestId("story-kf-content-0");
-    typeAtEnd(field, "`林`看@");
+    typeAtEnd(field, "看@");
     const offer = await screen.findByTestId("story-kf-content-0-offer");
     const offered = within(offer)
       .getAllByRole("option")
       .map((option) => option.textContent);
-    expect(offered).toContain("车厢背面");
+    expect(offered).toEqual(["林", "车厢背面"]);
     // The rest of the story's cast is not on this shot's list, so an @ does
     // not offer it: it is added to the list first.
-    expect(offered).toContain("林");
     expect(offered).not.toContain("周");
     fireEvent.click(within(offer).getByRole("option", { name: "车厢背面" }));
     await waitFor(() =>
       expect(field.querySelector("[data-mention-name]")?.textContent).toBe(
-        "林",
+        "车厢背面",
       ),
     );
     fireEvent.blur(field);
     await waitFor(() =>
       expect(story().chapters[0]!.acts[0]!.keyframes[0]!.content).toBe(
-        "`林`看`车厢背面` ",
+        "看`车厢背面` ",
       ),
     );
+    // Naming a picture the list already holds adds nothing to it.
+    expect(acts()[0]?.keyframes[0]?.references).toHaveLength(2);
   });
 
-  it("switches the shot's form when the @ names one of an element's forms", async () => {
-    const moka = boarded();
-    const hero = moka.stories![0]!.elements.find(
-      (element) => element.id === ids.hero,
-    )!;
-    hero.variants = [
-      {
-        id: "variant-old",
-        name: "老年",
-        description: "二十年以后。",
-        main: { takes: [] },
-      },
-    ];
-    openAtBoard(moka);
-    const field = screen.getByTestId("story-kf-content-0");
-    typeAtEnd(field, "`林`在灯下，@林");
-    const offer = await screen.findByTestId("story-kf-content-0-offer");
-    fireEvent.click(within(offer).getByRole("option", { name: "林 · 老年" }));
-    await waitFor(() =>
-      expect(
-        story().chapters[0]!.acts[0]!.keyframes[0]!.variantChoices,
-      ).toEqual({ [ids.hero]: "variant-old" }),
-    );
-  });
-
-  it("drops a picture when its mention is taken out of the words", async () => {
+  it("keeps the reference while its name is taken out of the words", async () => {
     openAtBoard(boarded());
     const field = screen.getByTestId("story-kf-content-0");
     expect(screen.getByTestId("story-kf-ref-0-0")).toBeDefined();
-    // The chip is one thing: taking it out takes the name out of the words and
-    // its picture out of the ask, together.
     field.querySelector("[data-mention-name]")?.remove();
     fireEvent.input(field);
     await waitFor(() =>
-      expect(screen.queryByTestId("story-kf-ref-0-0")).toBeNull(),
+      expect(field.querySelector("[data-mention-name]")).toBeNull(),
     );
     fireEvent.blur(field);
     await waitFor(() =>
@@ -997,6 +969,8 @@ describe("writing an episode's board", () => {
         "雨中的站台，立在灯下。",
       ),
     );
+    // The picture stays on the shot's list; the words only stopped naming it.
+    expect(screen.getByTestId("story-kf-ref-0-0")).toBeDefined();
   });
 
   it("marks a name the limit leaves behind, and one nobody has drawn", () => {
@@ -1005,6 +979,11 @@ describe("writing an episode's board", () => {
     held.maxReferenceImages = 2;
     held.chapters[0]!.acts[0]!.keyframes[0]!.content =
       "`林`看着`周`，`末班车车厢`里很暗。";
+    held.chapters[0]!.acts[0]!.keyframes[0]!.references = [
+      { elementId: ids.hero, name: "林" },
+      { elementId: ids.partner, name: "周" },
+      { elementId: ids.scene, name: "末班车车厢" },
+    ];
     openAtBoard(moka);
     const cell = screen.getByTestId("story-kf-content-0");
     const chips = Array.from(cell.querySelectorAll("[data-mention-name]"));
@@ -1023,23 +1002,23 @@ describe("writing an episode's board", () => {
         .getByTestId("story-kf-refs-0")
         .querySelectorAll(".story-ref-thumb"),
     ).toHaveLength(3);
-    expect(screen.getByTestId("story-kf-ref-beyond-0-0")).toBeDefined();
   });
 
   it("leaves a mentioned name nobody has drawn to the words", () => {
     const moka = buildStoryMokaFile();
     moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.content =
       "`旧车票`攥在手里。";
+    moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!.references = [
+      { elementId: ids.prop, name: "旧车票" },
+    ];
     openAtBoard(moka);
     const chip = screen
       .getByTestId("story-kf-content-0")
       .querySelector("[data-mention-name]");
     expect(chip?.className).toContain("is-undrawn");
-    expect(
-      screen
-        .getByTestId("story-kf-refs-0")
-        .querySelectorAll(".story-ref-thumb"),
-    ).toHaveLength(0);
+    // The reference stays on the list, with nothing to show for a picture yet.
+    const tile = screen.getByTestId("story-kf-ref-0-0");
+    expect(tile.textContent).toContain("旧车票");
   });
 
   it("writes the reference limit the reader sets beside the models", async () => {

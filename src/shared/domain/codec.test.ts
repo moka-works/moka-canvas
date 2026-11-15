@@ -17,6 +17,7 @@ import {
   buildShelfMokaFile,
   buildStoryMokaFile,
   buildTreeMokaFile,
+  storyIds,
 } from "./fixtures";
 import { decodeMokaFile, encodeMokaFile, MokaCodecError } from "./codec";
 import { derivePorts } from "./factories";
@@ -321,23 +322,59 @@ describe("moka codec", () => {
     ).toBe("reference");
   });
 
-  it("keeps a shot's extra references and their notes", () => {
+  it("keeps a shot's references, element and file alike", () => {
     const story = buildStoryMokaFile();
-    story.stories![0].chapters[0].acts[0].keyframes[0].extraReferences = [
-      { assetId: "asset-extra-1", note: "傍晚的暖光" },
-      { assetId: "asset-extra-2" },
+    const ids = storyIds();
+    story.stories![0].chapters[0].acts[0].keyframes[0].references = [
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra-1", name: "傍晚的暖光" },
     ];
     const read = decodeMokaFile(encodeMokaFile(story));
     expect(
-      read.stories![0].chapters[0].acts[0].keyframes[0].extraReferences,
+      read.stories![0].chapters[0].acts[0].keyframes[0].references,
     ).toEqual([
-      { assetId: "asset-extra-1", note: "傍晚的暖光" },
-      { assetId: "asset-extra-2" },
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra-1", name: "傍晚的暖光" },
     ]);
-    // A shot with none keeps the absence, so older documents read as they did.
+  });
+
+  it("reads the pictures older documents kept apart as the shot's references", () => {
+    const story = buildStoryMokaFile();
+    const raw = deserialize(
+      Buffer.from(encodeMokaFile(story)).subarray(4),
+    ) as Record<string, unknown>;
+    const storyDoc = (raw.stories as Record<string, unknown>[])[0];
+    const chapters = storyDoc.chapters as Record<string, unknown>[];
+    const acts = chapters[0].acts as Record<string, unknown>[];
+    const frames = acts[0].keyframes as Record<string, unknown>[];
+    delete frames[0].references;
+    frames[0].extraReferences = [
+      { assetId: "asset-extra-1", note: "傍晚的暖光" },
+    ];
+    const bson = serialize(raw);
+    const bytes = new Uint8Array(4 + bson.length);
+    bytes.set(MOKA_MAGIC, 0);
+    bytes.set(bson, 4);
+    const ids = storyIds();
     expect(
-      "extraReferences" in read.stories![0].chapters[0].acts[0].keyframes[1],
-    ).toBe(false);
+      decodeMokaFile(bytes).stories![0].chapters[0].acts[0].keyframes[0]
+        .references,
+    ).toEqual([
+      { assetId: "asset-extra-1", name: "" },
+      { elementId: ids.hero, name: "林" },
+    ]);
+  });
+
+  it("recognizes the names a shot's words use into its references", () => {
+    const story = buildStoryMokaFile();
+    story.stories![0].chapters[0].acts[0].keyframes[0].content =
+      "雨中的站台，`林`立在灯下。";
+    delete story.stories![0].chapters[0].acts[0].keyframes[0].references;
+    const read = decodeMokaFile(encodeMokaFile(story));
+    const ids = storyIds();
+    expect(
+      read.stories![0].chapters[0].acts[0].keyframes[0].references,
+    ).toEqual([{ elementId: ids.hero, name: "林" }]);
   });
 
   it("keeps the words a reader wrote for a clip's prompt", () => {

@@ -30,7 +30,7 @@ import type {
   StoryElement,
   StoryElementKind,
   StoryElementVariant,
-  StoryExtraReference,
+  StoryKeyframeReference,
   StoryKeyframe,
   StoryPictureReference,
   StorySlot,
@@ -1213,24 +1213,79 @@ export function actCast(
  * without either of them having to read the document.
  */
 /**
- * The name a shot's extra reference is known by in its own words.
+ * The name a shot's reference is known by in its own words.
  *
- * A reference to a story element is named as the form it draws is, and a file
- * on the shelf is named by what the reader called it. A file nobody named has
- * no name to write into the words, so it cannot be mentioned at all.
+ * A reference to a story element is named as the form it draws is when the
+ * reader has not named it, and a file is named by what the reader called it.
+ * A reference nobody named has no name to write into the words, so it cannot
+ * be mentioned at all.
  */
-export function extraReferenceName(
+export function referenceName(
   story: StoryDocument,
-  extra: StoryExtraReference,
-): string | undefined {
-  if (extra.elementId !== undefined) {
-    const element = elementOf(story, extra.elementId);
-    if (element === undefined) return extra.name;
-    const form = elementForm(element, extra.variantId);
-    return extra.name ?? formName(element, form);
+  reference: StoryKeyframeReference,
+): string {
+  const name = reference.name.trim();
+  if (name !== "") return name;
+  if (reference.elementId === undefined) return "";
+  const element = elementOf(story, reference.elementId);
+  if (element === undefined) return "";
+  return formName(element, elementForm(element, reference.variantId));
+}
+
+/**
+ * The shot's references with every cast name its words use recognized.
+ *
+ * A board writes a shot's words with the pictures they call in written between
+ * backticks; those names are the shot's references the same way a picture the
+ * reader adds is, so what is recognized here is kept among them. A name that
+ * matches nothing the story can draw is left to the words.
+ */
+export function recognizeReferences(
+  elements: StoryElement[],
+  content: string,
+  references: StoryKeyframeReference[],
+): StoryKeyframeReference[] {
+  const byName = new Map<string, StoryElement>();
+  for (const element of elements) {
+    if (!byName.has(element.name)) byName.set(element.name, element);
   }
-  const name = extra.name?.trim();
-  return name === undefined || name === "" ? undefined : name;
+  const named = new Set(references.map((reference) => reference.name));
+  const added: StoryKeyframeReference[] = [];
+  for (const mention of storyMentions(content)) {
+    if (named.has(mention.name)) continue;
+    const element = byName.get(mention.name);
+    if (element === undefined) continue;
+    named.add(mention.name);
+    added.push({ elementId: element.id, name: mention.name });
+  }
+  return added.length === 0 ? references : [...references, ...added];
+}
+
+/** A shot with the cast names its words use kept among its references. */
+export function recognizeKeyframeReferences(
+  story: StoryDocument,
+  keyframe: StoryKeyframe,
+): StoryKeyframe {
+  const held = keyframe.references ?? [];
+  const references = recognizeReferences(
+    story.elements,
+    keyframe.content,
+    held,
+  );
+  return references === held ? keyframe : { ...keyframe, references };
+}
+
+/** The same words without every mention that names one reference. */
+export function stripMentionNamed(content: string, name: string): string {
+  let out = "";
+  let cursor = 0;
+  for (const span of storyMentions(content)) {
+    if (span.name !== name) continue;
+    out += content.slice(cursor, span.start);
+    cursor = span.end;
+    if (content[cursor] === " ") cursor += 1;
+  }
+  return out + content.slice(cursor);
 }
 
 /**

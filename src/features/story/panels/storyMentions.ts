@@ -3,80 +3,42 @@
  *
  * A shot's words name the pictures that travel with it by writing a name in
  * backticks; the field draws each as a chip. This is where the names come
- * from — the shot's own reference list: the cast names its words already use,
- * every form of them, and the extra pictures kept beside it — and where what is
- * being typed after an @ is read.
+ * from — the shot's own reference list — and where what is being typed after
+ * an @ is read.
  */
 
-import {
-  elementForms,
-  extraReferenceName,
-  formName,
-  storyMentions,
-  type StoryDocument,
-} from "../../../shared/domain";
-import type {
-  StoryElement,
-  StoryExtraReference,
-} from "../../../shared/domain/types";
+import { referenceName, type StoryDocument } from "../../../shared/domain";
+import type { StoryKeyframeReference } from "../../../shared/domain/types";
 
 /** One thing the @ may mention, and the name it is written as. */
 export interface StoryMentionOption {
-  /** The row's own name, which tells two forms of one element apart. */
+  /** The row's own name, which tells two references apart. */
   key: string;
-  /** What the offer shows: the form's name, or the extra's own. */
+  /** What the offer shows. */
   label: string;
-  /** What is written into the words: the name the cast reads the picture by. */
+  /** What is written into the words: the name the reference is kept by. */
   name: string;
-  /** The cast form this choice draws the shot in, where it is one. */
-  elementId?: string;
-  variantId?: string;
 }
 
 /**
- * Every name a shot's words may mention: the cast its words already name,
- * forms first, then the pictures kept beside them.
+ * Every name a shot's words may mention: the names its references are kept by.
  *
  * Nothing outside the shot's own reference list is offered: a picture the shot
- * does not carry has no place in the words, and is added to the list first.
+ * does not keep has no place in the words, and is added to the list first. A
+ * reference nobody named has no name to write, so it is not offered.
  */
 export function storyMentionOptions(
   story: StoryDocument,
-  content: string,
-  extras: StoryExtraReference[],
+  references: StoryKeyframeReference[],
 ): StoryMentionOption[] {
   const options: StoryMentionOption[] = [];
   const named = new Set<string>();
-  const mentioned = new Set(
-    storyMentions(content).map((mention) => mention.name),
-  );
-  const byName = new Map<string, StoryElement>();
-  for (const element of story.elements) {
-    if (!byName.has(element.name)) byName.set(element.name, element);
-  }
-  for (const name of mentioned) {
-    const element = byName.get(name);
-    if (element === undefined) continue;
-    for (const form of elementForms(element)) {
-      const key = `cast:${element.id}:${form?.id ?? ""}`;
-      if (named.has(key)) continue;
-      named.add(key);
-      named.add(`name:${name}`);
-      options.push({
-        key,
-        label: formName(element, form),
-        name,
-        elementId: element.id,
-        ...(form === undefined ? {} : { variantId: form.id }),
-      });
-    }
-  }
-  extras.forEach((extra, at) => {
-    const name = extraReferenceName(story, extra);
-    if (name === undefined || named.has(`name:${name}`)) return;
-    named.add(`name:${name}`);
+  references.forEach((reference, at) => {
+    const name = referenceName(story, reference);
+    if (name === "" || named.has(name)) return;
+    named.add(name);
     options.push({
-      key: `extra:${extra.elementId ?? extra.assetId ?? at}`,
+      key: `reference:${reference.elementId ?? reference.assetId ?? at}`,
       label: name,
       name,
     });

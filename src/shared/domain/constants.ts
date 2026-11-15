@@ -352,11 +352,6 @@ export const MAX_VIDEO_PROMPT_OVERRIDES = 4_096;
 /** The longest name one clip's ask may be known by in that map. */
 export const MAX_VIDEO_PROMPT_KEY_LENGTH = 200;
 
-/** How many pictures a shot may carry outside its cast. */
-export const MAX_EXTRA_REFERENCES_PER_SHOT = 4;
-
-/** The longest line a shot's extra reference may be described with. */
-export const EXTRA_REFERENCE_NOTE_MAX = 120;
 /**
  * How many reference pictures one frame's ask carries when the story says
  * nothing: the bound the shape that draws with references is happiest with.
