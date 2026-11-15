@@ -24,6 +24,7 @@ import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
+import { FoldChevron } from "../components/StoryIcons";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { askPlaceOfKind, type StoryAskPlace } from "../stores/storyModels";
@@ -148,6 +149,10 @@ export function ActCard({
   const runArt = useStoryWavesAsk();
   const moka = useProjectStore((state) => state.moka);
   const models = useModelStore((state) => state.view);
+  // Whether this act is folded down to its head, which is how a long board is
+  // read act by act without the height of every table. A place on the page,
+  // not a thing the document keeps.
+  const [folded, setFolded] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [pickingVoice, setPickingVoice] = useState(false);
@@ -447,6 +452,23 @@ export function ActCard({
   return (
     <li className="story-act" data-testid={`story-act-${index}`}>
       <div className="story-act-head">
+        <button
+          aria-expanded={!folded}
+          aria-label={t(
+            folded ? "story:storyboard.unfoldAct" : "story:storyboard.foldAct",
+            { index: index + 1 },
+          )}
+          className="story-act-fold"
+          data-testid={`story-act-fold-${index}`}
+          onClick={() => setFolded(!folded)}
+          title={t(
+            folded ? "story:storyboard.unfoldAct" : "story:storyboard.foldAct",
+            { index: index + 1 },
+          )}
+          type="button"
+        >
+          <FoldChevron open={!folded} />
+        </button>
         <span className="story-act-index">
           {t("story:storyboard.actIndex", { index: index + 1 })}
         </span>
@@ -544,453 +566,465 @@ export function ActCard({
         </span>
       </div>
 
-      {/*
-        What the act is waiting on, one bar per batch: a batch drawing its
-        shots and one making its clip are two waits, and neither bar stands
-        for the other.
-      */}
-      {runs.length > 0 && (
-        <div className="story-runs">
-          {runs.map(({ job, items }) => (
-            <RunningBar
-              job={job}
-              key={job.id}
-              label={t("story:jobs.generatingKind", {
-                kind: t(ASK_PLACE_LABELS[askPlaceOfKind(job.kind)]),
-                model: modelNameOf(models, job.model),
-              })}
-              pieces={items}
-              testId="story-act-running"
+      {!folded && (
+        <>
+          {/*
+            What the act is waiting on, one bar per batch: a batch drawing its
+            shots and one making its clip are two waits, and neither bar stands
+            for the other.
+          */}
+          {runs.length > 0 && (
+            <div className="story-runs">
+              {runs.map(({ job, items }) => (
+                <RunningBar
+                  job={job}
+                  key={job.id}
+                  label={t("story:jobs.generatingKind", {
+                    kind: t(ASK_PLACE_LABELS[askPlaceOfKind(job.kind)]),
+                    model: modelNameOf(models, job.model),
+                  })}
+                  pieces={items}
+                  testId="story-act-running"
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="story-refs-row">
+            <RefPicker
+              chosen={act.characterIds}
+              elements={story.elements}
+              kind="character"
+              label={t("story:storyboard.characters")}
+              many
+              onInspect={(element) => setInspectingId(element.id)}
+              onPick={(characterIds) => write({ characterIds })}
+              pictureOf={(element) => takeFile(currentTake(element.main))}
             />
-          ))}
-        </div>
-      )}
-
-      <div className="story-refs-row">
-        <RefPicker
-          chosen={act.characterIds}
-          elements={story.elements}
-          kind="character"
-          label={t("story:storyboard.characters")}
-          many
-          onInspect={(element) => setInspectingId(element.id)}
-          onPick={(characterIds) => write({ characterIds })}
-          pictureOf={(element) => takeFile(currentTake(element.main))}
-        />
-        <RefPicker
-          chosen={act.sceneId === undefined ? [] : [act.sceneId]}
-          elements={story.elements}
-          kind="scene"
-          label={t("story:storyboard.scene")}
-          many={false}
-          onInspect={(element) => setInspectingId(element.id)}
-          onPick={(ids) => write({ sceneId: ids[0] ?? null })}
-          pictureOf={(element) => takeFile(currentTake(element.main))}
-        />
-        <RefPicker
-          chosen={act.propIds}
-          elements={story.elements}
-          kind="prop"
-          label={t("story:storyboard.props")}
-          many
-          onInspect={(element) => setInspectingId(element.id)}
-          onPick={(propIds) => write({ propIds })}
-          pictureOf={(element) => takeFile(currentTake(element.main))}
-        />
-        <button
-          className="link"
-          data-testid={`story-act-new-ref-${index}`}
-          disabled={story.elements.length >= MAX_ELEMENTS_PER_STORY}
-          onClick={() => setAddingReference(true)}
-          title={
-            story.elements.length >= MAX_ELEMENTS_PER_STORY
-              ? t("story:storyboard.elementLimit", {
-                  max: MAX_ELEMENTS_PER_STORY,
-                })
-              : t("story:storyboard.newReferenceHint")
-          }
-          type="button"
-        >
-          {t("story:storyboard.newReference")}
-        </button>
-      </div>
-
-      <label className="story-field-label" htmlFor={`act-summary-${index}`}>
-        {t("story:storyboard.summary")}
-      </label>
-      <textarea
-        aria-label={t("story:storyboard.summary")}
-        className="story-act-summary"
-        data-testid={`story-act-summary-${index}`}
-        id={`act-summary-${index}`}
-        maxLength={2000}
-        onBlur={summary.commit}
-        onChange={(event) => summary.set(event.target.value)}
-        rows={3}
-        value={summary.value}
-      />
-
-      <div className="story-act-sound">
-        {SOUND_FIELDS.map((field) => (
-          <label key={field.key}>
-            <span className="story-field-label">
-              {t(`story:storyboard.sound_${field.key}`)}
-            </span>
-            <input
-              aria-label={t(`story:storyboard.sound_${field.key}`)}
-              data-testid={`story-act-sound-${field.key}-${index}`}
-              maxLength={200}
-              onBlur={() => {
-                if (sound[field.key] !== act.sound[field.key]) {
-                  write({ sound });
-                }
-              }}
-              onChange={(event) =>
-                setSound({ ...sound, [field.key]: event.target.value })
+            <RefPicker
+              chosen={act.sceneId === undefined ? [] : [act.sceneId]}
+              elements={story.elements}
+              kind="scene"
+              label={t("story:storyboard.scene")}
+              many={false}
+              onInspect={(element) => setInspectingId(element.id)}
+              onPick={(ids) => write({ sceneId: ids[0] ?? null })}
+              pictureOf={(element) => takeFile(currentTake(element.main))}
+            />
+            <RefPicker
+              chosen={act.propIds}
+              elements={story.elements}
+              kind="prop"
+              label={t("story:storyboard.props")}
+              many
+              onInspect={(element) => setInspectingId(element.id)}
+              onPick={(propIds) => write({ propIds })}
+              pictureOf={(element) => takeFile(currentTake(element.main))}
+            />
+            <button
+              className="link"
+              data-testid={`story-act-new-ref-${index}`}
+              disabled={story.elements.length >= MAX_ELEMENTS_PER_STORY}
+              onClick={() => setAddingReference(true)}
+              title={
+                story.elements.length >= MAX_ELEMENTS_PER_STORY
+                  ? t("story:storyboard.elementLimit", {
+                      max: MAX_ELEMENTS_PER_STORY,
+                    })
+                  : t("story:storyboard.newReferenceHint")
               }
-              value={sound[field.key]}
-            />
+              type="button"
+            >
+              {t("story:storyboard.newReference")}
+            </button>
+          </div>
+
+          <label className="story-field-label" htmlFor={`act-summary-${index}`}>
+            {t("story:storyboard.summary")}
           </label>
-        ))}
-      </div>
+          <textarea
+            aria-label={t("story:storyboard.summary")}
+            className="story-act-summary"
+            data-testid={`story-act-summary-${index}`}
+            id={`act-summary-${index}`}
+            maxLength={2000}
+            onBlur={summary.commit}
+            onChange={(event) => summary.set(event.target.value)}
+            rows={3}
+            value={summary.value}
+          />
 
-      <KeyframeTable
-        act={act}
-        busyClips={busyClips}
-        busyKeyframes={busyKeyframes}
-        busyLines={busyLines}
-        chapterId={chapterId}
-        driftedFrames={driftedFrames}
-        guesses={guesses}
-        story={story}
-      />
+          <div className="story-act-sound">
+            {SOUND_FIELDS.map((field) => (
+              <label key={field.key}>
+                <span className="story-field-label">
+                  {t(`story:storyboard.sound_${field.key}`)}
+                </span>
+                <input
+                  aria-label={t(`story:storyboard.sound_${field.key}`)}
+                  data-testid={`story-act-sound-${field.key}-${index}`}
+                  maxLength={200}
+                  onBlur={() => {
+                    if (sound[field.key] !== act.sound[field.key]) {
+                      write({ sound });
+                    }
+                  }}
+                  onChange={(event) =>
+                    setSound({ ...sound, [field.key]: event.target.value })
+                  }
+                  value={sound[field.key]}
+                />
+              </label>
+            ))}
+          </div>
 
-      <div className="story-act-foot">
-        <span className="story-hint" data-testid={`story-act-state-${index}`}>
-          {t("story:storyboard.frames", {
-            drawn,
-            total: act.keyframes.length,
-          })}
-          {" · "}
-          {perShot
-            ? t("story:storyboard.shotsFilmed", {
-                filmed,
+          <KeyframeTable
+            act={act}
+            busyClips={busyClips}
+            busyKeyframes={busyKeyframes}
+            busyLines={busyLines}
+            chapterId={chapterId}
+            driftedFrames={driftedFrames}
+            guesses={guesses}
+            story={story}
+          />
+
+          <div className="story-act-foot">
+            <span
+              className="story-hint"
+              data-testid={`story-act-state-${index}`}
+            >
+              {t("story:storyboard.frames", {
+                drawn,
                 total: act.keyframes.length,
-              })
-            : clip === undefined
-              ? t("story:storyboard.noClip")
-              : t("story:storyboard.clipReady")}
-        </span>
+              })}
+              {" · "}
+              {perShot
+                ? t("story:storyboard.shotsFilmed", {
+                    filmed,
+                    total: act.keyframes.length,
+                  })
+                : clip === undefined
+                  ? t("story:storyboard.noClip")
+                  : t("story:storyboard.clipReady")}
+            </span>
 
-        {clipPromptDrifted && (
-          <span
-            className="story-hint story-prompt-drift"
-            data-testid={`story-act-prompt-drift-${index}`}
-            title={t("story:storyboard.promptDriftHint")}
-          >
-            {t("story:storyboard.promptDrift")}
-          </span>
-        )}
+            {clipPromptDrifted && (
+              <span
+                className="story-hint story-prompt-drift"
+                data-testid={`story-act-prompt-drift-${index}`}
+                title={t("story:storyboard.promptDriftHint")}
+              >
+                {t("story:storyboard.promptDrift")}
+              </span>
+            )}
 
-        {undrawn.length > 0 && (
-          <span
-            className="story-hint"
-            data-testid={`story-act-missing-ref-${index}`}
-            title={t("story:storyboard.undrawnHint")}
-          >
-            {undrawn.length < references.length
-              ? t("story:storyboard.missingRef", {
-                  names: undrawn.map((element) => element.name).join("、"),
-                })
-              : t("story:storyboard.noRefs")}
-          </span>
-        )}
+            {undrawn.length > 0 && (
+              <span
+                className="story-hint"
+                data-testid={`story-act-missing-ref-${index}`}
+                title={t("story:storyboard.undrawnHint")}
+              >
+                {undrawn.length < references.length
+                  ? t("story:storyboard.missingRef", {
+                      names: undrawn.map((element) => element.name).join("、"),
+                    })
+                  : t("story:storyboard.noRefs")}
+              </span>
+            )}
 
-        {stale.length > 0 && (
-          <button
-            data-testid={`story-act-redraw-stale-${index}`}
-            onClick={() =>
-              void runArt(
-                story.id,
-                "keyframeArt",
-                planKeyframeArtWaves(
-                  story,
-                  stale.map((keyframe) => ({
-                    chapterId,
-                    actId: act.id,
-                    keyframeId: keyframe.id,
-                  })),
-                ),
-              )
-            }
-            title={t("story:storyboard.redrawStaleHint")}
-            type="button"
-          >
-            {t("story:storyboard.redrawStale", { count: stale.length })}
-          </button>
-        )}
+            {stale.length > 0 && (
+              <button
+                data-testid={`story-act-redraw-stale-${index}`}
+                onClick={() =>
+                  void runArt(
+                    story.id,
+                    "keyframeArt",
+                    planKeyframeArtWaves(
+                      story,
+                      stale.map((keyframe) => ({
+                        chapterId,
+                        actId: act.id,
+                        keyframeId: keyframe.id,
+                      })),
+                    ),
+                  )
+                }
+                title={t("story:storyboard.redrawStaleHint")}
+                type="button"
+              >
+                {t("story:storyboard.redrawStale", { count: stale.length })}
+              </button>
+            )}
 
-        {drawable.length > 0 && (
-          <button
-            className="primary"
-            data-testid={`story-act-draw-${index}`}
-            disabled={act.keyframes.length === 0}
-            onClick={drawMissing}
-            title={
-              act.keyframes.length === 0
-                ? t("story:storyboard.noShots")
-                : undefined
-            }
-            type="button"
-          >
-            {t("story:storyboard.drawMissing", { count: drawable.length })}
-          </button>
-        )}
+            {drawable.length > 0 && (
+              <button
+                className="primary"
+                data-testid={`story-act-draw-${index}`}
+                disabled={act.keyframes.length === 0}
+                onClick={drawMissing}
+                title={
+                  act.keyframes.length === 0
+                    ? t("story:storyboard.noShots")
+                    : undefined
+                }
+                type="button"
+              >
+                {t("story:storyboard.drawMissing", { count: drawable.length })}
+              </button>
+            )}
 
-        {/*
+            {/*
           The clip's ask gathers into one column beside the clip itself: the
           words, the ask that made the take, the takes to choose from, and the
           model that films it stand together in one place to the clip's left,
           so what is asked for and what replies are read as one block.
         */}
-        <span
-          className="story-act-film"
-          data-testid={`story-act-film-${index}`}
-        >
-          <span className="story-act-film-side">
-            {!perShot && (
-              <span className="story-act-clip-actions">
-                {everyFrameDrawn && (
-                  <button
-                    className="link"
-                    data-testid={`story-act-video-prompt-${index}`}
-                    onClick={() => setEditingPrompt("edit")}
-                    type="button"
-                  >
-                    {t("story:storyboard.videoPromptEdit")}
-                    {promptEdited
-                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                      : ""}
-                  </button>
-                )}
-                {clip === undefined ? (
-                  <button
-                    data-testid={`story-act-video-go-${index}`}
-                    disabled={!everyFrameDrawn || videoBusy !== undefined}
-                    onClick={filmAct}
-                    title={
-                      everyFrameDrawn
-                        ? undefined
-                        : t("story:storyboard.drawEveryFrame")
-                    }
-                    type="button"
-                  >
-                    {videoBusy !== undefined
-                      ? placeText(t, videoBusy)
-                      : t("story:storyboard.filmAct")}
-                  </button>
-                ) : (
-                  <>
-                    {/*
+            <span
+              className="story-act-film"
+              data-testid={`story-act-film-${index}`}
+            >
+              <span className="story-act-film-side">
+                {!perShot && (
+                  <span className="story-act-clip-actions">
+                    {everyFrameDrawn && (
+                      <button
+                        className="link"
+                        data-testid={`story-act-video-prompt-${index}`}
+                        onClick={() => setEditingPrompt("edit")}
+                        type="button"
+                      >
+                        {t("story:storyboard.videoPromptEdit")}
+                        {promptEdited
+                          ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                          : ""}
+                      </button>
+                    )}
+                    {clip === undefined ? (
+                      <button
+                        data-testid={`story-act-video-go-${index}`}
+                        disabled={!everyFrameDrawn || videoBusy !== undefined}
+                        onClick={filmAct}
+                        title={
+                          everyFrameDrawn
+                            ? undefined
+                            : t("story:storyboard.drawEveryFrame")
+                        }
+                        type="button"
+                      >
+                        {videoBusy !== undefined
+                          ? placeText(t, videoBusy)
+                          : t("story:storyboard.filmAct")}
+                      </button>
+                    ) : (
+                      <>
+                        {/*
                       A clip already made is not the end of the ask that made
                       it: the column that holds it keeps the ask beside the
                       take, so a take the reader does not like is asked over
                       from where it stands.
                     */}
-                    <button
-                      className="link"
-                      data-testid={`story-act-video-again-${index}`}
-                      disabled={videoBusy !== undefined}
-                      onClick={filmAct}
-                      type="button"
-                    >
-                      {videoBusy !== undefined
-                        ? placeText(t, videoBusy)
-                        : t("story:voice.again")}
-                    </button>
-                    {act.video.takes.length > 1 && (
-                      /*
+                        <button
+                          className="link"
+                          data-testid={`story-act-video-again-${index}`}
+                          disabled={videoBusy !== undefined}
+                          onClick={filmAct}
+                          type="button"
+                        >
+                          {videoBusy !== undefined
+                            ? placeText(t, videoBusy)
+                            : t("story:voice.again")}
+                        </button>
+                        {act.video.takes.length > 1 && (
+                          /*
                         Every ask made another take and none of them was thrown
                         away, so the column that plays one is also where the
                         reader says which one the act is filmed by — and where
                         an unwanted one leaves.
                       */
-                      <button
-                        className="link"
-                        data-testid={`story-act-video-pick-${index}`}
-                        onClick={() => setPickingClip(true)}
-                        type="button"
-                      >
-                        {t("story:panels.pickClip")}
-                      </button>
+                          <button
+                            className="link"
+                            data-testid={`story-act-video-pick-${index}`}
+                            onClick={() => setPickingClip(true)}
+                            type="button"
+                          >
+                            {t("story:panels.pickClip")}
+                          </button>
+                        )}
+                      </>
                     )}
-                  </>
+                  </span>
                 )}
-              </span>
-            )}
-            {/* Which model films this act stands where the act is filmed from:
+                {/* Which model films this act stands where the act is filmed from:
                 an act may want a model of its own whatever the step is set to. */}
-            <span
-              className="story-model story-act-model"
-              data-testid={`story-act-model-${index}`}
-            >
-              <ModelPicker
-                capability="video"
-                label={t("story:storyboard.videoModel")}
-                noneLabel={t("story:storyboard.modelGlobal")}
-                onChange={(reference) => write({ videoModel: reference })}
-                testId={`story-act-video-model-${index}`}
-                value={act.videoModel ?? null}
-              />
-            </span>
-          </span>
-          {clip !== undefined && (
-            <span className="story-act-clip">
-              <button
-                aria-label={t("story:storyboard.playClip")}
-                className="story-act-play"
-                data-testid={`story-act-video-${index}`}
-                onClick={() => setPlaying(true)}
-                type="button"
-              >
-                <img
-                  alt=""
-                  decoding="async"
-                  onError={() => setFailedPoster(framePoster)}
-                  src={clipPoster}
-                  style={{ aspectRatio: frameRatio(story) }}
-                />
-              </button>
-              {clipStale && (
                 <span
-                  className="story-clip-stale"
-                  data-testid={`story-act-video-stale-${index}`}
-                  title={t("story:storyboard.clipStaleHint")}
+                  className="story-model story-act-model"
+                  data-testid={`story-act-model-${index}`}
                 >
-                  {t("story:storyboard.clipStale")}
+                  <ModelPicker
+                    capability="video"
+                    label={t("story:storyboard.videoModel")}
+                    noneLabel={t("story:storyboard.modelGlobal")}
+                    onChange={(reference) => write({ videoModel: reference })}
+                    testId={`story-act-video-model-${index}`}
+                    value={act.videoModel ?? null}
+                  />
+                </span>
+              </span>
+              {clip !== undefined && (
+                <span className="story-act-clip">
+                  <button
+                    aria-label={t("story:storyboard.playClip")}
+                    className="story-act-play"
+                    data-testid={`story-act-video-${index}`}
+                    onClick={() => setPlaying(true)}
+                    type="button"
+                  >
+                    <img
+                      alt=""
+                      decoding="async"
+                      onError={() => setFailedPoster(framePoster)}
+                      src={clipPoster}
+                      style={{ aspectRatio: frameRatio(story) }}
+                    />
+                  </button>
+                  {clipStale && (
+                    <span
+                      className="story-clip-stale"
+                      data-testid={`story-act-video-stale-${index}`}
+                      title={t("story:storyboard.clipStaleHint")}
+                    >
+                      {t("story:storyboard.clipStale")}
+                    </span>
+                  )}
                 </span>
               )}
             </span>
-          )}
-        </span>
-      </div>
+          </div>
 
-      {/*
-        The sound of the act, under the pictures it belongs to: the lines read
-        aloud in one voice, and the music they are spoken over. Both slots are
-        optional, so the row says what a reader has not asked for yet and makes
-        it one press away.
-      */}
-      <div className="story-sound-row" data-testid={`story-act-sound-${index}`}>
-        <span className="story-field-label">{t("story:voice.rowLabel")}</span>
-        <span className="story-sound-slot">
-          {needing.length > 0 && (
-            <button
-              data-testid={`story-act-voice-go-${index}`}
-              disabled={voiceBusy !== undefined}
-              onClick={speakAct}
-              type="button"
-            >
-              {voiceBusy !== undefined
-                ? placeText(t, voiceBusy)
-                : t("story:voice.speak", { count: needing.length })}
-            </button>
-          )}
-          {needing.length === 0 && spoken > 0 && (
-            <span
-              className="story-hint"
-              data-testid={`story-act-voice-count-${index}`}
-            >
-              {t("story:voice.allRead", { count: spoken })}
-            </span>
-          )}
-          {spoken === 0 && (
-            <span className="story-hint">{t("story:voice.noLines")}</span>
-          )}
           {/*
+            The sound of the act, under the pictures it belongs to: the lines
+            read aloud in one voice, and the music they are spoken over. Both
+            slots are optional, so the row says what a reader has not asked for
+            yet and makes it one press away.
+          */}
+          <div
+            className="story-sound-row"
+            data-testid={`story-act-sound-${index}`}
+          >
+            <span className="story-field-label">
+              {t("story:voice.rowLabel")}
+            </span>
+            <span className="story-sound-slot">
+              {needing.length > 0 && (
+                <button
+                  data-testid={`story-act-voice-go-${index}`}
+                  disabled={voiceBusy !== undefined}
+                  onClick={speakAct}
+                  type="button"
+                >
+                  {voiceBusy !== undefined
+                    ? placeText(t, voiceBusy)
+                    : t("story:voice.speak", { count: needing.length })}
+                </button>
+              )}
+              {needing.length === 0 && spoken > 0 && (
+                <span
+                  className="story-hint"
+                  data-testid={`story-act-voice-count-${index}`}
+                >
+                  {t("story:voice.allRead", { count: spoken })}
+                </span>
+              )}
+              {spoken === 0 && (
+                <span className="story-hint">{t("story:voice.noLines")}</span>
+              )}
+              {/*
             A reading of the whole act, made before every line had a voice of
             its own. Kept and playable — it is what the act sounds like until
             its lines are read one by one — and said to be what it is.
           */}
-          {voice !== undefined && (
-            <>
-              <audio
-                controls
-                data-testid={`story-act-voice-${index}`}
-                preload="metadata"
-                src={assetUrl(voice.assetIds[0])}
-              />
-              <span className="story-hint">
-                {t("story:voice.take", {
-                  seconds: secondsOf(moka, voice.assetIds[0]),
-                })}
-                {" · "}
-                {t("story:voice.legacyNote")}
-              </span>
-              {act.voice !== undefined && act.voice.takes.length > 1 && (
+              {voice !== undefined && (
+                <>
+                  <audio
+                    controls
+                    data-testid={`story-act-voice-${index}`}
+                    preload="metadata"
+                    src={assetUrl(voice.assetIds[0])}
+                  />
+                  <span className="story-hint">
+                    {t("story:voice.take", {
+                      seconds: secondsOf(moka, voice.assetIds[0]),
+                    })}
+                    {" · "}
+                    {t("story:voice.legacyNote")}
+                  </span>
+                  {act.voice !== undefined && act.voice.takes.length > 1 && (
+                    <button
+                      className="link"
+                      data-testid={`story-act-voice-pick-${index}`}
+                      onClick={() => setPickingVoice(true)}
+                      type="button"
+                    >
+                      {t("story:panels.pickClip")}
+                    </button>
+                  )}
+                </>
+              )}
+            </span>
+            <span className="story-sound-slot">
+              {music === undefined ? (
                 <button
-                  className="link"
-                  data-testid={`story-act-voice-pick-${index}`}
-                  onClick={() => setPickingVoice(true)}
+                  data-testid={`story-act-music-go-${index}`}
+                  disabled={!hasSound || musicBusy !== undefined}
+                  onClick={scoreAct}
+                  title={hasSound ? undefined : t("story:voice.noSound")}
                   type="button"
                 >
-                  {t("story:panels.pickClip")}
+                  {musicBusy !== undefined
+                    ? placeText(t, musicBusy)
+                    : t("story:voice.score")}
                 </button>
+              ) : (
+                <>
+                  <audio
+                    controls
+                    data-testid={`story-act-music-${index}`}
+                    preload="metadata"
+                    src={assetUrl(music.assetIds[0])}
+                  />
+                  <span className="story-hint">
+                    {t("story:voice.take", {
+                      seconds: secondsOf(moka, music.assetIds[0]),
+                    })}
+                  </span>
+                  <button
+                    className="link"
+                    data-testid={`story-act-music-again-${index}`}
+                    disabled={musicBusy !== undefined}
+                    onClick={scoreAct}
+                    type="button"
+                  >
+                    {musicBusy !== undefined
+                      ? placeText(t, musicBusy)
+                      : t("story:voice.again")}
+                  </button>
+                  {act.music !== undefined && act.music.takes.length > 1 && (
+                    <button
+                      className="link"
+                      data-testid={`story-act-music-pick-${index}`}
+                      onClick={() => setPickingMusic(true)}
+                      type="button"
+                    >
+                      {t("story:panels.pickClip")}
+                    </button>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </span>
-        <span className="story-sound-slot">
-          {music === undefined ? (
-            <button
-              data-testid={`story-act-music-go-${index}`}
-              disabled={!hasSound || musicBusy !== undefined}
-              onClick={scoreAct}
-              title={hasSound ? undefined : t("story:voice.noSound")}
-              type="button"
-            >
-              {musicBusy !== undefined
-                ? placeText(t, musicBusy)
-                : t("story:voice.score")}
-            </button>
-          ) : (
-            <>
-              <audio
-                controls
-                data-testid={`story-act-music-${index}`}
-                preload="metadata"
-                src={assetUrl(music.assetIds[0])}
-              />
-              <span className="story-hint">
-                {t("story:voice.take", {
-                  seconds: secondsOf(moka, music.assetIds[0]),
-                })}
-              </span>
-              <button
-                className="link"
-                data-testid={`story-act-music-again-${index}`}
-                disabled={musicBusy !== undefined}
-                onClick={scoreAct}
-                type="button"
-              >
-                {musicBusy !== undefined
-                  ? placeText(t, musicBusy)
-                  : t("story:voice.again")}
-              </button>
-              {act.music !== undefined && act.music.takes.length > 1 && (
-                <button
-                  className="link"
-                  data-testid={`story-act-music-pick-${index}`}
-                  onClick={() => setPickingMusic(true)}
-                  type="button"
-                >
-                  {t("story:panels.pickClip")}
-                </button>
-              )}
-            </>
-          )}
-        </span>
-      </div>
+            </span>
+          </div>
+        </>
+      )}
 
       {addingReference && (
         <ElementDraftDialog

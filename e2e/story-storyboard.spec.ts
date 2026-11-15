@@ -277,13 +277,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
-    // The strip of episodes folds away to the one being boarded, and opens
-    // again to every episode it holds.
+    // The strip of episodes folds down to the episodes around the one being
+    // boarded, so stepping to a neighbour never needs it opened again.
     await page.getByTestId("story-board-strip-fold").click();
-    await expect(page.getByTestId("story-board-chapter-0")).toHaveCount(0);
-    await expect(page.getByTestId("story-board-strip-current")).toContainText(
-      "1.",
-    );
+    await expect(page.getByTestId("story-board-strip-current")).toHaveCount(0);
+    await expect(page.getByTestId("story-board-chapter-0")).toBeVisible();
     await page.getByTestId("story-board-strip-fold").click();
     await expect(page.getByTestId("story-board-chapter-0")).toBeVisible();
 
@@ -302,14 +300,13 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       )
       .toBe(2);
 
-    // A shot is folded at its top-left to take its height off the page: its
-    // number and its words stay, its cells go, and the shot beside it stays.
-    await firstAct.getByTestId("story-kf-fold-0").click();
-    await expect(firstAct.getByTestId("story-kf-size-0")).toHaveCount(0);
-    await expect(firstAct.getByTestId("story-kf-slot-0")).toHaveCount(0);
-    await expect(firstAct.getByTestId("story-kf-0")).toContainText("Keeper");
-    await expect(firstAct.getByTestId("story-kf-size-1")).toBeVisible();
-    await firstAct.getByTestId("story-kf-fold-0").click();
+    // An act folds at its head to take its whole table off the page: the head
+    // stays where the reader left it, and unfolding brings the table back.
+    await firstAct.getByTestId("story-act-fold-0").click();
+    await expect(firstAct.getByTestId("story-table")).toHaveCount(0);
+    await expect(firstAct.getByTestId("story-act-title-0")).toBeVisible();
+    await firstAct.getByTestId("story-act-fold-0").click();
+    await expect(firstAct.getByTestId("story-table")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-size-0")).toBeVisible();
 
     // The shoot role stands in the row's tools rather than under its picture.

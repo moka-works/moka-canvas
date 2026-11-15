@@ -35,6 +35,7 @@ import { StepConfirm } from "../components/StepConfirm";
 import { ActCard } from "../panels/ActCard";
 import { TransitionCard } from "../panels/TransitionCard";
 import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
+import { chapterStripWindow } from "./chapterStrip";
 import { chapterGuesses } from "../jobs/apply";
 import {
   jobKey,
@@ -380,6 +381,25 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const previewRecord =
     previewId === null ? undefined : jobs.find((job) => job.id === previewId);
 
+  /** One episode's chip, as the strip shows it open or folded. */
+  const chapterChip = (held: StoryChapter, at: number) => {
+    const state = boardState(held, story.shotGranularity);
+    return (
+      <button
+        aria-selected={held.id === chapter.id}
+        className={`story-choice${held.id === chapter.id ? " is-on" : ""}`}
+        data-testid={`story-board-chapter-${at}`}
+        key={held.id}
+        onClick={() => useStoryStore.getState().openChapter(held.id)}
+        role="tab"
+        type="button"
+      >
+        {at + 1}. {held.title}
+        <span className="story-hint">{t(state.key, state.values ?? {})}</span>
+      </button>
+    );
+  };
+
   return (
     <div className="story-step-scroll" data-testid="story-step-storyboard-body">
       <div className="story-step-wide">
@@ -514,38 +534,24 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           >
             <FoldChevron open={stripOpen} />
           </button>
-          {stripOpen ? (
-            <div className="story-chapter-strip" role="tablist">
-              {story.chapters.map((held, at) => {
-                const state = boardState(held, story.shotGranularity);
-                return (
-                  <button
-                    aria-selected={held.id === chapter.id}
-                    className={`story-choice${held.id === chapter.id ? " is-on" : ""}`}
-                    data-testid={`story-board-chapter-${at}`}
-                    key={held.id}
-                    onClick={() =>
-                      useStoryStore.getState().openChapter(held.id)
-                    }
-                    role="tab"
-                    type="button"
-                  >
-                    {at + 1}. {held.title}
-                    <span className="story-hint">
-                      {t(state.key, state.values ?? {})}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <span
-              className="story-board-name"
-              data-testid="story-board-strip-current"
-            >
-              {index + 1}. {chapter.title}
-            </span>
-          )}
+          <div className="story-chapter-strip" role="tablist">
+            {stripOpen
+              ? story.chapters.map((held, at) => chapterChip(held, at))
+              : chapterStripWindow(story.chapters.length, index).map(
+                  (slot, at) =>
+                    slot === "gap" ? (
+                      <span
+                        aria-hidden="true"
+                        className="story-chapter-gap"
+                        key={`gap-${at}`}
+                      >
+                        …
+                      </span>
+                    ) : (
+                      chapterChip(story.chapters[slot]!, slot)
+                    ),
+                )}
+          </div>
         </div>
 
         <div className="story-board-head">

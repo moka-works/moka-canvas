@@ -61,7 +61,6 @@ import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
 import { useStoryWavesAsk, useStoryWavesRun } from "../stores/storyJobStore";
-import { FoldChevron } from "../components/StoryIcons";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { storyMentionOptions } from "./storyMentions";
@@ -313,10 +312,6 @@ function KeyframeRow({
     null,
   );
   const [playing, setPlaying] = useState(false);
-  // Whether this one shot is folded down to its number and its words, which
-  // is the reader's way of taking height off a board they are reading rather
-  // than editing. It is a place on the page, not a thing the document keeps.
-  const [folded, setFolded] = useState(false);
   // The row's own short menu, and the file it files from this computer.
   const moreMenu = useRef<HTMLDetailsElement>(null);
   const uploadFile = useRef<HTMLInputElement>(null);
@@ -450,49 +445,12 @@ function KeyframeRow({
   const filmed = keyframe.art.takes.length > 0;
   // The references this frame was drawn with that have been redrawn since.
   const stale = staleReferences(story, keyframe);
-  const columns = perShot ? 6 : 5;
-  // The top-left of the row: folding a shot takes its cells off the page and
-  // leaves its number and its words, which is how a board is read down to the
-  // shot a reader is working on without the height of all the others. The
-  // number stands inside the fold's control, so the mark and the number share
-  // one line and the whole of it is the target.
-  const fold = (
-    <button
-      aria-expanded={!folded}
-      aria-label={cell(
-        t(folded ? "story:storyboard.unfoldShot" : "story:storyboard.foldShot"),
-      )}
-      className="story-kf-fold"
-      data-testid={`story-kf-fold-${index}`}
-      onClick={() => setFolded(!folded)}
-      title={t(
-        folded ? "story:storyboard.unfoldShot" : "story:storyboard.foldShot",
-      )}
-      type="button"
-    >
-      <FoldChevron open={!folded} />
-      <span className="story-kf-number">{at}</span>
-    </button>
-  );
-  if (folded) {
-    return (
-      <tr className="story-kf is-folded" data-testid={`story-kf-${index}`}>
-        <td className="story-col-index">{fold}</td>
-        <td className="story-kf-folded" colSpan={columns - 1}>
-          <span className="story-kf-folded-words" title={keyframe.content}>
-            {keyframe.content}
-          </span>
-          <span className="story-hint">{t("story:storyboard.folded")}</span>
-        </td>
-      </tr>
-    );
-  }
 
   return (
     <>
       <tr data-testid={`story-kf-${index}`}>
         <td className="story-col-index">
-          {fold}
+          <span className="story-kf-number">{at}</span>
           {/*
             A shot is inserted where the reader is looking rather than only at
             the end of the list: the button stands in the row it would go above,

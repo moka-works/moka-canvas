@@ -611,17 +611,20 @@ describe("writing an episode's board", () => {
     );
   });
 
-  it("folds the episode strip down to the episode the board stands on", () => {
+  it("folds the episode strip down to the episodes around the one open", () => {
     const moka = boarded();
     openAtBoard(moka);
     fireEvent.click(screen.getByTestId("story-board-strip-fold"));
 
-    // The chips are away, and the episode the board below belongs to is still
-    // named where they stood.
-    expect(screen.queryByTestId("story-board-chapter-0")).toBeNull();
+    // A telling this short hides nothing, so every chip stays — and stepping
+    // to the episode beside it needs no unfolding.
+    expect(screen.queryByTestId("story-board-strip-current")).toBeNull();
+    expect(screen.getByTestId("story-board-chapter-0")).toBeDefined();
+    expect(screen.getByTestId("story-board-chapter-1")).toBeDefined();
+    fireEvent.click(screen.getByTestId("story-board-chapter-1"));
     expect(
-      screen.getByTestId("story-board-strip-current").textContent,
-    ).toContain(moka.stories![0]!.chapters[0]!.title);
+      screen.getByTestId("story-board-chapter-1").getAttribute("aria-selected"),
+    ).toBe("true");
 
     fireEvent.click(screen.getByTestId("story-board-strip-fold"));
     expect(screen.getByTestId("story-board-chapter-0")).toBeDefined();
@@ -696,22 +699,21 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.keyframes[0]?.imageModel).toBeUndefined();
   });
 
-  it("folds one shot down to its number and its words, and unfolds it again", () => {
+  it("folds a whole act down to its head, and unfolds it again", () => {
     openAtBoard(boarded());
-    const words = acts()[0]!.keyframes[0]!.content;
-    expect(screen.getByTestId("story-kf-size-0")).toBeDefined();
+    expect(screen.getByTestId("story-table")).toBeDefined();
 
-    fireEvent.click(screen.getByTestId("story-kf-fold-0"));
-    // The folded row keeps the shot's place and its words, and gives up every
-    // cell that made it tall; the shot beside it is untouched.
-    const folded = screen.getByTestId("story-kf-0");
-    expect(folded.className).toContain("is-folded");
-    expect(folded.textContent).toContain(words);
+    fireEvent.click(screen.getByTestId("story-act-fold-0"));
+    // The act keeps its head — where it stands, what it is called, and its
+    // tools — and gives up the table and everything under it.
+    expect(screen.getByTestId("story-act-0")).toBeDefined();
+    expect(screen.getByTestId("story-act-title-0")).toBeDefined();
+    expect(screen.queryByTestId("story-table")).toBeNull();
     expect(screen.queryByTestId("story-kf-size-0")).toBeNull();
     expect(screen.queryByTestId("story-kf-slot-0")).toBeNull();
-    expect(screen.getByTestId("story-kf-size-1")).toBeDefined();
 
-    fireEvent.click(screen.getByTestId("story-kf-fold-0"));
+    fireEvent.click(screen.getByTestId("story-act-fold-0"));
+    expect(screen.getByTestId("story-table")).toBeDefined();
     expect(screen.getByTestId("story-kf-size-0")).toBeDefined();
     expect(screen.getByTestId("story-kf-slot-0")).toBeDefined();
   });

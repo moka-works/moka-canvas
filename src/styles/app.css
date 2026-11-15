@@ -8480,22 +8480,29 @@ button > .story-spin {
   gap: 6px;
 }
 
-/* The strip of episodes folds away to the one the board stands on: its fold
-   stands at the head, where the list starts. */
+/* The strip of episodes folds down to a window around the one the board
+   stands on: its fold stands at the top of the list, where the reader looks
+   for it however many episodes the strip holds. */
 .story-chapter-strip-bar {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   gap: 6px;
+}
+
+/* The gap a folded strip keeps in place of the episodes further away. */
+.story-chapter-gap {
+  color: var(--muted);
+  padding: 0 2px;
 }
 
 /*
   Folds stand as small controls rather than bare glyphs: a chevron drawn in
   the room's own stroke, a hit area wider than the mark, and a hover that says
-  the mark can be pressed. The strip's fold and a shot's fold are the same
+  the mark can be pressed. The strip's fold and an act's fold are the same
   control in two places.
 */
 .story-strip-fold,
-.story-kf-fold {
+.story-act-fold {
   align-items: center;
   background: none;
   border: 1px solid transparent;
@@ -8509,13 +8516,14 @@ button > .story-spin {
   padding: 0 2px;
 }
 
-.story-strip-fold {
+.story-strip-fold,
+.story-act-fold {
   padding: 0;
   width: 18px;
 }
 
 .story-strip-fold:hover,
-.story-kf-fold:hover {
+.story-act-fold:hover {
   border-color: var(--stroke);
   color: var(--ink);
 }
@@ -9405,31 +9413,6 @@ button > .story-spin {
 
 .story-kf-insert:hover {
   color: var(--primary);
-}
-
-/* The fold at the top-left of a shot: the row keeps its number and its words
-   and gives up its height, so a long board can be read down to the work. */
-.story-kf.is-folded td {
-  padding-bottom: 4px;
-  padding-top: 4px;
-}
-
-.story-kf-folded {
-  color: var(--muted);
-}
-
-.story-kf-folded-words {
-  color: var(--ink);
-  display: inline-block;
-  max-width: min(70ch, 100%);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-  white-space: nowrap;
-}
-
-.story-kf-folded .story-hint {
-  margin-left: 8px;
 }
 
 .story-kf-number {
