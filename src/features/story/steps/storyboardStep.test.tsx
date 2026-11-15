@@ -743,6 +743,23 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-edit-dialog")).toBeDefined();
   });
 
+  it("leaves the frame's More menu by clicking elsewhere or stepping back", async () => {
+    openAtBoard(boarded());
+    const menu = screen.getByTestId("story-kf-more-0") as HTMLDetailsElement;
+
+    fireEvent.click(within(menu).getByText("More"));
+    await waitFor(() => expect(menu.open).toBe(true));
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(menu.open).toBe(false));
+
+    fireEvent.click(within(menu).getByText("More"));
+    await waitFor(() => expect(menu.open).toBe(true));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(menu.open).toBe(false));
+  });
+
   it("marks a frame whose reference was redrawn, and draws it again from it", async () => {
     const moka = boarded();
     settle(moka.stories![0], "林", (element) => {

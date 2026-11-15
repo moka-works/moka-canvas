@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -315,9 +315,33 @@ function KeyframeRow({
   // The row's own short menu, and the file it files from this computer.
   const moreMenu = useRef<HTMLDetailsElement>(null);
   const uploadFile = useRef<HTMLInputElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const closeMore = () => {
     if (moreMenu.current !== null) moreMenu.current.open = false;
+    setMoreOpen(false);
   };
+  // A menu is left by clicking anywhere else on the page, or by stepping back
+  // with Escape, as any other menu is.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const away = (event: PointerEvent) => {
+      const menu = moreMenu.current;
+      if (menu === null) return;
+      if (event.target instanceof Node && menu.contains(event.target)) return;
+      closeMore();
+    };
+    const back = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeMore();
+      moreMenu.current?.querySelector("summary")?.focus();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", back);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", back);
+    };
+  }, [moreOpen]);
   // A preview the server could not draw steps back to the shot's drawn frame,
   // rather than leaving a broken picture. The address is held rather than a
   // flag, so a new take is tried even after an older one failed.
@@ -637,6 +661,7 @@ function KeyframeRow({
               <details
                 className="story-kf-more"
                 data-testid={`story-kf-more-${index}`}
+                onToggle={(event) => setMoreOpen(event.currentTarget.open)}
                 ref={moreMenu}
               >
                 <summary className="story-kf-more-toggle">
