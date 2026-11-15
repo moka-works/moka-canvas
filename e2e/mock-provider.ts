@@ -382,6 +382,30 @@ function jsonAnswer(prompt: string): string | undefined {
       }),
     });
   }
+  // A board revised from a newer outline: one shot's words change, by the ids
+  // the prompt carries, which is what the room reads back.
+  if (prompt.includes("The outline the board was written from:")) {
+    const act = /Act ([^\s]+) —/.exec(prompt);
+    const frame = /Frame ([^\s]+) —/.exec(prompt);
+    return JSON.stringify({
+      summary: "The lamp goes out.",
+      needsRebuild: false,
+      unmapped: [],
+      acts: [],
+      keyframes:
+        act === null || frame === null
+          ? []
+          : [
+              {
+                actId: act[1],
+                keyframeId: frame[1],
+                reason: "The lamp goes out in the new outline.",
+                content:
+                  "Rain over the dark platform, `Keeper` waiting where the lamp was.",
+              },
+            ],
+    });
+  }
   // One episode's board: two acts of two shots each, with the cast the
   // elements answer above gives the story — a board naming anyone else would
   // be a board whose references the reading drops. The names a shot is drawn
