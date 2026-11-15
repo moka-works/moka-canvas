@@ -9175,10 +9175,19 @@ button > .story-spin {
 }
 
 .story-kf-more-toggle {
-  color: var(--muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  color: var(--ink);
   cursor: pointer;
   font-size: 12px;
   list-style: none;
+  padding: 3px 10px;
+  transition: 120ms ease;
+}
+
+.story-kf-more-toggle:hover {
+  border-color: var(--primary);
 }
 
 .story-kf-more-toggle::-webkit-details-marker {
@@ -9186,6 +9195,7 @@ button > .story-spin {
 }
 
 .story-kf-more[open] > .story-kf-more-toggle {
+  border-color: var(--primary);
   color: var(--ink);
 }
 
