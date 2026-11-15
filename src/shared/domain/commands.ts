@@ -3483,10 +3483,7 @@ function checkDialogue(lines: StoryKeyframe["dialogue"]) {
         i18n.t("errors:command.storyDialogueUnnamed"),
       );
     seen.add(line.id);
-    if (
-      line.text.length > MAX_DIALOGUE_LINE_LENGTH ||
-      line.speaker.length === 0
-    )
+    if (line.text.length > MAX_DIALOGUE_LINE_LENGTH)
       throw new CommandError(
         "VALIDATION_FAILED",
         i18n.t("errors:command.storyDialogueTooLong"),

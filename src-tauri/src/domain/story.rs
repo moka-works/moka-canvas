@@ -1843,7 +1843,7 @@ fn check_dialogue(lines: &[StoryDialogueLine]) -> Result<(), CommandError> {
     // take of it read aloud between them.
     let mut seen: Vec<&str> = Vec::with_capacity(lines.len());
     for line in lines {
-        if line.text.trim().is_empty() || line.speaker.is_empty() {
+        if line.text.trim().is_empty() {
             return Err(CommandError::new(
                 "VALIDATION_FAILED",
                 "A dialogue line has no words in it",

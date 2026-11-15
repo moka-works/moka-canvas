@@ -301,6 +301,24 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
       firstAct.getByTestId("story-line-voice-state-0"),
     ).toContainText("Read");
     await expect(firstAct.getByTestId("story-line-voice-take-0")).toBeVisible();
+    // The words take the room, the tone has its own, and the two presses stand
+    // at the end of the same row rather than wrapping under it.
+    const [textBox, toneBox, askBox, removeBox] = await Promise.all([
+      firstAct.getByTestId("story-line-text-0").boundingBox(),
+      firstAct.getByTestId("story-line-tone-0").boundingBox(),
+      firstAct.getByTestId("story-line-voice-go-0").boundingBox(),
+      firstAct.getByTestId("story-line-remove-0").boundingBox(),
+    ]);
+    if (!textBox || !toneBox || !askBox || !removeBox) {
+      throw new Error("a dialogue line is laid out in one row");
+    }
+    expect(textBox.width).toBeGreaterThan(200);
+    expect(toneBox.width).toBeGreaterThan(100);
+    const middle = (box: { y: number; height: number }) =>
+      box.y + box.height / 2;
+    for (const box of [toneBox, askBox, removeBox]) {
+      expect(Math.abs(middle(box) - middle(textBox))).toBeLessThan(8);
+    }
     await firstAct.getByTestId("story-kf-dialogue-1").click();
     await expect(
       firstAct.getByTestId("story-line-voice-state-0"),

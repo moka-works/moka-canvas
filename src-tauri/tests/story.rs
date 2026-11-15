@@ -1444,6 +1444,32 @@ fn refuses_a_line_of_dialogue_with_no_name_of_its_own_or_two_sharing_one() {
     );
 }
 
+#[test]
+fn writes_a_line_nobody_in_the_cast_says_without_a_name() {
+    let moka = story_document();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_FIRST.into(),
+            patch: StoryKeyframePatch {
+                dialogue: Some(vec![StoryDialogueLine {
+                    id: Some("line-off".into()),
+                    character_id: None,
+                    speaker: String::new(),
+                    text: "远处传来一声汽笛。".into(),
+                    tone: None,
+                }]),
+                ..Default::default()
+            },
+        }],
+    );
+    let lines = &story_of(&next).chapters[0].acts[0].keyframes[0].dialogue;
+    assert_eq!(lines[0].speaker, "");
+}
+
 /// A telling written before lines had names is still a telling: the document
 /// is read, and the names it does not carry are left off rather than written
 /// back as something else.

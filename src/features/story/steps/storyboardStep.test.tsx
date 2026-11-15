@@ -1651,9 +1651,6 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-dialogue")).toBeDefined();
 
     fireEvent.click(screen.getByTestId("story-line-add"));
-    fireEvent.change(screen.getByTestId("story-line-speaker-1"), {
-      target: { value: "画外音" },
-    });
     fireEvent.change(screen.getByTestId("story-line-text-1"), {
       target: { value: "末班车，不停了。" },
     });
@@ -1673,27 +1670,28 @@ describe("writing an episode's board", () => {
     expect(lines[0]?.id).not.toBe(lines[1]?.id);
     expect(lines[0]?.speaker).toBe("林");
     expect(lines[0]?.text).toBe("车已经停运了。");
-    expect(lines[1]?.speaker).toBe("画外音");
+    // A line nobody in the cast says keeps no name of its own: it is read in
+    // the telling's own voice.
+    expect(lines[1]?.speaker).toBe("");
     expect(lines[1]?.text).toBe("末班车，不停了。");
     expect(lines[1]?.characterId).toBeUndefined();
   });
 
-  it("gives a line the character it is read by, and reads a typed name against the cast", async () => {
+  it("gives a line the character it is read by, and lets it be off screen again", async () => {
     openAtBoard(boarded());
     fireEvent.click(screen.getByTestId("story-kf-dialogue-0"));
 
-    // The line the board wrote for 林 opens with him picked, his name beside it.
+    // The line the board wrote for 林 opens with him picked, and no name field
+    // stands beside the cast: the pick is the whole of who says it.
     const pick = screen.getByTestId("story-line-role-0") as HTMLSelectElement;
     expect(pick.value).toBe(ids.hero);
-    expect(
-      (screen.getByTestId("story-line-speaker-0") as HTMLInputElement).value,
-    ).toBe("林");
+    expect(screen.queryByTestId("story-line-speaker-0")).toBeNull();
 
     // Picking another character of the act carries his name with him.
     fireEvent.change(pick, { target: { value: ids.partner } });
     expect(
-      (screen.getByTestId("story-line-speaker-0") as HTMLInputElement).value,
-    ).toBe("周");
+      (screen.getByTestId("story-line-role-0") as HTMLSelectElement).value,
+    ).toBe(ids.partner);
     fireEvent.click(screen.getByTestId("story-line-done"));
     await waitFor(() =>
       expect(acts()[0]?.keyframes[0]?.dialogue[0]?.characterId).toBe(
@@ -1702,17 +1700,17 @@ describe("writing an episode's board", () => {
     );
     expect(acts()[0]?.keyframes[0]?.dialogue[0]?.speaker).toBe("周");
 
-    // A name written by hand that is nobody in the cast is a line off the
-    // cast, and it keeps the name it was written with.
+    // Off screen is nobody in the cast: the line keeps no name and falls to
+    // the telling's own voice.
     fireEvent.click(screen.getByTestId("story-kf-dialogue-0"));
-    fireEvent.change(screen.getByTestId("story-line-speaker-0"), {
-      target: { value: "广播里的声音" },
+    fireEvent.change(screen.getByTestId("story-line-role-0"), {
+      target: { value: "" },
     });
     fireEvent.click(screen.getByTestId("story-line-done"));
     await waitFor(() =>
       expect(acts()[0]?.keyframes[0]?.dialogue[0]?.characterId).toBeUndefined(),
     );
-    expect(acts()[0]?.keyframes[0]?.dialogue[0]?.speaker).toBe("广播里的声音");
+    expect(acts()[0]?.keyframes[0]?.dialogue[0]?.speaker).toBe("");
   });
 
   it("names every control by the shot and the column it belongs to", () => {

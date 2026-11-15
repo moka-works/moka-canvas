@@ -1880,6 +1880,23 @@ describe("the board commands", () => {
     ).toBe("VALIDATION_FAILED");
   });
 
+  it("writes a line nobody in the cast says without a name", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const next = apply(moka, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameSecond,
+      patch: {
+        dialogue: [{ id: "line-off", speaker: "", text: "远处传来一声汽笛。" }],
+      },
+    }).next;
+    const frames = storyOfFile(next).chapters[0].acts[0].keyframes;
+    expect(frames[1].dialogue[0]?.speaker).toBe("");
+  });
+
   it("moves a shot's role in filming, and puts the plain use back on undo", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();

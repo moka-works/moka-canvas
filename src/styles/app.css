@@ -9455,43 +9455,75 @@ button > .story-spin {
   padding: 4px 2px;
 }
 
-.story-dialogue-line {
-  display: grid;
-  gap: 4px;
-}
+/* One line: who says it, the words, how they are said, and the two things
+   done to the line itself — all in one row, with the trailing actions last.
+   What came of its reading stands under the words it read. */
 
-.story-dialogue-fields {
+.story-dialogue-line {
   align-items: center;
   display: grid;
-  gap: 6px;
-  grid-template-columns: 120px 1fr 120px 28px;
+  gap: 4px 6px;
+  grid-template-columns:
+    minmax(120px, 160px)
+    minmax(0, 1fr)
+    minmax(140px, 0.4fr)
+    auto
+    28px;
+}
+
+.story-dialogue-line .story-line-role {
+  grid-column: 1;
+  min-width: 0;
+  width: 100%;
 }
 
 .story-dialogue-line input {
   border-radius: var(--radius-sm);
   font-size: 12px;
+  min-width: 0;
   padding: 4px 8px;
+  width: 100%;
 }
 
-.story-dialogue-line button {
+.story-dialogue-text {
+  grid-column: 2;
+}
+
+.story-dialogue-tone {
+  grid-column: 3;
+}
+
+.story-dialogue-ask {
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 12px;
+  grid-column: 4;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.story-dialogue-remove {
   background: none;
   border: none;
   color: var(--muted);
+  grid-column: 5;
   padding: 2px 6px;
 }
 
-.story-dialogue-line button:hover:not(:disabled) {
+.story-dialogue-remove:hover:not(:disabled) {
   color: var(--coral);
 }
 
-/* What has become of one line's reading, under the line it reads. */
+/* What has become of one line's reading, under the words it read. */
 
 .story-line-voice {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-left: 126px;
+  grid-column: 2 / -1;
 }
 
 .story-line-voice audio {
