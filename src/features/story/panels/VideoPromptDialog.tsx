@@ -4,14 +4,18 @@ import { useTranslation } from "react-i18next";
 
 import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
-import { videoPromptOverride } from "../../../shared/domain/story";
+import { actAt, videoPromptOverride } from "../../../shared/domain/story";
 import type {
   StoryDocument,
   StoryVideoPromptOverride,
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { planActVideoWaves, planKeyframeVideoWaves } from "../jobs/plan";
+import {
+  actVideoModel,
+  planActVideoWaves,
+  planKeyframeVideoWaves,
+} from "../jobs/plan";
 import type { PromptContractIssue } from "../jobs/promptContract";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "./removeOldTake";
@@ -85,7 +89,13 @@ export function VideoPromptDialog({
   const { live, shown, auto, values, error, rewriting, issues, rewriteError } =
     session;
   const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
-  const guide = videoPromptRewrite(kind);
+  // The guide is the one the words will be held to when they are sent, which
+  // is the contract of the model that films the place rather than the step's.
+  const act = actAt(live, place.chapterId, place.actId);
+  const guide = videoPromptRewrite(
+    kind,
+    act === undefined ? null : actVideoModel(act),
+  );
 
   const overrides = live.videoPromptOverrides ?? {};
   /** Keys written for the asks this place used to have, and no longer has. */

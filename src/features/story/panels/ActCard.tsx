@@ -30,6 +30,7 @@ import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { askPlaceOfKind, type StoryAskPlace } from "../stores/storyModels";
 import {
   actClipPieces,
+  actVideoModel,
   drawnFrames,
   jobKey,
   planActMusic,
@@ -321,8 +322,10 @@ export function ActCard({
 
   const filmAct = () => {
     // A model with a prompt contract is asked over words the reader has seen:
-    // the dialog stands in front of the press, and its send button films.
-    if (videoPromptRewrite("actVideo") !== null) {
+    // the dialog stands in front of the press, and its send button films. The
+    // contract is read off the model that will film this act, which may be the
+    // act's own rather than the one the step is set to.
+    if (videoPromptRewrite("actVideo", actVideoModel(act)) !== null) {
       setEditingPrompt("film");
       return;
     }

@@ -17,9 +17,12 @@ import { create } from "zustand";
 
 import { errorText } from "../../../api/client";
 import type { StoryJobItemDraft } from "../../../api/story";
-import { withoutVideoPromptOverrides } from "../../../shared/domain/story";
+import {
+  actAt,
+  withoutVideoPromptOverrides,
+} from "../../../shared/domain/story";
 import type { StoryDocument } from "../../../shared/domain/types";
-import { planActVideos, planKeyframeVideos } from "../jobs/plan";
+import { actVideoModel, planActVideos, planKeyframeVideos } from "../jobs/plan";
 import type { PromptContractIssue } from "../jobs/promptContract";
 import { rewriteVideoPrompt, videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "../panels/removeOldTake";
@@ -160,8 +163,14 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
     rewrite(key) {
       const session = get().sessions[key];
       if (session === undefined || session.rewriting) return;
+      const act = actAt(
+        session.live,
+        session.place.chapterId,
+        session.place.actId,
+      );
       const guide = videoPromptRewrite(
         session.place.kind === "act" ? "actVideo" : "keyframeVideo",
+        act === undefined ? null : actVideoModel(act),
       );
       if (guide === null) return;
       const controller = new AbortController();

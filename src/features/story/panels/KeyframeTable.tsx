@@ -50,6 +50,7 @@ import { planAssembly } from "../assembly";
 import { planDubbing, type DubCue } from "../dubbing";
 import {
   actDefaultReferences,
+  actVideoModel,
   drawnFrames,
   filmRoleOf,
   jobKey,
@@ -405,7 +406,8 @@ function KeyframeRow({
 
   const film = () => {
     // A model with a prompt contract is asked over words the reader has seen.
-    if (videoPromptRewrite("keyframeVideo") !== null) {
+    // The shot is filmed by the act's model, so that is the contract read.
+    if (videoPromptRewrite("keyframeVideo", actVideoModel(act)) !== null) {
       setEditingPrompt("film");
       return;
     }

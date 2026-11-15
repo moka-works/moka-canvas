@@ -127,15 +127,20 @@ async function persistedBoard(page: Page): Promise<{
  * The telling walked as far as its first episode's board: the premise, the
  * chapters it is told in, the cast drawn and the step confirmed, and then the
  * board written.
+ *
+ * The room the project opens in is passed through, because the canvas room
+ * mounts dialogs the story room does not: a spec that is about the story room
+ * alone enters it straight from the room picker rather than after a canvas.
  */
 async function toTheBoard(
   page: Page,
   home: string,
   name: string,
+  room: "Story" | "Canvas" = "Canvas",
 ): Promise<void> {
   await page.goto("/");
-  await createProject(page, join(home, "project"), name);
-  await openStoryRoom(page);
+  await createProject(page, join(home, "project"), name, room);
+  if (room !== "Story") await openStoryRoom(page);
   await newStory(page, "Rain at Night");
 
   {
@@ -974,7 +979,9 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
     },
   ]);
   try {
-    await toTheBoard(page, home, "Rewritten Ask");
+    // Straight into the story room: no canvas is mounted on the way in, so the
+    // model registry has to be one the app itself read.
+    await toTheBoard(page, home, "Rewritten Ask", "Story");
     const firstAct = page.getByTestId("story-act-0");
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,

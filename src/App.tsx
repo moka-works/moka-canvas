@@ -62,9 +62,13 @@ export default function App() {
   }, []);
 
   // Apart from boot on purpose: model configuration is something the app
-  // shows, not something it needs in order to start.
+  // shows, not something it needs in order to start. The converter registry is
+  // read too, and not just when settings opens: what a video model's prompt
+  // contract is decides whether a clip's words are shown before they are
+  // asked, and a reader who never opens settings still films clips.
   useEffect(() => {
     void useModelStore.getState().load();
+    void useModelStore.getState().loadProtocols();
   }, []);
 
   // A room is fetched while the launcher is up: the launcher is where a session

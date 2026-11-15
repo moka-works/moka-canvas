@@ -34,19 +34,21 @@ export interface PromptRewriteGuide {
 /**
  * The contract the model this kind of clip is filmed by declares, or none.
  *
- * The model is the one the batch will actually be asked of — the room's own
- * choice where it has one, the deployment's default otherwise — so the
- * contract offered is the contract the words will be held to.
+ * The model is the one named for the place — an act may name the model that
+ * films it — and otherwise the one the batch will actually be asked of: the
+ * room's own choice where it has one, the deployment's default otherwise, so
+ * the contract offered is the contract the words will be held to.
  */
 export function videoPromptRewrite(
   kind: "actVideo" | "keyframeVideo",
+  model?: string | null,
 ): PromptRewriteGuide | null {
   const { view, protocols } = useModelStore.getState();
   if (view === null || protocols === null) return null;
-  const id = storyAskModel(kind) ?? effectiveDefaultId(view, "video");
-  const model = view.models.find((held) => held.id === id);
-  if (model === undefined) return null;
-  const declared = protocols.video?.[model.protocol]?.promptRewrite;
+  const id = model ?? storyAskModel(kind) ?? effectiveDefaultId(view, "video");
+  const held = view.models.find((each) => each.id === id);
+  if (held === undefined) return null;
+  const declared = protocols.video?.[held.protocol]?.promptRewrite;
   if (declared === undefined) return null;
   return {
     guide: declared.guide,

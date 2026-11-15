@@ -16,7 +16,12 @@ import type {
 } from "../../../shared/domain/types";
 import { RunningBar } from "../components/RunningBar";
 import { ModelPicker } from "../../settings/ModelPicker";
-import { planActVideoWaves, jobKey, videoCeiling } from "../jobs/plan";
+import {
+  actVideoModel,
+  planActVideoWaves,
+  jobKey,
+  videoCeiling,
+} from "../jobs/plan";
 import { useStoryWavesAsk, type ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
@@ -171,7 +176,8 @@ export function TransitionCard({
 
   const film = () => {
     // A model with a prompt contract is asked over words the reader has seen.
-    if (videoPromptRewrite("actVideo") !== null) {
+    // The bridge is filmed by the act's model, so that is the contract read.
+    if (videoPromptRewrite("actVideo", actVideoModel(act)) !== null) {
       setEditingPrompt("film");
       return;
     }
