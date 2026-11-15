@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -23,6 +23,7 @@ import { createAct } from "../../../shared/domain/factories";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
+import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OutlineRevisionDialog } from "../components/OutlineRevisionDialog";
 import { OutlineSyncDialog } from "../components/OutlineSyncDialog";
@@ -42,6 +43,11 @@ import {
   planStoryboard,
 } from "../jobs/plan";
 import { busyPlaces, mergePlaces, type PlaceBusy } from "../jobs/places";
+import {
+  actVideoPromptDrifted,
+  driftedFrameTargets,
+  promptSnapshots,
+} from "../panels/promptDrift";
 import {
   applyRevision,
   pendingRevision,
@@ -95,6 +101,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const run = useStoryRun();
   const runArt = useStoryWavesAsk();
   const openChapterId = useStoryStore((state) => state.openChapterId);
+  const resources = useProjectStore((state) => state.moka?.resources);
   const [asking, setAsking] = useState(false);
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
@@ -115,6 +122,20 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     story.chapters.findIndex((held) => held.id === openChapterId),
   );
   const chapter: StoryChapter | undefined = story.chapters[index];
+  // What the board's words would ask for now, against what the filed pictures
+  // and clips were asked with: a revision changes the first and not the second.
+  const snapshots = useMemo(() => promptSnapshots(resources), [resources]);
+  const driftedTargets = useMemo(
+    () =>
+      chapter === undefined
+        ? []
+        : driftedFrameTargets(story, chapter, snapshots),
+    [story, chapter, snapshots],
+  );
+  const driftedFrames = useMemo(
+    () => new Set(driftedTargets.map((target) => target.keyframeId)),
+    [driftedTargets],
+  );
   // The episode's own ask, which is the one thing on this page that waits on
   // the whole board: what the acts are having made is each act's own, and is
   // read off the acts themselves.
@@ -355,6 +376,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const ahead = chapterOutlineAhead(chapter);
   const pending = pendingRevision(jobs, chapter.id);
   const revisionJobs = revisionRuns(jobs, chapter.id);
+  const redrawable = driftedTargets.filter((target) => !drawing(target));
   const previewRecord =
     previewId === null ? undefined : jobs.find((job) => job.id === previewId);
 
@@ -404,6 +426,23 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             ))}
           </span>
           <div className="story-step-actions">
+            {redrawable.length > 0 && (
+              <button
+                data-testid="story-board-redraw-drifted"
+                onClick={() =>
+                  void runArt(
+                    story.id,
+                    "keyframeArt",
+                    planKeyframeArtWaves(story, redrawable),
+                  )
+                }
+                type="button"
+              >
+                {t("story:storyboard.redrawDrifted", {
+                  count: redrawable.length,
+                })}
+              </button>
+            )}
             {missingFrames.length > 0 && (
               <button
                 data-testid="story-board-draw-missing"
@@ -709,6 +748,13 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                       busyClips={busy.clips}
                       busyLines={busy.lines}
                       chapterId={chapter.id}
+                      clipPromptDrifted={actVideoPromptDrifted(
+                        story,
+                        chapter.id,
+                        act,
+                        snapshots,
+                      )}
+                      driftedFrames={driftedFrames}
                       guesses={marks.get(act.id) ?? []}
                       index={at}
                       last={at === chapter.acts.length - 1}

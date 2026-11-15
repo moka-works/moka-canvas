@@ -8620,6 +8620,12 @@ button > .story-spin {
   color: var(--danger);
 }
 
+.story-prompt-drift {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .story-revision-words {
     grid-template-columns: 1fr;

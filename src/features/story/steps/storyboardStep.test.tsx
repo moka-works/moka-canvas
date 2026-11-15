@@ -24,7 +24,7 @@ import {
   storyIds,
 } from "../../../shared/domain/fixtures";
 import { createAct, createKeyframe } from "../../../shared/domain/factories";
-import { clampSeconds } from "../jobs/plan";
+import { clampSeconds, planKeyframeArt } from "../jobs/plan";
 import { undo } from "../../editor/commands/execute";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -2386,7 +2386,8 @@ describe("revising a board from a newer outline", () => {
   /** The fixture's first episode, with its outline now standing at v2. */
   function withOutlineAhead(): MokaFile {
     const moka = buildStoryMokaFile();
-    const chapter = moka.stories![0]!.chapters[0]!;
+    const story = moka.stories![0]!;
+    const chapter = story.chapters[0]!;
     chapter.revision = 2;
     chapter.boardRevision = 1;
     chapter.boardOutline = {
@@ -2394,6 +2395,19 @@ describe("revising a board from a newer outline", () => {
       synopsis: "旧梗概：灯还亮着。",
     };
     chapter.synopsis = "新梗概：灯忽然全灭了。";
+    // The frame on file was drawn from the words the board still holds, which
+    // is what makes the revised words show up as a drift afterwards.
+    const frame = chapter.acts[0]!.keyframes[0]!;
+    const planned = planKeyframeArt(story, [
+      { chapterId: chapter.id, actId: ids.act, keyframeId: frame.id },
+    ])[0]!.prompt;
+    const asset = moka.resources.images.find(
+      (entry) => entry.id === ids.frameArt,
+    )!;
+    asset.provenance = {
+      createdAt: T0,
+      parameterSnapshot: { prompt: planned },
+    };
     return moka;
   }
 
@@ -2463,6 +2477,14 @@ describe("revising a board from a newer outline", () => {
     expect(chapter.acts[0]?.keyframes[0]?.art.takes[0]?.assetIds).toEqual([
       ids.frameArt,
     ]);
+    // The picture still on file was drawn from the old words, and the board
+    // says so beside the shot, with a way to redraw the shots that drifted.
+    expect(
+      screen.getByTestId(`story-frame-prompt-drift-${ids.frameFirst}`),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("story-board-redraw-drifted").textContent,
+    ).toContain("1");
     expect(screen.queryByTestId("story-board-outline-ahead")).toBeNull();
   });
 

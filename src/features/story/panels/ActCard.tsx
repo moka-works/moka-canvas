@@ -108,6 +108,8 @@ export function ActCard({
   busyKeyframes,
   busyClips,
   busyLines,
+  clipPromptDrifted,
+  driftedFrames,
   videoBusy,
   voiceBusy,
   musicBusy,
@@ -133,6 +135,10 @@ export function ActCard({
   musicBusy: PlaceBusy | undefined;
   /** The lines of this act being read just now, by the line's own name. */
   busyLines: Map<string, PlaceBusy>;
+  /** Whether the act's clip was filmed from words that have since changed. */
+  clipPromptDrifted: boolean;
+  /** The shots whose pictures were drawn from words that have since changed. */
+  driftedFrames: Set<string>;
   /** The batches working in this act just now, each with its own clock. */
   runs: ActRun[];
 }) {
@@ -654,6 +660,7 @@ export function ActCard({
         busyKeyframes={busyKeyframes}
         busyLines={busyLines}
         chapterId={chapterId}
+        driftedFrames={driftedFrames}
         guesses={guesses}
         story={story}
       />
@@ -674,6 +681,16 @@ export function ActCard({
               ? t("story:storyboard.noClip")
               : t("story:storyboard.clipReady")}
         </span>
+
+        {clipPromptDrifted && (
+          <span
+            className="story-hint story-prompt-drift"
+            data-testid={`story-act-prompt-drift-${index}`}
+            title={t("story:storyboard.promptDriftHint")}
+          >
+            {t("story:storyboard.promptDrift")}
+          </span>
+        )}
 
         {undrawn.length > 0 && (
           <span

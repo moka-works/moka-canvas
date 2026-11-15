@@ -116,6 +116,7 @@ export function KeyframeTable({
   busyKeyframes,
   busyClips,
   busyLines,
+  driftedFrames,
 }: {
   story: StoryDocument;
   chapterId: string;
@@ -128,6 +129,8 @@ export function KeyframeTable({
   busyClips: Map<string, PlaceBusy>;
   /** The lines being read just now, by the line's own name. */
   busyLines: Map<string, PlaceBusy>;
+  /** The shots whose pictures were drawn from words that have since changed. */
+  driftedFrames: Set<string>;
 }) {
   const { t } = useTranslation();
   const [dialogueAt, setDialogueAt] = useState<string | null>(null);
@@ -168,6 +171,7 @@ export function KeyframeTable({
               clipBusy={busyClips.get(keyframe.id)}
               chapterId={chapterId}
               dialogueOpen={dialogueAt === keyframe.id}
+              drifted={driftedFrames.has(keyframe.id)}
               guesses={guesses.filter((guess) => guess.keyframe === index + 1)}
               index={index}
               key={keyframe.id}
@@ -276,6 +280,7 @@ function KeyframeRow({
   busyLines,
   clipBusy,
   dialogueOpen,
+  drifted,
   onDialogue,
 }: {
   story: StoryDocument;
@@ -294,6 +299,8 @@ function KeyframeRow({
   busyLines: Map<string, PlaceBusy>;
   /** Whether this shot's own clip is being made just now. */
   clipBusy: PlaceBusy | undefined;
+  /** Whether this picture was drawn from words that have since changed. */
+  drifted: boolean;
   dialogueOpen: boolean;
   onDialogue: () => void;
 }) {
@@ -642,6 +649,15 @@ function KeyframeRow({
           </div>
         </td>
         <td className="story-col-content">
+          {drifted && (
+            <span
+              className="story-prompt-drift"
+              data-testid={`story-frame-prompt-drift-${keyframe.id}`}
+              title={t("story:storyboard.promptDriftHint")}
+            >
+              {t("story:storyboard.promptDrift")}
+            </span>
+          )}
           <KeyframePromptCell
             act={act}
             chapterId={chapterId}
