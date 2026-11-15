@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/stamp-web.mjs",
     "favicon": "node scripts/build-favicon.mjs",
     "preview": "vite preview",
     "test": "vitest run",

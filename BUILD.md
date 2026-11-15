@@ -187,6 +187,18 @@ make package-macos-x86
 
 包保留英文名——`.app` 文件夹、可执行文件与 DMG 文件名。在中文系统上，访达、程序坞与菜单栏显示的是摩卡画布：`bundle.macOS.files` 随附 `Contents/Resources/zh-Hans.lproj/InfoPlist.strings`（以及旁边的 `zh-Hant`），macOS 从那里读取本地化的 `CFBundleDisplayName`/`CFBundleName`；其他语言回退到包自身的名字。这些文件在包签名之前复制，因此 ad-hoc 签名仍然可验证。
 
+每次打包都会先重建前端，并在 `dist/` 写下 `moka-build.json`（前端构建的提交、版本与时间）；随后有两道硬检查，任一不通过都不会产出安装包：
+
+- `scripts/collect-release.mjs` 收集前要求该文件存在，且提交与当前 `HEAD` 一致——`dist/` 里放着上一个提交的前端时直接失败。
+- macOS 打包在生成 DMG 后只读挂载它，把里面的 `Moka Canvas.app/Contents/Resources/web/index.html` 与 `moka-build.json` 同 `dist/` 逐字对比，不一致即失败，并在结束（无论成败）时卸载；`package-macos-pkg` 则在重建 `.app` 后直接检查它。
+
+各打包任务开始前还会清掉 `target/.../release/bundle` 下上一次的产物，避免同名的旧 DMG / 安装器被当作本次结果收集。要查某个已安装应用带的是哪一版前端，或单独跑同一次检查：
+
+```sh
+cat "/Applications/Moka Canvas.app/Contents/Resources/web/moka-build.json"
+node scripts/verify-bundle.mjs "/Applications/Moka Canvas.app"
+```
+
 > 重新构建会删除上一个 DMG，所以在再次运行同一个打包任务之前先弹出任何已挂载的副本——否则 DMG 会作为残留卷保持挂载，Finder 样式化步骤会以通用的 `error running bundle_dmg.sh` 失败。
 
 ### Windows 安装器（Windows 主机）

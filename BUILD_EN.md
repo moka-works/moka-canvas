@@ -187,6 +187,18 @@ It cross-compiles on Apple Silicon and builds natively on Intel, producing `Moka
 
 The bundle keeps its English name — the `.app` folder, the executable, and the DMG file name. On a Chinese system Finder, the Dock, and the menu bar show 摩卡画布 instead: `bundle.macOS.files` ships `Contents/Resources/zh-Hans.lproj/InfoPlist.strings` (and `zh-Hant` beside it), and macOS reads the localized `CFBundleDisplayName`/`CFBundleName` from there; every other language falls back to the bundle's own name. The files are copied before the bundle is signed, so the ad-hoc signature still verifies.
 
+Every package task rebuilds the frontend first and stamps `dist/moka-build.json` with the commit, version, and time it was built from. Two hard checks follow, and either one fails the package:
+
+- `scripts/collect-release.mjs` requires the stamp, and requires its commit to match the current `HEAD` — a `dist/` left from the previous commit is refused instead of shipped under today's binary.
+- A macOS package mounts its freshly built DMG read-only and compares the `Moka Canvas.app/Contents/Resources/web/index.html` and `moka-build.json` inside it byte-for-byte with `dist/`, failing on any difference and detaching the image however the check ends; `package-macos-pkg` checks the rebuilt `.app` directly.
+
+Each package task also clears the previous run's outputs under `target/.../release/bundle`, so an older DMG or installer with the same name cannot be collected as this run's result. To ask an installed app which frontend it carries, or to run the same check on its own:
+
+```sh
+cat "/Applications/Moka Canvas.app/Contents/Resources/web/moka-build.json"
+node scripts/verify-bundle.mjs "/Applications/Moka Canvas.app"
+```
+
 > Rebuilding deletes the previous DMG, so eject any mounted copy before running the same package task again — otherwise the DMG stays mounted as a leftover volume and the Finder styling step fails with a generic `error running bundle_dmg.sh`.
 
 ### Windows installers (Windows host)
