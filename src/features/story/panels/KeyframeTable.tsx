@@ -57,6 +57,7 @@ import {
   planKeyframeVideoWaves,
   settledRoleFrames,
 } from "../jobs/plan";
+import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
 import { useStoryWavesAsk, useStoryWavesRun } from "../stores/storyJobStore";
@@ -122,11 +123,11 @@ export function KeyframeTable({
   /** The cells whose framing the reading chose rather than read. */
   guesses: StoryGuess[];
   /** The shots being drawn just now, by the place's own name. */
-  busyKeyframes: Set<string>;
+  busyKeyframes: Map<string, PlaceBusy>;
   /** The shots being filmed just now, by the place's own name. */
-  busyClips: Set<string>;
+  busyClips: Map<string, PlaceBusy>;
   /** The lines being read just now, by the line's own name. */
-  busyLines: Set<string>;
+  busyLines: Map<string, PlaceBusy>;
 }) {
   const { t } = useTranslation();
   const [dialogueAt, setDialogueAt] = useState<string | null>(null);
@@ -162,9 +163,9 @@ export function KeyframeTable({
           {act.keyframes.map((keyframe, index) => (
             <KeyframeRow
               act={act}
-              busy={busyKeyframes.has(keyframe.id)}
+              busy={busyKeyframes.get(keyframe.id)}
               busyLines={busyLines}
-              clipBusy={busyClips.has(keyframe.id)}
+              clipBusy={busyClips.get(keyframe.id)}
               chapterId={chapterId}
               dialogueOpen={dialogueAt === keyframe.id}
               guesses={guesses.filter((guess) => guess.keyframe === index + 1)}
@@ -288,11 +289,11 @@ function KeyframeRow({
   roleLocked: boolean;
   /** Whether pairing with the frame after it is still on offer. */
   rolePairable: boolean;
-  busy: boolean;
+  busy: PlaceBusy | undefined;
   /** The lines of this act being read just now, by the line's own name. */
-  busyLines: Set<string>;
+  busyLines: Map<string, PlaceBusy>;
   /** Whether this shot's own clip is being made just now. */
-  clipBusy: boolean;
+  clipBusy: PlaceBusy | undefined;
   dialogueOpen: boolean;
   onDialogue: () => void;
 }) {
@@ -749,15 +750,15 @@ function KeyframeRow({
                 <button
                   className="link"
                   data-testid={`story-kf-video-${index}`}
-                  disabled={!filmed || clipBusy}
+                  disabled={!filmed || clipBusy !== undefined}
                   onClick={film}
                   title={
                     filmed ? undefined : t("story:storyboard.drawFrameFirst")
                   }
                   type="button"
                 >
-                  {clipBusy
-                    ? t("story:panels.drawing")
+                  {clipBusy !== undefined
+                    ? placeText(t, clipBusy)
                     : t("story:storyboard.film")}
                 </button>
                 {filmed && (
@@ -798,12 +799,12 @@ function KeyframeRow({
                 <button
                   className="link"
                   data-testid={`story-kf-video-again-${index}`}
-                  disabled={clipBusy}
+                  disabled={clipBusy !== undefined}
                   onClick={film}
                   type="button"
                 >
-                  {clipBusy
-                    ? t("story:panels.drawing")
+                  {clipBusy !== undefined
+                    ? placeText(t, clipBusy)
                     : t("story:voice.again")}
                 </button>
                 {filmed && (
@@ -1478,7 +1479,7 @@ function LineVoiceRow({
   sentence: StoryDialogueLine;
   /** How this line's reading will lie under its shot, where it is planned. */
   cue: DubCue | undefined;
-  busy: boolean;
+  busy: PlaceBusy | undefined;
   /** Whether the editor's words are not the document's yet. */
   dirty: boolean;
   moka: MokaFile | null;
@@ -1540,13 +1541,13 @@ function LineVoiceRow({
       <button
         className="link"
         data-testid={`story-line-voice-go-${index}`}
-        disabled={busy || dirty}
+        disabled={busy !== undefined || dirty}
         onClick={onAsk}
         title={dirty ? t("story:voice.saveFirst") : undefined}
         type="button"
       >
-        {busy
-          ? t("story:panels.drawing")
+        {busy !== undefined
+          ? placeText(t, busy)
           : take === undefined
             ? t("story:voice.lineAsk")
             : t("story:voice.again")}
@@ -1623,7 +1624,7 @@ function DialogueEditor({
   act: StoryAct;
   keyframe: StoryKeyframe;
   /** The lines of this act being read just now, by the line's own name. */
-  busyLines: Set<string>;
+  busyLines: Map<string, PlaceBusy>;
   lines: StoryDialogueLine[];
   /** The act's characters, still in the story: who a line may be given to. */
   characters: StoryElement[];
@@ -1706,7 +1707,7 @@ function DialogueEditor({
             </div>
             {saved !== undefined && (
               <LineVoiceRow
-                busy={busyLines.has(line.id)}
+                busy={busyLines.get(line.id)}
                 cue={cues?.get(line.id)}
                 dirty={line.text.trim() !== saved.text.trim()}
                 index={index}

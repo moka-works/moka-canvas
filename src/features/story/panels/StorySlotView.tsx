@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { assetThumbUrl } from "../../../api/assets";
 import { currentTake, takeFile } from "../../../shared/domain/story";
 import type { StorySlot } from "../../../shared/domain/types";
+import { placeText, type PlaceBusy } from "../jobs/places";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 
@@ -103,7 +104,7 @@ export function StorySlotView({
   /** The shape of the place, as a CSS aspect ratio. */
   ratio: string;
   label: string;
-  busy?: boolean;
+  busy?: PlaceBusy;
   canGenerate: boolean;
   disabledReason?: string;
   onGenerate: () => void;
@@ -142,13 +143,13 @@ export function StorySlotView({
     <div className="story-slot" data-testid={testId}>
       {take === undefined ? (
         <div
-          className={`story-slot-empty${busy === true ? " is-busy" : ""}`}
+          className={`story-slot-empty${busy !== undefined ? " is-busy" : ""}`}
           style={{ aspectRatio: ratio }}
         >
-          {busy === true ? (
+          {busy !== undefined ? (
             <span className="story-slot-waiting" role="status">
-              <span className="story-spin" />
-              {t("story:panels.drawing")}
+              {busy.state === "running" && <span className="story-spin" />}
+              {placeText(t, busy)}
             </span>
           ) : (
             <>
@@ -189,12 +190,12 @@ export function StorySlotView({
               style={{ aspectRatio: ratio }}
             />
           </button>
-          {busy === true && (
+          {busy !== undefined && (
             // A picture being made again over the one it will replace: the
             // place says it is working on this picture and not on some other.
             <span className="story-slot-veil" role="status">
-              <span className="story-spin" />
-              {t("story:panels.drawing")}
+              {busy.state === "running" && <span className="story-spin" />}
+              {placeText(t, busy)}
             </span>
           )}
         </div>
@@ -206,14 +207,12 @@ export function StorySlotView({
           <button
             className="link"
             data-testid={testId === undefined ? undefined : `${testId}-again`}
-            disabled={busy === true || !canGenerate}
+            disabled={busy !== undefined || !canGenerate}
             onClick={onGenerate}
             title={canGenerate ? undefined : disabledReason}
             type="button"
           >
-            {busy === true
-              ? t("story:panels.drawing")
-              : t("story:panels.again")}
+            {busy !== undefined ? placeText(t, busy) : t("story:panels.again")}
           </button>
           {many && (
             <button

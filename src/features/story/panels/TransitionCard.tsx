@@ -25,6 +25,7 @@ import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { useField } from "./useField";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
+import { placeText, type PlaceBusy } from "../jobs/places";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 import { writeActs } from "./writeBoard";
 
@@ -59,7 +60,7 @@ export function TransitionCard({
   /** Which act of the chapter this is, counted from zero as the room counts. */
   index: number;
   /** Whether this bridge's clip is being made just now. */
-  videoBusy: boolean;
+  videoBusy: PlaceBusy | undefined;
   /** The batches working in this act just now, each with its own clock. */
   runs: ActRun[];
 }) {
@@ -337,13 +338,13 @@ export function TransitionCard({
               <button
                 className="primary"
                 data-testid={`story-transition-video-go-${index}`}
-                disabled={!ready || videoBusy}
+                disabled={!ready || videoBusy !== undefined}
                 onClick={film}
                 title={missing}
                 type="button"
               >
-                {videoBusy
-                  ? t("story:panels.drawing")
+                {videoBusy !== undefined
+                  ? placeText(t, videoBusy)
                   : t("story:storyboard.transitionFilm")}
               </button>
             ) : (
@@ -351,13 +352,13 @@ export function TransitionCard({
                 <button
                   className="link"
                   data-testid={`story-transition-video-again-${index}`}
-                  disabled={!ready || videoBusy}
+                  disabled={!ready || videoBusy !== undefined}
                   onClick={film}
                   title={missing}
                   type="button"
                 >
-                  {videoBusy
-                    ? t("story:panels.drawing")
+                  {videoBusy !== undefined
+                    ? placeText(t, videoBusy)
                     : t("story:storyboard.transitionAgain")}
                 </button>
                 {act.video.takes.length > 1 && (

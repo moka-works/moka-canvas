@@ -302,6 +302,7 @@
     "edit": "编辑",
     "more": "更多",
     "drawing": "生成中…",
+    "queued": "排队中 {{at}}/{{of}}",
     "pick": "挑一张",
     "picks": "{{label}} — 挑一张",
     "picksClip": "{{label}} — 选一段",

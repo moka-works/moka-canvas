@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { StoryJobRecord } from "../../../api/story";
 import {
   actComplete,
   actGranularity,
@@ -31,6 +30,7 @@ import { TransitionCard } from "../panels/TransitionCard";
 import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
 import { chapterGuesses } from "../jobs/apply";
 import { jobKey, planKeyframeArtWaves, planStoryboard } from "../jobs/plan";
+import { busyPlaces, mergePlaces, type PlaceBusy } from "../jobs/places";
 import {
   actRuns,
   boardRuns,
@@ -93,17 +93,18 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // read off the acts themselves.
   const board = chapter === undefined ? [] : boardRuns(jobs, chapter.id);
   // Every place this page asks about is read off one set: what a batch out for
-  // this story is making right now, by the name the place is known by.
-  const keys = busyKeys(jobs);
+  // this story is making right now, by the name the place is known by — and
+  // whether it holds a slot or is still waiting for one.
+  const places = busyPlaces(jobs);
   /** Whether an episode's own board is being written just now. */
   const boarding = (chapterId: string): boolean =>
-    keys.has(jobKey({ kind: "storyboard", chapterId }));
+    places.has(jobKey({ kind: "storyboard", chapterId }));
   /** Whether one of a shot's own pictures is being made just now. */
   const drawing = (target: {
     chapterId: string;
     actId: string;
     keyframeId: string;
-  }): boolean => keys.has(targetKey({ kind: "keyframe", ...target }));
+  }): boolean => places.has(targetKey({ kind: "keyframe", ...target }));
   const marks =
     chapter === undefined
       ? new Map<string, StoryGuess[]>()
@@ -472,7 +473,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         ) : (
           <ol className="story-acts">
             {chapter.acts.map((act, at) => {
-              const busy = busyIn(keys, chapter.id, act);
+              const busy = busyIn(places, chapter.id, act);
               return (
                 <Fragment key={act.id}>
                   {/*
@@ -704,90 +705,68 @@ function countVideos(
     );
 }
 
-/** The places a batch is working on right now, by the name a place is known by. */
-function busyKeys(jobs: StoryJobRecord[]): Set<string> {
-  const keys = new Set<string>();
-  for (const job of jobs) {
-    for (const item of job.items) {
-      if (item.status === "queued" || item.status === "running") {
-        keys.add(jobKey(item.target));
-      }
-    }
-  }
-  return keys;
-}
-
 /**
  * Which of an act's shots are being drawn or filmed, and whether its own clip,
  * its lines or its score are being made — one place at a time, since one batch
  * making one of them says nothing about the others.
  */
 function busyIn(
-  keys: Set<string>,
+  places: Map<string, PlaceBusy>,
   chapterId: string,
   act: StoryAct,
 ): {
-  frames: Set<string>;
-  clips: Set<string>;
-  lines: Set<string>;
-  video: boolean;
-  voice: boolean;
-  music: boolean;
+  frames: Map<string, PlaceBusy>;
+  clips: Map<string, PlaceBusy>;
+  lines: Map<string, PlaceBusy>;
+  video: PlaceBusy | undefined;
+  voice: PlaceBusy | undefined;
+  music: PlaceBusy | undefined;
 } {
-  const frames = new Set<string>();
-  const clips = new Set<string>();
-  const lines = new Set<string>();
-  const video = keys.has(
+  const frames = new Map<string, PlaceBusy>();
+  const clips = new Map<string, PlaceBusy>();
+  const lines = new Map<string, PlaceBusy>();
+  const video = places.get(
     targetKey({ kind: "actVideo", chapterId, actId: act.id }),
   );
-  const music = keys.has(
+  const music = places.get(
     targetKey({ kind: "actMusic", chapterId, actId: act.id }),
   );
   for (const keyframe of act.keyframes) {
     for (const line of keyframe.dialogue) {
-      if (
-        keys.has(
-          targetKey({
-            kind: "lineVoice",
-            chapterId,
-            actId: act.id,
-            keyframeId: keyframe.id,
-            lineId: line.id,
-          }),
-        )
-      ) {
-        lines.add(line.id);
-      }
+      const key = targetKey({
+        kind: "lineVoice",
+        chapterId,
+        actId: act.id,
+        keyframeId: keyframe.id,
+        lineId: line.id,
+      });
+      const held = places.get(key);
+      if (held !== undefined) lines.set(line.id, held);
     }
-    if (
-      keys.has(
-        targetKey({
-          kind: "keyframe",
-          chapterId,
-          actId: act.id,
-          keyframeId: keyframe.id,
-        }),
-      )
-    ) {
-      frames.add(keyframe.id);
-    }
-    if (
-      keys.has(
-        targetKey({
-          kind: "keyframeVideo",
-          chapterId,
-          actId: act.id,
-          keyframeId: keyframe.id,
-        }),
-      )
-    ) {
-      clips.add(keyframe.id);
-    }
+    const frame = places.get(
+      targetKey({
+        kind: "keyframe",
+        chapterId,
+        actId: act.id,
+        keyframeId: keyframe.id,
+      }),
+    );
+    if (frame !== undefined) frames.set(keyframe.id, frame);
+    const clip = places.get(
+      targetKey({
+        kind: "keyframeVideo",
+        chapterId,
+        actId: act.id,
+        keyframeId: keyframe.id,
+      }),
+    );
+    if (clip !== undefined) clips.set(keyframe.id, clip);
   }
   // The act's voice row is at work while any of its lines is being read, and
   // while its old whole-act reading is being made: the two sit on one row.
-  const voice =
-    lines.size > 0 ||
-    keys.has(targetKey({ kind: "actVoice", chapterId, actId: act.id }));
+  const voice = mergePlaces([
+    ...lines.values(),
+    places.get(targetKey({ kind: "actVoice", chapterId, actId: act.id })),
+  ]);
   return { frames, clips, lines, video, voice, music };
 }

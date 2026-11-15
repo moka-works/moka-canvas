@@ -27,6 +27,7 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { planElementArtWaves, resolveVoice } from "../jobs/plan";
+import type { PlaceBusy } from "../jobs/places";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -77,7 +78,7 @@ export const ElementCard = memo(function ElementCard({
   story: StoryDocument;
   element: StoryElement;
   /** The places the story's batches are making just now, by target key. */
-  busyTargets: Set<string>;
+  busyTargets: Map<string, PlaceBusy>;
   /** Whether the card is among those a bulk action is about. */
   selected: boolean;
   onSelect: (elementId: string, selected: boolean) => void;
@@ -154,8 +155,8 @@ export const ElementCard = memo(function ElementCard({
       view,
       ...(variant === undefined ? {} : { variantId: variant.id }),
     });
-  const busyMain = busyTargets.has(formTarget("main"));
-  const busyTurnaround = busyTargets.has(formTarget("turnaround"));
+  const busyMain = busyTargets.get(formTarget("main"));
+  const busyTurnaround = busyTargets.get(formTarget("turnaround"));
 
   /** Writes the form's own words or settings: the default form's, or a variant's. */
   const writeForm = (patch: {

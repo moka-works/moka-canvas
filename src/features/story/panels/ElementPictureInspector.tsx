@@ -3,9 +3,15 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
-import { currentTake, elementForm, takeFile } from "../../../shared/domain";
+import {
+  currentTake,
+  elementForm,
+  takeFile,
+  targetKey,
+} from "../../../shared/domain";
 import type { StoryDocument, StoryElement } from "../../../shared/domain/types";
 import { planElementArtWaves } from "../jobs/plan";
+import { busyPlaces, placeText } from "../jobs/places";
 import { useStoryJobs, useStoryWavesAsk } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 import {
@@ -68,21 +74,18 @@ export function ElementPictureInspector({
   const take = currentTake(slot);
   const canGenerate =
     view === "main" || currentTake(variant?.main ?? element.main) !== undefined;
+  const formId = variant?.id;
   const busy = useMemo(
     () =>
-      jobs.some(
-        (job) =>
-          (job.status === "queued" || job.status === "running") &&
-          job.items.some(
-            (item) =>
-              (item.status === "queued" || item.status === "running") &&
-              item.target.kind === "elementArt" &&
-              item.target.elementId === element.id &&
-              item.target.view === view &&
-              item.target.variantId === variant?.id,
-          ),
+      busyPlaces(jobs).get(
+        targetKey({
+          kind: "element",
+          elementId: element.id,
+          view,
+          ...(formId === undefined ? {} : { variantId: formId }),
+        }),
       ),
-    [jobs, element.id, view, variant?.id],
+    [jobs, element.id, view, formId],
   );
 
   useEffect(() => {
@@ -198,10 +201,10 @@ export function ElementPictureInspector({
                 src={assetThumbUrl(take.assetIds[0] ?? "", STAGE_THUMB_WIDTH)}
               />
             )}
-            {busy && (
+            {busy !== undefined && (
               <span className="story-slot-veil" role="status">
-                <span className="story-spin" />
-                {t("story:panels.drawing")}
+                {busy.state === "running" && <span className="story-spin" />}
+                {placeText(t, busy)}
               </span>
             )}
           </div>
@@ -211,15 +214,17 @@ export function ElementPictureInspector({
               <button
                 className="primary"
                 data-testid="story-inspector-again"
-                disabled={busy || !canGenerate}
+                disabled={busy !== undefined || !canGenerate}
                 onClick={generate}
                 type="button"
               >
-                {busy ? t("story:panels.drawing") : t("story:panels.again")}
+                {busy !== undefined
+                  ? placeText(t, busy)
+                  : t("story:panels.again")}
               </button>
               <button
                 data-testid="story-inspector-edit"
-                disabled={take === undefined || busy}
+                disabled={take === undefined || busy !== undefined}
                 onClick={() => setEditing(true)}
                 type="button"
               >

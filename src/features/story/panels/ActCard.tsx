@@ -39,6 +39,7 @@ import {
   videoCeiling,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
+import { placeText, type PlaceBusy } from "../jobs/places";
 import {
   useStoryRun,
   useStoryWavesAsk,
@@ -122,16 +123,16 @@ export function ActCard({
   /** The cells of this act's board the reading chose rather than read. */
   guesses: StoryGuess[];
   /** The shots of this act being drawn just now, by the shot's own name. */
-  busyKeyframes: Set<string>;
+  busyKeyframes: Map<string, PlaceBusy>;
   /** The shots of this act being filmed just now. */
-  busyClips: Set<string>;
-  /** Whether this act's own clip is being made just now. */
-  videoBusy: boolean;
-  /** Whether any of this act's lines, or its score, are being made just now. */
-  voiceBusy: boolean;
-  musicBusy: boolean;
+  busyClips: Map<string, PlaceBusy>;
+  /** What this act's own clip is doing just now, if anything. */
+  videoBusy: PlaceBusy | undefined;
+  /** What the act's lines and score are doing just now, if anything. */
+  voiceBusy: PlaceBusy | undefined;
+  musicBusy: PlaceBusy | undefined;
   /** The lines of this act being read just now, by the line's own name. */
-  busyLines: Set<string>;
+  busyLines: Map<string, PlaceBusy>;
   /** The batches working in this act just now, each with its own clock. */
   runs: ActRun[];
 }) {
@@ -758,7 +759,7 @@ export function ActCard({
                 {clip === undefined ? (
                   <button
                     data-testid={`story-act-video-go-${index}`}
-                    disabled={!everyFrameDrawn || videoBusy}
+                    disabled={!everyFrameDrawn || videoBusy !== undefined}
                     onClick={filmAct}
                     title={
                       everyFrameDrawn
@@ -767,8 +768,8 @@ export function ActCard({
                     }
                     type="button"
                   >
-                    {videoBusy
-                      ? t("story:panels.drawing")
+                    {videoBusy !== undefined
+                      ? placeText(t, videoBusy)
                       : t("story:storyboard.filmAct")}
                   </button>
                 ) : (
@@ -782,12 +783,12 @@ export function ActCard({
                     <button
                       className="link"
                       data-testid={`story-act-video-again-${index}`}
-                      disabled={videoBusy}
+                      disabled={videoBusy !== undefined}
                       onClick={filmAct}
                       type="button"
                     >
-                      {videoBusy
-                        ? t("story:panels.drawing")
+                      {videoBusy !== undefined
+                        ? placeText(t, videoBusy)
                         : t("story:voice.again")}
                     </button>
                     {act.video.takes.length > 1 && (
@@ -869,12 +870,12 @@ export function ActCard({
           {needing.length > 0 && (
             <button
               data-testid={`story-act-voice-go-${index}`}
-              disabled={voiceBusy}
+              disabled={voiceBusy !== undefined}
               onClick={speakAct}
               type="button"
             >
-              {voiceBusy
-                ? t("story:panels.drawing")
+              {voiceBusy !== undefined
+                ? placeText(t, voiceBusy)
                 : t("story:voice.speak", { count: needing.length })}
             </button>
           )}
@@ -926,12 +927,14 @@ export function ActCard({
           {music === undefined ? (
             <button
               data-testid={`story-act-music-go-${index}`}
-              disabled={!hasSound || musicBusy}
+              disabled={!hasSound || musicBusy !== undefined}
               onClick={scoreAct}
               title={hasSound ? undefined : t("story:voice.noSound")}
               type="button"
             >
-              {musicBusy ? t("story:panels.drawing") : t("story:voice.score")}
+              {musicBusy !== undefined
+                ? placeText(t, musicBusy)
+                : t("story:voice.score")}
             </button>
           ) : (
             <>
@@ -949,11 +952,13 @@ export function ActCard({
               <button
                 className="link"
                 data-testid={`story-act-music-again-${index}`}
-                disabled={musicBusy}
+                disabled={musicBusy !== undefined}
                 onClick={scoreAct}
                 type="button"
               >
-                {t("story:voice.again")}
+                {musicBusy !== undefined
+                  ? placeText(t, musicBusy)
+                  : t("story:voice.again")}
               </button>
               {act.music !== undefined && act.music.takes.length > 1 && (
                 <button

@@ -1139,6 +1139,39 @@ describe("writing an episode's board", () => {
     ).toBe(false);
   });
 
+  it("says where a frame stands in line until its painter takes it up", async () => {
+    openAtBoard(withThreeUndrawnShots());
+    const first = card(0);
+    fireEvent.click(within(first).getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+
+    // The batch is out with one piece at the painter and the rest waiting for
+    // a slot: waiting is not drawing, and the place says which it is.
+    landed = { __keep_running: [] };
+    held = held.map((job) =>
+      job.id === "job-1"
+        ? {
+            ...job,
+            items: job.items.map((item, at) => ({
+              ...item,
+              status: at === 0 ? ("running" as const) : ("queued" as const),
+            })),
+          }
+        : job,
+    );
+    await comesBack(1);
+
+    expect(within(first).getByTestId("story-kf-slot-0").textContent).toContain(
+      "Drawing…",
+    );
+    expect(within(first).getByTestId("story-kf-slot-1").textContent).toContain(
+      "Queued 1/2",
+    );
+    expect(within(first).getByTestId("story-kf-slot-2").textContent).toContain(
+      "Queued 2/2",
+    );
+  });
+
   it("shows a shot's picture as it lands while the rest are still being drawn", async () => {
     openAtBoard(withUndrawnFrames());
     const first = card(0);

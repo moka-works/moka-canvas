@@ -71,8 +71,14 @@ describe("a place with nothing in it", () => {
 
 describe("a place being drawn", () => {
   it("says so rather than offering the button twice", () => {
-    draw({ busy: true });
+    draw({ busy: { state: "running" } });
     expect(screen.getByRole("status").textContent).toContain("Drawing…");
+    expect(screen.queryByTestId("story-slot-main-generate")).toBeNull();
+  });
+
+  it("says where it stands in line while it waits for a slot", () => {
+    draw({ busy: { state: "queued", at: 3, of: 12 } });
+    expect(screen.getByRole("status").textContent).toContain("Queued 3/12");
     expect(screen.queryByTestId("story-slot-main-generate")).toBeNull();
   });
 });
@@ -103,7 +109,10 @@ describe("a place with a picture", () => {
   });
 
   it("says over the old picture that it is being drawn again", () => {
-    const { onGenerate } = draw({ busy: true, slot: slot(["asset-one"]) });
+    const { onGenerate } = draw({
+      busy: { state: "running" },
+      slot: slot(["asset-one"]),
+    });
     // What is there stays where it is, with the wait said over it: a place
     // that looked empty while it was being redrawn would read as a loss.
     expect(

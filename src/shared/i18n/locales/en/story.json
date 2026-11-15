@@ -302,6 +302,7 @@
     "edit": "Edit",
     "more": "More",
     "drawing": "Drawing…",
+    "queued": "Queued {{at}}/{{of}}",
     "pick": "Pick one",
     "picks": "{{label}} — choose one",
     "picksClip": "{{label}} — pick a take",
