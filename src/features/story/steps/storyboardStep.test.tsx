@@ -30,6 +30,7 @@ import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import { StoryPage } from "../StoryPage";
+import { STORY_PARALLEL_DEFAULT, useStoryBatch } from "../stores/storyBatch";
 import { useStoryJobStore } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 
@@ -41,6 +42,7 @@ let starts: Array<{
   kind: StoryJobKind;
   items: StoryJobItemDraft[];
   model?: string | null;
+  parallel?: number;
 }> = [];
 /** The batches the server is holding, newest first. */
 let held: StoryJobRecord[] = [];
@@ -89,11 +91,13 @@ function serving(): void {
             kind: StoryJobKind;
             items: StoryJobItemDraft[];
             model?: string | null;
+            parallel?: number;
           };
           starts.push({
             kind: body.kind,
             items: body.items,
             model: body.model ?? null,
+            parallel: body.parallel,
           });
           const record = batchOf(starts.length, body.kind, body.items);
           held = [record, ...held];
@@ -543,6 +547,7 @@ beforeEach(() => {
   // protocols a dialog reads go with them: half a registry left by one test
   // would be read as a model contract by the next.
   useModelStore.setState({ view: null, protocols: null });
+  useStoryBatch.setState({ parallel: STORY_PARALLEL_DEFAULT });
   useProjectStore.getState().close();
   useStoryStore.getState().forget();
   useStoryJobStore.getState().reset();
@@ -566,6 +571,26 @@ describe("writing an episode's board", () => {
     for (const place of ["text", "image", "video", "audio", "music"]) {
       expect(screen.getByTestId(`story-model-${place}`)).toBeDefined();
     }
+    // The pictures this step draws are asked in batches like the cast's, at a
+    // count the reader sets on this step's own band.
+    expect(screen.getByTestId("story-model-parallel")).toBeDefined();
+  });
+
+  it("runs the board's asks at the count its band is set to", async () => {
+    openAtBoard(withUndrawnFrames());
+    fireEvent.change(screen.getByTestId("story-parallel"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("keyframeArt");
+    expect(starts[0]!.parallel).toBe(2);
+    await comesBack();
+    await waitFor(() =>
+      expect(
+        acts()[0]?.keyframes.every((keyframe) => keyframe.art.takes.length > 0),
+      ).toBe(true),
+    );
   });
 
   it("says on the act's clock what kind of work is out, and on which model", async () => {

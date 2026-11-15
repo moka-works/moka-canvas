@@ -287,6 +287,21 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await page.getByTestId("story-board-strip-fold").click();
     await expect(page.getByTestId("story-board-chapter-0")).toBeVisible();
 
+    // The board's batches run at the count the step offers, as the cast's do:
+    // the number is set here rather than inherited from another step's band.
+    const parallel = page.getByTestId("story-parallel");
+    await expect(parallel).toBeVisible();
+    await parallel.selectOption("2");
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/ui-prefs");
+          const body = (await response.json()) as { storyParallel?: number };
+          return body.storyParallel;
+        }),
+      )
+      .toBe(2);
+
     // A shot is folded at its top-left to take its height off the page: its
     // number and its words stay, its cells go, and the shot beside it stays.
     await firstAct.getByTestId("story-kf-fold-0").click();

@@ -254,8 +254,12 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           <StoryImportButton story={story} target="canvas" />
         </div>
         <div className="story-step-bar">
+          {/* The board draws and films in batches like the cast does, and one
+              model's queue is asked to serve the same count here: the number
+              belongs to the step's band rather than to one button. */}
           <StoryModelPicks
             places={["text", "image", "video", "audio", "music"]}
+            withParallel
           />
           <ReferenceLimitField story={story} />
         </div>
