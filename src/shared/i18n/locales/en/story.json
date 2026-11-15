@@ -492,6 +492,8 @@
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",
     "noChapters": "This telling has no chapters yet. Split it into episodes in the outline first.",
     "chapters": "Episodes",
+    "hideChapters": "Hide the episodes",
+    "showChapters": "Show the episodes",
     "soundReady": "This episode has sound: it goes on the timeline with the clips when the film is assembled",
     "chipEmpty": "not boarded",
     "chipBoarded": "{{acts}} acts",

@@ -8463,6 +8463,26 @@ button > .story-spin {
   gap: 6px;
 }
 
+/* The strip of episodes folds away to the one the board stands on: its fold
+   stands at the head, where the list starts. */
+.story-chapter-strip-bar {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.story-strip-fold {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 0 2px;
+}
+
+.story-strip-fold:hover {
+  color: var(--ink);
+}
+
 .story-granularity {
   display: inline-flex;
   gap: 4px;

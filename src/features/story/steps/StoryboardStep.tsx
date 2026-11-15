@@ -76,6 +76,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     useState<StoryShotGranularity | null>(null);
   const [waves, setWaves] = useState<string[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
+  // Whether the strip of episodes stands open. Folded it keeps the episode
+  // the board below belongs to, which is the one thing about the list that is
+  // still worth a line while its chips are away.
+  const [stripOpen, setStripOpen] = useState(true);
   const starting = useRef(false);
 
   const index = Math.max(
@@ -335,26 +339,58 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           </div>
         </div>
 
-        <div className="story-chapter-strip" role="tablist">
-          {story.chapters.map((held, at) => {
-            const state = boardState(held, story.shotGranularity);
-            return (
-              <button
-                aria-selected={held.id === chapter.id}
-                className={`story-choice${held.id === chapter.id ? " is-on" : ""}`}
-                data-testid={`story-board-chapter-${at}`}
-                key={held.id}
-                onClick={() => useStoryStore.getState().openChapter(held.id)}
-                role="tab"
-                type="button"
-              >
-                {at + 1}. {held.title}
-                <span className="story-hint">
-                  {t(state.key, state.values ?? {})}
-                </span>
-              </button>
-            );
-          })}
+        <div className="story-chapter-strip-bar">
+          <button
+            aria-expanded={stripOpen}
+            aria-label={t(
+              stripOpen
+                ? "story:storyboard.hideChapters"
+                : "story:storyboard.showChapters",
+            )}
+            className="story-strip-fold"
+            data-testid="story-board-strip-fold"
+            onClick={() => setStripOpen(!stripOpen)}
+            title={t(
+              stripOpen
+                ? "story:storyboard.hideChapters"
+                : "story:storyboard.showChapters",
+            )}
+            type="button"
+          >
+            {stripOpen ? "▾" : "▸"}
+          </button>
+          {stripOpen ? (
+            <div className="story-chapter-strip" role="tablist">
+              {story.chapters.map((held, at) => {
+                const state = boardState(held, story.shotGranularity);
+                return (
+                  <button
+                    aria-selected={held.id === chapter.id}
+                    className={`story-choice${held.id === chapter.id ? " is-on" : ""}`}
+                    data-testid={`story-board-chapter-${at}`}
+                    key={held.id}
+                    onClick={() =>
+                      useStoryStore.getState().openChapter(held.id)
+                    }
+                    role="tab"
+                    type="button"
+                  >
+                    {at + 1}. {held.title}
+                    <span className="story-hint">
+                      {t(state.key, state.values ?? {})}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span
+              className="story-board-name"
+              data-testid="story-board-strip-current"
+            >
+              {index + 1}. {chapter.title}
+            </span>
+          )}
         </div>
 
         <div className="story-board-head">

@@ -492,6 +492,8 @@
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",
     "noChapters": "这个故事还没有章节，先去大纲里把它分成一集集",
     "chapters": "集",
+    "hideChapters": "收起集列表",
+    "showChapters": "展开集列表",
     "soundReady": "这一集已经有声音：装配成片时会和片段一起落到时间线上",
     "chipEmpty": "未分镜",
     "chipBoarded": "{{acts}} 幕",

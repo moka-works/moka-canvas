@@ -277,6 +277,16 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // The strip of episodes folds away to the one being boarded, and opens
+    // again to every episode it holds.
+    await page.getByTestId("story-board-strip-fold").click();
+    await expect(page.getByTestId("story-board-chapter-0")).toHaveCount(0);
+    await expect(page.getByTestId("story-board-strip-current")).toContainText(
+      "1.",
+    );
+    await page.getByTestId("story-board-strip-fold").click();
+    await expect(page.getByTestId("story-board-chapter-0")).toBeVisible();
+
     // A shot is folded at its top-left to take its height off the page: its
     // number and its words stay, its cells go, and the shot beside it stays.
     await firstAct.getByTestId("story-kf-fold-0").click();

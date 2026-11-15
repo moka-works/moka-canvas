@@ -566,6 +566,22 @@ describe("writing an episode's board", () => {
     }
   });
 
+  it("folds the episode strip down to the episode the board stands on", () => {
+    const moka = boarded();
+    openAtBoard(moka);
+    fireEvent.click(screen.getByTestId("story-board-strip-fold"));
+
+    // The chips are away, and the episode the board below belongs to is still
+    // named where they stood.
+    expect(screen.queryByTestId("story-board-chapter-0")).toBeNull();
+    expect(
+      screen.getByTestId("story-board-strip-current").textContent,
+    ).toContain(moka.stories![0]!.chapters[0]!.title);
+
+    fireEvent.click(screen.getByTestId("story-board-strip-fold"));
+    expect(screen.getByTestId("story-board-chapter-0")).toBeDefined();
+  });
+
   it("asks for the board as a table of chapters, and writes it into the story", async () => {
     openAtBoard(boarded(), 1);
     answers[`storyboard:${story().chapters[1]!.id}`] = boardAnswer(
