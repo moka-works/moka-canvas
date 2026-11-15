@@ -35,6 +35,13 @@ button.is-active {
   color: var(--on-primary);
 }
 
+button.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
 input,
 select,
 textarea {
