@@ -283,6 +283,7 @@
     "generate": "生成{{label}}",
     "again": "重新生成",
     "edit": "编辑",
+    "more": "更多",
     "drawing": "生成中…",
     "pick": "挑一张",
     "picks": "{{label}} — 挑一张",

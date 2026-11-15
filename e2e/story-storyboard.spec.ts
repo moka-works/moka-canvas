@@ -297,6 +297,23 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await firstAct.getByTestId("story-kf-fold-0").click();
     await expect(firstAct.getByTestId("story-kf-size-0")).toBeVisible();
 
+    // The shoot role stands in the row's tools rather than under its picture,
+    // and replacing, filing, and editing the picture stand behind one More.
+    await expect(
+      firstAct.getByTestId("story-kf-slot-0").getByTestId("story-kf-role-0"),
+    ).toHaveCount(0);
+    await expect(firstAct.getByTestId("story-kf-role-0")).toBeVisible();
+    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
+    await expect(firstAct.getByTestId("story-kf-slot-0-library")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-slot-0-upload")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-edit-0")).toBeVisible();
+    await firstAct.getByTestId("story-kf-slot-0-library").click();
+    await expect(page.getByTestId("story-library")).toBeVisible();
+    await page
+      .getByTestId("story-library")
+      .getByRole("button", { name: "Close" })
+      .click();
+
     // The pictures a shot stands on are the board's to look at: an element's
     // reference opens over the board, and the kept picture can be changed
     // rather than only drawn again.

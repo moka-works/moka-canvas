@@ -9226,6 +9226,42 @@ button > .story-spin {
   max-width: 100%;
 }
 
+/* The frame's short menu: replacing the picture, editing it, and the file it
+   is filed from stand behind one word rather than a line of their own. */
+.story-kf-more {
+  display: inline-block;
+  position: relative;
+}
+
+.story-kf-more-toggle {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.story-kf-more-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.story-kf-more[open] > .story-kf-more-toggle {
+  color: var(--ink);
+}
+
+.story-kf-more-menu {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  white-space: nowrap;
+  z-index: 5;
+}
+
 .story-kf-remove {
   background: none;
   border: none;
@@ -9239,7 +9275,9 @@ button > .story-spin {
 
 /* The shot's own row: where it goes, and the way to another place in it. */
 .story-kf-tools {
+  align-items: flex-start;
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
 }
 

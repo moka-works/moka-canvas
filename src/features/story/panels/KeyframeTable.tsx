@@ -315,6 +315,12 @@ function KeyframeRow({
   // is the reader's way of taking height off a board they are reading rather
   // than editing. It is a place on the page, not a thing the document keeps.
   const [folded, setFolded] = useState(false);
+  // The row's own short menu, and the file it files from this computer.
+  const moreMenu = useRef<HTMLDetailsElement>(null);
+  const uploadFile = useRef<HTMLInputElement>(null);
+  const closeMore = () => {
+    if (moreMenu.current !== null) moreMenu.current.open = false;
+  };
   // A preview the server could not draw steps back to the shot's drawn frame,
   // rather than leaving a broken picture. The address is held rather than a
   // flag, so a new take is tried even after an older one failed.
@@ -628,25 +634,62 @@ function KeyframeRow({
         <td className="story-col-frame">
           <StorySlotView
             actions={
-              <>
-                {!perShot && (
-                  <FilmRoleSelect
-                    index={index}
-                    locked={roleLocked}
-                    onWrite={(role) => write({ filmRole: role })}
-                    pairable={rolePairable}
-                    role={filmRoleOf(keyframe)}
+              <details
+                className="story-kf-more"
+                data-testid={`story-kf-more-${index}`}
+                ref={moreMenu}
+              >
+                <summary className="story-kf-more-toggle">
+                  {t("story:panels.more")}
+                </summary>
+                <span className="story-kf-more-menu">
+                  <button
+                    className="link"
+                    data-testid={`story-kf-slot-${index}-library`}
+                    onClick={() => {
+                      closeMore();
+                      setPicking(true);
+                    }}
+                    type="button"
+                  >
+                    {t("story:panels.fromLibrary")}
+                  </button>
+                  <button
+                    className="link"
+                    data-testid={`story-kf-slot-${index}-upload`}
+                    onClick={() => {
+                      closeMore();
+                      uploadFile.current?.click();
+                    }}
+                    type="button"
+                  >
+                    {t("story:panels.fromFile")}
+                  </button>
+                  <input
+                    accept="image/*"
+                    data-testid={`story-kf-slot-${index}-upload-input`}
+                    hidden
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0];
+                      event.target.value = "";
+                      if (chosen !== undefined) void upload(chosen);
+                    }}
+                    ref={uploadFile}
+                    type="file"
                   />
-                )}
-                <button
-                  className="link"
-                  data-testid={`story-kf-edit-${index}`}
-                  onClick={() => setEditing(true)}
-                  type="button"
-                >
-                  {t("story:panels.edit")}
-                </button>
-              </>
+                  <button
+                    className="link"
+                    data-testid={`story-kf-edit-${index}`}
+                    onClick={() => {
+                      closeMore();
+                      setEditing(true);
+                    }}
+                    type="button"
+                  >
+                    {t("story:panels.edit")}
+                  </button>
+                </span>
+              </details>
             }
             busy={busy}
             canGenerate
@@ -656,6 +699,7 @@ function KeyframeRow({
             }
             onGenerate={draw}
             onPickFromLibrary={() => setPicking(true)}
+            sourcesInMenu
             onRemove={(assetId) =>
               removeOldTake(assetId, () =>
                 dropFrame(story, chapterId, act, keyframe, assetId),
@@ -780,6 +824,20 @@ function KeyframeRow({
         )}
         <td>
           <span className="story-kf-tools">
+            {/*
+              How a drawn frame is used when the act is shot stands among the
+              row's own tools rather than under its picture, so the picture's
+              cell keeps one line of actions whatever the role says.
+            */}
+            {!perShot && (
+              <FilmRoleSelect
+                index={index}
+                locked={roleLocked}
+                onWrite={(role) => write({ filmRole: role })}
+                pairable={rolePairable}
+                role={filmRoleOf(keyframe)}
+              />
+            )}
             {/*
               A seam inside an act is where the act is cut in two: the row
               above the gap says so, and the shots keep the acts they were

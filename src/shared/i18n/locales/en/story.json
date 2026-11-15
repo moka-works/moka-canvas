@@ -283,6 +283,7 @@
     "generate": "Draw {{label}}",
     "again": "Draw it again",
     "edit": "Edit",
+    "more": "More",
     "drawing": "Drawing…",
     "pick": "Pick one",
     "picks": "{{label}} — choose one",

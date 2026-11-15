@@ -539,8 +539,10 @@ beforeEach(() => {
   serving();
   resetUiPrefs();
   // Every test starts on a machine whose settings say nothing, which is the
-  // state a room is read in unless a test sets a deployment of its own.
-  useModelStore.setState({ view: null });
+  // state a room is read in unless a test sets a deployment of its own. The
+  // protocols a dialog reads go with them: half a registry left by one test
+  // would be read as a model contract by the next.
+  useModelStore.setState({ view: null, protocols: null });
   useProjectStore.getState().close();
   useStoryStore.getState().forget();
   useStoryJobStore.getState().reset();
@@ -669,6 +671,33 @@ describe("writing an episode's board", () => {
     fireEvent.click(screen.getByTestId("story-kf-fold-0"));
     expect(screen.getByTestId("story-kf-size-0")).toBeDefined();
     expect(screen.getByTestId("story-kf-slot-0")).toBeDefined();
+  });
+
+  it("keeps a drawn frame short: the shoot role among the tools, the rest behind More", () => {
+    openAtBoard(boarded());
+    const row = screen.getByTestId("story-kf-0");
+
+    // The picture's cell no longer carries the shoot role; the row's tools do.
+    expect(
+      within(screen.getByTestId("story-kf-slot-0")).queryByTestId(
+        "story-kf-role-0",
+      ),
+    ).toBeNull();
+    const role = screen.getByTestId("story-kf-role-0");
+    const cells = row.querySelectorAll("td");
+    expect(cells[cells.length - 1]?.contains(role)).toBe(true);
+
+    // Replacing, keeping from this computer, and editing stand behind More.
+    expect(screen.getByTestId("story-kf-more-0")).toBeDefined();
+    fireEvent.click(screen.getByTestId("story-kf-slot-0-library"));
+    expect(screen.getByTestId("story-library")).toBeDefined();
+    fireEvent.click(
+      within(screen.getByTestId("story-library")).getByRole("button", {
+        name: "Close",
+      }),
+    );
+    fireEvent.click(screen.getByTestId("story-kf-edit-0"));
+    expect(screen.getByTestId("story-edit-dialog")).toBeDefined();
   });
 
   it("marks a frame whose reference was redrawn, and draws it again from it", async () => {

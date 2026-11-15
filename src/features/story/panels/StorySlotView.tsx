@@ -96,6 +96,7 @@ export function StorySlotView({
   actions,
   onPickFromLibrary,
   onUpload,
+  sourcesInMenu = false,
   testId,
 }: {
   slot: StorySlot;
@@ -117,6 +118,12 @@ export function StorySlotView({
   onPickFromLibrary?: () => void;
   /** Files a picture from this computer on the shelf and keeps it here. */
   onUpload?: (file: File) => void;
+  /**
+   * Whether the two sources stand behind the card's own controls rather than
+   * beside them: a place whose row is kept short offers them in a menu the
+   * card draws, and the empty place still offers them where they are needed.
+   */
+  sourcesInMenu?: boolean;
   testId?: string;
 }) {
   const { t } = useTranslation();
@@ -218,13 +225,17 @@ export function StorySlotView({
               {t("story:panels.pick")}
             </button>
           )}
-          <SlotSources
-            onPickFromLibrary={onPickFromLibrary}
-            onUpload={onUpload}
-            testId={testId}
-          />
+          {!sourcesInMenu && (
+            <SlotSources
+              onPickFromLibrary={onPickFromLibrary}
+              onUpload={onUpload}
+              testId={testId}
+            />
+          )}
           {actions}
-          {note !== undefined && <span className="story-hint">{note}</span>}
+          {note !== undefined && (
+            <span className="story-hint">{note}</span>
+          )}{" "}
         </div>
       )}
 
