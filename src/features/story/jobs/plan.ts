@@ -199,23 +199,33 @@ export function clampSeconds(
 
 /**
  * The longest one clip may be, in seconds, for the video model this machine
- * will ask: the one the room is set to, or the deployment's default, and that
- * model's own declared window where it has one.
+ * will ask: the one named, or the one the room is set to, and that model's own
+ * declared window where it has one.
  *
  * Read where a batch is planned rather than held, the way every other ask is:
  * a model swapped between two asks is the model the second one is planned for.
+ * An act that names its own model is planned against that model's window.
  */
-export function videoCeiling(): number {
-  const chosen = storyAskModel("actVideo");
+export function videoCeiling(model?: string | null): number {
+  const chosen = model === undefined ? storyAskModel("actVideo") : model;
   const view = useModelStore.getState().view;
   const id =
     chosen ??
     (view === null ? null : (effectiveDefaultId(view, "video") ?? null));
-  const model = view?.models.find((held) => held.id === id);
-  const seconds = model?.maxVideoSeconds;
+  const heldModel = view?.models.find((held) => held.id === id);
+  const seconds = heldModel?.maxVideoSeconds;
   return typeof seconds === "number" && seconds > 0
     ? Math.min(seconds, MAX_VIDEO_SECONDS)
     : MAX_VIDEO_SECONDS;
+}
+
+/**
+ * The video model an act is filmed by: the one the reader named for it, and
+ * otherwise the one the step is set to film its clips with.
+ */
+export function actVideoModel(act: StoryAct): string | null {
+  const own = (act.videoModel ?? "").trim();
+  return own === "" ? storyAskModel("actVideo") : own;
 }
 
 /** How one piece of an act's clip travels with its pictures. */
@@ -1113,11 +1123,13 @@ export function planActVideos(
   actIds: string[],
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
-  const ceiling = videoCeiling();
   return actIds.flatMap((actId): StoryJobItemDraft[] => {
     const chapter = story.chapters.find((held) => held.id === chapterId);
     const act = actAt(story, chapterId, actId);
     if (chapter === undefined || act === undefined) return [];
+    // The model this act is filmed by decides how long one of its pieces may
+    // run, so the ceiling is read for this act rather than for the step.
+    const ceiling = videoCeiling(actVideoModel(act));
     const target: StoryTarget = { kind: "actVideo", chapterId, actId };
     const base = jobKey(target);
     // A bridge is filmed between its neighbours' own clips: the last frame of
@@ -1265,9 +1277,9 @@ export function planKeyframeVideos(
   keyframeIds: string[],
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
-  const ceiling = videoCeiling();
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
+  const ceiling = videoCeiling(actVideoModel(act));
   return keyframeIds.flatMap((keyframeId) => {
     const keyframe = keyframeAt(story, { chapterId, actId, keyframeId });
     if (keyframe === undefined) return [];
@@ -1327,6 +1339,57 @@ export function planKeyframeVideos(
       },
     ];
   });
+}
+
+/**
+ * Acts filmed whole, gathered by the model each is filmed by.
+ *
+ * A batch is asked of one model, so acts that name models of their own are
+ * handed over as several asks rather than quietly filmed by one model.
+ */
+export function planActVideoWaves(
+  story: StoryDocument,
+  chapterId: string,
+  actIds: string[],
+): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
+  const groups = new Map<
+    string,
+    { model: string | null; items: StoryJobItemDraft[] }
+  >();
+  const seen = new Set<string>();
+  for (const item of planActVideos(story, chapterId, actIds)) {
+    if (item.target.kind !== "actVideo" || seen.has(item.id)) continue;
+    seen.add(item.id);
+    const act = actAt(story, item.target.chapterId, item.target.actId);
+    if (act === undefined) continue;
+    const model = actVideoModel(act);
+    const key = model ?? "";
+    const group = groups.get(key) ?? { model, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap(({ model, items }) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model,
+      items: wave,
+    })),
+  );
+}
+
+/** The same, for one act's shots filmed one at a time. */
+export function planKeyframeVideoWaves(
+  story: StoryDocument,
+  chapterId: string,
+  actId: string,
+  keyframeIds: string[],
+): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
+  const act = actAt(story, chapterId, actId);
+  if (act === undefined) return [];
+  const model = actVideoModel(act);
+  return chunkWaves(
+    planKeyframeVideos(story, chapterId, actId, keyframeIds),
+    MAX_ITEMS_PER_STORY_JOB,
+  ).map((wave) => ({ model, items: wave }));
 }
 
 // -----------------------------------------------------------------------------

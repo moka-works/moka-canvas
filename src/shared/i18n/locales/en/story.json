@@ -615,6 +615,7 @@
     "dialogue": "Lines",
     "duration": "Length",
     "imageModel": "Image model",
+    "videoModel": "Video model",
     "modelGlobal": "Use the step's model",
     "frame": "Frame",
     "clip": "Clip",

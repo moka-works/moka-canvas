@@ -9435,6 +9435,16 @@ button > .story-spin {
   gap: 8px;
 }
 
+/* The model an act is filmed by stands on the act's own foot, beside the asks
+   it governs rather than in the step's band. */
+.story-act-model {
+  min-width: 160px;
+}
+
+.story-act-model .dialog-field {
+  gap: 2px;
+}
+
 /*
   A bridge between acts: the same card as an act, with the two frames it is
   filmed between where a board would stand. The frames are the neighbours' and

@@ -314,6 +314,30 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .getByRole("button", { name: "Close" })
       .click();
 
+    // The act's foot names the video model this act is filmed by, and says so
+    // on the act rather than only in the step's band.
+    const actModel = firstAct.getByTestId("story-act-video-model-0");
+    await expect(actModel).toBeVisible();
+    await actModel.selectOption({ index: 1 });
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: { acts?: { videoModel?: string }[] }[];
+              }[];
+            };
+          };
+          return (
+            body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.videoModel ?? ""
+          );
+        }),
+      )
+      .not.toBe("");
+    await actModel.selectOption("");
+
     // The pictures a shot stands on are the board's to look at: an element's
     // reference opens over the board, and the kept picture can be changed
     // rather than only drawn again.

@@ -17,6 +17,7 @@ import {
   keyframeCast,
   planActMusic,
   planActVideos,
+  planActVideoWaves,
   planActVoice,
   planChapterRewrite,
   planElementArt,
@@ -112,6 +113,27 @@ function settingsWithVideoCeiling(maxSeconds: number): ModelsView {
       },
     ],
     defaults: { ...view.defaults, video: "filmer" },
+  };
+}
+
+/** The settings with two video models, the slower one the deployment's own. */
+function settingsWithTwoVideoModels(): ModelsView {
+  const view = settingsWithVideoSeconds(6);
+  const model = (id: string, maxSeconds: number) => ({
+    id,
+    category: "video" as const,
+    protocol: "bailianVideo",
+    url: "https://provider.test/video-synthesis",
+    model: id,
+    displayName: id,
+    maxVideoSeconds: maxSeconds,
+    enabled: true,
+    apiKey: { set: false, masked: null },
+  });
+  return {
+    ...view,
+    models: [model("slow", 15), model("quick", 5)],
+    defaults: { ...view.defaults, video: "slow" },
   };
 }
 
@@ -1067,6 +1089,24 @@ describe("planning the clips", () => {
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe(`actVideo:${ids.chapterFirst}:${ids.act}`);
     expect(items[0].params?.seconds).toBe(10);
+  });
+
+  it("films an act by the model it names, cut to that model's window", () => {
+    useModelStore.setState({ view: settingsWithTwoVideoModels() });
+    const held = plannedShot(8_000);
+    held.chapters[0]!.acts[0]!.videoModel = "quick";
+
+    const waves = planActVideoWaves(held, ids.chapterFirst, [ids.act]);
+    expect(waves.map((wave) => wave.model)).toEqual(["quick"]);
+    // Eight seconds a shot, under a model that films five: each shot is cut
+    // to the window this act's own model declares, not the step's.
+    expect(waves[0]?.items.map((item) => item.params?.seconds)).toEqual([5, 5]);
+
+    // The act beside it, which names nothing, stays with the step's model and
+    // its longer window.
+    held.chapters[0]!.acts[0]!.videoModel = undefined;
+    const shared = planActVideos(held, ids.chapterFirst, [ids.act]);
+    expect(shared.map((item) => item.params?.seconds)).toEqual([8, 8]);
   });
 
   it("asks for the act's own ceiling when the model declares none", () => {

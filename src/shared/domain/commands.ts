@@ -2668,6 +2668,17 @@ function applyOne(
       const chapter = chapterOf(story, command.chapterId);
       const act = actOf(chapter, command.actId);
       if (command.patch.sound !== undefined) checkActSound(command.patch.sound);
+      if (
+        command.patch.videoModel !== undefined &&
+        command.patch.videoModel !== null
+      ) {
+        const model = command.patch.videoModel.trim();
+        if (model === "" || model.length > VOICE_MODEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyElementModelInvalid"),
+          );
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
@@ -2697,6 +2708,9 @@ function applyOne(
                   next.propIds = command.patch.propIds;
                 if (command.patch.sound !== undefined)
                   next.sound = command.patch.sound;
+                if (command.patch.videoModel === null) delete next.videoModel;
+                else if (command.patch.videoModel !== undefined)
+                  next.videoModel = command.patch.videoModel;
                 return next;
               }),
             }

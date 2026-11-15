@@ -15,8 +15,9 @@ import type {
   StoryDocument,
 } from "../../../shared/domain/types";
 import { RunningBar } from "../components/RunningBar";
-import { planActVideos, jobKey, videoCeiling } from "../jobs/plan";
-import { useStoryRun, type ActRun } from "../stores/storyJobStore";
+import { ModelPicker } from "../../settings/ModelPicker";
+import { planActVideoWaves, jobKey, videoCeiling } from "../jobs/plan";
+import { useStoryWavesAsk, type ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
 import { frameRatio } from "./ratios";
@@ -63,7 +64,7 @@ export function TransitionCard({
   runs: ActRun[];
 }) {
   const { t } = useTranslation();
-  const run = useStoryRun();
+  const run = useStoryWavesAsk();
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
@@ -101,6 +102,23 @@ export function TransitionCard({
     );
   };
 
+  /** The model this bridge is filmed by, written where the act stands now. */
+  const writeVideoModel = (model: string | null) => {
+    const held = readLive();
+    if (held === undefined) return;
+    writeActs(
+      held.doc,
+      chapter.id,
+      held.chapter.acts.map((each) => {
+        if (each.id !== act.id) return each;
+        const next = { ...each };
+        if (model === null) delete next.videoModel;
+        else next.videoModel = model;
+        return next;
+      }),
+    );
+  };
+
   const videos = neighbourVideos(story, chapter, index);
   const ready = videos.from !== undefined && videos.to !== undefined;
   const missing =
@@ -130,7 +148,7 @@ export function TransitionCard({
       : videos.from === undefined
         ? undefined
         : assetFrameUrl(videos.from.assetId, "last", TRANSITION_POSTER_WIDTH);
-  const ceiling = videoCeiling();
+  const ceiling = videoCeiling(act.videoModel);
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
     ceiling,
@@ -160,8 +178,11 @@ export function TransitionCard({
     // press itself may be doing: the ask is planned from the document as it
     // stands.
     const live = liveStory(story.id) ?? story;
-    const items = planActVideos(live, chapter.id, [act.id]);
-    if (items.length > 0) void run(story.id, "actVideo", items);
+    void run(
+      story.id,
+      "actVideo",
+      planActVideoWaves(live, chapter.id, [act.id]),
+    );
   };
   const remove = () =>
     writeActs(
@@ -291,6 +312,19 @@ export function TransitionCard({
       </label>
 
       <div className="story-act-foot">
+        <span
+          className="story-model story-act-model"
+          data-testid={`story-transition-model-${index}`}
+        >
+          <ModelPicker
+            capability="video"
+            label={t("story:storyboard.videoModel")}
+            noneLabel={t("story:storyboard.modelGlobal")}
+            onChange={writeVideoModel}
+            testId={`story-transition-video-model-${index}`}
+            value={act.videoModel ?? null}
+          />
+        </span>
         {clip === undefined ? (
           <button
             className="primary"

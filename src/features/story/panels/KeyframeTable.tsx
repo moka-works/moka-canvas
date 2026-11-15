@@ -56,16 +56,12 @@ import {
   jobKey,
   keyframeCast,
   planKeyframeArtWaves,
-  planKeyframeVideos,
+  planKeyframeVideoWaves,
   settledRoleFrames,
 } from "../jobs/plan";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
-import {
-  useStoryRun,
-  useStoryWavesAsk,
-  useStoryWavesRun,
-} from "../stores/storyJobStore";
+import { useStoryWavesAsk, useStoryWavesRun } from "../stores/storyJobStore";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { storyMentionOptions } from "./storyMentions";
@@ -302,7 +298,6 @@ function KeyframeRow({
   onDialogue: () => void;
 }) {
   const { t } = useTranslation();
-  const run = useStoryRun();
   const runArt = useStoryWavesAsk();
   const [picking, setPicking] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
@@ -387,8 +382,11 @@ function KeyframeRow({
       setEditingPrompt("film");
       return;
     }
-    const [item] = planKeyframeVideos(story, chapterId, act.id, [keyframe.id]);
-    if (item !== undefined) void run(story.id, "keyframeVideo", [item]);
+    void runArt(
+      story.id,
+      "keyframeVideo",
+      planKeyframeVideoWaves(story, chapterId, act.id, [keyframe.id]),
+    );
   };
 
   const remove = () =>

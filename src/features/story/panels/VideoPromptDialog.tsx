@@ -11,7 +11,7 @@ import type {
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { planActVideos, planKeyframeVideos } from "../jobs/plan";
+import { planActVideoWaves, planKeyframeVideoWaves } from "../jobs/plan";
 import type { PromptContractIssue } from "../jobs/promptContract";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "./removeOldTake";
@@ -19,17 +19,9 @@ import {
   useVideoPromptSessions,
   type VideoPromptPlace,
 } from "./videoPromptSessions";
-import { useStoryRun } from "../stores/storyJobStore";
+import { useStoryWavesAsk } from "../stores/storyJobStore";
 
 export type { VideoPromptPlace };
-
-function planFor(story: StoryDocument, place: VideoPromptPlace) {
-  return place.kind === "act"
-    ? planActVideos(story, place.chapterId, [place.actId])
-    : planKeyframeVideos(story, place.chapterId, place.actId, [
-        place.keyframeId ?? "",
-      ]);
-}
 
 /** How many seconds a planned ask is for, as its parameters carry it. */
 function secondsOf(params: Record<string, unknown> | undefined): number {
@@ -71,7 +63,7 @@ export function VideoPromptDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const run = useStoryRun();
+  const runArt = useStoryWavesAsk();
   const [key] = useState(() =>
     useVideoPromptSessions.getState().open(story, place),
   );
@@ -163,13 +155,17 @@ export function VideoPromptDialog({
     }
     if (film) {
       // The document as it stands after the write, not the telling this
-      // dialog was opened from.
+      // dialog was opened from. The model the place is filmed by is read from
+      // that document too, since an act may name one of its own.
       const fresh = liveStory(story.id) ?? story;
-      const items = planFor(fresh, place);
-      void run(
+      void runArt(
         story.id,
         place.kind === "act" ? "actVideo" : "keyframeVideo",
-        items,
+        place.kind === "act"
+          ? planActVideoWaves(fresh, place.chapterId, [place.actId])
+          : planKeyframeVideoWaves(fresh, place.chapterId, place.actId, [
+              place.keyframeId ?? "",
+            ]),
       );
     }
     // The telling holds the words now, so the session has nothing left to

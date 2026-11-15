@@ -493,6 +493,10 @@ pub struct StoryAct {
     pub voice: Option<StorySlot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub music: Option<StorySlot>,
+    /// The video model this act is filmed by, where the reader named one of
+    /// its own rather than leaving the step's model to film it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -781,6 +785,14 @@ pub struct StoryActPatch {
     pub prop_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sound: Option<StoryActSound>,
+    /// The video model drawn of this act; a null hands it back to the step's
+    /// own.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub video_model: Option<Option<String>>,
 }
 
 /// The fields a caller may move on a shot, for `updateStoryKeyframe`.
@@ -2328,6 +2340,15 @@ pub fn apply_story_command(
             let act = story
                 .act(chapter_id, act_id)
                 .ok_or_else(story_target_invalid)?;
+            if let Some(Some(model)) = &patch.video_model {
+                let model = model.trim();
+                if model.is_empty() || model.chars().count() > MODEL_REFERENCE_MAX {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The act's video model is not a model name",
+                    ));
+                }
+            }
             let previous = StoryActPatch {
                 title: patch.title.as_ref().map(|_| act.title.clone()),
                 summary: patch.summary.as_ref().map(|_| act.summary.clone()),
@@ -2338,6 +2359,7 @@ pub fn apply_story_command(
                 scene_id: patch.scene_id.as_ref().map(|_| act.scene_id.clone()),
                 prop_ids: patch.prop_ids.as_ref().map(|_| act.prop_ids.clone()),
                 sound: patch.sound.as_ref().map(|_| act.sound.clone()),
+                video_model: patch.video_model.as_ref().map(|_| act.video_model.clone()),
             };
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2365,6 +2387,9 @@ pub fn apply_story_command(
                     }
                     if let Some(sound) = &patch.sound {
                         held.sound = sound.clone();
+                    }
+                    if let Some(model) = &patch.video_model {
+                        held.video_model = model.clone();
                     }
                 }
             }

@@ -419,6 +419,7 @@ fn act_from(
             shot_granularity: None,
             voice: None,
             music: None,
+            video_model: None,
             transition: None,
         },
     };

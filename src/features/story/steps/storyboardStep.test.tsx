@@ -1319,6 +1319,31 @@ describe("writing an episode's board", () => {
     );
   });
 
+  it("names the video model one act is filmed by, and asks that act of it", async () => {
+    filmingWithCeiling(15);
+    openAtBoard(withoutTheClip());
+
+    const picker = screen.getByTestId(
+      "story-act-video-model-0",
+    ) as HTMLSelectElement;
+    expect(picker.value).toBe("");
+    fireEvent.change(picker, { target: { value: "filmer" } });
+    expect(acts()[0]?.videoModel).toBe("filmer");
+
+    fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]?.kind).toBe("actVideo");
+    expect(starts[0]?.model).toBe("filmer");
+    await comesBack();
+
+    // Clearing the choice hands the act back to the step's own model.
+    fireEvent.change(
+      screen.getByTestId("story-act-video-model-0") as HTMLSelectElement,
+      { target: { value: "" } },
+    );
+    expect(acts()[0]?.videoModel).toBeUndefined();
+  });
+
   it("asks a long act in pieces, and says so beside the plan", async () => {
     // The video model films fifteen seconds at a time and the act runs for
     // eighteen: it is filmed in two pieces, and the row says so before the ask.

@@ -615,6 +615,7 @@
     "dialogue": "台词",
     "duration": "时长",
     "imageModel": "图像模型",
+    "videoModel": "视频模型",
     "modelGlobal": "使用全局设置",
     "frame": "图",
     "clip": "片段",

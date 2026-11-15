@@ -50,9 +50,11 @@ import {
   ELEMENT_MERGE_ID,
   itemsForTargets,
   jobKey,
+  planActVideoWaves,
   planChapterRewrite,
   planElementArtWaves,
   planKeyframeArtWaves,
+  planKeyframeVideoWaves,
 } from "../jobs/plan";
 import { storyAskModel } from "./storyModels";
 import { storyParallel } from "./storyBatch";
@@ -950,6 +952,59 @@ export async function retryFailed(
     }
     return;
   }
+  // An act filmed by a model of its own is asked of that model again, and the
+  // acts that share a model share a batch.
+  if (job.kind === "actVideo") {
+    const byChapter = new Map<string, string[]>();
+    for (const item of failed) {
+      if (item.target.kind !== "actVideo") continue;
+      const held = byChapter.get(item.target.chapterId) ?? [];
+      if (!held.includes(item.target.actId)) held.push(item.target.actId);
+      byChapter.set(item.target.chapterId, held);
+    }
+    for (const [chapterId, actIds] of byChapter) {
+      for (const wave of planActVideoWaves(story, chapterId, actIds)) {
+        const record = await useStoryJobStore
+          .getState()
+          .start(story.id, "actVideo", wave.items, wave.model);
+        if (record === null) return;
+      }
+    }
+    return;
+  }
+  if (job.kind === "keyframeVideo") {
+    const byAct = new Map<
+      string,
+      { chapterId: string; actId: string; keyframeIds: string[] }
+    >();
+    for (const item of failed) {
+      if (item.target.kind !== "keyframeVideo") continue;
+      const key = `${item.target.chapterId}:${item.target.actId}`;
+      const held = byAct.get(key) ?? {
+        chapterId: item.target.chapterId,
+        actId: item.target.actId,
+        keyframeIds: [],
+      };
+      if (!held.keyframeIds.includes(item.target.keyframeId)) {
+        held.keyframeIds.push(item.target.keyframeId);
+      }
+      byAct.set(key, held);
+    }
+    for (const { chapterId, actId, keyframeIds } of byAct.values()) {
+      for (const wave of planKeyframeVideoWaves(
+        story,
+        chapterId,
+        actId,
+        keyframeIds,
+      )) {
+        const record = await useStoryJobStore
+          .getState()
+          .start(story.id, "keyframeVideo", wave.items, wave.model);
+        if (record === null) return;
+      }
+    }
+    return;
+  }
   const planned = failed.flatMap((item) => againFor(story, item));
   const items = [...new Map(planned.map((item) => [item.id, item])).values()];
   if (items.length === 0) return;
@@ -1056,6 +1111,31 @@ export async function redoTarget(
       const record = await useStoryJobStore
         .getState()
         .start(story.id, "keyframeArt", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
+  if (target.kind === "actVideo") {
+    for (const wave of planActVideoWaves(story, target.chapterId, [
+      target.actId,
+    ])) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "actVideo", wave.items, wave.model);
+      if (record === null) return;
+    }
+    return;
+  }
+  if (target.kind === "keyframeVideo") {
+    for (const wave of planKeyframeVideoWaves(
+      story,
+      target.chapterId,
+      target.actId,
+      [target.keyframeId],
+    )) {
+      const record = await useStoryJobStore
+        .getState()
+        .start(story.id, "keyframeVideo", wave.items, wave.model);
       if (record === null) return;
     }
     return;

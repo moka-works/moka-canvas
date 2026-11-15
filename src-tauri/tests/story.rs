@@ -157,6 +157,7 @@ fn act(id: &str) -> StoryAct {
         shot_granularity: None,
         voice: None,
         music: None,
+        video_model: None,
         transition: None,
     }
 }
@@ -321,6 +322,7 @@ fn story_document() -> MokaFile {
                     shot_granularity: None,
                     voice: None,
                     music: None,
+                    video_model: None,
                     transition: None,
                 }],
             },
@@ -1145,6 +1147,41 @@ fn takes_a_scene_away_when_the_patch_carries_a_null_for_it() {
         }],
     );
     assert_eq!(story_of(&next).chapters[0].acts[0].scene_id, None);
+}
+
+#[test]
+fn names_the_video_model_an_act_is_filmed_by() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryAct {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            patch: story::StoryActPatch {
+                video_model: Some(Some("filmer-2".into())),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        story_of(&set).chapters[0].acts[0].video_model.as_deref(),
+        Some("filmer-2")
+    );
+
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryAct {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            patch: story::StoryActPatch {
+                video_model: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(story_of(&cleared).chapters[0].acts[0].video_model, None);
 }
 
 #[test]

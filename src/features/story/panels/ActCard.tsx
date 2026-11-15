@@ -24,12 +24,13 @@ import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RunningBar } from "../components/RunningBar";
+import { ModelPicker } from "../../settings/ModelPicker";
 import {
   actClipPieces,
   drawnFrames,
   jobKey,
   planActMusic,
-  planActVideos,
+  planActVideoWaves,
   planElementArtWaves,
   planKeyframeArtWaves,
   planLineVoiceAsks,
@@ -200,7 +201,7 @@ export function ActCard({
   // What the ask comes to is worth saying out loud when it is not the length
   // the board planned: a shot that outran one clip is made as long as it can
   // be, and an act filmed in pieces is made in pieces.
-  const ceiling = videoCeiling();
+  const ceiling = videoCeiling(act.videoModel);
   const pieces = actClipPieces(act, ceiling);
   const askedSeconds = pieces.reduce((sum, piece) => sum + piece.seconds, 0);
   const split = pieces.length > 1;
@@ -303,8 +304,11 @@ export function ActCard({
       setEditingPrompt("film");
       return;
     }
-    const items = planActVideos(story, chapterId, [act.id]);
-    void run(story.id, "actVideo", items);
+    void runArt(
+      story.id,
+      "actVideo",
+      planActVideoWaves(story, chapterId, [act.id]),
+    );
   };
 
   // What a switch would leave behind: every clip this act has, of either kind,
@@ -709,6 +713,22 @@ export function ActCard({
             {t("story:storyboard.drawMissing", { count: drawable.length })}
           </button>
         )}
+
+        {/* Which model films this act stands where the act is filmed from:
+            an act may want a model of its own whatever the step is set to. */}
+        <span
+          className="story-model story-act-model"
+          data-testid={`story-act-model-${index}`}
+        >
+          <ModelPicker
+            capability="video"
+            label={t("story:storyboard.videoModel")}
+            noneLabel={t("story:storyboard.modelGlobal")}
+            onChange={(reference) => write({ videoModel: reference })}
+            testId={`story-act-video-model-${index}`}
+            value={act.videoModel ?? null}
+          />
+        </span>
 
         {!perShot && everyFrameDrawn && clip === undefined && (
           <button

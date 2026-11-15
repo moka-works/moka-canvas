@@ -987,6 +987,11 @@ export interface StoryAct {
    * own.
    */
   transition?: StoryTransition;
+  /**
+   * The video model this act is filmed by, where the reader has named one of
+   * its own rather than leaving the step's model to film it.
+   */
+  videoModel?: string;
 }
 
 /** A chapter — one episode of the telling. */
@@ -1332,6 +1337,8 @@ export interface StoryActPatch {
   sceneId?: string | null;
   propIds?: string[];
   sound?: StoryActSound;
+  /** The video model drawn of this act; a null hands it to the step's own. */
+  videoModel?: string | null;
 }
 
 /** The fields a caller may move on a shot, for `updateStoryKeyframe`. */
