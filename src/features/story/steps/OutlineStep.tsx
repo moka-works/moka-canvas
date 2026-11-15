@@ -38,6 +38,7 @@ import {
   pieceRunning,
   redoGeneratedChapter,
   useRunningJob,
+  useStoryJobStopping,
   useStoryJobs,
   useStoryJobStore,
 } from "../stores/storyJobStore";
@@ -86,6 +87,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   // hold the table back.
   const writing = kindJob(jobs, "outline");
   const failure = useStoryJobStore((state) => state.error);
+  const stopping = useStoryJobStopping(running?.id ?? null);
   const elapsed = useElapsed(running?.createdAt);
   const [mode, setMode] = useState<"expand" | "split">(
     brief.sourceSplit === true ? "split" : "expand",
@@ -494,16 +496,22 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
             {elapsed >= STORY_SLOW_MS && (
               <span className="story-hint">{t("story:outline.slow")}</span>
             )}
-            <button
-              className="link"
-              data-testid="story-outline-cancel"
-              onClick={() =>
-                void useStoryJobStore.getState().cancel(running.id)
-              }
-              type="button"
-            >
-              {t("story:outline.cancel")}
-            </button>
+            {stopping ? (
+              <span className="story-hint" data-testid="story-outline-stopping">
+                {t("story:jobs.stopping")}
+              </span>
+            ) : (
+              <button
+                className="link"
+                data-testid="story-outline-cancel"
+                onClick={() =>
+                  void useStoryJobStore.getState().cancel(running.id)
+                }
+                type="button"
+              >
+                {t("story:outline.cancel")}
+              </button>
+            )}
           </div>
         )}
 

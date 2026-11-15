@@ -265,6 +265,15 @@ interface StoryJobState {
   error: string | null;
   /** Batches whose answers are being written into the document just now. */
   applying: string[];
+  /**
+   * Batches this room has asked to stop and not yet seen end.
+   *
+   * A batch waiting in a model's queue is ended by the ask at once, but one
+   * with a piece at a provider ends when that piece does — and the record's
+   * own mark is only written when it settles, so what a press was heard by
+   * has to be kept here rather than read off the record between looks.
+   */
+  cancelling: string[];
   /** Lists the story's batches and reads in whatever has come back. */
   load: (storyId: string | null) => Promise<void>;
   start: (
@@ -678,7 +687,12 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       at === -1
         ? [record, ...held]
         : held.map((job) => (job.id === record.id ? record : job));
-    set({ jobs });
+    // A batch that has settled is no longer one this room is waiting to see
+    // stop, whichever way it ended.
+    const cancelling = isRunning(record.status)
+      ? get().cancelling
+      : get().cancelling.filter((id) => id !== record.id);
+    set({ jobs, cancelling });
   };
 
   /**
@@ -748,6 +762,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     starting: false,
     error: null,
     applying: [],
+    cancelling: [],
 
     async load(storyId) {
       if (storyId === null) {
@@ -762,6 +777,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         readIn = new Map<string, BatchRead>();
         watched = new Set<string>();
         jobRun = new Map<string, string>();
+        set({ cancelling: [] });
       }
       set({ storyId });
       try {
@@ -857,9 +873,21 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     },
 
     async cancel(id) {
-      const record = await storyApi.cancel(id);
-      integrate(record);
-      await readAnswers([record]);
+      // Said before the ask goes out: a press is answered where it was made,
+      // not only once the far end has stopped. The record's own mark is written
+      // when the batch settles, and every look until then would otherwise read
+      // back a batch that says nothing has been asked of it.
+      const held = get().cancelling;
+      if (!held.includes(id)) set({ cancelling: [...held, id] });
+      try {
+        const record = await storyApi.cancel(id);
+        integrate(record);
+        await readAnswers([record]);
+      } catch (problem) {
+        set({ cancelling: get().cancelling.filter((jobId) => jobId !== id) });
+        const said = errorText(problem);
+        toast("error", said.message, undefined, said.detail);
+      }
     },
 
     async adopt(id) {
@@ -892,6 +920,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         starting: false,
         error: null,
         applying: [],
+        cancelling: [],
       });
     },
   };
@@ -1450,6 +1479,13 @@ export function useTargetRunning(storyId: string | null, key: string): boolean {
 export function useRunningJob(storyId: string | null): StoryJobRecord | null {
   const jobs = useStoryJobs(storyId);
   return jobs.find((job) => isRunning(job.status)) ?? null;
+}
+
+/** Whether this room has asked a batch to stop and not yet seen it end. */
+export function useStoryJobStopping(id: string | null): boolean {
+  return useStoryJobStore((state) =>
+    id === null ? false : state.cancelling.includes(id),
+  );
 }
 
 /**

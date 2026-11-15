@@ -160,6 +160,7 @@
     "referenceMissing": "有角色还没有参考录音：到「剧情元素」里给角色挑一段录音",
     "referenceMissingGo": "去挑录音",
     "busy": "{{done}}/{{total}}…",
+    "stopping": "正在停止…",
     "generating": "生成中",
     "generatingKind": "生成{{kind}} · {{model}}",
     "kindText": "文字",

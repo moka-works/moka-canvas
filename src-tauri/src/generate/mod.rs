@@ -538,6 +538,21 @@ impl Cancel {
             _ = woken => Err(ProviderError::Cancelled),
         }
     }
+
+    /// Resolves once the cancel is raised, and at once when it already is.
+    ///
+    /// The counterpart of {@link Cancel::wait} for a caller with no delay of
+    /// its own to race — a piece waiting for a model's slot, which has nothing
+    /// else to end the wait.
+    pub async fn cancelled(&self) {
+        let notified = self.wake.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.is_cancelled() {
+            return;
+        }
+        notified.await;
+    }
 }
 
 /// Callback invoked once per chunk of streamed text.

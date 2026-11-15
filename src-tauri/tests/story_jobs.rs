@@ -1496,6 +1496,75 @@ async fn a_batch_is_cancelled_without_losing_the_pieces_that_answered() {
     assert_eq!(settled["items"][2]["status"], "queued", "{settled}");
 }
 
+/// A batch still waiting in the model's queue is ended by a cancel at once.
+///
+/// Nothing of it has been asked of the provider, so there is nothing to wait
+/// for: the slot in front of it belongs to another batch, and one that runs for
+/// minutes must not keep a cancelled batch saying it is still on its way.
+#[tokio::test]
+async fn a_batch_still_waiting_its_turn_is_cancelled_without_waiting_for_the_one_before_it() {
+    let tmp = TempDir::new().unwrap();
+    let harness = harness_at(&tmp);
+    let finished = Arc::new(AtomicBool::new(false));
+    let provider = serve(answering(Recorded::default(), Arc::clone(&finished))).await;
+    harness
+        .configure(&provider, &[(SHOOTER, Capability::Video)])
+        .await;
+    harness.project("Story Queue Cancel").await;
+
+    // The batch in front holds the model's only slot, and the provider will not
+    // finish its shot while this test runs.
+    let holding = harness
+        .start_ok(batch(
+            "actVideo",
+            vec![piece("act", act_video_target("act-1"), "video", "第一幕")],
+        ))
+        .await;
+    let holding_id = holding["id"].as_str().unwrap().to_string();
+    harness.until_placed(&holding_id).await;
+
+    // The batch behind it has asked for the same one slot: its piece is queued,
+    // which is the state a room shows as waiting in line.
+    let mut request = batch(
+        "actVideo",
+        vec![piece("act", act_video_target("act-2"), "video", "第二幕")],
+    );
+    request["parallel"] = json!(1);
+    let waiting = harness.start_ok(request).await;
+    let waiting_id = waiting["id"].as_str().unwrap().to_string();
+
+    // Taken up by its driver and waiting at the gate: the record says it is
+    // running while its one piece is still queued, which is the moment a room
+    // shows it as waiting in line.
+    for _ in 0..120 {
+        let job = harness.job(&waiting_id).await;
+        if job["status"] == json!("running") && job["items"][0]["status"] == json!("queued") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let queued = harness.job(&waiting_id).await;
+    assert_eq!(queued["status"], json!("running"), "{queued}");
+    assert_eq!(queued["items"][0]["status"], json!("queued"), "{queued}");
+
+    let (status, _) = harness.cancel(&waiting_id).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        let job = harness.job(&waiting_id).await;
+        if job["status"] == json!("cancelled") {
+            assert_eq!(job["items"][0]["status"], json!("queued"), "{job}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the cancelled batch was still waiting on the one before it: {job}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+}
+
 #[tokio::test]
 async fn one_piece_being_refused_does_not_take_the_others_with_it() {
     let tmp = TempDir::new().unwrap();

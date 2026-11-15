@@ -86,6 +86,15 @@ function serving(): void {
             ? json({ code: "NOT_FOUND", message: "no" }, 404)
             : json(marked);
         }
+        // A batch asked to stop: one being driven is answered as it stands,
+        // with the request marked, since its record is written when it ends.
+        const stopping = /\/story\/jobs\/([^/?]+)\/cancel$/.exec(url);
+        if (stopping !== null && method === "POST") {
+          const found = held.find((job) => job.id === stopping[1]);
+          return found === undefined
+            ? json({ code: "NOT_FOUND", message: "no" }, 404)
+            : json({ ...found, cancelRequested: true });
+        }
         if (method === "POST") {
           const body = JSON.parse(String(init?.body ?? "{}")) as {
             kind: StoryJobKind;
@@ -1217,6 +1226,35 @@ describe("writing an episode's board", () => {
     expect(within(first).getByTestId("story-kf-slot-2").textContent).toContain(
       "Queued 2/2",
     );
+  });
+
+  it("says a stop was heard while a batch still in line is ending", async () => {
+    openAtBoard(withThreeUndrawnShots());
+    const first = card(0);
+    fireEvent.click(within(first).getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+
+    // The batch is out with every piece still waiting for a slot, so the press
+    // itself is the only thing that can say the stop was heard.
+    held = held.map((job) =>
+      job.id === "job-1"
+        ? {
+            ...job,
+            items: job.items.map((item) => ({
+              ...item,
+              status: "queued" as const,
+            })),
+          }
+        : job,
+    );
+    fireEvent.click(within(first).getByTestId("story-act-running-cancel"));
+
+    await waitFor(() =>
+      expect(
+        within(first).getByTestId("story-act-running-stopping").textContent,
+      ).toBe("Stopping…"),
+    );
+    expect(within(first).queryByTestId("story-act-running-cancel")).toBeNull();
   });
 
   it("shows a shot's picture as it lands while the rest are still being drawn", async () => {

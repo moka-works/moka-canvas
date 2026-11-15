@@ -160,6 +160,7 @@
     "referenceMissing": "Some characters still need a reference recording: pick one on their cards in the Elements step",
     "referenceMissingGo": "Pick the recordings",
     "busy": "{{done}}/{{total}}…",
+    "stopping": "Stopping…",
     "generating": "Generating",
     "generatingKind": "Generating {{kind}} · {{model}}",
     "kindText": "words",

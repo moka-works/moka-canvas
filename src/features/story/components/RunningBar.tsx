@@ -2,7 +2,11 @@ import { useTranslation } from "react-i18next";
 
 import type { StoryJobItem, StoryJobRecord } from "../../../api/story";
 import { formatDuration } from "../../../shared/domain";
-import { piecesProgress, useStoryJobStore } from "../stores/storyJobStore";
+import {
+  piecesProgress,
+  useStoryJobStopping,
+  useStoryJobStore,
+} from "../stores/storyJobStore";
 import { useElapsed } from "../steps/useElapsed";
 
 /** How long a batch runs before the reader is told it may be a while. */
@@ -32,6 +36,7 @@ export function RunningBar({
 }) {
   const { t } = useTranslation();
   const elapsed = useElapsed(job.createdAt);
+  const stopping = useStoryJobStopping(job.id);
   const progress = piecesProgress(pieces);
   return (
     <div className="story-running" data-testid={testId} role="status">
@@ -49,14 +54,20 @@ export function RunningBar({
       {elapsed >= SLOW_MS && (
         <span className="story-hint">{t("story:outline.slow")}</span>
       )}
-      <button
-        className="link"
-        data-testid={`${testId}-cancel`}
-        onClick={() => void useStoryJobStore.getState().cancel(job.id)}
-        type="button"
-      >
-        {t("story:outline.cancel")}
-      </button>
+      {stopping ? (
+        <span className="story-hint" data-testid={`${testId}-stopping`}>
+          {t("story:jobs.stopping")}
+        </span>
+      ) : (
+        <button
+          className="link"
+          data-testid={`${testId}-cancel`}
+          onClick={() => void useStoryJobStore.getState().cancel(job.id)}
+          type="button"
+        >
+          {t("story:outline.cancel")}
+        </button>
+      )}
     </div>
   );
 }

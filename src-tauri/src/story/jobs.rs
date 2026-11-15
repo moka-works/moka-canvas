@@ -75,8 +75,15 @@ impl ModelGate {
     /// finishes between the read and the wait still wakes this one. A waiter
     /// that is dropped — a cancelled batch — leaves the slot free rather than
     /// taking it with it.
-    async fn acquire(self: &Arc<Self>) -> GatePermit {
+    ///
+    /// A cancel ends the wait as well as the work: a piece still in line has
+    /// asked nothing of the provider, so a batch a reader has stopped must not
+    /// go on saying it is on its way until the batch in front of it finishes.
+    async fn acquire(self: &Arc<Self>, cancel: &Cancel) -> Option<GatePermit> {
         loop {
+            if cancel.is_cancelled() {
+                return None;
+            }
             let notified = self.wake.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
@@ -84,10 +91,13 @@ impl ModelGate {
                 let mut state = self.state.lock().expect("the model gate is not poisoned");
                 if state.in_flight < state.limit {
                     state.in_flight += 1;
-                    return GatePermit(Arc::clone(self));
+                    return Some(GatePermit(Arc::clone(self)));
                 }
             }
-            notified.await;
+            tokio::select! {
+                _ = notified => {}
+                _ = cancel.cancelled() => return None,
+            }
         }
     }
 
@@ -987,9 +997,11 @@ impl StoryJobManager {
         if cancel.is_cancelled() {
             return Ok(ItemOutcome::never_ran());
         }
-        let _permit = gate.acquire().await;
-        // Asked again once the slot is in hand: waiting for one may have been
-        // the whole of what a cancel had to interrupt.
+        let Some(_permit) = gate.acquire(cancel).await else {
+            return Ok(ItemOutcome::never_ran());
+        };
+        // Asked again once the slot is in hand: a cancel may have landed
+        // between the gate answering and this line.
         if cancel.is_cancelled() {
             return Ok(ItemOutcome::never_ran());
         }

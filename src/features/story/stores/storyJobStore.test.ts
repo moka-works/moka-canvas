@@ -1279,6 +1279,29 @@ describe("cancelling a batch", () => {
 
     expect(useStoryJobStore.getState().jobs[0].status).toBe("cancelled");
   });
+
+  it("says a press was heard until the batch ends", async () => {
+    serving({
+      "/api/v1/projects/current/story/jobs": [job()],
+      // A batch its driver holds is answered as it stands with the request
+      // marked: the record itself is only written once it settles.
+      "/api/v1/projects/current/story/jobs/job-1/cancel": job({
+        cancelRequested: true,
+      }),
+      "/api/v1/projects/current/story/jobs/job-1": job({
+        status: "cancelled",
+        cancelRequested: true,
+      }),
+    });
+
+    await useStoryJobStore.getState().load(ids.story);
+    await useStoryJobStore.getState().cancel("job-1");
+    expect(useStoryJobStore.getState().cancelling).toEqual(["job-1"]);
+
+    // The look that sees it end clears the wait with it.
+    await useStoryJobStore.getState().adopt("job-1");
+    expect(useStoryJobStore.getState().cancelling).toEqual([]);
+  });
 });
 
 describe("asking again for what did not come back", () => {
