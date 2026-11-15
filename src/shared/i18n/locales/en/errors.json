@@ -123,7 +123,8 @@
     "directorSceneTooLarge": "Director scene \"{{title}}\" is {{bytes}} bytes; the limit is {{limit}}",
     "storyElementModelInvalid": "The element's picture model is not a model name",
     "storyElementVariantsInvalid": "An element's forms are not named by plain, unique ids",
-    "storyElementReferenceInvalid": "The reference picture is not a file the story can name"
+    "storyElementReferenceInvalid": "The reference picture is not a file the story can name",
+    "storyReferenceInvalid": "The shot's reference is not a picture with a name"
   },
   "timeline": {
     "clipAssetMissing": "Clip's asset is not in the project",
@@ -223,9 +224,6 @@
     "storyElementLimit": "A story holds more elements than the limit",
     "storyActLimit": "An episode holds more acts than the limit",
     "storyKeyframeLimit": "An act holds more shots than the limit",
-    "storyExtraReferenceLimit": "A shot may carry at most {{max}} extra references",
-    "storyExtraReference": "An extra reference must point at a file",
-    "storyExtraReferenceNote": "An extra reference's note is too long (at most {{max}} characters)",
     "storyReferenceLimitOutOfRange": "A story's reference picture limit is out of range",
     "storySlotFull": "A place holds more takes than the limit",
     "storyShotDurationOutOfRange": "A shot's duration is out of range",
@@ -236,6 +234,7 @@
     "extensionInvalid": "Extension node \"{{title}}\" is invalid: {{reason}}",
     "directorSceneLimit": "The project holds more director scenes than the {{count}} allowed",
     "duplicateDirectorSceneId": "Duplicate director scene id {{id}}",
-    "directorSceneInvalid": "Director scene \"{{title}}\" is invalid at {{path}}: {{reason}}"
+    "directorSceneInvalid": "Director scene \"{{title}}\" is invalid at {{path}}: {{reason}}",
+    "storyReference": "A shot's reference must point at a picture"
   }
 }

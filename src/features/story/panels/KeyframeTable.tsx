@@ -16,8 +16,9 @@ import {
   currentTake,
   elementForm,
   elementOf,
-  extraReferenceName,
-  formName,
+  recognizeReferences,
+  referenceName,
+  stripMentionNamed,
   keyframeAt,
   newId,
   slotWithoutTake,
@@ -32,7 +33,7 @@ import type {
   StoryDialogueLine,
   StoryDocument,
   StoryElement,
-  StoryExtraReference,
+  StoryKeyframeReference,
   StoryFilmRole,
   MokaFile,
   StoryKeyframe,
@@ -40,10 +41,6 @@ import type {
   StorySlot,
   StoryVoiceTake,
 } from "../../../shared/domain/types";
-import {
-  EXTRA_REFERENCE_NOTE_MAX,
-  MAX_EXTRA_REFERENCES_PER_SHOT,
-} from "../../../shared/domain/constants";
 import { assetThumbUrl, assetUrl } from "../../../api/assets";
 import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
@@ -59,7 +56,6 @@ import {
   planKeyframeArtWaves,
   planKeyframeVideoWaves,
   settledRoleFrames,
-  type StoryReference,
 } from "../jobs/plan";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
@@ -997,125 +993,88 @@ function KeyframePromptCell({
   const { t } = useTranslation();
   const [inspectingId, setInspectingId] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState<string | null>(null);
-  const [pickingExtra, setPickingExtra] = useState(false);
+  const [pickingLibrary, setPickingLibrary] = useState(false);
   const [pickingElement, setPickingElement] = useState(false);
-  const [addingExtra, setAddingExtra] = useState(false);
-  const extraFile = useRef<HTMLInputElement>(null);
+  const [addingReference, setAddingReference] = useState(false);
+  const referenceFile = useRef<HTMLInputElement>(null);
   const images = useProjectStore((state) => state.moka?.resources.images ?? []);
   const inspecting =
     inspectingId === null
       ? undefined
       : story.elements.find((held) => held.id === inspectingId);
-  const extras = keyframe.extraReferences ?? [];
+  const references = keyframe.references ?? [];
   const content = useField(keyframe.content, (value) => {
-    if (value !== keyframe.content) write({ content: value });
+    if (value === keyframe.content) return;
+    // The words may name a cast member the list has not recognized yet; the
+    // shot keeps its references in one list, so the name is taken in with them.
+    const recognized = recognizeReferences(story.elements, value, references);
+    write(
+      recognized === references
+        ? { content: value }
+        : { content: value, references: recognized },
+    );
   });
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
-  const cast = keyframeCast(story, content.value, extras, variantChoices);
-  const mentionOptions = storyMentionOptions(story, content.value, extras);
-  // The shot's reference list, in the order its words name the pictures: the
-  // ones that travel, then the ones the story's limit leaves behind, and the
-  // extras the words never name kept on the board but out of the ask.
-  const referenced = [...cast.carried, ...cast.beyond];
-  const named = new Set(
-    referenced.flatMap((reference) =>
-      reference.extraIndex === undefined ? [] : [reference.extraIndex],
-    ),
-  );
-  const idleExtras = extras.flatMap((extra, at) =>
-    named.has(at) ? [] : [{ extra, at }],
-  );
+  const cast = keyframeCast(story, content.value, references, variantChoices);
+  const mentionOptions = storyMentionOptions(story, references);
 
-  /** One picture of the list: sent, or referenced but past the limit. */
-  const referenceTile = (
-    reference: StoryReference,
-    at: number,
-    state: "carried" | "beyond",
-  ) => {
-    const held = reference.extraIndex;
-    const extra = held === undefined ? undefined : extras[held];
-    if (held !== undefined && extra !== undefined) {
-      return (
-        <ExtraReferenceTile
-          at={held}
-          extra={extra}
-          index={index}
-          key={`extra-${held}`}
-          onNote={(note) => writeNote(held, note)}
-          onOpen={(assetId) => setZoomed(assetId)}
-          onRemove={() =>
-            write({
-              extraReferences: extras.filter(
-                (_held, position) => position !== held,
-              ),
-            })
-          }
-          state={state}
-          story={story}
-        />
-      );
-    }
-    const element = reference.element;
-    if (element === undefined) return null;
-    const carried = state === "carried";
-    return (
-      <button
-        aria-label={t("story:storyboard.inspectRef", { name: reference.name })}
-        className={`story-ref-thumb${carried ? "" : " is-beyond"}`}
-        data-testid={
-          carried
-            ? `story-kf-ref-${index}-${at}`
-            : `story-kf-ref-beyond-${index}-${at}`
-        }
-        key={element.id}
-        onClick={() => setInspectingId(element.id)}
-        title={t(
-          carried
-            ? "story:storyboard.mentionCarried"
-            : "story:storyboard.notCarried",
-          { name: reference.name },
-        )}
-        type="button"
-      >
-        <img
-          alt={reference.name}
-          src={assetThumbUrl(reference.assetId, REF_THUMB_WIDTH)}
-        />
-      </button>
+  /** The picture a kept reference stands on right now, where it has one. */
+  const referenceAsset = (
+    reference: StoryKeyframeReference,
+  ): string | undefined => {
+    if (reference.assetId !== undefined) return reference.assetId;
+    if (reference.elementId === undefined) return undefined;
+    const element = elementOf(story, reference.elementId);
+    if (element === undefined) return undefined;
+    const form = elementForm(
+      element,
+      reference.variantId ?? variantChoices[element.id],
     );
+    return currentTake(form?.main ?? element.main)?.assetIds[0];
   };
 
-  /** Adds a picture to the shot's references, once and within the limit. */
-  const addExtra = (extra: StoryExtraReference) => {
+  /** What the list calls one reference: its name, or the file's own. */
+  const referenceLabel = (reference: StoryKeyframeReference): string => {
+    const name = referenceName(story, reference);
+    if (name !== "") return name;
+    const asset =
+      reference.assetId === undefined
+        ? undefined
+        : images.find((held) => held.id === reference.assetId);
+    return asset?.name ?? t("story:storyboard.reference");
+  };
+
+  /** Adds a picture to the shot's references, once. */
+  const addReference = (reference: StoryKeyframeReference) => {
     if (
-      extra.assetId !== undefined &&
-      extras.some((held) => held.assetId === extra.assetId)
+      reference.assetId !== undefined &&
+      references.some((held) => held.assetId === reference.assetId)
     )
       return;
     if (
-      extra.elementId !== undefined &&
-      extras.some(
+      reference.elementId !== undefined &&
+      references.some(
         (held) =>
-          held.elementId === extra.elementId &&
-          held.variantId === extra.variantId,
+          held.elementId === reference.elementId &&
+          held.variantId === reference.variantId,
       )
     )
       return;
-    if (extras.length >= MAX_EXTRA_REFERENCES_PER_SHOT) return;
-    write({ extraReferences: [...extras, extra] });
+    write({ references: [...references, reference] });
   };
 
-  /** Rewrites one extra's note, or clears it where nothing was written. */
-  const writeNote = (at: number, note: string) => {
+  /** Takes one picture off the shot, and its name out of the words with it. */
+  const removeReference = (at: number) => {
+    const reference = references[at];
+    if (reference === undefined) return;
+    const name = referenceName(story, reference);
+    const words =
+      name === "" ? content.value : stripMentionNamed(content.value, name);
     write({
-      extraReferences: extras.map((extra, index) => {
-        if (index !== at) return extra;
-        const rest = { ...extra };
-        delete rest.note;
-        return note.trim() === "" ? rest : { ...extra, note };
-      }),
+      references: references.filter((_held, position) => position !== at),
+      ...(words === content.value ? {} : { content: words }),
     });
   };
 
@@ -1151,13 +1110,9 @@ function KeyframePromptCell({
       <div className="story-prompt" data-testid={`story-kf-prompt-${index}`}>
         <span className="story-prompt-scaffold">{parts.before}</span>
         <KeyframeContentField
-          kinds={mentionKinds(story, cast, content.value, extras)}
+          kinds={mentionKinds(story, cast, content.value, references)}
           label={t("story:storyboard.content")}
           mentionOptions={mentionOptions}
-          onChooseMention={(option) => {
-            if (option.elementId !== undefined)
-              chooseVariant(option.elementId, option.variantId);
-          }}
           onChange={content.set}
           onCommit={content.commit}
           testId={`story-kf-content-${index}`}
@@ -1166,106 +1121,117 @@ function KeyframePromptCell({
         <span className="story-prompt-scaffold">{parts.after}</span>
       </div>
       {/*
-        One reference list: the pictures the shot's words name and the ones
-        kept beside them stand together, in the order an ask sends them. An
-        extra the words never name stays on the list, dimmed, because it is
-        still the reader's — it is simply not sent.
+        The shot's reference list: every picture it keeps, in the order it was
+        kept, whether the board read it out of the words or the reader added it.
+        A reference is a picture and a name; the words decide which of them the
+        ask sends.
       */}
-      <div className="story-extra-refs" data-testid={`story-kf-refs-${index}`}>
-        {cast.carried.map((reference, at) =>
-          referenceTile(reference, at, "carried"),
-        )}
-        {cast.beyond.map((reference, at) =>
-          referenceTile(reference, at, "beyond"),
-        )}
-        {idleExtras.map(({ extra, at }) => (
-          <ExtraReferenceTile
-            at={at}
-            extra={extra}
-            index={index}
-            key={`extra-${at}`}
-            onNote={(note) => writeNote(at, note)}
-            onOpen={(assetId) => setZoomed(assetId)}
-            onRemove={() =>
-              write({
-                extraReferences: extras.filter(
-                  (_held, position) => position !== at,
-                ),
-              })
-            }
-            state="idle"
-            story={story}
-          />
-        ))}
-        {extras.length < MAX_EXTRA_REFERENCES_PER_SHOT ? (
-          <>
+      <div className="story-ref-list" data-testid={`story-kf-refs-${index}`}>
+        {references.map((reference, at) => {
+          const assetId = referenceAsset(reference);
+          const label = referenceLabel(reference);
+          const element =
+            reference.elementId === undefined
+              ? undefined
+              : elementOf(story, reference.elementId);
+          return (
+            <span
+              className="story-ref-item"
+              key={`${reference.elementId ?? reference.assetId ?? at}:${at}`}
+            >
+              <button
+                aria-label={t(
+                  element === undefined
+                    ? "story:storyboard.enlargeRef"
+                    : "story:storyboard.inspectRef",
+                  { name: label },
+                )}
+                className="story-ref-thumb"
+                data-testid={`story-kf-ref-${index}-${at}`}
+                disabled={assetId === undefined}
+                onClick={() => {
+                  if (assetId === undefined) return;
+                  if (element === undefined) setZoomed(assetId);
+                  else setInspectingId(element.id);
+                }}
+                title={label}
+                type="button"
+              >
+                {assetId === undefined ? (
+                  <span className="story-ref-missing">{label}</span>
+                ) : (
+                  <img
+                    alt={label}
+                    src={assetThumbUrl(assetId, REF_THUMB_WIDTH)}
+                  />
+                )}
+              </button>
+              <button
+                aria-label={t("story:storyboard.removeReference")}
+                className="story-ref-off"
+                data-testid={`story-kf-ref-remove-${index}-${at}`}
+                onClick={() => removeReference(at)}
+                type="button"
+              >
+                ✕
+              </button>
+            </span>
+          );
+        })}
+        <button
+          className="link"
+          data-testid={`story-kf-ref-add-${index}`}
+          onClick={() => setAddingReference(!addingReference)}
+          type="button"
+        >
+          {t("story:storyboard.addReference")}
+        </button>
+        {addingReference && (
+          <span className="story-ref-add-menu">
             <button
               className="link"
-              data-testid={`story-kf-extra-add-${index}`}
-              onClick={() => setAddingExtra(!addingExtra)}
+              data-testid={`story-kf-ref-library-${index}`}
+              onClick={() => {
+                setAddingReference(false);
+                setPickingLibrary(true);
+              }}
               type="button"
             >
-              {t("story:storyboard.addExtraRef")}
+              {t("story:panels.fromLibrary")}
             </button>
-            {addingExtra && (
-              <span className="story-extra-add">
-                <button
-                  className="link"
-                  data-testid={`story-kf-extra-library-${index}`}
-                  onClick={() => {
-                    setAddingExtra(false);
-                    setPickingExtra(true);
-                  }}
-                  type="button"
-                >
-                  {t("story:panels.fromLibrary")}
-                </button>
-                <button
-                  className="link"
-                  data-testid={`story-kf-extra-file-${index}`}
-                  onClick={() => extraFile.current?.click()}
-                  type="button"
-                >
-                  {t("story:panels.fromFile")}
-                </button>
-                <button
-                  className="link"
-                  data-testid={`story-kf-extra-element-${index}`}
-                  onClick={() => {
-                    setAddingExtra(false);
-                    setPickingElement(true);
-                  }}
-                  type="button"
-                >
-                  {t("story:storyboard.fromElements")}
-                </button>
-                <input
-                  accept="image/*"
-                  hidden
-                  onChange={async (event) => {
-                    const chosen = event.target.files?.[0];
-                    event.target.value = "";
-                    if (chosen === undefined) return;
-                    const assetId = await filePictureFromComputer(chosen);
-                    if (assetId !== undefined)
-                      addExtra({ assetId, name: chosen.name });
-                  }}
-                  ref={extraFile}
-                  type="file"
-                />
-              </span>
-            )}
-          </>
-        ) : (
-          <span
-            className="story-hint"
-            title={t("story:storyboard.extraLimit", {
-              max: MAX_EXTRA_REFERENCES_PER_SHOT,
-            })}
-          >
-            {t("story:storyboard.extraLimit", {
-              max: MAX_EXTRA_REFERENCES_PER_SHOT,
-            })}
+            <button
+              className="link"
+              data-testid={`story-kf-ref-file-${index}`}
+              onClick={() => referenceFile.current?.click()}
+              type="button"
+            >
+              {t("story:panels.fromFile")}
+            </button>
+            <button
+              className="link"
+              data-testid={`story-kf-ref-element-${index}`}
+              onClick={() => {
+                setAddingReference(false);
+                setPickingElement(true);
+              }}
+              type="button"
+            >
+              {t("story:storyboard.fromElements")}
+            </button>
+            <input
+              accept="image/*"
+              hidden
+              onChange={async (event) => {
+                const chosen = event.target.files?.[0];
+                event.target.value = "";
+                if (chosen === undefined) return;
+                const assetId = await filePictureFromComputer(chosen);
+                if (assetId !== undefined)
+                  addReference({ assetId, name: chosen.name });
+              }}
+              ref={referenceFile}
+              type="file"
+            />
           </span>
         )}
       </div>
@@ -1279,25 +1245,25 @@ function KeyframePromptCell({
           variantId={variantChoices[inspecting.id]}
         />
       )}
-      {pickingExtra && (
+      {pickingLibrary && (
         <StoryLibraryPicker
           current={undefined}
-          label={t("story:storyboard.extraRef")}
+          label={t("story:storyboard.reference")}
           onChoose={(assetId) => {
             const entry = images.find((held) => held.id === assetId);
-            addExtra({
+            addReference({
               assetId,
-              ...(entry === undefined ? {} : { name: entry.name }),
+              name: entry?.name ?? t("story:storyboard.reference"),
             });
-            setPickingExtra(false);
+            setPickingLibrary(false);
           }}
-          onClose={() => setPickingExtra(false)}
+          onClose={() => setPickingLibrary(false)}
         />
       )}
       {pickingElement && (
         <StoryElementPicker
           onChoose={(elementId, variantId, name) => {
-            addExtra({
+            addReference({
               elementId,
               ...(variantId === undefined ? {} : { variantId }),
               name,
@@ -1311,103 +1277,11 @@ function KeyframePromptCell({
       {zoomed !== null && (
         <StoryLightbox
           assetIds={[zoomed]}
-          label={t("story:storyboard.extraRef")}
+          label={t("story:storyboard.reference")}
           onClose={() => setZoomed(null)}
         />
       )}
     </>
-  );
-}
-
-/** One reference: its picture, its note, and the way to take it off. */
-function ExtraReferenceTile({
-  extra,
-  story,
-  state,
-  index,
-  at,
-  onNote,
-  onRemove,
-  onOpen,
-}: {
-  extra: StoryExtraReference;
-  story: StoryDocument;
-  /**
-   * How the reference stands in this ask: sent, past the limit, or kept but
-   * not named by the words, which is a picture the ask does not send.
-   */
-  state: "carried" | "beyond" | "idle";
-  index: number;
-  at: number;
-  onNote: (note: string) => void;
-  onRemove: () => void;
-  onOpen: (assetId: string) => void;
-}) {
-  const { t } = useTranslation();
-  const field = useField(extra.note ?? "", onNote);
-  const element =
-    extra.elementId === undefined
-      ? undefined
-      : elementOf(story, extra.elementId);
-  const form =
-    element === undefined ? undefined : elementForm(element, extra.variantId);
-  const assetId =
-    extra.assetId ??
-    (element === undefined
-      ? undefined
-      : currentTake(form?.main ?? element.main)?.assetIds[0]);
-  const label =
-    extra.name ??
-    (element === undefined
-      ? t("story:storyboard.extraRef")
-      : formName(element, form));
-  const carried = state === "carried";
-  return (
-    <span
-      className={`story-extra-ref${carried ? "" : " is-beyond"}`}
-      data-testid={`story-kf-extra-${index}-${at}`}
-    >
-      <button
-        aria-label={t("story:storyboard.extraRef")}
-        className="story-extra-thumb"
-        disabled={assetId === undefined}
-        onClick={() => {
-          if (assetId !== undefined) onOpen(assetId);
-        }}
-        title={t(
-          state === "carried"
-            ? "story:storyboard.extraCarried"
-            : state === "beyond"
-              ? "story:storyboard.extraNotCarried"
-              : "story:storyboard.extraUnreferenced",
-        )}
-        type="button"
-      >
-        {assetId === undefined ? (
-          <span className="story-extra-missing">{label}</span>
-        ) : (
-          <img alt={label} src={assetThumbUrl(assetId, REF_THUMB_WIDTH)} />
-        )}
-      </button>
-      <input
-        aria-label={t("story:storyboard.extraNote")}
-        className="story-extra-note"
-        maxLength={EXTRA_REFERENCE_NOTE_MAX}
-        onBlur={field.commit}
-        onChange={(event) => field.set(event.target.value)}
-        placeholder={t("story:storyboard.extraNoteHint")}
-        value={field.value}
-      />
-      <button
-        aria-label={t("story:storyboard.removeExtraRef")}
-        className="story-ref-off"
-        data-testid={`story-kf-extra-remove-${index}-${at}`}
-        onClick={onRemove}
-        type="button"
-      >
-        ✕
-      </button>
-    </span>
   );
 }
 
@@ -1416,14 +1290,14 @@ function mentionKinds(
   story: StoryDocument,
   cast: ReturnType<typeof keyframeCast>,
   content: string,
-  extras: StoryExtraReference[],
+  references: StoryKeyframeReference[],
 ): Record<string, MentionKind> {
   const carried = new Set(cast.carried.map((reference) => reference.name));
   const beyond = new Set(cast.beyond.map((reference) => reference.name));
   const known = new Set(story.elements.map((element) => element.name));
-  for (const extra of extras) {
-    const name = extraReferenceName(story, extra);
-    if (name !== undefined) known.add(name);
+  for (const reference of references) {
+    const name = referenceName(story, reference);
+    if (name !== "") known.add(name);
   }
   const kinds: Record<string, MentionKind> = {};
   for (const { name } of storyMentions(content)) {

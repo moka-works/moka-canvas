@@ -18,49 +18,38 @@ function story(): StoryDocument {
 }
 
 describe("the names an @ offers", () => {
-  it("offers the forms of the cast the words name and the shot's extras", () => {
+  it("offers the names the shot's references are kept by", () => {
     const held = story();
-    const hero = held.elements.find((element) => element.id === ids.hero)!;
-    hero.variants = [
-      {
-        id: "variant-old",
-        name: "老年",
-        description: "二十年以后。",
-        main: { takes: [] },
-      },
-    ];
-    const options = storyMentionOptions(held, "雨中的站台，`林`立在灯下。", [
-      { elementId: ids.scene, name: "车厢背面" },
+    const options = storyMentionOptions(held, [
+      { elementId: ids.hero, name: "林" },
+      { elementId: ids.scene, variantId: "variant-night", name: "车厢背面" },
       { assetId: "asset-extra", name: "傍晚的暖光" },
-      { assetId: "asset-unnamed" },
+      { assetId: "asset-unnamed", name: "" },
     ]);
-    expect(options.map((option) => option.label)).toContain("林 · 老年");
-    expect(options.map((option) => option.label)).toContain("车厢背面");
-    expect(options.map((option) => option.label)).toContain("傍晚的暖光");
-    // A file nobody named has no name to write into the words.
-    expect(options.map((option) => option.name)).not.toContain("");
-    // The cast's own name wins over an extra of the same name.
-    const repeated = storyMentionOptions(held, "雨中的站台，`林`立在灯下。", [
-      { elementId: ids.scene, name: "林" },
+    expect(options.map((option) => option.label)).toEqual([
+      "林",
+      "车厢背面",
+      "傍晚的暖光",
     ]);
-    const castOnly = repeated.filter((option) => option.name === "林");
-    expect(castOnly.length).toBeGreaterThan(0);
-    expect(castOnly.every((option) => option.elementId === ids.hero)).toBe(
-      true,
-    );
-  });
-
-  it("offers nothing outside the shot's own reference list", () => {
-    const options = storyMentionOptions(story(), "雨下个不停。", []);
-    expect(options).toEqual([]);
+    // A reference the reader never named is offered under its form's name;
+    // a file with no name has no name to write into the words.
+    const unnamed = storyMentionOptions(held, [
+      { elementId: ids.hero, name: "" },
+    ]);
+    expect(unnamed.map((option) => option.name)).toEqual(["林"]);
+    // Two references of one name are one name as far as the words go.
+    const repeated = storyMentionOptions(held, [
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra", name: "林" },
+    ]);
+    expect(repeated.map((option) => option.name)).toEqual(["林"]);
   });
 
   it("narrows the offer by what has been typed", () => {
-    const options = storyMentionOptions(
-      story(),
-      "雨中的站台，`林`立在灯下。",
-      [],
-    );
+    const options = storyMentionOptions(story(), [
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra", name: "傍晚的暖光" },
+    ]);
     expect(
       narrowStoryMentions(options, "林").map((option) => option.name),
     ).toEqual(["林"]);

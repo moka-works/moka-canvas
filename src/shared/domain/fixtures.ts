@@ -1084,6 +1084,7 @@ export function buildStoryMokaFile(): MokaFile {
                   cameraMove: "pushIn",
                   angle: "eyeLevel",
                   content: "雨中的站台，`林`立在灯下。",
+                  references: [{ elementId: ids.hero, name: "林" }],
                   dialogue: [
                     {
                       id: ids.lineFirst,
@@ -1114,6 +1115,7 @@ export function buildStoryMokaFile(): MokaFile {
                   cameraMove: "static",
                   angle: "overTheShoulder",
                   content: "`周`转过身来。",
+                  references: [{ elementId: ids.partner, name: "周" }],
                   dialogue: [],
                   durationMs: 3_000,
                   art: { takes: [] },

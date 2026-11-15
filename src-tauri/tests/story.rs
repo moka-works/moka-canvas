@@ -136,6 +136,7 @@ fn frame(index: usize) -> StoryKeyframe {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
+        references: Vec::new(),
     }
 }
 
@@ -258,6 +259,7 @@ fn story_document() -> MokaFile {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
+        references: Vec::new(),
     };
     let second = StoryKeyframe {
         id: FRAME_SECOND.into(),
@@ -274,6 +276,7 @@ fn story_document() -> MokaFile {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
+        references: Vec::new(),
     };
 
     moka.stories = Some(vec![StoryDocument {
@@ -1224,6 +1227,81 @@ fn moves_only_the_fields_a_shot_patch_names_and_keeps_a_shot_to_its_length() {
                 keyframe_id: FRAME_SECOND.into(),
                 patch: StoryKeyframePatch {
                     duration_ms: Some(10),
+                    ..Default::default()
+                },
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
+fn keeps_a_shots_references_and_takes_them_away_again() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                references: Some(vec![
+                    story::StoryKeyframeReference {
+                        asset_id: None,
+                        element_id: Some(HERO.into()),
+                        variant_id: None,
+                        name: "林".into(),
+                    },
+                    story::StoryKeyframeReference {
+                        asset_id: Some("asset-neon".into()),
+                        element_id: None,
+                        variant_id: None,
+                        name: "霓虹".into(),
+                    },
+                ]),
+                ..Default::default()
+            },
+        }],
+    );
+    let held = &story_of(&set).chapters[0].acts[0].keyframes[1];
+    assert_eq!(held.references.len(), 2);
+    assert_eq!(held.references[0].element_id.as_deref(), Some(HERO));
+    assert_eq!(held.references[1].name, "霓虹");
+
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                references: Some(Vec::new()),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(story_of(&cleared).chapters[0].acts[0].keyframes[1]
+        .references
+        .is_empty());
+
+    // A reference that names no picture is not a reference.
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateStoryKeyframe {
+                story_id: STORY.into(),
+                chapter_id: CHAPTER_FIRST.into(),
+                act_id: ACT.into(),
+                keyframe_id: FRAME_SECOND.into(),
+                patch: StoryKeyframePatch {
+                    references: Some(vec![story::StoryKeyframeReference {
+                        asset_id: None,
+                        element_id: None,
+                        variant_id: None,
+                        name: "霓虹".into(),
+                    }]),
                     ..Default::default()
                 },
             }

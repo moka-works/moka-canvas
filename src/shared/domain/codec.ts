@@ -29,7 +29,11 @@ import {
 } from "./types";
 import { reconcilePorts } from "./factories";
 import { newId } from "./ids";
-import { STORY_STEPS, type StoryStep } from "./story";
+import {
+  recognizeKeyframeReferences,
+  STORY_STEPS,
+  type StoryStep,
+} from "./story";
 import type {
   AssistantFailure,
   AssistantMessage,
@@ -49,7 +53,7 @@ import type {
   ResultSlot,
   StoryAct,
   StoryAspect,
-  StoryExtraReference,
+  StoryKeyframeReference,
   StoryBrief,
   StoryChapter,
   StoryDialogueLine,
@@ -468,15 +472,18 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
       slot: encodeStorySlot(take.slot),
     }));
   }
-  if (
-    keyframe.extraReferences !== undefined &&
-    keyframe.extraReferences.length > 0
-  ) {
-    doc.extraReferences = keyframe.extraReferences.map((extra) => ({
-      assetId: extra.assetId,
-      ...(extra.note !== undefined && extra.note !== ""
-        ? { note: extra.note }
-        : {}),
+  if (keyframe.references !== undefined && keyframe.references.length > 0) {
+    doc.references = keyframe.references.map((reference) => ({
+      ...(reference.assetId === undefined
+        ? {}
+        : { assetId: reference.assetId }),
+      ...(reference.elementId === undefined
+        ? {}
+        : { elementId: reference.elementId }),
+      ...(reference.variantId === undefined
+        ? {}
+        : { variantId: reference.variantId }),
+      name: reference.name,
     }));
   }
   return doc;
@@ -1516,8 +1523,10 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
   }
   const voices = decodeStoryVoices(doc.voices);
   if (voices !== undefined) keyframe.voices = voices;
-  const extras = decodeStoryExtraReferences(doc.extraReferences);
-  if (extras !== undefined) keyframe.extraReferences = extras;
+  const references = decodeStoryReferences(
+    doc.references ?? doc.extraReferences,
+  );
+  if (references !== undefined) keyframe.references = references;
   const choices = decodeStoryVariantChoices(doc.variantChoices);
   if (choices !== undefined) keyframe.variantChoices = choices;
   return keyframe;
@@ -1538,49 +1547,38 @@ function decodeStoryVariantChoices(
 }
 
 /**
- * The pictures a shot carries outside its cast, as a document holds them.
- *
- * An entry with no file is not a reference: it could never travel with an ask,
- * and reading it back as one would put a nameless place in the prompt. A list
- * that comes back empty is the absence it was.
- */
-/**
- * The pictures a shot carries outside its cast, as a document holds them.
+ * The pictures a shot is drawn from, as a document holds them.
  *
  * An entry that names neither a file nor an element is not a reference: it
  * could never travel with an ask, and reading it back as one would put a
- * nameless place in the prompt. A list that comes back empty is the absence
- * it was.
+ * nameless place in the prompt. Older documents kept these pictures apart as
+ * `extraReferences`; they are the shot's references now, and an entry nobody
+ * named is kept with an empty name so the sheet still holds its picture.
  */
-function decodeStoryExtraReferences(
+function decodeStoryReferences(
   value: unknown,
-): StoryExtraReference[] | undefined {
+): StoryKeyframeReference[] | undefined {
   if (value === undefined) return undefined;
-  const held = asArray(value, "keyframes[].extraReferences").flatMap(
-    (entry): StoryExtraReference[] => {
-      const doc = asRecord(entry, "keyframes[].extraReferences[]");
+  const held = asArray(value, "keyframes[].references").flatMap(
+    (entry): StoryKeyframeReference[] => {
+      const doc = asRecord(entry, "keyframes[].references[]");
       const assetId = optionalString(doc.assetId);
       const elementId = optionalString(doc.elementId);
-      const name = optionalString(doc.name);
-      const note = optionalString(doc.note);
-      const common = {
-        ...(name !== undefined && name !== "" ? { name } : {}),
-        ...(note !== undefined && note !== "" ? { note } : {}),
-      };
+      const variantId = optionalString(doc.variantId);
+      const name = optionalString(doc.name) ?? "";
       if (elementId !== undefined && elementId !== "") {
-        const variantId = optionalString(doc.variantId);
         return [
           {
             elementId,
             ...(variantId !== undefined && variantId !== ""
               ? { variantId }
               : {}),
-            ...common,
+            name,
           },
         ];
       }
       if (assetId === undefined || assetId === "") return [];
-      return [{ assetId, ...common }];
+      return [{ assetId, name }];
     },
   );
   return held.length === 0 ? undefined : held;
@@ -1966,6 +1964,18 @@ function decodeStory(value: unknown): StoryDocument {
     story.videoPromptOverrides = decodeVideoPromptOverrides(
       doc.videoPromptOverrides,
     );
+  // A shot's words and its reference list are two views of one thing: a
+  // document written before the list existed still says which pictures its
+  // words call in, so those are recognized among the references as it reads.
+  story.chapters = story.chapters.map((chapter) => ({
+    ...chapter,
+    acts: chapter.acts.map((act) => ({
+      ...act,
+      keyframes: act.keyframes.map((keyframe) =>
+        recognizeKeyframeReferences(story, keyframe),
+      ),
+    })),
+  }));
   return story;
 }
 

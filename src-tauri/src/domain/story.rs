@@ -441,6 +441,34 @@ pub struct StoryKeyframe {
     /// its own rather than leaving the step's model to draw it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_model: Option<String>,
+    /// The pictures this shot is drawn from, in the order they are kept.
+    ///
+    /// The field reads the older `extraReferences` too, where the pictures a
+    /// reader added were kept apart from the cast the board recognized.
+    #[serde(
+        default,
+        alias = "extraReferences",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub references: Vec<StoryKeyframeReference>,
+}
+
+/// One picture a shot may be drawn from, and the name its words use for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryKeyframeReference {
+    /// The file that travels, where the reference is a file on the shelf.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<String>,
+    /// The element whose current drawing travels, where it is not a file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_id: Option<String>,
+    /// The element's form; absent falls back to the shot's chosen form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_id: Option<String>,
+    /// The name the shot's words use for it.
+    #[serde(default)]
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -826,6 +854,9 @@ pub struct StoryKeyframePatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub image_model: Option<Option<String>>,
+    /// The shot's reference pictures; an empty list clears them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references: Option<Vec<StoryKeyframeReference>>,
 }
 
 /// The fields a caller may move on an assembly, for `setStoryEdit`.
@@ -2456,6 +2487,24 @@ pub fn apply_story_command(
                     ));
                 }
             }
+            if let Some(references) = &patch.references {
+                for reference in references {
+                    let names_a_picture = reference
+                        .asset_id
+                        .as_deref()
+                        .is_some_and(|held| !held.is_empty())
+                        || reference
+                            .element_id
+                            .as_deref()
+                            .is_some_and(|held| !held.is_empty());
+                    if !names_a_picture {
+                        return Err(CommandError::new(
+                            "VALIDATION_FAILED",
+                            "A shot's reference must name a picture",
+                        ));
+                    }
+                }
+            }
             let previous = StoryKeyframePatch {
                 title: patch.title.as_ref().map(|_| keyframe.title.clone()),
                 shot_size: patch.shot_size.map(|_| keyframe.shot_size),
@@ -2473,6 +2522,10 @@ pub fn apply_story_command(
                     .image_model
                     .as_ref()
                     .map(|_| keyframe.image_model.clone()),
+                references: patch
+                    .references
+                    .as_ref()
+                    .map(|_| keyframe.references.clone()),
             };
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2516,6 +2569,9 @@ pub fn apply_story_command(
                         }
                         if let Some(model) = &patch.image_model {
                             frame.image_model = model.clone();
+                        }
+                        if let Some(references) = &patch.references {
+                            frame.references = references.clone();
                         }
                     }
                 }

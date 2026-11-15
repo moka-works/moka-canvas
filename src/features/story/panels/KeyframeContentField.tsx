@@ -219,7 +219,6 @@ export function KeyframeContentField({
   label,
   testId,
   mentionOptions,
-  onChooseMention,
   onChange,
   onCommit,
 }: {
@@ -230,8 +229,6 @@ export function KeyframeContentField({
   testId?: string;
   /** The names an @ offers: the shot's own reference list. */
   mentionOptions: StoryMentionOption[];
-  /** A cast form was chosen, which is the form this shot now draws it in. */
-  onChooseMention?: (option: StoryMentionOption) => void;
   onChange: (next: string) => void;
   onCommit: () => void;
 }) {
@@ -339,7 +336,6 @@ export function KeyframeContentField({
     setActive(0);
     drawn.current = signatureOf(inserted.value, held.current.kinds);
     onChange(inserted.value);
-    onChooseMention?.(option);
     if (area) {
       renderValue(area, inserted.value, held.current.kinds, titleOf);
       area.focus();

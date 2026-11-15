@@ -2772,6 +2772,18 @@ function applyOne(
             i18n.t("errors:command.storyElementModelInvalid"),
           );
       }
+      if (command.patch.references !== undefined) {
+        for (const reference of command.patch.references) {
+          if (
+            reference.assetId === undefined &&
+            reference.elementId === undefined
+          )
+            throw new CommandError(
+              "VALIDATION_FAILED",
+              i18n.t("errors:command.storyReferenceInvalid"),
+            );
+        }
+      }
       const previous: typeof command.patch = {};
       for (const key of Object.keys(
         command.patch,
@@ -2812,6 +2824,11 @@ function applyOne(
                           Object.keys(command.patch.variantChoices).length === 0
                         )
                           delete merged.variantChoices;
+                        if (
+                          command.patch.references !== undefined &&
+                          command.patch.references.length === 0
+                        )
+                          delete merged.references;
                         return merged;
                       }),
                     }

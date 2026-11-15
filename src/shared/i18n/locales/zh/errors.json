@@ -123,7 +123,8 @@
     "directorSceneTooLarge": "导演台场景“{{title}}”为 {{bytes}} 字节；上限为 {{limit}}",
     "storyElementModelInvalid": "元素的图片模型名称不合法",
     "storyElementVariantsInvalid": "元素的形态必须有唯一且合法的 id",
-    "storyElementReferenceInvalid": "参考图不是故事能引用的文件"
+    "storyElementReferenceInvalid": "参考图不是故事能引用的文件",
+    "storyReferenceInvalid": "分镜格的参考图无效"
   },
   "timeline": {
     "clipAssetMissing": "片段引用的资源不在项目中",
@@ -223,9 +224,6 @@
     "storyElementLimit": "故事剧情元素数超过上限",
     "storyActLimit": "某一集的幕数超过上限",
     "storyKeyframeLimit": "某一幕的关键帧数超过上限",
-    "storyExtraReferenceLimit": "一格的附加参考图不能超过 {{max}} 张",
-    "storyExtraReference": "附加参考图必须指向一个文件",
-    "storyExtraReferenceNote": "附加参考的说明太长（最多 {{max}} 字）",
     "storyReferenceLimitOutOfRange": "故事的参考图数量上限超出范围",
     "storySlotFull": "某一处保留的生成结果超过上限",
     "storyShotDurationOutOfRange": "某一格时长超出范围",
@@ -236,6 +234,7 @@
     "extensionInvalid": "扩展节点“{{title}}”的数据无效：{{reason}}",
     "directorSceneLimit": "项目里的导演台场景数量超过上限 {{count}}",
     "duplicateDirectorSceneId": "重复的导演台场景 id {{id}}",
-    "directorSceneInvalid": "导演台场景“{{title}}”在 {{path}} 处无效：{{reason}}"
+    "directorSceneInvalid": "导演台场景“{{title}}”在 {{path}} 处无效：{{reason}}",
+    "storyReference": "参考图必须指向一张图片"
   }
 }

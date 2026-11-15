@@ -738,7 +738,7 @@ describe("planning the drawings", () => {
     expect(item.prompt).not.toContain("末班车车厢 —");
   });
 
-  it("carries a story element extra the words name from the drawing it keeps now", () => {
+  it("carries a story element reference the words name from the drawing it keeps now", () => {
     const held = story();
     const scene = held.elements.find((element) => element.id === ids.scene)!;
     scene.variants = [
@@ -756,37 +756,38 @@ describe("planning the drawings", () => {
         },
       },
     ];
-    const extras = [
+    const references = [
       {
         elementId: ids.scene,
         variantId: "variant-night",
         name: "车厢背面",
       },
     ];
-    const cast = keyframeCast(held, "`车厢背面`在雨里。", extras);
+    const cast = keyframeCast(held, "`车厢背面`在雨里。", references);
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
       "asset-scene-night",
     ]);
     expect(cast.carried[0]?.name).toBe("车厢背面");
     expect(cast.carried[0]?.variant?.id).toBe("variant-night");
-    expect(cast.carried[0]?.extraIndex).toBe(0);
   });
 
-  it("carries a shot's extra references where the words name them", () => {
-    const extras = [
-      { assetId: "asset-extra", name: "霓虹", note: "傍晚的暖光" },
+  it("carries a shot's references where the words name them", () => {
+    const references = [
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra", name: "霓虹" },
     ];
     const cast = keyframeCast(
       story(),
       "`林`看着站台，`霓虹`在雨里亮着。",
-      extras,
+      references,
     );
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
       ids.heroMain,
       "asset-extra",
     ]);
-    expect(cast.carried[1]?.description).toBe("傍晚的暖光");
-    expect(cast.carried[1]?.extraIndex).toBe(0);
+    expect(cast.carried[1]?.description).toBe(
+      "A picture this shot is drawn with.",
+    );
 
     // The story's limit is one budget for both: the mention goes first and
     // the extra is left beside it rather than silently sent instead.
@@ -794,14 +795,14 @@ describe("planning the drawings", () => {
     const held = keyframeCast(
       limited,
       "`林`看着站台，`霓虹`在雨里亮着。",
-      extras,
+      references,
     );
     expect(held.carried.map(({ assetId }) => assetId)).toEqual([ids.heroMain]);
     expect(held.beyond.map(({ assetId }) => assetId)).toEqual(["asset-extra"]);
 
-    const withExtra = withContent("`林`看着站台，`霓虹`在雨里亮着。");
-    withExtra.chapters[0]!.acts[0]!.keyframes[0]!.extraReferences = extras;
-    const [item] = planKeyframeArt(withExtra, [
+    const withReferences = withContent("`林`看着站台，`霓虹`在雨里亮着。");
+    withReferences.chapters[0]!.acts[0]!.keyframes[0]!.references = references;
+    const [item] = planKeyframeArt(withReferences, [
       {
         chapterId: ids.chapterFirst,
         actId: ids.act,
@@ -812,20 +813,21 @@ describe("planning the drawings", () => {
       ids.heroMain,
       "asset-extra",
     ]);
-    expect(item.prompt).toContain("霓虹 — 傍晚的暖光");
+    expect(item.prompt).toContain("霓虹 —");
   });
 
   it("leaves a shot's reference out of the ask when its words never name it", () => {
-    const extras = [
-      { assetId: "asset-extra", name: "霓虹", note: "傍晚的暖光" },
+    const references = [
+      { elementId: ids.hero, name: "林" },
+      { assetId: "asset-extra", name: "霓虹" },
     ];
-    const cast = keyframeCast(story(), "`林`看着站台。", extras);
+    const cast = keyframeCast(story(), "`林`看着站台。", references);
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([ids.heroMain]);
     expect(cast.beyond).toEqual([]);
 
-    const withExtra = withContent("`林`看着站台。");
-    withExtra.chapters[0]!.acts[0]!.keyframes[0]!.extraReferences = extras;
-    const [item] = planKeyframeArt(withExtra, [
+    const withReferences = withContent("`林`看着站台。");
+    withReferences.chapters[0]!.acts[0]!.keyframes[0]!.references = references;
+    const [item] = planKeyframeArt(withReferences, [
       {
         chapterId: ids.chapterFirst,
         actId: ids.act,

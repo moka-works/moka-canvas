@@ -407,22 +407,22 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .toBe("老年");
     await page.getByTestId("story-inspector-close").click();
 
-    // A picture beside the cast, which the shot's own words do not name, is
-    // taken from the shelf and kept on the shot it was added to.
-    await firstAct.getByTestId("story-kf-extra-add-0").click();
-    await firstAct.getByTestId("story-kf-extra-library-0").click();
+    // A picture taken from the shelf becomes one of the shot's references,
+    // standing beside the one the board recognized.
+    await firstAct.getByTestId("story-kf-ref-add-0").click();
+    await firstAct.getByTestId("story-kf-ref-library-0").click();
     const shelf = page.getByTestId("story-library");
     await page.getByTestId("story-library-search").fill("no-such-picture");
     await expect(shelf.locator(".story-pick")).toHaveCount(0);
     await expect(shelf.getByText(/No asset matches/)).toBeVisible();
     await page.getByTestId("story-library-search").fill("");
     await shelf.locator(".story-pick").first().click();
-    await expect(firstAct.getByTestId("story-kf-extra-0-0")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-ref-0-1")).toBeVisible();
 
-    // A picture beside the cast may also come from the story's own elements,
-    // and the words may name it from an @ the same way they name the cast.
-    await firstAct.getByTestId("story-kf-extra-add-0").click();
-    await firstAct.getByTestId("story-kf-extra-element-0").click();
+    // A reference may also come from the story's own elements, and the words
+    // may name it from an @ the same way they name the cast.
+    await firstAct.getByTestId("story-kf-ref-add-0").click();
+    await firstAct.getByTestId("story-kf-ref-element-0").click();
     const picker = page.getByTestId("story-element-picker");
     await page.getByTestId("story-element-search").fill("Last");
     await expect(picker.locator(".story-pick")).toHaveCount(1);
@@ -430,7 +430,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .locator(".story-pick")
       .filter({ hasText: "Last carriage" })
       .click();
-    await expect(firstAct.getByTestId("story-kf-extra-0-1")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-ref-0-2")).toBeVisible();
 
     const words = firstAct.getByTestId("story-kf-content-0");
     await words.click();

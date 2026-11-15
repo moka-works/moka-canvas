@@ -9018,24 +9018,6 @@ button > .story-spin {
   background: var(--canvas);
 }
 
-.story-mention-offer-label {
-  color: var(--muted);
-  font-size: 10px;
-  margin: 4px 8px 2px;
-  text-transform: uppercase;
-}
-
-.story-extra-missing {
-  color: var(--muted);
-  display: inline-block;
-  font-size: 10px;
-  line-height: 1.2;
-  max-width: 48px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .story-prompt-field:focus {
   border-color: var(--primary);
   outline: none;
@@ -9087,16 +9069,10 @@ button > .story-spin {
   width: 100%;
 }
 
-.story-ref-thumb.is-beyond {
-  opacity: 0.45;
-}
-
-/* A shot's reference list: the pictures its words call in, in the order they
-   are named, then the ones its words leave unnamed — a little of the picture,
-   what it is there for, and the way to take it off. A reference past the
-   story's limit or left unnamed stays on the row, dimmed, because it is still
-   the reader's. */
-.story-extra-refs {
+/* A shot's reference list: every picture it keeps, in the order it was kept,
+   whether the board read it out of the words or the reader added it. Each one
+   is the same shape — the picture, and the way to take it off. */
+.story-ref-list {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -9104,55 +9080,26 @@ button > .story-spin {
   margin-top: 6px;
 }
 
-.story-extra-ref {
+.story-ref-item {
   align-items: center;
-  background: var(--canvas);
-  border: 1px solid var(--stroke);
-  border-radius: var(--radius-sm);
   display: inline-flex;
-  gap: 4px;
-  padding: 3px;
+  gap: 2px;
 }
 
-.story-extra-ref.is-beyond {
-  border-style: dashed;
-  opacity: 0.6;
+.story-ref-missing {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 10px;
+  height: 100%;
+  justify-content: center;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
 }
 
-.story-extra-thumb {
-  background: none;
-  border: none;
-  cursor: zoom-in;
-  line-height: 0;
-  padding: 0;
-}
-
-.story-extra-thumb img {
-  border-radius: 4px;
-  display: block;
-  height: 36px;
-  object-fit: contain;
-  width: 36px;
-}
-
-.story-extra-note {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--ink);
-  font: inherit;
-  font-size: 11px;
-  padding: 2px 4px;
-  width: 96px;
-}
-
-.story-extra-note:focus {
-  background: var(--surface);
-  border-color: var(--primary);
-  outline: none;
-}
-
-.story-extra-add {
+.story-ref-add-menu {
   align-items: center;
   display: inline-flex;
   gap: 8px;
