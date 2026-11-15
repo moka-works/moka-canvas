@@ -2795,14 +2795,22 @@ function applyOne(
                       keyframes: heldAct.keyframes.map((heldFrame) => {
                         if (heldFrame.id !== command.keyframeId)
                           return heldFrame;
-                        const merged = { ...heldFrame, ...command.patch };
+                        // The model is taken off rather than left holding a
+                        // null, which a frame does not spell: what it leaves
+                        // behind is the step's own model.
+                        const { imageModel, ...rest } = command.patch;
+                        const merged: StoryKeyframe = {
+                          ...heldFrame,
+                          ...rest,
+                          ...(imageModel === null || imageModel === undefined
+                            ? {}
+                            : { imageModel }),
+                        };
                         if (
                           command.patch.variantChoices !== undefined &&
                           Object.keys(command.patch.variantChoices).length === 0
                         )
                           delete merged.variantChoices;
-                        if (command.patch.imageModel === null)
-                          delete merged.imageModel;
                         return merged;
                       }),
                     }
