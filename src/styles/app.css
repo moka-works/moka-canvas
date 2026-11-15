@@ -325,6 +325,12 @@ h2 {
   width: calc(100vw - 48px);
 }
 
+/* A dialog whose work is read rather than answered: a revision of a board. */
+.dialog.is-wide {
+  max-width: 760px;
+  width: min(92vw, 760px);
+}
+
 .dialog h2 {
   margin-bottom: 0;
 }
@@ -8532,6 +8538,92 @@ button > .story-spin {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.story-outline-ahead {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.story-board-revision {
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.story-revision-list {
+  display: grid;
+  gap: 14px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.story-revision-act {
+  display: grid;
+  gap: 10px;
+}
+
+.story-revision-act-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.story-revision-row {
+  border-top: 1px dashed var(--stroke);
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.story-revision-check {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.story-revision-check input {
+  accent-color: var(--primary);
+}
+
+.story-revision-words {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.story-revision-words p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.story-revision-lines {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.story-revision-field {
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.story-revision-warning {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .story-revision-words {
+    grid-template-columns: 1fr;
+  }
 }
 
 .story-board-name {

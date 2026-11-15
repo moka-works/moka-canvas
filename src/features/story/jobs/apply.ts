@@ -31,6 +31,7 @@ import {
   mergeElements,
   recognizeKeyframeReferences,
   slotAt,
+  syncChapterBoard,
   withTake,
   type ActDraft,
   type ChapterWrite,
@@ -741,7 +742,21 @@ function commandsFor(
         return [];
       }
       report.applied += 1;
-      return applyParsedActs(story, chapter.id, parsed.value);
+      const written = applyParsedActs(story, chapter.id, parsed.value);
+      if (written.length === 0) return written;
+      // The board was written from the outline as it stands, so the chapter's
+      // board revision follows it. A proposal for the board it replaces is
+      // moot, and is settled where the reader rewrites the board.
+      return [
+        ...written,
+        {
+          type: "setStoryChapters",
+          storyId: story.id,
+          chapters: story.chapters.map((held) =>
+            held.id === chapter.id ? syncChapterBoard(held) : held,
+          ),
+        },
+      ];
     }
     default:
       return [];

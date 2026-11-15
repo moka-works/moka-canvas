@@ -5,6 +5,9 @@ import {
   actComplete,
   actGranularity,
   actsRegenerationCost,
+  chapterBoardRevision,
+  chapterOutlineAhead,
+  chapterRevision,
   chunkWaves,
   formatDuration,
   keyframeCount,
@@ -19,7 +22,10 @@ import { REFERENCE_IMAGES_MAX } from "../../../shared/domain/constants";
 import { createAct } from "../../../shared/domain/factories";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
+import { useAppStore } from "../../editor/stores/appStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { OutlineRevisionDialog } from "../components/OutlineRevisionDialog";
+import { OutlineSyncDialog } from "../components/OutlineSyncDialog";
 import { RunningBar } from "../components/RunningBar";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { FoldChevron } from "../components/StoryIcons";
@@ -29,8 +35,21 @@ import { ActCard } from "../panels/ActCard";
 import { TransitionCard } from "../panels/TransitionCard";
 import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
 import { chapterGuesses } from "../jobs/apply";
-import { jobKey, planKeyframeArtWaves, planStoryboard } from "../jobs/plan";
+import {
+  jobKey,
+  planKeyframeArtWaves,
+  planOutlineRevision,
+  planStoryboard,
+} from "../jobs/plan";
 import { busyPlaces, mergePlaces, type PlaceBusy } from "../jobs/places";
+import {
+  applyRevision,
+  pendingRevision,
+  revisionItemOf,
+  revisionRuns,
+  type RevisionAnswer,
+  type RevisionSelection,
+} from "../jobs/revision";
 import {
   actRuns,
   boardRuns,
@@ -45,6 +64,10 @@ import { useField } from "../panels/useField";
 
 /** How many episodes one batch is asked to board at once. */
 const BOARDS_PER_ASK = 8;
+
+function toast(kind: "info" | "success" | "error", message: string): void {
+  useAppStore.getState().pushToast(kind, message);
+}
 
 /**
  * The fourth step: every episode's board — its acts, their shots, and the
@@ -77,6 +100,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     useState<StoryShotGranularity | null>(null);
   const [waves, setWaves] = useState<string[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
+  // The two questions a board whose outline has moved on asks: how it follows
+  // the outline, and what the answer would change.
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   // Whether the strip of episodes stands open. Folded it keeps the episode
   // the board below belongs to, which is the one thing about the list that is
   // still worth a line while its chips are away.
@@ -200,8 +227,25 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     writeGranularity(next);
   };
 
+  /**
+   * Settles the revision proposals a rewrite makes moot: a board written again
+   * from the outline has no use for a patch to the board it replaces.
+   */
+  const settleRevisions = async (chapterIds: string[]) => {
+    for (const chapterId of chapterIds) {
+      for (const job of jobs) {
+        if (job.kind !== "outlineRevision" || job.readAt !== undefined) {
+          continue;
+        }
+        if (revisionItemOf(job, chapterId) === undefined) continue;
+        await useStoryJobStore.getState().markRevisionRead(job.id);
+      }
+    }
+  };
+
   /** Boards these episodes. */
   const boardEpisodes = async (chapterIds: string[]) => {
+    await settleRevisions(chapterIds);
     await run(story.id, "storyboard", planStoryboard(story, chapterIds));
   };
 
@@ -215,6 +259,67 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     const first = cut[0] ?? [];
     if (first.length === 0) return;
     await boardEpisodes(first);
+  };
+
+  /** Asks for a proposal for one chapter from its newer outline. */
+  const startRevision = async (chapterId: string) => {
+    setSyncOpen(false);
+    setPreviewId(null);
+    await settleRevisions([chapterId]);
+    const planned = planOutlineRevision(story, chapterId);
+    if (planned === undefined) return;
+    await run(story.id, "outlineRevision", [planned]);
+  };
+
+  /** Puts a proposal aside; the board stays where it is. */
+  const discardRevision = async (id: string) => {
+    await useStoryJobStore.getState().markRevisionRead(id);
+    setPreviewId(null);
+  };
+
+  /** Writes the changes the reader kept, and brings the board up to date. */
+  const applyRevisionAnswer = async (
+    answer: RevisionAnswer,
+    selection: RevisionSelection,
+    revision: number,
+  ) => {
+    if (previewId === null || chapter === undefined) return;
+    const application = applyRevision(
+      story,
+      chapter,
+      answer,
+      revision,
+      selection,
+    );
+    if (application.stale) {
+      toast("error", t("story:storyboard.revisionStale"));
+      return;
+    }
+    if (application.commands.length > 0) {
+      const done = execute(
+        t("story:history.reviseBoard"),
+        application.commands,
+        previewId,
+      );
+      if (done === null) return;
+    }
+    await useStoryJobStore.getState().markRevisionRead(previewId);
+    setPreviewId(null);
+    toast(
+      "success",
+      application.keyframes === 0
+        ? t("story:storyboard.revisionSynced")
+        : t("story:storyboard.revisionDone", {
+            count: application.keyframes,
+          }),
+    );
+  };
+
+  /** Writes the whole episode again from the outline as it stands. */
+  const rebuildChapter = async (chapterId: string) => {
+    setSyncOpen(false);
+    setPreviewId(null);
+    await boardEpisodes([chapterId]);
   };
 
   if (chapter === undefined) {
@@ -247,6 +352,11 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // takes the name of writing it again and asks first, since that replaces
   // what is there.
   const boarded = chapter.acts.length > 0;
+  const ahead = chapterOutlineAhead(chapter);
+  const pending = pendingRevision(jobs, chapter.id);
+  const revisionJobs = revisionRuns(jobs, chapter.id);
+  const previewRecord =
+    previewId === null ? undefined : jobs.find((job) => job.id === previewId);
 
   return (
     <div className="story-step-scroll" data-testid="story-step-storyboard-body">
@@ -424,7 +534,53 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
               {t("story:storyboard.soundReady")}
             </span>
           )}
+          {ahead && (
+            <span
+              className="story-outline-ahead"
+              data-testid="story-board-outline-ahead"
+            >
+              <span className="story-hint">
+                {t("story:storyboard.outlineAhead", {
+                  revision: chapterRevision(chapter),
+                  board: chapterBoardRevision(chapter),
+                })}
+              </span>
+              <button
+                className="link"
+                data-testid="story-board-outline-update"
+                onClick={() => setSyncOpen(true)}
+                type="button"
+              >
+                {t("story:storyboard.outlineUpdate")}
+              </button>
+            </span>
+          )}
         </div>
+
+        {pending !== undefined && (
+          <div
+            className="story-board-revision"
+            data-testid="story-board-revision-pending"
+          >
+            <span>{t("story:storyboard.revisionPending")}</span>
+            <button
+              className="primary"
+              data-testid="story-board-revision-review"
+              onClick={() => setPreviewId(pending.record.id)}
+              type="button"
+            >
+              {t("story:storyboard.revisionReview")}
+            </button>
+            <button
+              className="link"
+              data-testid="story-board-revision-discard"
+              onClick={() => void discardRevision(pending.record.id)}
+              type="button"
+            >
+              {t("story:storyboard.revisionDiscard")}
+            </button>
+          </div>
+        )}
 
         <div className="story-step-actions">
           {totalWaves > 1 && (board.length > 0 || waves.length > 0) && (
@@ -452,6 +608,20 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                 label={t("story:storyboard.writing")}
                 pieces={job.items}
                 testId="story-board-running"
+              />
+            ))}
+          </div>
+        )}
+
+        {revisionJobs.length > 0 && (
+          <div className="story-runs">
+            {revisionJobs.map((job) => (
+              <RunningBar
+                job={job}
+                key={job.id}
+                label={t("story:storyboard.revisionRunning")}
+                pieces={job.items}
+                testId="story-board-revision-running"
               />
             ))}
           </div>
@@ -602,6 +772,29 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           title={t("story:storyboard.granularityDefaultTitle", {
             to: t(`story:storyboard.granularity_by_${granularityTo}`),
           })}
+        />
+      )}
+      {syncOpen && (
+        <OutlineSyncDialog
+          chapter={chapter}
+          onCancel={() => setSyncOpen(false)}
+          onPatch={() => void startRevision(chapter.id)}
+          onRebuild={() => void rebuildChapter(chapter.id)}
+        />
+      )}
+      {previewRecord !== undefined && (
+        <OutlineRevisionDialog
+          chapter={chapter}
+          key={previewRecord.id}
+          onApply={(answer, selection, revision) =>
+            void applyRevisionAnswer(answer, selection, revision)
+          }
+          onClose={() => setPreviewId(null)}
+          onDiscard={() => void discardRevision(previewRecord.id)}
+          onRebuild={() => void rebuildChapter(chapter.id)}
+          onRetry={() => void startRevision(chapter.id)}
+          record={previewRecord}
+          story={story}
         />
       )}
     </div>

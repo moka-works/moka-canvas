@@ -28,6 +28,7 @@ import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
 import { planOutline, storySplitChars } from "../jobs/plan";
+import { pendingRevision, revisionRuns } from "../jobs/revision";
 import { SplitCancelled, runManuscriptSplit } from "../jobs/split";
 import { readTextAsset } from "../readText";
 import {
@@ -509,7 +510,11 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
         <ol className="story-chapters">
           {story.chapters.map((chapter, index) => (
             <ChapterCard
-              busy={boardRuns(jobs, chapter.id).length > 0}
+              busy={
+                boardRuns(jobs, chapter.id).length > 0 ||
+                revisionRuns(jobs, chapter.id).length > 0 ||
+                pendingRevision(jobs, chapter.id) !== undefined
+              }
               chapter={chapter}
               index={index}
               key={chapter.id}

@@ -2379,3 +2379,157 @@ describe("a board bigger than one batch", () => {
     expect(starts.map((held) => held.items.length)).toEqual([40, 5]);
   });
 });
+
+describe("revising a board from a newer outline", () => {
+  const revisionId = `outlineRevision:${ids.chapterFirst}:2`;
+
+  /** The fixture's first episode, with its outline now standing at v2. */
+  function withOutlineAhead(): MokaFile {
+    const moka = buildStoryMokaFile();
+    const chapter = moka.stories![0]!.chapters[0]!;
+    chapter.revision = 2;
+    chapter.boardRevision = 1;
+    chapter.boardOutline = {
+      title: chapter.title,
+      synopsis: "旧梗概：灯还亮着。",
+    };
+    chapter.synopsis = "新梗概：灯忽然全灭了。";
+    return moka;
+  }
+
+  function revisionAnswer(
+    patches: Array<Record<string, unknown>>,
+    overrides: Record<string, unknown> = {},
+  ): string {
+    return JSON.stringify({
+      summary: "灯灭了。",
+      needsRebuild: false,
+      unmapped: [],
+      acts: [],
+      keyframes: patches,
+      ...overrides,
+    });
+  }
+
+  async function openTheProposal(): Promise<void> {
+    fireEvent.click(screen.getByTestId("story-board-outline-update"));
+    fireEvent.click(screen.getByTestId("story-outline-sync-start"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    await comesBack();
+    fireEvent.click(screen.getByTestId("story-board-revision-review"));
+  }
+
+  it("asks for a revision, previews it, and brings the board up to date", async () => {
+    openAtBoard(withOutlineAhead());
+    expect(
+      screen.getByTestId("story-board-outline-ahead").textContent,
+    ).toContain("v2");
+
+    fireEvent.click(screen.getByTestId("story-board-outline-update"));
+    expect(screen.getByTestId("story-outline-sync")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("story-outline-sync-start"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]?.kind).toBe("outlineRevision");
+    expect(starts[0]?.items[0]?.id).toBe(revisionId);
+    expect(starts[0]?.items[0]?.prompt).toContain("旧梗概：灯还亮着。");
+    expect(starts[0]?.items[0]?.prompt).toContain("新梗概：灯忽然全灭了。");
+
+    answers[revisionId] = revisionAnswer([
+      {
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+        reason: "灯灭了",
+        content: "`林`立在熄灭的灯下。",
+      },
+    ]);
+    await comesBack();
+    await waitFor(() =>
+      expect(screen.getByTestId("story-board-revision-pending")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("story-board-revision-review"));
+
+    const apply = screen.getByTestId(
+      "story-board-revision-apply",
+    ) as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+    expect(apply.textContent).toContain("v2");
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(story().chapters[0]?.revision).toBe(2));
+    const chapter = story().chapters[0]!;
+    expect(chapter.boardRevision).toBe(2);
+    expect(chapter.boardOutline).toBeUndefined();
+    expect(chapter.acts[0]?.keyframes[0]?.content).toBe("`林`立在熄灭的灯下。");
+    expect(chapter.acts[0]?.keyframes[0]?.art.takes[0]?.assetIds).toEqual([
+      ids.frameArt,
+    ]);
+    expect(screen.queryByTestId("story-board-outline-ahead")).toBeNull();
+  });
+
+  it("leaves the outline ahead when a suggested change is left out", async () => {
+    openAtBoard(withOutlineAhead());
+    answers[revisionId] = revisionAnswer([
+      {
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+        content: "`林`立在熄灭的灯下。",
+      },
+      {
+        actId: ids.act,
+        keyframeId: ids.frameSecond,
+        content: "`周`在黑暗里转过身来。",
+      },
+    ]);
+    await openTheProposal();
+
+    fireEvent.click(screen.getByTestId("story-board-revision-frame-frame-2"));
+    const apply = screen.getByTestId(
+      "story-board-revision-apply",
+    ) as HTMLButtonElement;
+    expect(apply.textContent).toContain("stays at v1");
+    fireEvent.click(apply);
+
+    await waitFor(() =>
+      expect(story().chapters[0]?.acts[0]?.keyframes[0]?.content).toBe(
+        "`林`立在熄灭的灯下。",
+      ),
+    );
+    expect(story().chapters[0]?.boardRevision).toBe(1);
+    expect(story().chapters[0]?.acts[0]?.keyframes[1]?.content).toBe(
+      "`周`转过身来。",
+    );
+    expect(screen.getByTestId("story-board-outline-ahead")).toBeTruthy();
+  });
+
+  it("offers a rebuild when the change cannot be carried by shot words", async () => {
+    openAtBoard(withOutlineAhead());
+    answers[revisionId] = revisionAnswer([], {
+      needsRebuild: true,
+      unmapped: ["换到了车厢外"],
+    });
+    await openTheProposal();
+
+    expect(screen.getByTestId("story-board-revision-rebuild")).toBeTruthy();
+    expect(screen.queryByTestId("story-board-revision-apply")).toBeNull();
+  });
+
+  it("rebuilds the episode from the chooser and brings the version up to date", async () => {
+    openAtBoard(withOutlineAhead());
+    fireEvent.click(screen.getByTestId("story-board-outline-update"));
+    fireEvent.click(screen.getByTestId("story-outline-sync-rebuild"));
+    fireEvent.click(screen.getByTestId("story-outline-sync-start"));
+
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]?.kind).toBe("storyboard");
+    expect(starts[0]?.items[0]?.id).toBe(`storyboard:${ids.chapterFirst}`);
+
+    answers[`storyboard:${ids.chapterFirst}`] = boardAnswer("wide", "close");
+    await comesBack();
+
+    await waitFor(() => expect(story().chapters[0]?.boardRevision).toBe(2));
+    expect(story().chapters[0]?.boardOutline).toBeUndefined();
+    expect(
+      story().chapters[0]?.acts[0]?.keyframes[0]?.art.takes[0]?.assetIds,
+    ).toEqual([ids.frameArt]);
+  });
+});

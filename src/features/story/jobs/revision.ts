@@ -14,6 +14,7 @@
  */
 
 import type { DocumentCommand } from "../../../shared/domain/types";
+import type { StoryJobRecord } from "../../../api/story";
 import {
   STORY_CAMERA_ANGLES,
   STORY_CAMERA_MOVES,
@@ -141,6 +142,60 @@ export function revisionStampOf(
   return Number.isInteger(revision) && revision > 0
     ? { chapterId: match[1]!, revision }
     : undefined;
+}
+
+/** The piece of a revision batch that answers for one chapter. */
+export function revisionItemOf(
+  record: StoryJobRecord,
+  chapterId: string,
+): StoryJobRecord["items"][number] | undefined {
+  return record.items.find(
+    (item) =>
+      item.target.kind === "outlineRevision" &&
+      item.target.chapterId === chapterId,
+  );
+}
+
+function inFlight(status: StoryJobRecord["status"]): boolean {
+  return status === "queued" || status === "running";
+}
+
+/** A revision that answered and is waiting to be read, newest first. */
+export interface PendingRevision {
+  record: StoryJobRecord;
+  item: StoryJobRecord["items"][number];
+}
+
+/** The newest revision proposal for one chapter that nobody has settled yet. */
+export function pendingRevision(
+  jobs: StoryJobRecord[],
+  chapterId: string,
+): PendingRevision | undefined {
+  for (const record of jobs) {
+    if (record.kind !== "outlineRevision" || record.readAt !== undefined) {
+      continue;
+    }
+    if (record.status !== "succeeded") continue;
+    const item = revisionItemOf(record, chapterId);
+    if (item?.status === "succeeded" && (item.text ?? "").trim() !== "") {
+      return { record, item };
+    }
+  }
+  return undefined;
+}
+
+/** The revision batches working on one chapter just now. */
+export function revisionRuns(
+  jobs: StoryJobRecord[],
+  chapterId: string,
+): StoryJobRecord[] {
+  return jobs.filter((record) => {
+    if (record.kind !== "outlineRevision" || !inFlight(record.status)) {
+      return false;
+    }
+    const item = revisionItemOf(record, chapterId);
+    return item !== undefined && inFlight(item.status);
+  });
 }
 
 /** A failure in the answer's shape, raised while reading it. */
