@@ -973,6 +973,26 @@ describe("writing an episode's board", () => {
     ).toHaveLength(3);
   });
 
+  it("leaves a shot the reader emptied with nothing to fall back on", async () => {
+    const moka = boarded();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.content = "雨下个不停。";
+    frame.references = undefined;
+    openAtBoard(moka);
+
+    // Every picture the act stands in is taken off, one at a time.
+    for (let taken = 0; taken < 4; taken += 1) {
+      fireEvent.click(screen.getByTestId("story-kf-ref-remove-0-0"));
+    }
+    await waitFor(() =>
+      expect(acts()[0]?.keyframes[0]?.references).toEqual([]),
+    );
+    // The act's cast is not put back in the place of what was taken away.
+    expect(
+      screen.getByTestId("story-kf-refs-0").querySelectorAll(".story-ref-item"),
+    ).toHaveLength(0);
+  });
+
   it("shows the ask as it will be sent, with the mentioned names and their pictures", () => {
     openAtBoard(boarded());
     // The scaffolding the template writes — the episode, the framing, the look

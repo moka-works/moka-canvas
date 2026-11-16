@@ -1026,6 +1026,35 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
         { timeout: 30_000 },
       )
       .toBe(SENTENCE);
+
+    // A shot the reader empties keeps its empty list: what the act's cast
+    // stands in for is not put back in the place of it, and the document says
+    // so to the server rather than dropping the answer.
+    const refs = firstAct.getByTestId("story-kf-refs-0");
+    const kept = await refs.locator(".story-ref-item").count();
+    expect(kept).toBeGreaterThan(0);
+    for (let taken = 0; taken < kept; taken += 1) {
+      await firstAct.getByTestId("story-kf-ref-remove-0-0").click();
+    }
+    await expect(refs.locator(".story-ref-item")).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: {
+                  acts?: { keyframes?: { references?: unknown[] }[] }[];
+                }[];
+              }[];
+            };
+          };
+          return body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]
+            ?.keyframes?.[0]?.references;
+        }),
+      )
+      .toEqual([]);
   } finally {
     forgetHome(home);
   }

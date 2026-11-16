@@ -894,6 +894,10 @@ export interface StoryKeyframe {
    * out of every cast name it writes, and the reader may add pictures of their
    * own. They are all the same kind of thing, and only the ones the words
    * actually name travel with the ask.
+   *
+   * Absent means the shot has never kept a list and stands on the act's cast;
+   * an empty list is a shot the reader emptied, which is drawn with no
+   * pictures at all.
    */
   references?: StoryKeyframeReference[];
   /**
@@ -1388,8 +1392,11 @@ export interface StoryKeyframePatch {
   content?: string;
   dialogue?: StoryDialogueLine[];
   durationMs?: number;
-  /** The shot's reference pictures; an empty list clears them. */
-  references?: StoryKeyframeReference[];
+  /**
+   * The shot's reference pictures: an empty list leaves the shot with none of
+   * its own, and a null hands it back to the act's cast.
+   */
+  references?: StoryKeyframeReference[] | null;
   /** Which form each mentioned element travels as; an empty map clears them. */
   variantChoices?: Record<string, string>;
   /** The picture model drawn of this frame; a null hands it to the step's own. */

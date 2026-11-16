@@ -136,7 +136,7 @@ fn frame(index: usize) -> StoryKeyframe {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
-        references: Vec::new(),
+        references: None,
     }
 }
 
@@ -259,7 +259,7 @@ fn story_document() -> MokaFile {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
-        references: Vec::new(),
+        references: None,
     };
     let second = StoryKeyframe {
         id: FRAME_SECOND.into(),
@@ -276,7 +276,7 @@ fn story_document() -> MokaFile {
         voices: None,
         variant_choices: Default::default(),
         image_model: None,
-        references: Vec::new(),
+        references: None,
     };
 
     moka.stories = Some(vec![StoryDocument {
@@ -1256,7 +1256,7 @@ fn moves_only_the_fields_a_shot_patch_names_and_keeps_a_shot_to_its_length() {
 }
 
 #[test]
-fn keeps_a_shots_references_and_takes_them_away_again() {
+fn keeps_a_shots_references_and_tells_an_emptied_list_from_none() {
     let moka = story_document();
     let set = round_trip(
         &moka,
@@ -1266,7 +1266,7 @@ fn keeps_a_shots_references_and_takes_them_away_again() {
             act_id: ACT.into(),
             keyframe_id: FRAME_SECOND.into(),
             patch: StoryKeyframePatch {
-                references: Some(vec![
+                references: Some(Some(vec![
                     story::StoryKeyframeReference {
                         asset_id: None,
                         element_id: Some(HERO.into()),
@@ -1279,17 +1279,20 @@ fn keeps_a_shots_references_and_takes_them_away_again() {
                         variant_id: None,
                         name: "霓虹".into(),
                     },
-                ]),
+                ])),
                 ..Default::default()
             },
         }],
     );
     let held = &story_of(&set).chapters[0].acts[0].keyframes[1];
-    assert_eq!(held.references.len(), 2);
-    assert_eq!(held.references[0].element_id.as_deref(), Some(HERO));
-    assert_eq!(held.references[1].name, "霓虹");
+    let held = held.references.as_deref().expect("the shot keeps its list");
+    assert_eq!(held.len(), 2);
+    assert_eq!(held[0].element_id.as_deref(), Some(HERO));
+    assert_eq!(held[1].name, "霓虹");
 
-    let cleared = round_trip(
+    // An emptied list is the reader's own answer and stays on the shot: the
+    // act's cast does not stand in for the pictures they took away.
+    let emptied = round_trip(
         &set,
         vec![DocumentCommand::UpdateStoryKeyframe {
             story_id: STORY.into(),
@@ -1297,14 +1300,40 @@ fn keeps_a_shots_references_and_takes_them_away_again() {
             act_id: ACT.into(),
             keyframe_id: FRAME_SECOND.into(),
             patch: StoryKeyframePatch {
-                references: Some(Vec::new()),
+                references: Some(Some(Vec::new())),
                 ..Default::default()
             },
         }],
     );
-    assert!(story_of(&cleared).chapters[0].acts[0].keyframes[1]
-        .references
-        .is_empty());
+    assert_eq!(
+        story_of(&emptied).chapters[0].acts[0].keyframes[1].references,
+        Some(Vec::new())
+    );
+    // Which a document says out loud, so a reopened board reads it back.
+    let written = serde_json::to_value(&emptied).expect("the document is JSON");
+    assert_eq!(
+        written["stories"][0]["chapters"][0]["acts"][0]["keyframes"][1]["references"],
+        serde_json::json!([])
+    );
+
+    // A null hands the shot back to no list at all.
+    let handed_back = round_trip(
+        &emptied,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                references: Some(None),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        story_of(&handed_back).chapters[0].acts[0].keyframes[1].references,
+        None
+    );
 
     // A reference that names no picture is not a reference.
     assert_eq!(
@@ -1316,12 +1345,12 @@ fn keeps_a_shots_references_and_takes_them_away_again() {
                 act_id: ACT.into(),
                 keyframe_id: FRAME_SECOND.into(),
                 patch: StoryKeyframePatch {
-                    references: Some(vec![story::StoryKeyframeReference {
+                    references: Some(Some(vec![story::StoryKeyframeReference {
                         asset_id: None,
                         element_id: None,
                         variant_id: None,
                         name: "霓虹".into(),
-                    }]),
+                    }])),
                     ..Default::default()
                 },
             }

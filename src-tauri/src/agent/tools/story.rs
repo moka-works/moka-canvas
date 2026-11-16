@@ -605,7 +605,7 @@ fn keyframe_from(
             voices: None,
             variant_choices: Default::default(),
             image_model: None,
-            references: Vec::new(),
+            references: None,
         });
     if let Some(title) = value.get("title").and_then(Value::as_str) {
         keyframe.title = title.to_string();

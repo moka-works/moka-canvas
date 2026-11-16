@@ -363,6 +363,29 @@ describe("moka codec", () => {
     ]);
   });
 
+  it("keeps a shot the reader emptied with no references", () => {
+    const story = buildStoryMokaFile();
+    const frame = story.stories![0].chapters[0].acts[0].keyframes[0];
+    frame.content = "雨下个不停。";
+    frame.references = [];
+    const bytes = encodeMokaFile(story);
+    const raw = deserialize(Buffer.from(bytes).subarray(4)) as Record<
+      string,
+      unknown
+    >;
+    const chapters = (raw.stories as Record<string, unknown>[])[0]
+      .chapters as Record<string, unknown>[];
+    const frames = (chapters[0].acts as Record<string, unknown>[])[0]
+      .keyframes as Record<string, unknown>[];
+    // The emptied list is spelled out rather than left off: a document that
+    // wrote nothing here would hand the shot back to the act's cast.
+    expect(frames[0]).toMatchObject({ references: [] });
+    expect(
+      decodeMokaFile(bytes).stories![0].chapters[0].acts[0].keyframes[0]
+        .references,
+    ).toEqual([]);
+  });
+
   it("reads the pictures older documents kept apart as the shot's references", () => {
     const story = buildStoryMokaFile();
     const raw = deserialize(

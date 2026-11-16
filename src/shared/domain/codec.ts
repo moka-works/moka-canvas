@@ -472,7 +472,9 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
       slot: encodeStorySlot(take.slot),
     }));
   }
-  if (keyframe.references !== undefined && keyframe.references.length > 0) {
+  // An empty list is a shot the reader emptied, which is not a shot that never
+  // kept one: it is written as it stands, the empty list and all.
+  if (keyframe.references !== undefined) {
     doc.references = keyframe.references.map((reference) => ({
       ...(reference.assetId === undefined
         ? {}
@@ -1599,7 +1601,9 @@ function decodeStoryReferences(
       return [{ assetId, name }];
     },
   );
-  return held.length === 0 ? undefined : held;
+  // A list a document spells empty is the shot's own answer — the reader took
+  // every picture out of it — and is not the same as a list never written.
+  return held;
 }
 
 /**

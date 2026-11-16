@@ -1853,6 +1853,42 @@ describe("the board commands", () => {
     ).toBe("STORY_TARGET_INVALID");
   });
 
+  it("keeps a shot the reader emptied from falling back to the act's cast", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const emptied = expectRoundTrip(moka, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameSecond,
+      patch: { content: "雨下个不停。", references: [] },
+    });
+    expect(
+      storyOfFile(emptied).chapters[0].acts[0].keyframes[1].references,
+    ).toEqual([]);
+    // What a document spells as an empty list reads back as emptied, not as a
+    // shot that never kept one.
+    const read = decodeMokaFile(encodeMokaFile(emptied));
+    expect(
+      read.stories![0].chapters[0].acts[0].keyframes[1].references,
+    ).toEqual([]);
+
+    // A null hands the shot back to the act's cast, and the undo of the last
+    // removal says exactly that.
+    const handedBack = expectRoundTrip(emptied, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameSecond,
+      patch: { references: null },
+    });
+    expect(
+      storyOfFile(handedBack).chapters[0].acts[0].keyframes[1].references,
+    ).toBeUndefined();
+  });
+
   it("refuses a line with no name of its own, or two sharing one", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();

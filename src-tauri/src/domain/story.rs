@@ -445,12 +445,16 @@ pub struct StoryKeyframe {
     ///
     /// The field reads the older `extraReferences` too, where the pictures a
     /// reader added were kept apart from the cast the board recognized.
+    ///
+    /// Absent is a shot that has never kept a list of its own and is drawn
+    /// with the act's cast; an empty list is a shot the reader emptied, which
+    /// is drawn with no pictures at all, so the two are told apart.
     #[serde(
         default,
         alias = "extraReferences",
-        skip_serializing_if = "Vec::is_empty"
+        skip_serializing_if = "Option::is_none"
     )]
-    pub references: Vec<StoryKeyframeReference>,
+    pub references: Option<Vec<StoryKeyframeReference>>,
 }
 
 /// One picture a shot may be drawn from, and the name its words use for it.
@@ -922,9 +926,14 @@ pub struct StoryKeyframePatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub image_model: Option<Option<String>>,
-    /// The shot's reference pictures; an empty list clears them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub references: Option<Vec<StoryKeyframeReference>>,
+    /// The shot's reference pictures: an empty list leaves the shot with none
+    /// of its own, and a null hands it back to the act's cast.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub references: Option<Option<Vec<StoryKeyframeReference>>>,
 }
 
 /// The fields a caller may move on an assembly, for `setStoryEdit`.
@@ -2558,7 +2567,7 @@ pub fn apply_story_command(
                     ));
                 }
             }
-            if let Some(references) = &patch.references {
+            if let Some(Some(references)) = &patch.references {
                 for reference in references {
                     let names_a_picture = reference
                         .asset_id

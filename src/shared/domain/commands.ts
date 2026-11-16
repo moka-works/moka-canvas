@@ -2772,7 +2772,10 @@ function applyOne(
             i18n.t("errors:command.storyElementModelInvalid"),
           );
       }
-      if (command.patch.references !== undefined) {
+      if (
+        command.patch.references !== undefined &&
+        command.patch.references !== null
+      ) {
         for (const reference of command.patch.references) {
           if (
             reference.assetId === undefined &&
@@ -2796,6 +2799,11 @@ function applyOne(
       if (command.patch.imageModel !== undefined) {
         previous.imageModel = keyframe.imageModel ?? null;
       }
+      if (command.patch.references !== undefined) {
+        // A shot that kept no list of its own reads back as absent, not as an
+        // empty one: the undo of the last removal draws the act's cast again.
+        previous.references = keyframe.references ?? null;
+      }
       const chapters = story.chapters.map((held) =>
         held.id === command.chapterId
           ? {
@@ -2809,14 +2817,21 @@ function applyOne(
                           return heldFrame;
                         // The model is taken off rather than left holding a
                         // null, which a frame does not spell: what it leaves
-                        // behind is the step's own model.
-                        const { imageModel, ...rest } = command.patch;
+                        // behind is the step's own model. A null reference
+                        // list likewise leaves no list at all, handing the
+                        // shot back to the act's cast; an empty one is the
+                        // reader's own answer and stays on the shot.
+                        const { imageModel, references, ...rest } =
+                          command.patch;
                         const merged: StoryKeyframe = {
                           ...heldFrame,
                           ...rest,
                           ...(imageModel === null || imageModel === undefined
                             ? {}
                             : { imageModel }),
+                          ...(references === null || references === undefined
+                            ? {}
+                            : { references }),
                         };
                         if (imageModel === null) delete merged.imageModel;
                         if (
@@ -2824,11 +2839,7 @@ function applyOne(
                           Object.keys(command.patch.variantChoices).length === 0
                         )
                           delete merged.variantChoices;
-                        if (
-                          command.patch.references !== undefined &&
-                          command.patch.references.length === 0
-                        )
-                          delete merged.references;
+                        if (references === null) delete merged.references;
                         return merged;
                       }),
                     }
