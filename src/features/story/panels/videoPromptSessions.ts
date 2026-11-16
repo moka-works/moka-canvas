@@ -63,6 +63,8 @@ export interface VideoPromptSession {
   error: string | null;
   /** Whether a rewrite is on its way just now. */
   rewriting: boolean;
+  /** The text model that rewrites for this place, or none for the room's own. */
+  rewriteModel: string | null;
   /** What the model's own contract still finds wrong with what it wrote. */
   issues: PromptContractIssue[];
   /** Why a rewrite failed, with the model's own words under it. */
@@ -83,7 +85,12 @@ interface VideoPromptSessionsState {
     patch: Partial<
       Pick<
         VideoPromptSession,
-        "values" | "error" | "rewriting" | "issues" | "rewriteError"
+        | "values"
+        | "error"
+        | "rewriting"
+        | "rewriteModel"
+        | "issues"
+        | "rewriteError"
       >
     >,
   ) => void;
@@ -131,6 +138,7 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
             values: shown.map((ask) => ask.prompt),
             error: null,
             rewriting: false,
+            rewriteModel: null,
             issues: [],
             rewriteError: null,
           },
@@ -191,6 +199,7 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
                 ? {}
                 : { context: ask.promptContext }),
               guide,
+              model: session.rewriteModel,
               signal: controller.signal,
             });
             next[at] = rewritten.prompt;

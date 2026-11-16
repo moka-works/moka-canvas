@@ -24,6 +24,7 @@ import {
   type VideoPromptPlace,
 } from "./videoPromptSessions";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
+import { ModelPicker } from "../../settings/ModelPicker";
 
 export type { VideoPromptPlace };
 
@@ -45,9 +46,9 @@ function secondsOf(params: Record<string, unknown> | undefined): number {
  *
  * In `film` mode the dialog stands in front of the press that would have
  * filmed the place: the words may be sent as they are, or rewritten for the
- * model first. A rewrite is one ask of the room's own text model, and what it
- * writes goes back into the field — nothing is sent until the reader presses
- * send over words they have seen.
+ * model first. A rewrite is one ask of a text model — the room's own unless
+ * the reader names another here — and what it writes goes back into the field;
+ * nothing is sent until the reader presses send over words they have seen.
  *
  * What the dialog holds lives beside it rather than inside it, by the place it
  * was opened on: closing the dialog puts the words aside without taking back a
@@ -86,8 +87,17 @@ export function VideoPromptDialog({
 
   // Only while the save that drops the session is closing the dialog.
   if (session === undefined) return null;
-  const { live, shown, auto, values, error, rewriting, issues, rewriteError } =
-    session;
+  const {
+    live,
+    shown,
+    auto,
+    values,
+    error,
+    rewriting,
+    rewriteModel,
+    issues,
+    rewriteError,
+  } = session;
   const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
   // The guide is the one the words will be held to when they are sent, which
   // is the contract of the model that films the place rather than the step's.
@@ -341,6 +351,23 @@ export function VideoPromptDialog({
                 <pre>{rewriteError.detail}</pre>
               </details>
             )}
+          </div>
+        )}
+
+        {mode === "film" && guide !== null && (
+          <div className="story-video-prompt-model">
+            {/* Which text model does the rewriting: the room's own unless the
+                reader names one for this place, and nothing else about the
+                filming changes with it. */}
+            <ModelPicker
+              capability="text"
+              disabled={rewriting}
+              label={t("story:storyboard.videoPromptRewriteModel")}
+              noneLabel={t("story:storyboard.modelGlobal")}
+              onChange={(reference) => patch(key, { rewriteModel: reference })}
+              testId="story-video-prompt-model"
+              value={rewriteModel}
+            />
           </div>
         )}
 

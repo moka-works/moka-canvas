@@ -718,6 +718,7 @@
     "videoPromptSend": "Send",
     "videoPromptRewrite": "Rewrite prompt",
     "videoPromptRewriting": "Rewriting…",
+    "videoPromptRewriteModel": "Text model for the rewrite",
     "videoPromptRewriteEmpty": "The text model answered with no prompt",
     "videoPromptErrorDetail": "Full details",
     "videoPromptIssueTitle": "The rewrite still has these problems",

@@ -75,9 +75,11 @@ export async function rewriteVideoPrompt(input: {
   prompt: string;
   context?: StoryPromptContext;
   guide: PromptRewriteGuide;
+  /** The text model to ask, or none for the model the room is set to. */
+  model?: string | null;
   signal?: AbortSignal;
 }): Promise<RewrittenPrompt> {
-  const model = storyTextModel();
+  const model = input.model ?? storyTextModel();
   const answer = await generateApi.text(
     {
       capability: "text",

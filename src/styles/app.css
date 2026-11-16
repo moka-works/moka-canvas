@@ -429,6 +429,10 @@ h2 {
   overflow-y: auto;
 }
 
+.story-video-prompt-model {
+  max-width: 360px;
+}
+
 .story-video-prompt-piece {
   display: grid;
   gap: 8px;

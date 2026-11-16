@@ -718,6 +718,7 @@
     "videoPromptSend": "直接发送",
     "videoPromptRewrite": "改写提示词",
     "videoPromptRewriting": "改写中…",
+    "videoPromptRewriteModel": "改写提示词的文本模型",
     "videoPromptRewriteEmpty": "文字模型没有返回提示词",
     "videoPromptErrorDetail": "完整描述",
     "videoPromptIssueTitle": "改写结果还有这些问题",

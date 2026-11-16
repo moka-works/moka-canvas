@@ -150,6 +150,15 @@ function filmWithContract() {
           displayName: "H3",
           enabled: true,
         },
+        {
+          id: "text-1",
+          category: "text",
+          protocol: "openai",
+          url: "http://127.0.0.1:8020/v1/chat/completions",
+          model: "writer",
+          displayName: "Writer",
+          enabled: true,
+        },
       ],
       defaults: { video: "video-1" },
       preferences: {},
@@ -181,6 +190,29 @@ describe("a clip's prompt before it is filmed", () => {
     open(undefined, "film");
     expect(screen.getByTestId("story-video-prompt-send")).toBeTruthy();
     expect(screen.queryByTestId("story-video-prompt-rewrite")).toBeNull();
+    expect(screen.queryByTestId("story-video-prompt-model")).toBeNull();
+  });
+
+  it("asks the text model the reader names, or the room's own when none is named", async () => {
+    filmWithContract();
+    const text = vi.spyOn(generateApi, "text").mockResolvedValue({
+      status: "succeeded",
+      outputs: [],
+      text: "integrated_multimodal_description: [Shot 1] She waits.",
+    } as GenerateResponse);
+
+    open(undefined, "film");
+    const picker = screen.getByTestId(
+      "story-video-prompt-model",
+    ) as HTMLSelectElement;
+    // The room's own model until the reader names another for this place.
+    expect(picker.value).toBe("");
+
+    fireEvent.change(picker, { target: { value: "text-1" } });
+    fireEvent.click(screen.getByTestId("story-video-prompt-rewrite"));
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    expect(text.mock.calls[0]![0].model).toBe("text-1");
+    text.mockRestore();
   });
 
   it("rewrites the words from the contract and the material, and names what is still wrong", async () => {
@@ -202,6 +234,7 @@ describe("a clip's prompt before it is filmed", () => {
     );
     const request = text.mock.calls[0]![0];
     expect(request.system).toContain("CONTRACT GUIDE");
+    expect(request.model).toBeUndefined();
     expect(request.params).toEqual({ temperature: 0.2 });
     expect(request.prompt).toContain("车已经停运了。");
     expect(

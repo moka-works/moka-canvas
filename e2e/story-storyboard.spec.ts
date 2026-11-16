@@ -974,6 +974,7 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
   await configureModels([
     { id: PAINTER, capability: "image", alias: "Painter" },
     { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+    { id: "understudy", capability: "text", alias: "Understudy" },
     {
       id: VIDEOGRAPHER,
       capability: "video",
@@ -1011,11 +1012,26 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
       askDialog.getByTestId("story-video-prompt-text-0"),
     ).toHaveValue(/Shoot this act/);
 
-    // One ask of the stand-in's text model, and what it wrote is in the field.
+    // The rewrite is asked of the step's own text model until the reader names
+    // another for this place.
+    const rewriteModel = askDialog.getByTestId("story-video-prompt-model");
+    await expect(rewriteModel).toHaveValue("");
+    await rewriteModel.selectOption("understudy");
+
+    // One ask of the chosen text model, and what it wrote is in the field.
     await askDialog.getByTestId("story-video-prompt-rewrite").click();
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
     ).toHaveValue(SENTENCE, { timeout: 30_000 });
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path === "/v1/chat/completions")
+            .at(-1)?.model,
+        { timeout: 30_000 },
+      )
+      .toBe("understudy");
     // The stand-in's answer dropped both lines the act says, and the dialog
     // names them rather than letting the loss travel.
     await expect(
