@@ -28,7 +28,7 @@ use crate::generate::adapters::{
     exchange, image_item, media_item, open_stream, provider_error, read_stream, succeeded,
     ModelCall, Opened, ProviderAdapter, Reply, StreamEvent,
 };
-use crate::generate::debug::Kind;
+use crate::generate::debug::{self, Kind};
 use crate::generate::error::ProviderError;
 use crate::generate::media::{MediaInput, MultipartBody};
 use crate::generate::{
@@ -77,25 +77,38 @@ impl ProviderAdapter for LuaAdapter {
         inputs: &[MediaInput],
         cancel: &Cancel,
     ) -> Result<GenerateResult, ProviderError> {
-        let session = Session::open(call)?;
-        let asked = session.call(
-            "build_request",
-            vec![call_json(call), request_json(request), inputs_json(inputs)],
-        )?;
-        let ended = follow(
-            &session,
-            &asked,
-            "parse_response",
-            Step {
-                call,
-                inputs,
-                capability: request.capability,
-                cancel,
-                kind: Kind::Generate,
+        let run = debug::begin_run(Kind::Generate, call, request, inputs);
+        let outcome = async {
+            let session = Session::open(call)?;
+            let asked = session.call(
+                "build_request",
+                vec![call_json(call), request_json(request), inputs_json(inputs)],
+            )?;
+            let ended = follow(
+                &session,
+                &asked,
+                "parse_response",
+                Step {
+                    call,
+                    inputs,
+                    capability: request.capability,
+                    cancel,
+                    kind: Kind::Generate,
+                    run: run.as_ref(),
+                },
+            )
+            .await?;
+            result_of(&session, &ended, call, request.capability, run.as_ref()).await
+        }
+        .await;
+        debug::finish(
+            run,
+            match &outcome {
+                Ok(result) => debug::Outcome::Ok(result),
+                Err(error) => debug::Outcome::Err(error),
             },
-        )
-        .await?;
-        result_of(&session, &ended, call, request.capability).await
+        );
+        outcome
     }
 
     /// The answer read as it arrives, where the script asked for a stream.
@@ -129,69 +142,82 @@ impl ProviderAdapter for LuaAdapter {
                 "this converter streams without exporting 'parse_event'",
             ));
         }
-        let asked = session.call(
-            "build_stream_request",
-            vec![call_json(call), request_json(request), inputs_json(inputs)],
-        )?;
-        if let Some(error) = asked.get("error").and_then(Value::as_str) {
-            return Err(ProviderError::Rejected(error.to_string()));
-        }
-        // The door the stream is asked at is the one the script named; a
-        // service that refuses it — and a script that asked to read the
-        // refusal — lets the script name another door before the refusal is
-        // the answer, the chain the whole-answer path runs in `follow`.
-        let mut exchange_step = Exchange::asked(&asked, "parse_response")?;
-        let mut state = asked.get("state").cloned().unwrap_or(Value::Null);
-        let budget = call.budgets.timeout_for(request.capability);
-        let deadline = Instant::now() + budget;
-        for _ in 0..MAX_EXCHANGES {
-            cancel.check()?;
-            let left = step_time_left(deadline, request.capability, budget)?;
-            let request_builder = builder(call, &session.entry, &exchange_step.request, inputs)?;
-            match open_stream(Kind::Stream, call, request_builder).await? {
-                Opened::Streaming(response, recording) => {
-                    let parse = |payload: &Value| session.event(payload);
-                    return read_stream(
-                        response,
-                        recording.map(|recording| *recording),
-                        sink,
-                        cancel,
-                        left,
-                        parse,
-                    )
-                    .await;
-                }
-                Opened::Refused(reply) => {
-                    if !reads_failure(&exchange_step.request) {
+        let run = debug::begin_run(Kind::Stream, call, request, inputs);
+        let outcome = async {
+            let asked = session.call(
+                "build_stream_request",
+                vec![call_json(call), request_json(request), inputs_json(inputs)],
+            )?;
+            if let Some(error) = asked.get("error").and_then(Value::as_str) {
+                return Err(ProviderError::Rejected(error.to_string()));
+            }
+            // The door the stream is asked at is the one the script named; a
+            // service that refuses it — and a script that asked to read the
+            // refusal — lets the script name another door before the refusal is
+            // the answer, the chain the whole-answer path runs in `follow`.
+            let mut exchange_step = Exchange::asked(&asked, "parse_response")?;
+            let mut state = asked.get("state").cloned().unwrap_or(Value::Null);
+            let budget = call.budgets.timeout_for(request.capability);
+            let deadline = Instant::now() + budget;
+            for _ in 0..MAX_EXCHANGES {
+                cancel.check()?;
+                let left = step_time_left(deadline, request.capability, budget)?;
+                let request_builder =
+                    builder(call, &session.entry, &exchange_step.request, inputs)?;
+                match open_stream(Kind::Stream, call, request_builder, run.as_ref()).await? {
+                    Opened::Streaming(response, recording) => {
+                        let parse = |payload: &Value| session.event(payload);
+                        return read_stream(
+                            response,
+                            recording.map(|recording| *recording),
+                            sink,
+                            cancel,
+                            left,
+                            parse,
+                        )
+                        .await;
+                    }
+                    Opened::Refused(reply) => {
+                        if !reads_failure(&exchange_step.request) {
+                            return Err(provider_error(&reply, &call.api_key));
+                        }
+                        // Looked up before the script is asked what to make of the
+                        // refusal: a script that named no function to read it with
+                        // is refused rather than handed a body nothing will read.
+                        if !session.has(&exchange_step.handler) {
+                            return Err(ProviderError::invalid(format!(
+                                "script '{}' does not export '{}'",
+                                session.entry.script, exchange_step.handler
+                            )));
+                        }
+                        let parsed = session.reply(&exchange_step.handler, &reply, state)?;
+                        if let Some(next) = exchange_step.asked_by(&parsed) {
+                            exchange_step = next?;
+                            state = parsed.get("state").cloned().unwrap_or(Value::Null);
+                            continue;
+                        }
+                        if let Some(error) = parsed.get("error").and_then(Value::as_str) {
+                            return Err(ProviderError::Rejected(error.to_string()));
+                        }
+                        // Said by the host: a script with nothing of its own to say
+                        // about the refusal has left it where it was found.
                         return Err(provider_error(&reply, &call.api_key));
                     }
-                    // Looked up before the script is asked what to make of the
-                    // refusal: a script that named no function to read it with
-                    // is refused rather than handed a body nothing will read.
-                    if !session.has(&exchange_step.handler) {
-                        return Err(ProviderError::invalid(format!(
-                            "script '{}' does not export '{}'",
-                            session.entry.script, exchange_step.handler
-                        )));
-                    }
-                    let parsed = session.reply(&exchange_step.handler, &reply, state)?;
-                    if let Some(next) = exchange_step.asked_by(&parsed) {
-                        exchange_step = next?;
-                        state = parsed.get("state").cloned().unwrap_or(Value::Null);
-                        continue;
-                    }
-                    if let Some(error) = parsed.get("error").and_then(Value::as_str) {
-                        return Err(ProviderError::Rejected(error.to_string()));
-                    }
-                    // Said by the host: a script with nothing of its own to say
-                    // about the refusal has left it where it was found.
-                    return Err(provider_error(&reply, &call.api_key));
                 }
             }
+            Err(ProviderError::invalid(format!(
+                "the script asked for more than {MAX_EXCHANGES} exchanges in one step"
+            )))
         }
-        Err(ProviderError::invalid(format!(
-            "the script asked for more than {MAX_EXCHANGES} exchanges in one step"
-        )))
+        .await;
+        debug::finish(
+            run,
+            match &outcome {
+                Ok(result) => debug::Outcome::Ok(result),
+                Err(error) => debug::Outcome::Err(error),
+            },
+        );
+        outcome
     }
 
     async fn create_task(
@@ -229,49 +255,69 @@ impl ProviderAdapter for LuaAdapter {
                 answer: Some(Box::new(SettledAnswer::of(&result))),
             });
         }
-        let asked = session.call(
-            "build_task_request",
-            vec![call_json(call), request_json(request), inputs_json(inputs)],
-        )?;
-        let ended = follow(
-            &session,
-            &asked,
-            "parse_task_response",
-            Step {
-                call,
-                inputs,
-                capability: request.capability,
-                cancel,
-                kind: Kind::TaskCreate,
-            },
-        )
-        .await?;
-        if let Some(error) = ended.reply.get("error").and_then(Value::as_str) {
-            return Err(ProviderError::Rejected(error.to_string()));
-        }
-        let reference = ended
-            .reply
-            .get("reference")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|reference| !reference.is_empty())
-            .ok_or_else(|| ProviderError::NoOutput("no task reference in response".to_string()))?
-            .to_string();
+        let run = debug::begin_run(Kind::TaskCreate, call, request, inputs);
+        let outcome = async {
+            let asked = session.call(
+                "build_task_request",
+                vec![call_json(call), request_json(request), inputs_json(inputs)],
+            )?;
+            let ended = follow(
+                &session,
+                &asked,
+                "parse_task_response",
+                Step {
+                    call,
+                    inputs,
+                    capability: request.capability,
+                    cancel,
+                    kind: Kind::TaskCreate,
+                    run: run.as_ref(),
+                },
+            )
+            .await?;
+            if let Some(error) = ended.reply.get("error").and_then(Value::as_str) {
+                return Err(ProviderError::Rejected(error.to_string()));
+            }
+            let reference = ended
+                .reply
+                .get("reference")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|reference| !reference.is_empty())
+                .ok_or_else(|| {
+                    ProviderError::NoOutput("no task reference in response".to_string())
+                })?
+                .to_string();
 
-        Ok(AsyncTask {
-            id: crate::domain::new_id(),
-            reference,
-            protocol: call.protocol.clone(),
-            // The capability the request came in on, not the one this adapter
-            // was written for: polling resolves the model configuration again,
-            // and a handle filed under the wrong category would be answered by
-            // whatever model that category happens to hold.
-            capability: request.capability,
-            model: call.config_id.clone(),
-            scene: call.scene,
-            created_at: crate::domain::now_iso(),
-            answer: None,
-        })
+            Ok(AsyncTask {
+                id: crate::domain::new_id(),
+                reference,
+                protocol: call.protocol.clone(),
+                // The capability the request came in on, not the one this adapter
+                // was written for: polling resolves the model configuration again,
+                // and a handle filed under the wrong category would be answered by
+                // whatever model that category happens to hold.
+                capability: request.capability,
+                model: call.config_id.clone(),
+                scene: call.scene,
+                created_at: crate::domain::now_iso(),
+                answer: None,
+            })
+        }
+        .await;
+        match outcome {
+            Ok(task) => {
+                // The job's calls are written now rather than when it finishes:
+                // a shot takes minutes, and a process that stops in between has
+                // left the create behind for the terminal poll to join.
+                debug::task_started(run, &task);
+                Ok(task)
+            }
+            Err(error) => {
+                debug::finish(run, debug::Outcome::Err(&error));
+                Err(error)
+            }
+        }
     }
 
     async fn poll_task(
@@ -294,106 +340,116 @@ impl ProviderAdapter for LuaAdapter {
             };
             return answer.result().map(TaskState::Succeeded);
         }
-        let task_json = serde_json::json!({
-            "id": task.id,
-            "reference": task.reference,
-        });
-        let asked = session.call("build_poll_request", vec![call_json(call), task_json])?;
-        // No inputs: a poll describes a request about a job rather than one
-        // carrying media, so a script that asks for a file part here is told
-        // the request carried none.
-        let ended = follow(
-            &session,
-            &asked,
-            "parse_poll_response",
-            Step {
-                call,
-                inputs: &[],
-                capability: task.capability,
-                cancel,
-                kind: Kind::TaskPoll,
-            },
-        )
-        .await?;
-
-        if ended.gone {
-            return Err(ProviderError::TaskExpired {
-                task: task.id.clone(),
+        let run = debug::resume(Kind::TaskPoll, call, task.capability, task);
+        let outcome = async {
+            let task_json = serde_json::json!({
+                "id": task.id,
+                "reference": task.reference,
             });
-        }
+            let asked = session.call("build_poll_request", vec![call_json(call), task_json])?;
+            // No inputs: a poll describes a request about a job rather than one
+            // carrying media, so a script that asks for a file part here is told
+            // the request carried none.
+            let ended = follow(
+                &session,
+                &asked,
+                "parse_poll_response",
+                Step {
+                    call,
+                    inputs: &[],
+                    capability: task.capability,
+                    cancel,
+                    kind: Kind::TaskPoll,
+                    run: run.as_ref(),
+                },
+            )
+            .await?;
 
-        if let Some(error) = ended.reply.get("error").and_then(Value::as_str) {
+            if ended.gone {
+                return Err(ProviderError::TaskExpired {
+                    task: task.id.clone(),
+                });
+            }
+
+            if let Some(error) = ended.reply.get("error").and_then(Value::as_str) {
+                match ended.reply.get("status").and_then(Value::as_str) {
+                    Some("expired") => {
+                        return Err(ProviderError::TaskExpired {
+                            task: task.id.clone(),
+                        })
+                    }
+                    // A job that ran and ended badly is not a failed look: it is
+                    // what the job did, and a client reading it is owed the
+                    // provider's own words and whether waiting would help.
+                    Some("failed") => {
+                        return Ok(TaskState::Failed {
+                            message: error.to_string(),
+                            retryable: ended
+                                .reply
+                                .get("retryable")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false),
+                        })
+                    }
+                    _ => return Err(ProviderError::Rejected(error.to_string())),
+                }
+            }
+
             match ended.reply.get("status").and_then(Value::as_str) {
-                Some("expired") => {
-                    return Err(ProviderError::TaskExpired {
-                        task: task.id.clone(),
+                Some("succeeded") => {
+                    let result = ended.reply.get("result");
+                    let mut items = Vec::new();
+                    if let Some(list) = result.and_then(|result| result.get("items")) {
+                        items = items_of(
+                            list,
+                            &ended.body,
+                            call,
+                            task.capability,
+                            &session.entry.auth,
+                            run.as_ref(),
+                        )
+                        .await?;
+                    }
+                    // Words travel the same way media does. A job that answers with
+                    // them — a transcript, the point of a recognition job — has
+                    // nothing to download and everything to say.
+                    let text = text_of(result)?;
+                    Ok(TaskState::Succeeded(GenerateResult {
+                        text,
+                        items,
+                        usage: usage_of(result.and_then(|result| result.get("usage"))),
+                        ..GenerateResult::default()
+                    }))
+                }
+                Some("pending") | None => {
+                    let interval_ms = ended
+                        .reply
+                        .get("poll_interval_ms")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(15000);
+                    Ok(TaskState::Pending {
+                        retry_after_ms: interval_ms,
                     })
                 }
-                // A job that ran and ended badly is not a failed look: it is
-                // what the job did, and a client reading it is owed the
-                // provider's own words and whether waiting would help.
-                Some("failed") => {
-                    return Ok(TaskState::Failed {
-                        message: error.to_string(),
-                        retryable: ended
-                            .reply
-                            .get("retryable")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                    })
-                }
-                _ => return Err(ProviderError::Rejected(error.to_string())),
+                Some("failed") => Ok(TaskState::Failed {
+                    message: ended
+                        .reply
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("the job failed without saying why")
+                        .to_string(),
+                    retryable: false,
+                }),
+                Some(other) => Err(ProviderError::Rejected(format!(
+                    "unexpected status: {other}"
+                ))),
             }
         }
-
-        match ended.reply.get("status").and_then(Value::as_str) {
-            Some("succeeded") => {
-                let result = ended.reply.get("result");
-                let mut items = Vec::new();
-                if let Some(list) = result.and_then(|result| result.get("items")) {
-                    items = items_of(
-                        list,
-                        &ended.body,
-                        call,
-                        task.capability,
-                        &session.entry.auth,
-                    )
-                    .await?;
-                }
-                // Words travel the same way media does. A job that answers with
-                // them — a transcript, the point of a recognition job — has
-                // nothing to download and everything to say.
-                let text = text_of(result)?;
-                Ok(TaskState::Succeeded(GenerateResult {
-                    text,
-                    items,
-                    usage: usage_of(result.and_then(|result| result.get("usage"))),
-                    ..GenerateResult::default()
-                }))
-            }
-            Some("pending") | None => {
-                let interval_ms = ended
-                    .reply
-                    .get("poll_interval_ms")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(15000);
-                Ok(TaskState::Pending {
-                    retry_after_ms: interval_ms,
-                })
-            }
-            Some("failed") => Ok(TaskState::Failed {
-                message: ended
-                    .reply
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .unwrap_or("the job failed without saying why")
-                    .to_string(),
-                retryable: false,
-            }),
-            Some(other) => Err(ProviderError::Rejected(format!(
-                "unexpected status: {other}"
-            ))),
-        }
+        .await;
+        // A job still running writes nothing: a poll carries no prompt and no
+        // answer, and a directory per look would bury the one that mattered.
+        debug::settle_poll(run, &outcome);
+        outcome
     }
 }
 
@@ -588,6 +644,7 @@ async fn follow(
             request_builder,
             left,
             step.call.budgets.max_response_bytes,
+            step.run,
         )
         .await?;
         // A status the provider refused is the host's to explain, unless the
@@ -672,6 +729,8 @@ struct Step<'a> {
     capability: Capability,
     cancel: &'a Cancel,
     kind: Kind,
+    /// The run this step's exchanges belong to, when one is being recorded.
+    run: Option<&'a debug::Run>,
 }
 
 /// Whether a request description asks for the answer even when the provider
@@ -768,12 +827,23 @@ async fn result_of(
     ended: &Ended,
     call: &ModelCall,
     capability: Capability,
+    run: Option<&debug::Run>,
 ) -> Result<GenerateResult, ProviderError> {
     if let Some(error) = ended.reply.get("error").and_then(Value::as_str) {
         return Err(ProviderError::Rejected(error.to_string()));
     }
     let items = match ended.reply.get("items") {
-        Some(list) => items_of(list, &ended.body, call, capability, &session.entry.auth).await?,
+        Some(list) => {
+            items_of(
+                list,
+                &ended.body,
+                call,
+                capability,
+                &session.entry.auth,
+                run,
+            )
+            .await?
+        }
         None => Vec::new(),
     };
     Ok(GenerateResult {
@@ -801,6 +871,7 @@ async fn items_of(
     call: &ModelCall,
     capability: Capability,
     auth: &AuthSpec,
+    run: Option<&debug::Run>,
 ) -> Result<Vec<GeneratedItem>, ProviderError> {
     let specs = match list.as_array() {
         Some(specs) => specs,
@@ -817,7 +888,7 @@ async fn items_of(
     };
     let mut items = Vec::with_capacity(specs.len());
     for spec in specs {
-        items.push(item_of(spec, body, call, capability, auth).await?);
+        items.push(item_of(spec, body, call, capability, auth, run).await?);
     }
     Ok(items)
 }
@@ -828,6 +899,7 @@ async fn item_of(
     call: &ModelCall,
     capability: Capability,
     auth: &AuthSpec,
+    run: Option<&debug::Run>,
 ) -> Result<GeneratedItem, ProviderError> {
     let claimed = spec.get("mime").and_then(Value::as_str);
     if let Some(address) = spec.get("url").and_then(Value::as_str) {
@@ -840,6 +912,7 @@ async fn item_of(
             call.described_with("GET", address, auth)?,
             call.budgets.timeout_for(capability),
             call.budgets.max_response_bytes,
+            run,
         )
         .await?;
         if !succeeded(reply.status) {

@@ -321,6 +321,10 @@ impl Gateway {
     /// note that outlived the request which started it.
     async fn settled(&self, session: &Arc<FsProjectStore>, task: &str) {
         self.tasks.forget(task);
+        // A recording is bound to the job while the job can still answer; a
+        // handle nobody will poll again is one whose prompt need not stay in
+        // memory with it.
+        super::debug::forget(task);
         if let Err(error) = session.drop_job(task).await {
             tracing::warn!("job {task}: the note of it could not be dropped: {error}");
         }

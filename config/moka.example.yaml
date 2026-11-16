@@ -72,10 +72,13 @@ generate:
   # Looks at a job a provider is still running before the step waiting on it
   # gives up: five minutes at the interval the executor polls at.
   videoMaxPolls: 120
-  # Writes down every call that reaches a provider — the address, the headers,
-  # the prompt and the whole answer — as files, for diagnosing an answer that
-  # arrived and was the wrong thing. Off unless switched on, and not a setting to
-  # leave on: what lands on the disk is the prompt somebody typed. Turned on
+  # Writes down every generation that reaches a provider as a directory a person
+  # can read afterwards: the prompt, the parameters, the reference pictures and
+  # sounds as real files, the text and tool calls that came back, and the
+  # pictures, sounds and films it made. Raw binary bodies are not written, a
+  # job's pending polls leave nothing behind, and an SSE stream keeps its raw
+  # events beside the reading of them. Off unless switched on, and not a setting
+  # to leave on: what lands on the disk is the prompt somebody typed. Turned on
   # three ways, in descending order of precedence: the --llm-debug flag, the
   # environment (MOKA_LLM_DEBUG=1), or here. Recordings always go to the
   # "records" subdirectory of the platform application data directory, and a

@@ -37,11 +37,12 @@ struct Args {
     /// starting the server.
     #[arg(long)]
     generate_key: bool,
-    /// Records every call that reaches a provider — the address, the headers, the
-    /// prompt and the whole answer — for diagnosing an answer that arrived and
-    /// was the wrong thing. Recordings always go to the `records` subdirectory
-    /// of the platform application data directory, and credentials in them are
-    /// always masked.
+    /// Records every generation that reaches a provider as a directory a person
+    /// can read afterwards: the prompt, the parameters, the reference media as
+    /// real files, and the words, tool calls and media that came back. Pending
+    /// polls and raw binary bodies are not written. Recordings always go to the
+    /// `records` subdirectory of the platform application data directory, and
+    /// credentials in them are always masked.
     ///
     /// This writes prompts to the disk. See docs/security.md.
     #[arg(long)]

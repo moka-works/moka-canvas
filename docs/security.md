@@ -140,27 +140,42 @@ watches in a terminal, to the console beside it; the desktop app writes to the
 file alone. What protects them is the shape of the line, not the place it lands.
 
 There is one exception, and it is explicit rather than implied:
-`generate.debug.enabled`. Switched on, every call that reaches a provider is
-written to a directory as the request and the answer that came back — address,
-headers, prompt, reference media and body, whole and untruncated. It exists
-because an answer that arrived and was the wrong thing cannot be diagnosed from a
-line saying the call took nine seconds: the only evidence of what was asked and
-what came back was in the two bodies, and both were dropped the moment the call
-returned.
+`generate.debug.enabled`. Switched on, every generation that reaches a provider
+is written to a directory of its own — named for when it happened and which
+model answered it — with the words that were asked and the answer that came
+back, in a form a person can read. It exists because an answer that arrived and
+was the wrong thing cannot be diagnosed from a line saying the call took nine
+seconds.
 
-It is off by default and it is not a setting to leave on. What it writes:
+It is off by default and it is not a setting to leave on. One directory holds:
 
-- **Prompts.** Everything a reader typed, and everything a card on their canvas
-  said, in full. A recording directory is a copy of the work that went through
-  it.
+- **The request.** `request.json` carries the capability, the model, the prompt,
+  the conversation, the parameters, and every reference the request carried.
+  Each reference is also written as a real picture, sound, or film named for
+  the asset it came from, rather than encoded into a document nobody can read.
+- **The exchanges.** `calls.jsonl` holds one line per HTTP call worth reading:
+  the address with its credential masked, the status, how long it took, and the
+  request and answer bodies as text. Media inside a body is lifted into a file
+  and replaced by a pointer. A job's pending polls carry nothing a person can
+  use and are not written; the poll that ended the job is.
+- **The answer.** `response.json` holds the outcome, totals, finish reason, tool
+  calls, and the media items; `response.txt` holds the words. Pictures, sounds,
+  and films are written as `response-<n>.<ext>`.
+- **A stream.** `response.sse.txt` keeps the raw events beside the reading of
+  them, because the interesting failure is the one where the two disagree;
+  `response-thinking.txt` holds what could be lifted out of them as reasoning,
+  and `response-tools.json` the calls the model made.
 - **Credentials, masked.** Masking is not a setting and cannot be turned off:
   the header that carries a key is masked with the same `masked` form every
   other diagnostic surface uses, a key in a query parameter is masked, and any
   echo of the key inside a body is replaced. What remains says which key was
   used, which is the half of it a diagnosis needs, and never the key itself.
-- **Media.** A body that is not text — a picture, a sound, a video — is written
-  beside the record as a `.bin` file of its own and pointed at from it, rather
-  than encoded into a document nobody can read.
+
+A recording is for a person rather than for replay: raw binary bodies are not
+written, a poll that carries no prompt and no answer leaves nothing behind, and
+everything that is written can be opened and read. `index.jsonl` at the root of
+the records directory lists when each generation started and finished, so that
+the right directory can be found without opening them all.
 
 The protections that apply:
 

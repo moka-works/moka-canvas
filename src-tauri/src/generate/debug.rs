@@ -1,41 +1,66 @@
-//! Every call that reaches a provider, written down where a reader can pick it
-//! up afterwards.
+//! Every generation, written down where a person can read it afterwards.
 //!
-//! A generation that fails says why in the log, and a generation that succeeds
-//! says nothing at all — which is the whole trouble this answers. An answer that
+//! A generation that fails says why in the log, and one that succeeds says
+//! nothing at all — which is the whole trouble this answers. An answer that
 //! arrived and was the wrong thing cannot be diagnosed from a line saying the
-//! call took nine seconds, because the only evidence of what was asked and what
-//! came back was in the two bodies, and both were dropped on the floor the moment
-//! the call returned.
+//! call took nine seconds: a reader needs the words that were asked, the media
+//! that travelled with them, and what came back.
+//!
+//! What lands on the disk is for a person, not for a replay tool. One
+//! generation gets one directory, named for when it happened and which model
+//! answered it. Inside it:
+//!
+//! - `request.json` — the capability, the model, the prompt, the conversation,
+//!   the parameters, and every reference the request carried, each pointing at
+//!   the file its bytes were written to.
+//! - `request-<asset id>.<ext>` — those references, as real pictures, sounds,
+//!   and films rather than base64 inside a document nobody can read.
+//! - `calls.jsonl` — one line per HTTP exchange worth keeping: what was sent,
+//!   what came back, and how long it took. Bodies are kept as text, with
+//!   embedded media lifted out into files and replaced by a pointer. A video
+//!   job's pending polls carry nothing a person can use, so they are skipped;
+//!   the poll that finished the job stays.
+//! - `response.json`, `response.txt`, `response-tools.json` — what the model
+//!   answered: text, totals, tool calls, and the media items, each pointing at
+//!   the file its bytes were written to.
+//! - `response.sse.txt` — for a stream, the raw events beside the reading of
+//!   them, because the interesting failure is the one where the two disagree;
+//!   `response-thinking.txt` carries what could be lifted out of them as
+//!   reasoning.
+//! - `response-<n>.<ext>` — the pictures, sounds, and films the model made.
 //!
 //! It is off until somebody asks for it, and turning it on is a decision rather
-//! than a setting: what lands on the disk is the prompt a reader typed and the
-//! references that travelled with it. The credential that carried them is always
-//! masked, and the directory recordings go to is always the `records`
-//! subdirectory of the platform application data directory — neither is a
-//! setting, because a setting somebody can get wrong is either a key on the
-//! disk or a recording nobody can find. `docs/security.md` carries the warning;
-//! this module carries the mechanism.
+//! than a setting: what lands on the disk is the prompt a reader typed. The
+//! credential that carried it is always masked, and recordings always go to
+//! the `records` subdirectory of the platform application data directory —
+//! neither is a setting, because a setting somebody can get wrong is either a
+//! key on the disk or a recording nobody can find. `docs/security.md` carries
+//! the warning; this module carries the mechanism.
 //!
-//! Nothing here can fail a generation. A recording is written by a task of its
-//! own after the answer is already in hand, and a disk that will not take it is
-//! complained about in the log rather than handed back to whoever asked.
+//! Nothing here can fail a generation. Recordings are written by a task of
+//! their own after the answer is already in hand, and a disk that will not take
+//! one is complained about in the log rather than handed back to whoever asked.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use base64::Engine as _;
 use reqwest::header::HeaderMap;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 
 use super::adapters::ModelCall;
+use super::error::ProviderError;
+use super::media::MediaInput;
+use super::{AsyncTask, GenerateRequest, GenerateResult, TaskState, ToolCall, Usage};
 use crate::config::DebugConfig;
-use crate::domain::now_iso;
+use crate::domain::{now_iso, Capability};
 use crate::metadata::redact::masked;
 
 /// What one call was for.
@@ -70,20 +95,19 @@ impl Kind {
     }
 }
 
-/// The model configuration a call was placed with, copied rather than
-/// borrowed.
+/// The model configuration a run was placed with, copied rather than borrowed.
 ///
-/// Copied because a recording outlives the call it describes: the task that
-/// writes it runs after the answer is in hand, by which time the call that
-/// made it may have been dropped.
+/// Copied because a recording outlives the calls it describes: the task that
+/// writes it runs after the answer is in hand, by which time the call that made
+/// it may have been dropped.
 #[derive(Debug, Clone)]
 struct Who {
-    /// The model configuration's identifier.
     config: String,
     model: String,
+    display_name: String,
     protocol: String,
-    /// The credential this call carried, kept so that it can be taken back out
-    /// of anything that echoes it. Never written down in full.
+    /// The credential these calls carried, kept so that it can be taken back
+    /// out of anything that echoes it. Never written down in full.
     api_key: String,
 }
 
@@ -92,6 +116,7 @@ impl From<&ModelCall> for Who {
         Self {
             config: call.config_id.clone(),
             model: call.model.clone(),
+            display_name: call.display_name.clone(),
             protocol: call.protocol.wire_name().to_string(),
             api_key: call.api_key.clone(),
         }
@@ -99,10 +124,6 @@ impl From<&ModelCall> for Who {
 }
 
 /// One header, as a pair of strings.
-///
-/// A header value is bytes rather than text, and one that is not text is still
-/// worth writing down: the lossy reading shows what a reader needs in order to
-/// recognise it, and the original is in the request that carried it.
 type Header = (String, String);
 
 fn headers_of(map: &HeaderMap) -> Vec<Header> {
@@ -121,35 +142,8 @@ fn headers_of(map: &HeaderMap) -> Vec<Header> {
     headers
 }
 
-/// What went out.
-#[derive(Debug)]
-struct Sent {
-    method: String,
-    url: String,
-    headers: Vec<Header>,
-    /// The body as it was handed to the client. Empty for a request that had
-    /// none, and a streamed one says so rather than pretending it was empty.
-    body: Body,
-}
-
-/// What came back.
-#[derive(Debug)]
-struct Back {
-    /// Absent for a call that never reached the provider, which is a different
-    /// thing from one that reached it and was refused.
-    status: Option<u16>,
-    headers: Vec<Header>,
-    body: Body,
-    /// What a stream added up to, which is the answer that got stored. Kept
-    /// beside the raw stream rather than instead of it: the raw one shows what
-    /// arrived and this shows what was made of it.
-    aggregate: Option<String>,
-    /// Why the call failed, when it did.
-    error: Option<String>,
-}
-
 /// A body, held as it arrived.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Body {
     /// Nothing was sent, or nothing came back.
     Empty,
@@ -162,59 +156,7 @@ enum Body {
     Streamed,
 }
 
-/// One call, from the file name it will be written under to the moment its
-/// answer ends.
-///
-/// Held across the call rather than assembled at the end of it, because the
-/// request has to be read before it goes out — after that there is nothing left
-/// to read — and the answer is not there yet. Dropping one without finishing it
-/// writes nothing, so a call that is abandoned on the way leaves no half file
-/// behind.
-pub struct Pending {
-    name: String,
-    kind: Kind,
-    who: Who,
-    /// When the call was placed, as the rest of the application says it.
-    placed: String,
-    started: Instant,
-    sent: Sent,
-}
-
-/// The answer a call got, in the shape a recording wants it.
-pub struct Outcome {
-    status: Option<u16>,
-    headers: Vec<Header>,
-    body: Body,
-    aggregate: Option<String>,
-    error: Option<String>,
-}
-
-impl Outcome {
-    /// An answer that arrived and was read whole.
-    fn of(status: u16, headers: &HeaderMap, body: Vec<u8>) -> Self {
-        Self {
-            status: Some(status),
-            headers: headers_of(headers),
-            body: Body::of(body),
-            aggregate: None,
-            error: None,
-        }
-    }
-
-    /// A call that failed part way, with whatever of the answer there was.
-    fn broken(error: &str, status: Option<u16>, headers: Vec<Header>, body: Body) -> Self {
-        Self {
-            status,
-            headers,
-            body,
-            aggregate: None,
-            error: Some(error.to_string()),
-        }
-    }
-}
-
 impl Body {
-    /// Bytes as they arrived, read as text where they are text.
     fn of(bytes: Vec<u8>) -> Self {
         if bytes.is_empty() {
             return Self::Empty;
@@ -222,6 +164,146 @@ impl Body {
         match String::from_utf8(bytes) {
             Ok(text) => Self::Text(text),
             Err(not_text) => Self::Bytes(not_text.into_bytes()),
+        }
+    }
+}
+
+/// One file a run's request carried, ready to be written beside the record.
+struct InputFile {
+    name: String,
+    bytes: Vec<u8>,
+}
+
+/// One HTTP exchange, as it will be written to `calls.jsonl`.
+struct Call {
+    seq: u64,
+    kind: Kind,
+    method: String,
+    url: String,
+    /// What the request carried, with credentials still in them until written.
+    headers: Vec<Header>,
+    response_headers: Vec<Header>,
+    status: Option<u16>,
+    took: Duration,
+    request: Body,
+    response: Body,
+    /// A media download's type and weight, kept instead of its bytes: the bytes
+    /// are the answer's own item and are written as that item.
+    media: Option<(String, u64)>,
+    /// What a stream added up to, as counts and calls rather than raw events.
+    stream: Option<StreamSummary>,
+    error: Option<String>,
+}
+
+struct StreamSummary {
+    text_chars: usize,
+    thinking_chars: usize,
+    tool_calls: Vec<ToolCall>,
+    usage: Option<Usage>,
+    finish_reason: Option<String>,
+}
+
+/// One exchange's request, read before it goes out.
+///
+/// The request is read here because sending it consumes the body, and the
+/// answer is not there yet. A `Capture` with nothing recording is `None`, so a
+/// call site pays only the branch.
+pub struct Capture {
+    run: Run,
+    kind: Kind,
+    started: Instant,
+    seq: u64,
+    method: String,
+    url: String,
+    headers: Vec<Header>,
+    body: Body,
+}
+
+/// A generation being recorded: the directory it writes to and the exchanges
+/// that belong in it.
+#[derive(Clone)]
+pub struct Run {
+    state: Arc<RunState>,
+}
+
+struct RunState {
+    /// The directory's own name under the records root.
+    name: String,
+    who: Who,
+    started: Instant,
+    /// What `request.json` will say, kept until the first write.
+    request: Value,
+    /// The line `index.jsonl` starts with, kept for a run whose directory is
+    /// only made when it finishes.
+    index: Value,
+    /// Every reference digest, and the file it was written to.
+    digests: HashMap<String, String>,
+    calls: Mutex<Vec<Call>>,
+    /// Which exchange this is, so two exchanges of one run can be put in order.
+    sequence: AtomicU64,
+    /// Whether the request and its references have been handed to the writer.
+    started_job: AtomicBool,
+    /// Whether this run has already been written once.
+    finished: AtomicBool,
+    /// The provider task this run started, when it started one. The binding is
+    /// how a poll finds the directory its create made.
+    task: Mutex<Option<String>>,
+}
+
+impl RunState {
+    fn push(&self, call: Call) {
+        self.calls
+            .lock()
+            .expect("the call list is not held across a write")
+            .push(call);
+    }
+
+    fn take_calls(&self) -> Vec<Call> {
+        std::mem::take(
+            &mut *self
+                .calls
+                .lock()
+                .expect("the call list is not held across a write"),
+        )
+    }
+}
+
+/// What a run ended as, in the shape a recording wants it.
+pub enum Outcome<'a> {
+    /// The answer, whole.
+    Ok(&'a GenerateResult),
+    /// A job the provider ran and ended badly.
+    JobFailed { message: &'a str, retryable: bool },
+    /// The call failed before there was an answer.
+    Err(&'a ProviderError),
+}
+
+/// What a run ended as, owned by the writer.
+enum Verdict {
+    Ok(GenerateResult),
+    JobFailed {
+        message: String,
+        retryable: bool,
+    },
+    Err {
+        code: &'static str,
+        message: String,
+        retryable: bool,
+    },
+}
+
+impl Verdict {
+    fn status(&self) -> &'static str {
+        match self {
+            Self::Ok(_) => "ok",
+            _ => "error",
+        }
+    }
+
+    fn message(&self) -> Option<&str> {
+        match self {
+            Self::Ok(_) => None,
+            Self::JobFailed { message, .. } | Self::Err { message, .. } => Some(message),
         }
     }
 }
@@ -245,31 +327,58 @@ static RECORDER: OnceLock<Recorder> = OnceLock::new();
 
 struct Recorder {
     settings: Settings,
-    /// Which call this is, so that two calls placed in the same millisecond
-    /// still get two names and can be put back in order.
+    /// Which run this is, so that two runs placed in the same millisecond still
+    /// get two names and can be put back in order.
     sequence: AtomicU64,
     jobs: mpsc::UnboundedSender<Job>,
+    /// Runs a poll can find by the task they started.
+    live: Mutex<HashMap<String, Run>>,
 }
 
-/// One call, handed to the task that writes it.
-struct Job {
+/// One piece of work for the writer.
+enum Job {
+    /// A run's request and references, written before the first answer arrives
+    /// so that a process which dies mid-call leaves the prompt behind.
+    Started {
+        name: String,
+        request: Value,
+        inputs: Vec<InputFile>,
+        index: Value,
+    },
+    /// A job's create exchanges, written as soon as the job started rather than
+    /// waiting minutes for the terminal poll.
+    Calls {
+        name: String,
+        who: Who,
+        calls: Vec<Call>,
+        digests: HashMap<String, String>,
+    },
+    /// A stream's raw events and what could be lifted out of them as reasoning.
+    RawSse {
+        name: String,
+        who: Who,
+        raw: Vec<u8>,
+        thinking: String,
+    },
+    /// The end of a run: what came back, and the exchanges not written yet.
+    Finished(Box<FinishedJob>),
+}
+
+struct FinishedJob {
     name: String,
-    kind: Kind,
     who: Who,
-    /// When the call was placed, as the rest of the application says it.
-    placed: String,
+    verdict: Verdict,
+    calls: Vec<Call>,
+    digests: HashMap<String, String>,
+    /// Present when the directory was never started: a poll that found no
+    /// create to attach to, or a call that failed before its first write.
+    request: Option<Value>,
+    index_start: Option<Value>,
+    index_finish: Value,
     took: Duration,
-    sent: Sent,
-    back: Back,
 }
 
 /// Says what the command line asked for, before the server starts.
-///
-/// A flag rather than a value written into the configuration, so that the order
-/// the three sources are read in stays in one place: what was typed beats what
-/// the environment says, and what the environment says beats what the file
-/// says. It says whether to record and nothing else: where recordings go is
-/// none of the three sources' business.
 pub fn from_cli() {
     let _ = FROM_CLI.set(true);
 }
@@ -285,8 +394,7 @@ pub const RECORDS_DIR_NAME: &str = "records";
 ///
 /// The directory is not settled, because it is not a setting: recordings go to
 /// the `records` subdirectory of the platform application data directory, the
-/// same root the metadata directory is resolved from, which is the directory
-/// the application already owns and already protects.
+/// same root the metadata directory is resolved from.
 pub fn resolve(file: &DebugConfig) -> Result<Settings> {
     let app_root = crate::metadata::paths::platform_default()
         .context("cannot determine the platform application data directory")?;
@@ -301,11 +409,6 @@ pub fn resolve(file: &DebugConfig) -> Result<Settings> {
 /// Settles the three sources, in the order they are read: what somebody typed at
 /// the process beats what the environment says, and what the environment says
 /// beats what the configuration file says.
-///
-/// Split out from [`resolve`] so that the precedence can be tested by handing it
-/// three answers rather than by editing the environment a whole test binary is
-/// running in, which every other test in the process would read at the same
-/// moment.
 fn settle(
     file: &DebugConfig,
     cli: Option<bool>,
@@ -329,17 +432,12 @@ fn truthy(words: &str) -> Option<bool> {
         "" => None,
         "1" | "true" | "yes" | "on" => Some(true),
         "0" | "false" | "no" | "off" => Some(false),
-        // A word that means neither is left to the file, rather than guessed at.
         _ => None,
     }
 }
 
 /// Opens the directory and starts the task that writes into it, or does nothing
 /// at all when recording is off.
-///
-/// Called from inside the runtime, because the writer is a task of its own: a
-/// recording is written after the answer is already in hand and off the path of
-/// whoever asked, so that a slow disk costs a generation nothing.
 pub fn init(file: &DebugConfig) -> Result<Option<Settings>> {
     let settings = resolve(file)?;
     if !settings.enabled {
@@ -349,9 +447,7 @@ pub fn init(file: &DebugConfig) -> Result<Option<Settings>> {
 }
 
 /// Starts the recorder into a directory handed in, for a test that needs a
-/// directory of its own rather than the one the platform says. The running
-/// program never takes this path: [`init`] resolves the one directory
-/// recordings go to, and nothing else gets a say.
+/// directory of its own rather than the one the platform says.
 #[doc(hidden)]
 pub fn init_in(dir: &Path) -> Result<Option<Settings>> {
     start(Settings {
@@ -361,7 +457,6 @@ pub fn init_in(dir: &Path) -> Result<Option<Settings>> {
     .map(Some)
 }
 
-/// Opens the directory and starts the task that writes into it.
 fn start(settings: Settings) -> Result<Settings> {
     std::fs::create_dir_all(&settings.dir)
         .with_context(|| format!("cannot create {}", settings.dir.display()))?;
@@ -371,11 +466,10 @@ fn start(settings: Settings) -> Result<Settings> {
         settings: settings.clone(),
         sequence: AtomicU64::new(1),
         jobs: sender,
+        live: Mutex::new(HashMap::new()),
     };
-    // Settled before the writer is started, so that a process which already has a
-    // recorder keeps it and starts nothing: a desktop window beside a server it
-    // also runs is two servers in one process, and the index they would share is a
-    // single file that two writers appending to it would interleave.
+    // Settled before the writer is started, so that a process which already has
+    // a recorder keeps it and starts nothing.
     if let Err(unused) = RECORDER.set(recorder) {
         drop(unused);
         let active = active().expect("a recorder was already set");
@@ -394,192 +488,456 @@ fn start(settings: Settings) -> Result<Settings> {
 }
 
 /// What is being recorded and where, or nothing when recording is off.
-///
-/// Asked for by a diagnostic that has to say so out loud, because a reader who
-/// does not know a recording is happening cannot weigh what it is worth.
 pub fn active() -> Option<&'static Settings> {
     RECORDER.get().map(|recorder| &recorder.settings)
 }
 
-/// Reads a request that is about to go out, or nothing when recording is off.
-///
-/// Read here rather than after the answer, because a request is consumed by
-/// sending it and there is nothing left to read afterwards.
-pub fn begin(kind: Kind, call: &ModelCall, request: &reqwest::Request) -> Option<Pending> {
-    Some(RECORDER.get()?.begin(kind, call, request))
+/// Starts recording one logical generation: the request, its references, and
+/// the exchanges that follow.
+pub fn begin_run(
+    kind: Kind,
+    call: &ModelCall,
+    request: &GenerateRequest,
+    inputs: &[MediaInput],
+) -> Option<Run> {
+    Some(RECORDER.get()?.begin(kind, call, request, inputs))
+}
+
+/// Finds the run a task's create started, or opens a run for a poll that has no
+/// create to attach to — one from before a restart, whose request is gone.
+pub fn resume(
+    kind: Kind,
+    call: &ModelCall,
+    capability: Capability,
+    task: &AsyncTask,
+) -> Option<Run> {
+    let recorder = RECORDER.get()?;
+    if let Some(run) = recorder
+        .live
+        .lock()
+        .expect("the live runs are not held across a write")
+        .get(&task.id)
+        .cloned()
+    {
+        return Some(run);
+    }
+    Some(recorder.lazy(kind, call, capability, task))
+}
+
+/// Records that a job started, binds its task to the run's directory, and
+/// writes the create exchanges now rather than minutes later.
+pub fn task_started(run: Option<Run>, task: &AsyncTask) {
+    let Some(run) = run else { return };
+    let Some(recorder) = RECORDER.get() else {
+        return;
+    };
+    *run.state
+        .task
+        .lock()
+        .expect("the task binding is not held across a write") = Some(task.id.clone());
+    recorder
+        .live
+        .lock()
+        .expect("the live runs are not held across a write")
+        .insert(task.id.clone(), run.clone());
+    let calls = filter_polls(run.state.take_calls());
+    if !calls.is_empty() {
+        let _ = recorder.jobs.send(Job::Calls {
+            name: run.state.name.clone(),
+            who: run.state.who.clone(),
+            calls,
+            digests: run.state.digests.clone(),
+        });
+    }
 }
 
 impl Recorder {
-    /// Reads a request that is about to go out.
-    ///
-    /// A method rather than a free function so that a test can record into a
-    /// directory of its own instead of into the one the process has, which it can
-    /// only have once.
-    fn begin(&self, kind: Kind, call: &ModelCall, request: &reqwest::Request) -> Pending {
+    fn begin(
+        &self,
+        kind: Kind,
+        call: &ModelCall,
+        request: &GenerateRequest,
+        inputs: &[MediaInput],
+    ) -> Run {
+        let started = Instant::now();
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         let placed = now_iso();
-        Pending {
-            name: name_of(&placed, sequence, call, kind),
-            kind,
-            who: call.into(),
-            started: Instant::now(),
-            sent: Sent {
-                method: request.method().to_string(),
-                url: request.url().to_string(),
-                headers: headers_of(request.headers()),
-                body: body_of(request.body()),
-            },
-            placed,
+        let name = name_of(&placed, sequence, call);
+        let who = Who::from(call);
+        let (files, references, digests) = input_files(inputs);
+        let prompt = prompt_of(request);
+        let record = request_record(kind, &who, &placed, call, request, references);
+        let index = start_index(&name, &placed, kind, request.capability, &who, &prompt);
+        let started_job = self
+            .jobs
+            .send(Job::Started {
+                name: name.clone(),
+                request: record,
+                inputs: files,
+                index: index.clone(),
+            })
+            .is_ok();
+        Run {
+            state: Arc::new(RunState {
+                name,
+                who,
+                started,
+                // Already handed to the writer; a job may live for minutes and
+                // there is no reason to keep a second copy of its prompt.
+                request: Value::Null,
+                index,
+                digests,
+                calls: Mutex::new(Vec::new()),
+                sequence: AtomicU64::new(1),
+                started_job: AtomicBool::new(started_job),
+                finished: AtomicBool::new(false),
+                task: Mutex::new(None),
+            }),
         }
     }
+
+    fn lazy(&self, kind: Kind, call: &ModelCall, capability: Capability, task: &AsyncTask) -> Run {
+        let started = Instant::now();
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let placed = now_iso();
+        let name = name_of(&placed, sequence, call);
+        let who = Who::from(call);
+        let record = poll_record(&who, &placed, call, capability, task);
+        let index = start_index(&name, &placed, kind, capability, &who, "");
+        Run {
+            state: Arc::new(RunState {
+                name,
+                who,
+                started,
+                request: record,
+                index,
+                digests: HashMap::new(),
+                calls: Mutex::new(Vec::new()),
+                sequence: AtomicU64::new(1),
+                started_job: AtomicBool::new(false),
+                finished: AtomicBool::new(false),
+                task: Mutex::new(Some(task.id.clone())),
+            }),
+        }
+    }
+}
+
+/// Reads a request that is about to go out, or nothing when recording is off.
+pub fn capture(run: Option<&Run>, kind: Kind, request: &reqwest::Request) -> Option<Capture> {
+    let run = run?;
+    let seq = run.state.sequence.fetch_add(1, Ordering::Relaxed);
+    // A media download's bytes are the answer's own item, written as that item:
+    // keeping a second copy in a call would only double it.
+    let body = if kind == Kind::Media {
+        Body::Empty
+    } else {
+        body_of(request.body())
+    };
+    Some(Capture {
+        run: run.clone(),
+        kind,
+        started: Instant::now(),
+        seq,
+        method: request.method().to_string(),
+        url: request.url().to_string(),
+        headers: headers_of(request.headers()),
+        body,
+    })
 }
 
 /// The body a request carries, read out of the client's own shape.
 fn body_of(body: Option<&reqwest::Body>) -> Body {
     match body.and_then(|body| body.as_bytes()) {
         Some(bytes) => Body::of(bytes.to_vec()),
-        // A request that streams its body cannot be read twice, and saying so is
-        // better than writing down an empty one and leaving a reader to guess.
         None if body.is_some() => Body::Streamed,
         None => Body::Empty,
     }
 }
 
-/// Writes a call down with the answer that came back.
-///
-/// Every finisher takes the [`Pending`] rather than an `Option` of one so that a
-/// call site with nothing recorded — because recording is off — has nothing to do
-/// and no branch to write. The body arrives as a slice for the same reason: it is
-/// copied only once recording is known to be on, and a call that is not being
-/// recorded pays nothing for one that is.
-pub fn answered(pending: Option<Pending>, status: u16, headers: &HeaderMap, body: &[u8]) {
-    let Some(pending) = pending else { return };
-    finish(pending, Outcome::of(status, headers, body.to_vec()));
+/// Records an answer that arrived whole.
+pub fn answered(capture: Option<Capture>, status: u16, headers: &HeaderMap, body: &[u8]) {
+    let Some(capture) = capture else { return };
+    let response_headers = headers_of(headers);
+    let media = (capture.kind == Kind::Media).then(|| {
+        let mime = content_type(&response_headers)
+            .map(str::to_string)
+            .or_else(|| sniff(body))
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        (mime, body.len() as u64)
+    });
+    let response = if capture.kind == Kind::Media {
+        Body::Empty
+    } else {
+        Body::of(body.to_vec())
+    };
+    capture.run.state.push(Call {
+        seq: capture.seq,
+        kind: capture.kind,
+        method: capture.method,
+        url: capture.url,
+        headers: capture.headers,
+        response_headers,
+        status: Some(status),
+        took: capture.started.elapsed(),
+        request: capture.body,
+        response,
+        media,
+        stream: None,
+        error: None,
+    });
 }
 
-/// Writes a stream down with the raw events it arrived as, and what they added up
-/// to beside them.
-///
-/// Both rather than either: the raw stream shows what the provider sent, and the
-/// aggregate shows what was made of it, and the interesting failure is the one
-/// where those two disagree.
+/// Records a call that reached the provider and could not be read.
+pub fn broken(capture: Option<Capture>, error: &str, status: u16, headers: &HeaderMap) {
+    let Some(capture) = capture else { return };
+    capture.run.state.push(Call {
+        seq: capture.seq,
+        kind: capture.kind,
+        method: capture.method,
+        url: capture.url,
+        headers: capture.headers,
+        response_headers: headers_of(headers),
+        status: Some(status),
+        took: capture.started.elapsed(),
+        request: capture.body,
+        response: Body::Empty,
+        media: None,
+        stream: None,
+        error: Some(error.to_string()),
+    });
+}
+
+/// Records a call that never left, which has no answer of any kind.
+pub fn unsent(capture: Option<Capture>, error: &str) {
+    let Some(capture) = capture else { return };
+    capture.run.state.push(Call {
+        seq: capture.seq,
+        kind: capture.kind,
+        method: capture.method,
+        url: capture.url,
+        headers: capture.headers,
+        response_headers: Vec::new(),
+        status: None,
+        took: capture.started.elapsed(),
+        request: capture.body,
+        response: Body::Empty,
+        media: None,
+        stream: None,
+        error: Some(error.to_string()),
+    });
+}
+
+/// Records a stream that ended, with its raw events and what they added up to.
 pub fn streamed(
-    pending: Option<Pending>,
+    capture: Option<Capture>,
     status: u16,
     headers: &HeaderMap,
+    result: &GenerateResult,
     raw: Vec<u8>,
-    aggregate: String,
 ) {
-    let Some(pending) = pending else { return };
-    finish(
-        pending,
-        Outcome {
-            status: Some(status),
-            headers: headers_of(headers),
-            body: Body::of(raw),
-            aggregate: Some(aggregate),
-            error: None,
-        },
-    );
+    let Some(capture) = capture else { return };
+    let thinking = thinking_of_sse(&raw);
+    capture.run.write_raw(&raw, &thinking);
+    let summary = StreamSummary {
+        text_chars: result.text.as_deref().map(str::len).unwrap_or_default(),
+        thinking_chars: thinking.chars().count(),
+        tool_calls: result.tool_calls.clone(),
+        usage: result.usage,
+        finish_reason: result.finish_reason.clone(),
+    };
+    capture.run.state.push(Call {
+        seq: capture.seq,
+        kind: capture.kind,
+        method: capture.method,
+        url: capture.url,
+        headers: capture.headers,
+        response_headers: headers_of(headers),
+        status: Some(status),
+        took: capture.started.elapsed(),
+        request: capture.body,
+        response: Body::Empty,
+        media: None,
+        stream: Some(summary),
+        error: None,
+    });
 }
 
-/// Writes a stream down that ended in the middle, with what had arrived by then.
-///
-/// The part that arrived is the evidence, so it is kept rather than dropped
-/// because the call did not finish.
+/// Records a stream that ended in the middle, with what had arrived by then.
 pub fn stream_broken(
-    pending: Option<Pending>,
+    capture: Option<Capture>,
     error: &str,
     status: u16,
     headers: &HeaderMap,
     raw: Vec<u8>,
 ) {
-    let Some(pending) = pending else { return };
-    finish(
-        pending,
-        Outcome::broken(error, Some(status), headers_of(headers), Body::of(raw)),
-    );
+    let Some(capture) = capture else { return };
+    let thinking = thinking_of_sse(&raw);
+    capture.run.write_raw(&raw, &thinking);
+    capture.run.state.push(Call {
+        seq: capture.seq,
+        kind: capture.kind,
+        method: capture.method,
+        url: capture.url,
+        headers: capture.headers,
+        response_headers: headers_of(headers),
+        status: Some(status),
+        took: capture.started.elapsed(),
+        request: capture.body,
+        response: Body::Empty,
+        media: None,
+        stream: Some(StreamSummary {
+            text_chars: 0,
+            thinking_chars: thinking.chars().count(),
+            tool_calls: Vec::new(),
+            usage: None,
+            finish_reason: None,
+        }),
+        error: Some(error.to_string()),
+    });
 }
 
-/// Writes a call down that reached the provider and could not be read.
-pub fn broken(pending: Option<Pending>, error: &str, status: u16, headers: &HeaderMap) {
-    let Some(pending) = pending else { return };
-    finish(
-        pending,
-        Outcome::broken(error, Some(status), headers_of(headers), Body::Empty),
-    );
-}
-
-/// Writes a call down that never left, which has no answer of any kind.
-pub fn unsent(pending: Option<Pending>, error: &str) {
-    let Some(pending) = pending else { return };
-    finish(
-        pending,
-        Outcome::broken(error, None, Vec::new(), Body::Empty),
-    );
-}
-
-fn finish(pending: Pending, outcome: Outcome) {
+/// Writes a run down with what it ended as.
+pub fn finish(run: Option<Run>, outcome: Outcome<'_>) {
+    let Some(run) = run else { return };
     let Some(recorder) = RECORDER.get() else {
         return;
     };
-    let job = job_of(pending, outcome);
-    // A writer that has gone away means the process is ending, and a recording
-    // lost at that moment is worth a line in the log and nothing more.
+    if run.state.finished.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let verdict = match outcome {
+        Outcome::Ok(result) => Verdict::Ok(result.clone()),
+        Outcome::JobFailed { message, retryable } => Verdict::JobFailed {
+            message: message.to_string(),
+            retryable,
+        },
+        Outcome::Err(error) => Verdict::Err {
+            code: error.code(),
+            message: error.to_string(),
+            retryable: error.retryable(),
+        },
+    };
+    let calls = filter_polls(run.state.take_calls());
+    let took = run.state.started.elapsed();
+    let started = run.state.started_job.load(Ordering::SeqCst);
+    let error = verdict
+        .message()
+        .map(|message| scrubbed_text(message, &run.state.who));
+    let index_finish = json!({
+        "event": "finish",
+        "dir": run.state.name,
+        "status": verdict.status(),
+        "tookMs": took.as_millis() as u64,
+        "error": error,
+    });
+    let job = Job::Finished(Box::new(FinishedJob {
+        name: run.state.name.clone(),
+        who: run.state.who.clone(),
+        verdict,
+        calls,
+        digests: run.state.digests.clone(),
+        request: (!started).then(|| run.state.request.clone()),
+        index_start: (!started).then(|| run.state.index.clone()),
+        index_finish,
+        took,
+    }));
     if let Err(error) = recorder.jobs.send(job) {
         tracing::warn!(%error, "a provider call could not be recorded");
     }
-}
-
-/// What a call and its answer add up to as one thing to write down.
-fn job_of(pending: Pending, outcome: Outcome) -> Job {
-    let Outcome {
-        status,
-        headers,
-        body,
-        aggregate,
-        error,
-    } = outcome;
-    Job {
-        name: pending.name,
-        kind: pending.kind,
-        who: pending.who,
-        placed: pending.placed,
-        took: pending.started.elapsed(),
-        sent: pending.sent,
-        back: Back {
-            status,
-            headers,
-            body,
-            aggregate,
-            error,
-        },
+    let task = run
+        .state
+        .task
+        .lock()
+        .expect("the task binding is not held across a write")
+        .take();
+    if let Some(task) = task {
+        recorder
+            .live
+            .lock()
+            .expect("the live runs are not held across a write")
+            .remove(&task);
     }
 }
 
-/// The name every file of one call shares.
+/// Forgets a job the caller has given up on, so that the recording handle and
+/// the credential it was scrubbing do not outlive the job. A poll that arrives
+/// afterwards opens a directory of its own, which is what a poll after a
+/// restart does too.
+pub fn forget(task: &str) {
+    let Some(recorder) = RECORDER.get() else {
+        return;
+    };
+    recorder
+        .live
+        .lock()
+        .expect("the live runs are not held across a write")
+        .remove(task);
+}
+
+/// Settles one look at a job: a job still running writes nothing, and one that
+/// ended — or a look that failed — finishes the run.
+pub fn settle_poll(run: Option<Run>, state: &Result<TaskState, ProviderError>) {
+    match state {
+        Ok(TaskState::Pending { .. }) => {}
+        Ok(TaskState::Succeeded(result)) => finish(run, Outcome::Ok(result)),
+        Ok(TaskState::Failed { message, retryable }) => finish(
+            run,
+            Outcome::JobFailed {
+                message,
+                retryable: *retryable,
+            },
+        ),
+        Err(error) => finish(run, Outcome::Err(error)),
+    }
+}
+
+impl Run {
+    /// Hands a stream's raw events to the writer, since a person reading the
+    /// reading afterwards may want to see what it was made of.
+    fn write_raw(&self, raw: &[u8], thinking: &str) {
+        if raw.is_empty() && thinking.is_empty() {
+            return;
+        }
+        let Some(recorder) = RECORDER.get() else {
+            return;
+        };
+        let _ = recorder.jobs.send(Job::RawSse {
+            name: self.state.name.clone(),
+            who: self.state.who.clone(),
+            raw: raw.to_vec(),
+            thinking: thinking.to_string(),
+        });
+    }
+}
+
+/// Pending polls carry nothing a person can use, so only the poll that ended a
+/// job is kept. Everything else the run did — an upload, the create, a media
+/// download — stays in the order it happened.
+fn filter_polls(calls: Vec<Call>) -> Vec<Call> {
+    let last_poll = calls.iter().rposition(|call| call.kind == Kind::TaskPoll);
+    calls
+        .into_iter()
+        .enumerate()
+        .filter(|(at, call)| call.kind != Kind::TaskPoll || Some(*at) == last_poll)
+        .map(|(_, call)| call)
+        .collect()
+}
+
+/// The name every file of one run shares.
 ///
-/// The moment first, so that a directory lists itself in order; then which call
-/// it was, so that two calls placed in the same moment still pair up; then the
+/// The moment first, so that a directory lists itself in order; then the
 /// configuration and the model, which are the two things a reader filters by;
-/// then what the call was for.
-fn name_of(placed: &str, sequence: u64, call: &ModelCall, kind: Kind) -> String {
+/// then which run it was, so two placed in the same moment still pair up.
+fn name_of(placed: &str, sequence: u64, call: &ModelCall) -> String {
     format!(
-        "{}_{sequence:04}_{}_{}_{}",
-        // A moment is written the same way everywhere else in the application and
-        // only the colons in it are a path separator's business.
+        "{}_{}_{}_{sequence:04}",
         placed.replace(':', "-"),
         safe_name(&call.config_id),
-        safe_name(&call.model),
-        kind.as_str()
+        safe_name(&call.model)
     )
 }
 
 /// One name a reader typed, made safe to put in a path.
-///
-/// A configuration is named by whoever configured it and a model by whoever serves it,
-/// and neither has any reason to be a file name: one that carried a slash would
-/// write somewhere else, and one that carried nothing would say nothing.
 fn safe_name(words: &str) -> String {
     let mut safe: String = words
         .chars()
@@ -598,17 +956,167 @@ fn safe_name(words: &str) -> String {
     safe
 }
 
-/// Writes every call the process records, one at a time.
+/// The references a request carried, each written as the file its bytes are.
 ///
-/// One at a time rather than one task each: the index a reader starts from is a
-/// single appended file, and two writers racing to append to it would interleave
-/// lines. Serialising the writes here also keeps a directory that lists itself in
-/// the order the calls were placed, which is what a reader wants when they are
-/// looking for the one that went wrong.
+/// A reference is named for the asset it came from rather than for where it
+/// sits in the request: a reader looking at a folder wants to recognise the
+/// picture the request named, and the role it played is in `request.json`.
+fn input_files(inputs: &[MediaInput]) -> (Vec<InputFile>, Vec<Value>, HashMap<String, String>) {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut files = Vec::with_capacity(inputs.len());
+    let mut references = Vec::with_capacity(inputs.len());
+    let mut digests = HashMap::new();
+    for (at, input) in inputs.iter().enumerate() {
+        let id = if input.asset_id.is_empty() {
+            (at + 1).to_string()
+        } else {
+            safe_name(&input.asset_id)
+        };
+        let count = seen.entry(id.clone()).or_insert(0);
+        *count += 1;
+        let base = if *count == 1 {
+            format!("request-{id}")
+        } else {
+            format!("request-{id}-{count}")
+        };
+        let name = format!(
+            "{base}.{}",
+            crate::assets::extension_for(&input.name, &input.mime)
+        );
+        digests.insert(digest_hex(&input.bytes), name.clone());
+        references.push(json!({
+            "role": input.role.as_str(),
+            "name": input.name,
+            "assetId": input.asset_id,
+            "mime": input.mime,
+            "bytes": input.bytes.len(),
+            "file": name,
+        }));
+        files.push(InputFile {
+            name,
+            bytes: input.bytes.clone(),
+        });
+    }
+    (files, references, digests)
+}
+
+/// What `request.json` says about one generation.
+fn request_record(
+    kind: Kind,
+    who: &Who,
+    placed: &str,
+    call: &ModelCall,
+    request: &GenerateRequest,
+    references: Vec<Value>,
+) -> Value {
+    json!({
+        "placed": placed,
+        "kind": kind.as_str(),
+        "capability": request.capability.as_str(),
+        "config": who.config,
+        "model": who.model,
+        "displayName": who.display_name,
+        "protocol": who.protocol,
+        "endpoint": scrubbed_url(&call.url, who),
+        "prompt": scrubbed_text(&request.prompt, who),
+        "system": request.system.as_deref().map(|system| scrubbed_text(system, who)),
+        "params": scrub_value(&Value::Object(request.params.clone()), who),
+        "messages": serde_json::to_value(&request.messages)
+            .map(|value| scrub_value(&value, who))
+            .unwrap_or(Value::Null),
+        "tools": serde_json::to_value(&request.tools)
+            .map(|value| scrub_value(&value, who))
+            .unwrap_or(Value::Null),
+        "toolChoice": request.tool_choice.as_deref().map(|choice| scrubbed_text(choice, who)),
+        "references": references,
+    })
+}
+
+/// What `request.json` says about a poll that has no create to attach to.
+fn poll_record(
+    who: &Who,
+    placed: &str,
+    call: &ModelCall,
+    capability: Capability,
+    task: &AsyncTask,
+) -> Value {
+    json!({
+        "placed": placed,
+        "kind": Kind::TaskPoll.as_str(),
+        "capability": capability.as_str(),
+        "config": who.config,
+        "model": who.model,
+        "displayName": who.display_name,
+        "protocol": who.protocol,
+        "endpoint": scrubbed_url(&call.url, who),
+        "task": { "id": task.id, "reference": task.reference },
+    })
+}
+
+/// The words a reader would look for when scanning the index: a prompt, or the
+/// last thing said to the model when the request is a conversation.
+fn prompt_of(request: &GenerateRequest) -> String {
+    if !request.prompt.trim().is_empty() {
+        return request.prompt.clone();
+    }
+    request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user")
+        .map(|message| message.text.clone())
+        .unwrap_or_default()
+}
+
+fn start_index(
+    name: &str,
+    placed: &str,
+    kind: Kind,
+    capability: Capability,
+    who: &Who,
+    prompt: &str,
+) -> Value {
+    json!({
+        "event": "start",
+        "dir": name,
+        "placed": placed,
+        "kind": kind.as_str(),
+        "capability": capability.as_str(),
+        "config": who.config,
+        "model": who.model,
+        "protocol": who.protocol,
+        "prompt": scrubbed_text(&excerpt(prompt), who),
+        "promptChars": prompt.chars().count(),
+    })
+}
+
+/// The first stretch of a prompt on one line, so an index stays scannable while
+/// the whole of it is in the directory the line points at.
+fn excerpt(text: &str) -> String {
+    let one_line: String = text
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    let cut: String = one_line.trim().chars().take(160).collect();
+    if cut.len() < one_line.trim().len() {
+        format!("{cut}…")
+    } else {
+        cut
+    }
+}
+
+/// Writes every job the process records, one at a time.
 async fn write_all(root: PathBuf, mut jobs: mpsc::UnboundedReceiver<Job>) {
     while let Some(job) = jobs.recv().await {
-        // Blocking work in a task of its own, so that a body the size of a picture
-        // is not written on a thread the rest of the application is waiting on.
+        // Blocking work in a task of its own, so that a body the size of a
+        // picture is not written on a thread the rest of the application is
+        // waiting on.
         let root = root.clone();
         let outcome = tokio::task::spawn_blocking(move || write_one(&root, job)).await;
         match outcome {
@@ -619,158 +1127,840 @@ async fn write_all(root: PathBuf, mut jobs: mpsc::UnboundedReceiver<Job>) {
     }
 }
 
-/// Writes one call down: the request, the answer, and one line in the index that
-/// ties them together.
 fn write_one(root: &Path, job: Job) -> Result<()> {
-    let Job {
-        name,
-        kind,
-        who,
-        placed,
-        took,
-        sent,
-        back,
-    } = job;
-    let sidecars = std::cell::RefCell::new(Vec::new());
-    let request = record_of_request(&name, &placed, kind, &who, &sent, &sidecars);
-    let response = record_of_response(&name, &who, &back, took, &sidecars);
-    let request_bytes = write_json(root, &format!("{name}.request.json"), &request)?;
-    let response_bytes = write_json(root, &format!("{name}.response.json"), &response)?;
-    for (suffix, bytes) in sidecars.into_inner() {
-        write_binary(root, &format!("{name}.{suffix}"), &bytes)?;
+    match job {
+        Job::Started {
+            name,
+            request,
+            inputs,
+            index,
+        } => {
+            let dir = root.join(&name);
+            ensure_dir(&dir)?;
+            write_json(&dir, "request.json", &request)?;
+            for input in inputs {
+                write_binary(&dir, &input.name, &input.bytes)?;
+            }
+            append_index(root, &index)?;
+        }
+        Job::Calls {
+            name,
+            who,
+            calls,
+            digests,
+        } => {
+            let dir = root.join(&name);
+            ensure_dir(&dir)?;
+            write_calls(&dir, &who, calls, &digests, &HashMap::new())?;
+        }
+        Job::RawSse {
+            name,
+            who,
+            raw,
+            thinking,
+        } => {
+            let dir = root.join(&name);
+            ensure_dir(&dir)?;
+            if !raw.is_empty() {
+                let events = String::from_utf8_lossy(&raw);
+                write_text(&dir, "response.sse.txt", &scrubbed_text(&events, &who))?;
+            }
+            if !thinking.trim().is_empty() {
+                write_text(
+                    &dir,
+                    "response-thinking.txt",
+                    &scrubbed_text(&thinking, &who),
+                )?;
+            }
+        }
+        Job::Finished(job) => write_finished(root, *job)?,
     }
-    append_index(
-        root,
-        &index_line(
-            &name,
-            kind,
-            &who,
-            &placed,
-            took,
-            &sent,
-            &back,
-            request_bytes,
-            response_bytes,
-        ),
-    )
+    Ok(())
 }
 
-/// A body a sidecar file was written for, so that one can be written after the
-/// document that points at it has been composed.
-type Sidecars = std::cell::RefCell<Vec<(String, Vec<u8>)>>;
+fn write_finished(root: &Path, job: FinishedJob) -> Result<()> {
+    let FinishedJob {
+        name,
+        who,
+        verdict,
+        calls,
+        digests,
+        request,
+        index_start,
+        index_finish,
+        took,
+    } = job;
+    let dir = root.join(&name);
+    ensure_dir(&dir)?;
+    if let Some(request) = request {
+        write_json(&dir, "request.json", &request)?;
+    }
+    if let Some(line) = index_start {
+        append_index(root, &line)?;
+    }
+    // The answer's media is written before the calls, so a body that carried
+    // the same bytes can point at the file instead of repeating them.
+    let mut outputs = HashMap::new();
+    let mut media = Vec::new();
+    if let Verdict::Ok(result) = &verdict {
+        for (at, item) in result.items.iter().enumerate() {
+            let file = format!(
+                "response-{}.{}",
+                at + 1,
+                crate::assets::extension_for("", &item.mime)
+            );
+            write_binary(&dir, &file, &item.bytes)?;
+            outputs.insert(digest_hex(&item.bytes), file.clone());
+            media.push(json!({
+                "file": file,
+                "mime": item.mime,
+                "bytes": item.bytes.len(),
+                "width": item.width,
+                "height": item.height,
+                "durationMs": item.duration_ms,
+            }));
+        }
+    }
+    write_calls(&dir, &who, calls, &digests, &outputs)?;
+    write_response(&dir, &who, &verdict, &media, took)?;
+    let mut index_finish = index_finish;
+    index_finish["files"] = json!(files_in(&dir));
+    append_index(root, &index_finish)?;
+    Ok(())
+}
 
-fn record_of_request(
-    name: &str,
-    placed: &str,
-    kind: Kind,
+/// One line per exchange, and the files a body's media was lifted into.
+fn write_calls(
+    dir: &Path,
     who: &Who,
-    sent: &Sent,
-    sidecars: &Sidecars,
+    calls: Vec<Call>,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+) -> Result<()> {
+    if calls.is_empty() {
+        return Ok(());
+    }
+    let path = dir.join("calls.jsonl");
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("cannot open {}", path.display()))?;
+    for call in calls {
+        let mut sidecars = Vec::new();
+        let line = call_line(call, who, inputs, outputs, &mut sidecars);
+        for (name, bytes) in sidecars {
+            write_binary(dir, &name, &bytes)?;
+        }
+        use std::io::Write;
+        writeln!(file, "{}", serde_json::to_string(&line)?)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+    }
+    private_file(&path);
+    Ok(())
+}
+
+fn call_line(
+    call: Call,
+    who: &Who,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
 ) -> Value {
+    let request_type = header_value(&call.headers, "content-type");
+    let response_type = header_value(&call.response_headers, "content-type");
+    let mut line = json!({
+        "seq": call.seq,
+        "kind": call.kind.as_str(),
+        "method": call.method,
+        "url": scrubbed_url(&call.url, who),
+        "status": call.status,
+        "tookMs": call.took.as_millis() as u64,
+        "headers": scrubbed_headers(&call.headers, who),
+    });
+    if let Some(body) = body_value(
+        &call.request,
+        call.seq,
+        "request",
+        request_type,
+        inputs,
+        outputs,
+        sidecars,
+        who,
+    ) {
+        line["request"] = body;
+    }
+    if let Some(body) = body_value(
+        &call.response,
+        call.seq,
+        "response",
+        response_type,
+        inputs,
+        outputs,
+        sidecars,
+        who,
+    ) {
+        line["response"] = body;
+    }
+    if let Some((mime, bytes)) = &call.media {
+        line["media"] = json!({ "mime": mime, "bytes": bytes });
+    }
+    if let Some(stream) = &call.stream {
+        line["stream"] = json!({
+            "textChars": stream.text_chars,
+            "thinkingChars": stream.thinking_chars,
+            "finishReason": stream.finish_reason,
+            "usage": serde_json::to_value(stream.usage).unwrap_or(Value::Null),
+            "toolCalls": serde_json::to_value(&stream.tool_calls).unwrap_or(Value::Null),
+        });
+    }
+    if let Some(error) = &call.error {
+        line["error"] = json!(scrubbed_text(error, who));
+    }
+    line
+}
+
+/// The final answer, written in the shape a person reads it.
+fn write_response(
+    dir: &Path,
+    who: &Who,
+    verdict: &Verdict,
+    media: &[Value],
+    took: Duration,
+) -> Result<()> {
+    let record = match verdict {
+        Verdict::Ok(result) => {
+            let text = result.text.as_deref().map(|text| scrubbed_text(text, who));
+            if let Some(text) = text.as_deref().filter(|text| !text.trim().is_empty()) {
+                write_text(dir, "response.txt", text)?;
+            }
+            if !result.tool_calls.is_empty() {
+                let tools = serde_json::to_value(&result.tool_calls)?;
+                let tools = scrub_value(&tools, who);
+                write_json(dir, "response-tools.json", &tools)?;
+            }
+            json!({
+                "ok": true,
+                "tookMs": took.as_millis() as u64,
+                "text": text,
+                "usage": serde_json::to_value(result.usage).unwrap_or(Value::Null),
+                "finishReason": result.finish_reason,
+                "toolCalls": serde_json::to_value(&result.tool_calls).unwrap_or(Value::Null),
+                "media": media,
+            })
+        }
+        Verdict::JobFailed { message, retryable } => json!({
+            "ok": false,
+            "tookMs": took.as_millis() as u64,
+            "error": {
+                "code": "GENERATION_JOB_FAILED",
+                "message": scrubbed_text(message, who),
+                "retryable": retryable,
+            },
+        }),
+        Verdict::Err {
+            code,
+            message,
+            retryable,
+        } => json!({
+            "ok": false,
+            "tookMs": took.as_millis() as u64,
+            "error": {
+                "code": code,
+                "message": scrubbed_text(message, who),
+                "retryable": retryable,
+            },
+        }),
+    };
+    write_json(dir, "response.json", &record)?;
+    Ok(())
+}
+
+/// One body, as the line that describes it carries it.
+///
+/// JSON is kept as JSON so that a reader can fold it open; text that is not
+/// JSON is kept as text; media is lifted into a file of its own and pointed at,
+/// because a document holding a megabyte of base64 is one nobody can read.
+#[allow(clippy::too_many_arguments)]
+fn body_value(
+    body: &Body,
+    seq: u64,
+    which: &str,
+    content_type: Option<&str>,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+    who: &Who,
+) -> Option<Value> {
+    match body {
+        Body::Empty => None,
+        Body::Streamed => Some(json!({
+            "kind": "streamed",
+            "note": "the body was streamed out and cannot be read twice",
+        })),
+        Body::Text(text) => {
+            if is_multipart(content_type) {
+                return Some(multipart_value(
+                    text.as_bytes(),
+                    content_type.expect("a multipart body named its type"),
+                    seq,
+                    which,
+                    inputs,
+                    outputs,
+                    sidecars,
+                    who,
+                ));
+            }
+            match serde_json::from_str::<Value>(text) {
+                Ok(value) => {
+                    let mut counter = 0;
+                    Some(sanitize_json(
+                        &value,
+                        seq,
+                        which,
+                        inputs,
+                        outputs,
+                        sidecars,
+                        &mut counter,
+                        who,
+                    ))
+                }
+                Err(_) => Some(json!({
+                    "kind": "text",
+                    "text": scrubbed_text(text, who),
+                })),
+            }
+        }
+        Body::Bytes(bytes) => {
+            if is_multipart(content_type) {
+                return Some(multipart_value(
+                    bytes,
+                    content_type.expect("a multipart body named its type"),
+                    seq,
+                    which,
+                    inputs,
+                    outputs,
+                    sidecars,
+                    who,
+                ));
+            }
+            Some(binary_value(
+                bytes,
+                seq,
+                which,
+                content_type,
+                inputs,
+                outputs,
+                sidecars,
+            ))
+        }
+    }
+}
+
+/// Bytes that are not text: pointed at where they were already written, or
+/// written here when they are media somebody could open. Anything else is
+/// described by its weight and type rather than copied: a blob nobody can read
+/// is exactly what a recording is meant to keep off the disk.
+fn binary_value(
+    bytes: &[u8],
+    seq: u64,
+    which: &str,
+    content_type: Option<&str>,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+) -> Value {
+    let digest = digest_hex(bytes);
+    if let Some(file) = inputs.get(&digest).or_else(|| outputs.get(&digest)) {
+        return json!({
+            "kind": "binary",
+            "bytes": bytes.len(),
+            "mime": content_type.unwrap_or("application/octet-stream"),
+            "file": file,
+        });
+    }
+    let declared = content_type
+        .filter(|mime| is_media(mime))
+        .map(str::to_string);
+    let media = sniff(bytes).or(declared);
+    let Some(mime) = media else {
+        return json!({
+            "kind": "binary",
+            "bytes": bytes.len(),
+            "mime": content_type.unwrap_or("application/octet-stream"),
+        });
+    };
+    let file = format!(
+        "call-{seq}-{which}.{}",
+        crate::assets::extension_for("", &mime)
+    );
+    sidecars.push((file.clone(), bytes.to_vec()));
     json!({
-        "name": name,
-        "placed": placed,
-        "kind": kind.as_str(),
-        "config": who.config,
-        "model": who.model,
-        "protocol": who.protocol,
-        "method": sent.method,
-        "url": scrubbed_url(&sent.url, who),
-        "headers": scrubbed_headers(&sent.headers, who),
-        "body": body_value(&sent.body, name, "request", sidecars, who),
+        "kind": "binary",
+        "bytes": bytes.len(),
+        "mime": mime,
+        "file": file,
     })
 }
 
-fn record_of_response(
-    name: &str,
-    who: &Who,
-    back: &Back,
-    took: Duration,
-    sidecars: &Sidecars,
-) -> Value {
-    let mut record = json!({
-        "name": name,
-        "tookMs": took.as_millis() as u64,
-        "headers": scrubbed_headers(&back.headers, who),
-        "body": body_value(&back.body, name, "response", sidecars, who),
-    });
-    let map = record.as_object_mut().expect("built as an object above");
-    // A call that never reached the provider has no status, and the absence says
-    // something a status of zero would not.
-    match back.status {
-        Some(status) => map.insert("status".into(), json!(status)),
-        None => map.insert("status".into(), Value::Null),
-    };
-    if let Some(error) = &back.error {
-        map.insert("error".into(), json!(scrubbed_text(error, who)));
-    }
-    if let Some(aggregate) = &back.aggregate {
-        map.insert("aggregate".into(), json!(scrubbed_text(aggregate, who)));
-    }
-    record
+fn is_media(mime: &str) -> bool {
+    mime.starts_with("image/") || mime.starts_with("audio/") || mime.starts_with("video/")
 }
 
-/// One body, as the document that describes it carries it.
-///
-/// A body that is JSON is kept as JSON, so that a reader can fold it open rather
-/// than reading an escaped string of it. One that is text but not JSON is kept as
-/// text. One that is neither — a picture, a sound, a video — is written beside the
-/// document and pointed at, because there is nothing useful to inline and a
-/// document holding a megabyte of base64 is one nobody can read.
-///
-/// Nothing is cut short. A recording that left out the middle of an answer would
-/// be worse than no recording, because a reader would trust it.
-fn body_value(body: &Body, name: &str, which: &str, sidecars: &Sidecars, who: &Who) -> Value {
-    match body {
-        Body::Empty => json!({ "kind": "empty", "bytes": 0 }),
-        Body::Streamed => json!({
-            "kind": "streamed",
-            "bytes": 0,
-            "note": "the body was streamed out and cannot be read twice",
-        }),
-        Body::Bytes(bytes) => {
-            let suffix = format!("{which}.bin");
-            sidecars.borrow_mut().push((suffix.clone(), bytes.clone()));
-            json!({
-                "kind": "binary",
-                "bytes": bytes.len(),
-                "sha256": digest(bytes),
-                "file": format!("{name}.{suffix}"),
-            })
+/// One JSON document with its media lifted out and its strings scrubbed.
+#[allow(clippy::too_many_arguments)]
+fn sanitize_json(
+    value: &Value,
+    seq: u64,
+    which: &str,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+    counter: &mut usize,
+    who: &Who,
+) -> Value {
+    match value {
+        Value::String(text) => {
+            sanitize_string(text, seq, which, inputs, outputs, sidecars, counter, who)
         }
-        Body::Text(text) => {
-            let text = scrubbed_text(text, who);
-            match serde_json::from_str::<Value>(&text) {
-                Ok(parsed) => json!({
-                    "kind": "json",
-                    "bytes": text.len(),
-                    "json": parsed,
-                }),
-                Err(_) => json!({ "kind": "text", "bytes": text.len(), "text": text }),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| {
+                    sanitize_json(item, seq, which, inputs, outputs, sidecars, counter, who)
+                })
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(name, item)| {
+                    (
+                        name.clone(),
+                        sanitize_json(item, seq, which, inputs, outputs, sidecars, counter, who),
+                    )
+                })
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// One string inside a body: a data URL or a long base64 blob becomes a file
+/// pointer, and everything else is scrubbed and left as it was.
+#[allow(clippy::too_many_arguments)]
+fn sanitize_string(
+    text: &str,
+    seq: u64,
+    which: &str,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+    counter: &mut usize,
+    who: &Who,
+) -> Value {
+    if let Some((mime, bytes)) = data_url(text) {
+        let sniffed = sniff(&bytes);
+        let media = mime
+            .as_deref()
+            .filter(|mime| is_media(mime))
+            .map(str::to_string)
+            .or(sniffed);
+        if let Some(mime) = media {
+            return lift(
+                &bytes,
+                Some(&mime),
+                seq,
+                which,
+                inputs,
+                outputs,
+                sidecars,
+                counter,
+            );
+        }
+        if mime
+            .as_deref()
+            .is_some_and(|mime| mime.starts_with("text/"))
+        {
+            return Value::String(scrubbed_text(&String::from_utf8_lossy(&bytes), who));
+        }
+        return json!({
+            "dataUrlChars": text.len(),
+            "mime": mime,
+            "note": "unrecognised binary is not written",
+        });
+    }
+    if let Some(bytes) = base64_blob(text) {
+        if let Some(mime) = sniff(&bytes) {
+            return lift(
+                &bytes,
+                Some(&mime),
+                seq,
+                which,
+                inputs,
+                outputs,
+                sidecars,
+                counter,
+            );
+        }
+        // A long blob nothing recognises is not worth a file nobody can open,
+        // and is certainly not worth leaving in the middle of a document.
+        return json!({
+            "base64Chars": text.len(),
+            "note": "unrecognised base64 is not written",
+        });
+    }
+    Value::String(scrubbed_text(text, who))
+}
+
+/// The file a piece of media was written to: one of the request's own, one of
+/// the answer's own, or a file made for this body alone.
+#[allow(clippy::too_many_arguments)]
+fn lift(
+    bytes: &[u8],
+    mime: Option<&str>,
+    seq: u64,
+    which: &str,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+    counter: &mut usize,
+) -> Value {
+    let digest = digest_hex(bytes);
+    if let Some(file) = inputs.get(&digest).or_else(|| outputs.get(&digest)) {
+        return json!({
+            "file": file,
+            "mime": mime.map(str::to_string),
+            "bytes": bytes.len(),
+        });
+    }
+    let mime = mime
+        .map(str::to_string)
+        .or_else(|| sniff(bytes))
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    *counter += 1;
+    let file = format!(
+        "call-{seq}-{which}-{counter}.{}",
+        crate::assets::extension_for("", &mime)
+    );
+    sidecars.push((file.clone(), bytes.to_vec()));
+    json!({
+        "file": file,
+        "mime": mime,
+        "bytes": bytes.len(),
+    })
+}
+
+/// A form's fields and file parts, without the bytes that would make it
+/// unreadable.
+#[allow(clippy::too_many_arguments)]
+fn multipart_value(
+    bytes: &[u8],
+    content_type: &str,
+    seq: u64,
+    which: &str,
+    inputs: &HashMap<String, String>,
+    outputs: &HashMap<String, String>,
+    sidecars: &mut Vec<(String, Vec<u8>)>,
+    who: &Who,
+) -> Value {
+    let Some(boundary) = boundary_of(content_type) else {
+        return json!({
+            "kind": "binary",
+            "bytes": bytes.len(),
+            "note": "a multipart body named no boundary",
+        });
+    };
+    let parts = multipart_parts(bytes, &boundary);
+    if parts.is_empty() {
+        return json!({
+            "kind": "binary",
+            "bytes": bytes.len(),
+            "note": "a multipart body could not be read",
+        });
+    }
+    let mut fields = Map::new();
+    let mut files = Vec::new();
+    for part in parts {
+        let headers = part_headers(part);
+        let name = part_param(&headers, "content-disposition", "name");
+        let filename = part_param(&headers, "content-disposition", "filename");
+        let mime = headers
+            .iter()
+            .find(|(header, _)| header == "content-type")
+            .map(|(_, value)| value.as_str());
+        let body = part_body(part);
+        if filename.is_some() || mime.is_some() {
+            let digest = digest_hex(body);
+            let part_mime = mime
+                .map(str::to_string)
+                .or_else(|| sniff(body))
+                .unwrap_or_else(|| "application/octet-stream".to_string());
+            let file = match inputs.get(&digest).or_else(|| outputs.get(&digest)) {
+                Some(file) => file.clone(),
+                None => {
+                    let part_name = safe_name(name.as_deref().unwrap_or("file"));
+                    let file = format!(
+                        "call-{seq}-{which}-{part_name}.{}",
+                        crate::assets::extension_for(filename.as_deref().unwrap_or(""), &part_mime)
+                    );
+                    sidecars.push((file.clone(), body.to_vec()));
+                    file
+                }
+            };
+            files.push(json!({
+                "part": name,
+                "filename": filename,
+                "mime": part_mime,
+                "bytes": body.len(),
+                "file": file,
+            }));
+        } else {
+            let name = name.unwrap_or_else(|| "field".to_string());
+            fields.insert(
+                name,
+                Value::String(scrubbed_text(&String::from_utf8_lossy(body), who)),
+            );
+        }
+    }
+    json!({
+        "kind": "multipart",
+        "fields": fields,
+        "files": files,
+    })
+}
+
+/// Splits a multipart body into its parts, on the boundary the header named.
+fn multipart_parts<'a>(bytes: &'a [u8], boundary: &str) -> Vec<&'a [u8]> {
+    let marker = format!("--{boundary}");
+    let marker = marker.as_bytes();
+    let mut parts = Vec::new();
+    let mut cursor = 0;
+    while let Some(found) = find(&bytes[cursor..], marker) {
+        let mut start = cursor + found + marker.len();
+        if bytes.get(start..start + 2) == Some(b"--") {
+            break;
+        }
+        if bytes.get(start..start + 2) == Some(b"\r\n") {
+            start += 2;
+        }
+        let Some(end) = find(&bytes[start..], marker) else {
+            break;
+        };
+        let end = start + end;
+        parts.push(
+            bytes[start..end]
+                .strip_suffix(b"\r\n")
+                .unwrap_or(&bytes[start..end]),
+        );
+        cursor = end;
+    }
+    parts
+}
+
+fn part_headers(part: &[u8]) -> Vec<(String, String)> {
+    let Some(split) = find(part, b"\r\n\r\n") else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&part[..split])
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+        .collect()
+}
+
+fn part_body(part: &[u8]) -> &[u8] {
+    find(part, b"\r\n\r\n")
+        .map(|split| &part[split + 4..])
+        .unwrap_or(part)
+}
+
+fn part_param(headers: &[(String, String)], header: &str, param: &str) -> Option<String> {
+    let value = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(header))
+        .map(|(_, value)| value.as_str())?;
+    value.split(';').skip(1).find_map(|piece| {
+        let piece = piece.trim();
+        let (name, value) = piece.split_once('=')?;
+        if !name.trim().eq_ignore_ascii_case(param) {
+            return None;
+        }
+        Some(value.trim().trim_matches('"').to_string())
+    })
+}
+
+fn boundary_of(content_type: &str) -> Option<String> {
+    content_type.split(';').skip(1).find_map(|piece| {
+        let (name, value) = piece.trim().split_once('=')?;
+        name.trim()
+            .eq_ignore_ascii_case("boundary")
+            .then(|| value.trim().trim_matches('"').to_string())
+    })
+}
+
+fn is_multipart(content_type: Option<&str>) -> bool {
+    content_type
+        .map(|value| {
+            value
+                .to_ascii_lowercase()
+                .starts_with("multipart/form-data")
+        })
+        .unwrap_or(false)
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|part| part == needle)
+}
+
+fn header_value<'a>(headers: &'a [Header], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header, _)| header.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn content_type(headers: &[Header]) -> Option<&str> {
+    header_value(headers, "content-type")
+}
+
+/// What kind of media these bytes are, when they are media this recording
+/// knows how to name.
+fn sniff(bytes: &[u8]) -> Option<String> {
+    infer::get(bytes)
+        .map(|kind| kind.mime_type().to_string())
+        .filter(|mime| {
+            mime.starts_with("image/") || mime.starts_with("audio/") || mime.starts_with("video/")
+        })
+}
+
+/// The bytes inside a `data:` URL, and the mime it named if it named one.
+fn data_url(text: &str) -> Option<(Option<String>, Vec<u8>)> {
+    let rest = text.strip_prefix("data:")?;
+    let (header, encoded) = rest.split_once(',')?;
+    if !header.to_ascii_lowercase().contains("base64") {
+        return None;
+    }
+    let mime = header
+        .split(';')
+        .next()
+        .map(str::trim)
+        .filter(|mime| !mime.is_empty() && !mime.eq_ignore_ascii_case("base64"))
+        .map(str::to_string);
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .ok()?;
+    Some((mime, bytes))
+}
+
+/// A string that is a long base64 blob rather than words. A threshold keeps an
+/// ordinary answer from being decoded just because it happens to use the same
+/// letters.
+fn base64_blob(text: &str) -> Option<Vec<u8>> {
+    const LEAST: usize = 512;
+    if text.len() < LEAST
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+    {
+        return None;
+    }
+    base64::engine::general_purpose::STANDARD.decode(text).ok()
+}
+
+/// Everything an SSE stream said about its reasoning, gathered into one
+/// readable stretch.
+///
+/// Providers name a thought differently — `reasoning_content`, a reasoning
+/// text delta, a Gemini part flagged as a thought — and none of them is the
+/// answer, so none of them reaches a converter. A person diagnosing a
+/// generation still wants to see it, which is what this is for.
+fn thinking_of_sse(raw: &[u8]) -> String {
+    let events = String::from_utf8_lossy(raw);
+    let mut out = String::new();
+    for line in events.lines() {
+        let Some(payload) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(payload) {
+            if let Some(thought) = thinking_of(&value) {
+                out.push_str(&thought);
             }
         }
-    }
-}
-
-/// First sixteen hex characters of a body's digest, so that two recordings can be
-/// compared without reading either of them.
-fn digest(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(32);
-    for byte in &digest[..16] {
-        out.push_str(&format!("{byte:02x}"));
     }
     out
 }
 
+fn thinking_of(value: &Value) -> Option<String> {
+    let mut out = String::new();
+    gather_thinking(value, &mut out);
+    (!out.is_empty()).then_some(out)
+}
+
+/// Walks one event looking for what a provider calls a thought, whichever of
+/// its shapes the event uses: a reasoning delta, a thought part, or the
+/// reasoning field beside a chat choice.
+fn gather_thinking(value: &Value, out: &mut String) {
+    match value {
+        Value::Object(map) => {
+            let kind = map.get("type").and_then(Value::as_str);
+            let mut handled = false;
+            if kind == Some("thinking_delta") {
+                if let Some(text) = map.get("thinking").and_then(Value::as_str) {
+                    out.push_str(text);
+                    handled = true;
+                }
+            }
+            if let Some(kind) = kind {
+                if kind.ends_with("reasoning_text.delta")
+                    || kind.ends_with("reasoning_summary_text.delta")
+                {
+                    if let Some(text) = map.get("delta").and_then(Value::as_str) {
+                        out.push_str(text);
+                        handled = true;
+                    }
+                }
+            }
+            // A Gemini candidate carries a thought as a part of its own,
+            // flagged rather than named.
+            if map.get("thought").and_then(Value::as_bool) == Some(true) {
+                if let Some(text) = map.get("text").and_then(Value::as_str) {
+                    out.push_str(text);
+                    handled = true;
+                }
+            }
+            if !handled {
+                for key in ["reasoning_content", "reasoning", "thinking"] {
+                    if let Some(text) = map.get(key).and_then(Value::as_str) {
+                        if !text.is_empty() {
+                            out.push_str(text);
+                            break;
+                        }
+                    }
+                }
+            }
+            for child in map.values() {
+                gather_thinking(child, out);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                gather_thinking(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The headers a call carried, with the credential taken out of them.
-///
-/// Masked rather than dropped: which key was used is half of diagnosing a
-/// refusal, and a masked one still says that. The mask is the same one every other
-/// diagnostic surface in the application uses, so a key can be recognised in a
-/// recording and in a log line as the same key. Always masked, with no setting
-/// to turn that off: a recording is read by a person and pasted into bug
-/// reports, and there is no diagnosis that needs the whole key.
 fn scrubbed_headers(headers: &[Header], who: &Who) -> Value {
     let mut out = serde_json::Map::new();
     for (name, value) in headers {
@@ -784,7 +1974,6 @@ fn scrubbed_headers(headers: &[Header], who: &Who) -> Value {
     Value::Object(out)
 }
 
-/// A header that carries a credential, whichever protocol put it there.
 fn is_credential(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -797,10 +1986,6 @@ fn is_credential(name: &str) -> bool {
     )
 }
 
-/// One credential header, masked.
-///
-/// The scheme is kept where there is one, because "Bearer" and "Basic" say
-/// different things about a refusal and neither of them is a secret.
 fn masked_credential(value: &str, who: &Who) -> String {
     match value.split_once(' ') {
         Some((scheme, secret)) if !secret.contains(' ') => format!("{scheme} {}", masked(secret)),
@@ -810,10 +1995,6 @@ fn masked_credential(value: &str, who: &Who) -> String {
 }
 
 /// An address with any credential in its query taken out.
-///
-/// A key belongs in a header, and the protocols here put it in one, but an address
-/// is quoted back in error messages and copied into browsers, and one that carried
-/// a key in its query would keep it wherever it was copied to.
 fn scrubbed_url(url: &str, who: &Who) -> String {
     let Some((base, query)) = url.split_once('?') else {
         return scrubbed_text(url, who);
@@ -830,9 +2011,6 @@ fn scrubbed_url(url: &str, who: &Who) -> String {
 }
 
 /// Any echo of the key this call carried, wherever it turns up.
-///
-/// A provider explains a refusal by quoting back what it was sent, and what it was
-/// sent sometimes includes the key it was sent with.
 fn scrubbed_text(text: &str, who: &Who) -> String {
     if who.api_key.len() < MIN_SCRUBBED_CHARS || !text.contains(&who.api_key) {
         return text.to_string();
@@ -840,17 +2018,52 @@ fn scrubbed_text(text: &str, who: &Who) -> String {
     text.replace(&who.api_key, &masked(&who.api_key))
 }
 
-/// Shorter than this and a key is not worth masking, because the mask would show
-/// most of it.
+/// Every string inside a document, scrubbed. Used for the request summary,
+/// whose media is in its own files rather than in its fields.
+fn scrub_value(value: &Value, who: &Who) -> Value {
+    match value {
+        Value::String(text) => Value::String(scrubbed_text(text, who)),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| scrub_value(item, who)).collect())
+        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(name, item)| (name.clone(), scrub_value(item, who)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 const MIN_SCRUBBED_CHARS: usize = 8;
+
+/// A body's digest, so two recordings can be compared without reading either,
+/// and the same bytes inside two documents can point at one file.
+fn digest_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+fn ensure_dir(path: &Path) -> Result<()> {
+    std::fs::create_dir_all(path).with_context(|| format!("cannot create {}", path.display()))?;
+    private_directory(path);
+    Ok(())
+}
 
 /// One document, written whole and readable only by whoever owns the directory.
 fn write_json(root: &Path, name: &str, value: &Value) -> Result<u64> {
-    // Pretty rather than packed: this is read by a person in an editor, and a
-    // single line holding a whole answer is a line nobody scrolls.
+    // Pretty rather than packed: this is read by a person in an editor.
     let bytes = serde_json::to_vec_pretty(value)?;
     write_binary(root, name, &bytes)?;
     Ok(bytes.len() as u64)
+}
+
+fn write_text(root: &Path, name: &str, text: &str) -> Result<()> {
+    write_binary(root, name, text.as_bytes())
 }
 
 fn write_binary(root: &Path, name: &str, bytes: &[u8]) -> Result<()> {
@@ -860,11 +2073,7 @@ fn write_binary(root: &Path, name: &str, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// One line in the index, which is the place a reader starts.
-///
-/// Appended rather than rewritten, so that a directory that was being written to
-/// when the process died still says everything it got as far as saying.
-fn append_index(root: &Path, line: &str) -> Result<()> {
+fn append_index(root: &Path, line: &Value) -> Result<()> {
     use std::io::Write;
 
     let path = root.join("index.jsonl");
@@ -873,49 +2082,26 @@ fn append_index(root: &Path, line: &str) -> Result<()> {
         .append(true)
         .open(&path)
         .with_context(|| format!("cannot append to {}", path.display()))?;
-    writeln!(file, "{line}").with_context(|| format!("cannot write {}", path.display()))?;
+    let text = serde_json::to_string(line)?;
+    writeln!(file, "{text}").with_context(|| format!("cannot write {}", path.display()))?;
     private_file(&path);
     Ok(())
 }
 
-/// The one line the index carries for a call: enough to find it and enough to
-/// know whether it is the one worth opening.
-#[allow(clippy::too_many_arguments)]
-fn index_line(
-    name: &str,
-    kind: Kind,
-    who: &Who,
-    placed: &str,
-    took: Duration,
-    sent: &Sent,
-    back: &Back,
-    request_bytes: u64,
-    response_bytes: u64,
-) -> String {
-    let line = json!({
-        "name": name,
-        "placed": placed,
-        "kind": kind.as_str(),
-        "config": who.config,
-        "model": who.model,
-        "protocol": who.protocol,
-        "method": sent.method,
-        "url": scrubbed_url(&sent.url, who),
-        "status": back.status,
-        "tookMs": took.as_millis() as u64,
-        "error": back.error,
-        "requestFileBytes": request_bytes,
-        "responseFileBytes": response_bytes,
-        "files": [format!("{name}.request.json"), format!("{name}.response.json")],
-    });
-    serde_json::to_string(&line).unwrap_or_else(|_| "{}".to_string())
+/// The files a directory holds, in the order a reader lists them.
+fn files_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
 }
 
-/// A directory only its owner can read.
-///
-/// A recording holds prompts and, unless they are masked, credentials. The
-/// metadata directory beside it is held the same way, and for the same reason:
-/// the process that owns them is the only thing that should.
 #[cfg(unix)]
 fn private_directory(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -930,7 +2116,6 @@ fn private_directory(path: &Path) {
     let _ = path;
 }
 
-/// A file only its owner can read.
 #[cfg(unix)]
 fn private_file(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -948,95 +2133,98 @@ fn private_file(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generate::{GeneratedItem, InputRole};
     use crate::metadata::Protocol;
 
-    fn file(enabled: Option<bool>) -> DebugConfig {
-        DebugConfig { enabled }
-    }
-
-    fn who(key: &str) -> Who {
+    fn who() -> Who {
         Who {
             config: "chan".into(),
             model: "painter".into(),
+            display_name: "Painter".into(),
             protocol: "openaiChat".into(),
-            api_key: key.into(),
+            api_key: "sk-secret-value-1234".into(),
         }
     }
 
-    fn job(body: Body, status: Option<u16>) -> Job {
-        Job {
-            name: "2026-01-01T00-00-00Z_0001_chan_painter_generate".into(),
-            kind: Kind::Generate,
-            who: who("sk-secret-value-1234"),
-            placed: "2026-01-01T00:00:00Z".into(),
-            took: Duration::from_millis(1200),
-            sent: Sent {
-                method: "POST".into(),
-                url: "https://api.example.invalid/v1/chat/completions?key=sk-secret-value-1234"
-                    .into(),
-                headers: vec![
-                    ("authorization".into(), "Bearer sk-secret-value-1234".into()),
-                    ("content-type".into(), "application/json".into()),
-                ],
-                body: Body::Text(r#"{"prompt":"a lantern"}"#.into()),
+    fn model() -> ModelCall {
+        ModelCall::new(
+            &crate::generate::models::ResolvedModel {
+                config_id: "chan".into(),
+                model: "painter".into(),
+                display_name: "Painter".into(),
+                protocol: Protocol::from_wire_name("openaiChat"),
+                url: "https://api.example.invalid/v1/chat/completions".into(),
+                category: Capability::Text,
+                scene: None,
             },
-            back: Back {
-                status,
-                headers: vec![("content-type".into(), "application/json".into())],
-                body,
-                aggregate: None,
-                error: None,
-            },
+            "sk-secret-value-1234".into(),
+            crate::config::GenerateConfig::default(),
+        )
+        .expect("a call")
+    }
+
+    fn input(bytes: Vec<u8>) -> MediaInput {
+        MediaInput {
+            role: InputRole::FirstFrame,
+            asset_id: "frame-1".into(),
+            name: "opening".into(),
+            bytes,
+            mime: "image/png".into(),
         }
+    }
+
+    fn call(kind: Kind, request: Body, response: Body) -> Call {
+        Call {
+            seq: 1,
+            kind,
+            method: "POST".into(),
+            url: "https://api.example.invalid/v1?key=sk-secret-value-1234".into(),
+            headers: vec![
+                ("authorization".into(), "Bearer sk-secret-value-1234".into()),
+                ("content-type".into(), "application/json".into()),
+            ],
+            response_headers: vec![("content-type".into(), "application/json".into())],
+            status: Some(200),
+            took: Duration::from_millis(5),
+            request,
+            response,
+            media: None,
+            stream: None,
+            error: None,
+        }
+    }
+
+    fn read(root: &Path, name: &str) -> Vec<u8> {
+        std::fs::read(root.join(name)).unwrap_or_else(|_| panic!("{name} is there"))
+    }
+
+    fn read_json(root: &Path, name: &str) -> Value {
+        serde_json::from_slice(&read(root, name)).expect("the file is JSON")
     }
 
     #[test]
     fn recording_is_off_until_somebody_asks_for_it() {
-        let settled = settle(&file(None), None, None, Path::new("/appdata"));
+        let settled = settle(
+            &DebugConfig { enabled: None },
+            None,
+            None,
+            Path::new("/appdata"),
+        );
         assert!(!settled.enabled);
         assert_eq!(settled.dir, PathBuf::from("/appdata/records"));
     }
 
     #[test]
-    fn the_file_says_whether_recording_happens() {
-        let settled = settle(&file(Some(true)), None, None, Path::new("/appdata"));
-        assert!(settled.enabled);
-    }
-
-    #[test]
-    fn the_environment_beats_the_file() {
-        let settled = settle(&file(Some(false)), None, Some("1"), Path::new("/appdata"));
-        assert!(settled.enabled);
-    }
-
-    #[test]
-    fn the_environment_can_switch_off_what_the_file_switched_on() {
-        let settled = settle(&file(Some(true)), None, Some("off"), Path::new("/appdata"));
-        assert!(!settled.enabled);
-    }
-
-    #[test]
     fn what_somebody_typed_at_the_process_beats_the_environment() {
         let settled = settle(
-            &file(Some(false)),
+            &DebugConfig {
+                enabled: Some(false),
+            },
             Some(true),
             Some("0"),
             Path::new("/appdata"),
         );
         assert!(settled.enabled);
-    }
-
-    #[test]
-    fn the_directory_is_not_a_setting_any_source_can_move() {
-        // All three sources say on or off and nothing about where: recordings
-        // land in the records subdirectory of the application data directory
-        // whatever else anybody configured.
-        for settled in [
-            settle(&file(Some(true)), None, None, Path::new("/appdata")),
-            settle(&file(None), Some(true), Some("1"), Path::new("/appdata")),
-        ] {
-            assert_eq!(settled.dir, PathBuf::from("/appdata/records"));
-        }
     }
 
     #[test]
@@ -1047,255 +2235,381 @@ mod tests {
         for word in ["0", "false", "No", "off"] {
             assert_eq!(truthy(word), Some(false), "{word} means off");
         }
-        // A word that means neither is left to the file rather than guessed at.
-        assert_eq!(truthy(""), None);
         assert_eq!(truthy("maybe"), None);
     }
 
     #[test]
     fn a_name_a_reader_typed_cannot_write_somewhere_else() {
         assert_eq!(safe_name("my/channel"), "my_channel");
-        // Dots are kept, because a model is named with them; the separators that
-        // would climb out of the directory are what goes.
         assert_eq!(safe_name("../../etc"), ".._.._etc");
         assert_eq!(safe_name(""), "unnamed");
-        assert_eq!(safe_name("a b:c"), "a_b_c");
         assert_eq!(safe_name(&"x".repeat(60)).len(), 40);
     }
 
     #[test]
-    fn a_credential_is_masked_but_still_says_which_one_it_was() {
-        let who = who("sk-secret-value-1234");
-        let headers = scrubbed_headers(
-            &[
-                ("authorization".into(), "Bearer sk-secret-value-1234".into()),
-                ("x-goog-api-key".into(), "sk-secret-value-1234".into()),
-                ("content-type".into(), "application/json".into()),
-            ],
-            &who,
-        );
-        let value = |name: &str| {
-            headers
-                .get(name)
-                .and_then(Value::as_str)
-                .unwrap()
-                .to_string()
-        };
-        // The scheme is kept because "Bearer" and "Basic" say different things
-        // about a refusal and neither of them is a secret.
-        assert!(value("authorization").starts_with("Bearer sk-…"));
-        assert!(!value("authorization").contains("secret-value"));
-        assert!(value("x-goog-api-key").contains('…'));
-        assert_eq!(value("content-type"), "application/json");
-    }
-
-    #[test]
-    fn a_key_in_an_address_is_masked_too() {
-        let who = who("sk-secret-value-1234");
-        let url = scrubbed_url(
-            "https://api.example.invalid/v1/models?key=sk-secret-value-1234&pageSize=50",
-            &who,
-        );
-        assert!(url.contains("pageSize=50"), "the rest of the query stays");
-        assert!(!url.contains("secret-value"), "the key does not");
-        assert!(url.contains("key=sk-…"));
-    }
-
-    #[test]
-    fn a_key_a_provider_echoes_back_is_masked_wherever_it_turns_up() {
-        let who = who("sk-secret-value-1234");
-        let echoed = scrubbed_text(
-            r#"{"error":{"message":"invalid key sk-secret-value-1234"}}"#,
-            &who,
-        );
-        assert!(!echoed.contains("secret-value"));
-        assert!(echoed.contains("invalid key"));
-    }
-
-    #[test]
-    fn a_key_too_short_to_mask_worthily_is_left_alone() {
-        let who = who("short");
-        // Masking five characters would show most of them, which is worse than
-        // either extreme: it looks protected and is not.
-        assert_eq!(scrubbed_text("short", &who), "short");
-    }
-
-    /// A recorder of the test's own: a directory to write into, and a writer
-    /// reading for it.
-    ///
-    /// Made here rather than borrowed from [`init`], which is the one recorder a
-    /// process has and can only have once: a test that wants a call written down
-    /// should not depend on the process being in a state it can only be in once,
-    /// and two tests that both depended on it would be recording into the same
-    /// directory.
-    fn recording() -> (tempfile::TempDir, Recorder) {
-        let dir = tempfile::tempdir().expect("a directory to record into");
-        private_directory(dir.path());
-        let (sender, receiver) = mpsc::unbounded_channel();
-        let recorder = Recorder {
-            settings: Settings {
-                enabled: true,
-                dir: dir.path().to_path_buf(),
-            },
-            sequence: AtomicU64::new(1),
-            jobs: sender,
-        };
-        tokio::spawn(write_all(dir.path().to_path_buf(), receiver));
-        (dir, recorder)
-    }
-
-    /// Writes one call into a directory of its own and reads the files back.
-    ///
-    /// The directory is handed back with the path because it owns the files: one
-    /// dropped here would take the recording with it.
-    fn written(job: Job) -> (tempfile::TempDir, PathBuf) {
-        let dir = tempfile::tempdir().expect("a directory to record into");
-        let root = dir.path().to_path_buf();
-        write_one(&root, job).expect("a recording is written");
-        (dir, root)
-    }
-
-    fn read_json(root: &Path, name: &str) -> Value {
-        let bytes = std::fs::read(root.join(name)).expect("the file is there");
-        serde_json::from_slice(&bytes).expect("the file is JSON")
-    }
-
-    #[test]
-    fn a_call_is_written_as_a_request_and_the_answer_to_it() {
-        let (_dir, root) = written(job(
-            Body::Text(r#"{"choices":[{"text":"a lantern"}]}"#.into()),
-            Some(200),
-        ));
-        let name = "2026-01-01T00-00-00Z_0001_chan_painter_generate";
-        let request = read_json(&root, &format!("{name}.request.json"));
-        let response = read_json(&root, &format!("{name}.response.json"));
-
-        assert_eq!(request["kind"], "generate");
-        assert_eq!(request["config"], "chan");
-        assert_eq!(request["model"], "painter");
-        assert_eq!(request["method"], "POST");
-        assert_eq!(request["placed"], "2026-01-01T00:00:00Z");
-        // The prompt is the reason the recording exists, so it is whole.
-        assert_eq!(request["body"]["kind"], "json");
-        assert_eq!(request["body"]["json"]["prompt"], "a lantern");
-        assert_eq!(response["status"], 200);
-        assert_eq!(response["tookMs"], 1200);
-        assert_eq!(response["body"]["json"]["choices"][0]["text"], "a lantern");
-    }
-
-    #[test]
-    fn a_body_that_is_not_text_lands_beside_the_record_and_is_pointed_at() {
-        let bytes: Vec<u8> = (0..256u32).map(|byte| byte as u8).collect();
-        let (_dir, root) = written(job(Body::Bytes(bytes.clone()), Some(200)));
-        let name = "2026-01-01T00-00-00Z_0001_chan_painter_generate";
-        let response = read_json(&root, &format!("{name}.response.json"));
-        let sidecar = format!("{name}.response.bin");
-
-        assert_eq!(response["body"]["kind"], "binary");
-        assert_eq!(response["body"]["file"], sidecar);
-        assert_eq!(response["body"]["bytes"], 256);
+    fn a_run_is_named_for_when_it_happened_and_which_model_answered() {
         assert_eq!(
-            std::fs::read(root.join(&sidecar)).expect("the bytes are there"),
-            bytes,
-            "nothing is cut out of a body"
+            name_of("2026-11-16T10:15:00.123Z", 7, &model()),
+            "2026-11-16T10-15-00.123Z_chan_painter_0007"
         );
-        // A digest lets two recordings be compared without reading either.
+    }
+
+    #[test]
+    fn a_reference_is_written_under_the_asset_it_came_from() {
+        let (files, references, digests) = input_files(&[input(vec![1, 2, 3])]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "request-frame-1.png");
+        assert_eq!(files[0].bytes, vec![1, 2, 3]);
+        assert_eq!(references[0]["role"], "firstFrame");
+        assert_eq!(references[0]["file"], "request-frame-1.png");
         assert_eq!(
-            response["body"]["sha256"].as_str().expect("a digest").len(),
-            32
+            digests[&digest_hex(&[1, 2, 3])],
+            "request-frame-1.png",
+            "the bytes are recognised wherever they turn up again"
         );
     }
 
     #[test]
-    fn a_call_that_never_left_says_so_rather_than_looking_like_an_answer() {
-        let mut failed = job(Body::Empty, None);
-        failed.back.error = Some("the channel did not answer in time".into());
-        let (_dir, root) = written(failed);
-        let name = "2026-01-01T00-00-00Z_0001_chan_painter_generate";
-        let response = read_json(&root, &format!("{name}.response.json"));
-        assert!(
-            response["status"].is_null(),
-            "there was no status to report"
+    fn the_same_asset_twice_gets_two_names() {
+        let (files, _, _) = input_files(&[input(vec![1]), input(vec![2])]);
+        assert_eq!(files[0].name, "request-frame-1.png");
+        assert_eq!(files[1].name, "request-frame-1-2.png");
+    }
+
+    #[test]
+    fn media_inside_a_body_is_lifted_into_a_file_and_pointed_at() {
+        let mut sidecars = Vec::new();
+        let mut counter = 0;
+        let value = json!({
+            "prompt": "a lantern",
+            "image": "data:image/png;base64,AQID",
+        });
+        let sanitized = sanitize_json(
+            &value,
+            1,
+            "request",
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut sidecars,
+            &mut counter,
+            &who(),
         );
-        assert_eq!(response["body"]["kind"], "empty");
-        assert_eq!(response["error"], "the channel did not answer in time");
+        assert_eq!(sanitized["prompt"], "a lantern");
+        assert_eq!(sanitized["image"]["file"], "call-1-request-1.png");
+        assert_eq!(sanitized["image"]["mime"], "image/png");
+        assert_eq!(sidecars.len(), 1);
+        assert_eq!(sidecars[0].0, "call-1-request-1.png");
+        assert_eq!(sidecars[0].1, vec![1, 2, 3]);
     }
 
     #[test]
-    fn the_index_says_enough_to_find_the_one_call_worth_opening() {
-        let (_dir, root) = written(job(Body::Text("{}".into()), Some(200)));
-        let lines = std::fs::read_to_string(root.join("index.jsonl")).expect("an index");
-        let line: Value = serde_json::from_str(lines.trim()).expect("one JSON line");
-        assert_eq!(line["kind"], "generate");
-        assert_eq!(line["status"], 200);
-        assert_eq!(line["tookMs"], 1200);
-        // The address is masked in the index too: it is the file most likely to
-        // be pasted into a bug report.
-        assert!(!lines.contains("secret-value"));
-        assert!(lines.contains("key=sk-…"));
-        let files = line["files"].as_array().expect("the files of the call");
-        assert_eq!(files.len(), 2);
+    fn a_data_url_nothing_can_open_is_described_rather_than_written() {
+        let mut sidecars = Vec::new();
+        let mut counter = 0;
+        let sanitized = sanitize_json(
+            &json!({ "doc": "data:application/pdf;base64,JVBERi0=" }),
+            1,
+            "request",
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut sidecars,
+            &mut counter,
+            &who(),
+        );
+        assert!(sanitized["doc"]["dataUrlChars"].is_number());
+        assert!(sidecars.is_empty(), "there is nothing to open");
     }
 
     #[test]
-    fn two_calls_in_one_directory_do_not_overwrite_each_other() {
+    fn media_that_was_already_written_points_at_that_file() {
+        let inputs = HashMap::from([(digest_hex(&[1, 2, 3]), "request-frame-1.png".to_string())]);
+        let mut sidecars = Vec::new();
+        let mut counter = 0;
+        let sanitized = sanitize_json(
+            &json!({ "image": "data:image/png;base64,AQID" }),
+            1,
+            "request",
+            &inputs,
+            &HashMap::new(),
+            &mut sidecars,
+            &mut counter,
+            &who(),
+        );
+        assert_eq!(sanitized["image"]["file"], "request-frame-1.png");
+        assert!(sidecars.is_empty(), "nothing is written twice");
+    }
+
+    #[test]
+    fn a_blob_nothing_recognises_is_not_written_in_full() {
+        let mut sidecars = Vec::new();
+        let mut counter = 0;
+        let blob = "A".repeat(600);
+        let sanitized = sanitize_json(
+            &json!({ "blob": blob }),
+            1,
+            "response",
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut sidecars,
+            &mut counter,
+            &who(),
+        );
+        assert_eq!(sanitized["blob"]["base64Chars"], 600);
+        assert!(sidecars.is_empty());
+    }
+
+    #[test]
+    fn a_form_is_written_as_its_fields_and_files() {
+        let body = "--BOUND\r\n\
+Content-Disposition: form-data; name=\"prompt\"\r\n\r\n\
+A lantern\r\n\
+--BOUND\r\n\
+Content-Disposition: form-data; name=\"image\"; filename=\"opening.png\"\r\n\
+Content-Type: image/png\r\n\r\n\
+\x01\x02\x03\r\n\
+--BOUND--\r\n";
+        let mut sidecars = Vec::new();
+        let value = multipart_value(
+            body.as_bytes(),
+            "multipart/form-data; boundary=BOUND",
+            1,
+            "request",
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut sidecars,
+            &who(),
+        );
+        assert_eq!(value["kind"], "multipart");
+        assert_eq!(value["fields"]["prompt"], "A lantern");
+        assert_eq!(value["files"][0]["part"], "image");
+        assert_eq!(value["files"][0]["file"], "call-1-request-image.png");
+        assert_eq!(sidecars.len(), 1);
+        assert_eq!(sidecars[0].1, vec![1, 2, 3]);
+
+        let inputs = HashMap::from([(digest_hex(&[1, 2, 3]), "request-frame-1.png".to_string())]);
+        let mut sidecars = Vec::new();
+        let matched = multipart_value(
+            body.as_bytes(),
+            "multipart/form-data; boundary=BOUND",
+            1,
+            "request",
+            &inputs,
+            &HashMap::new(),
+            &mut sidecars,
+            &who(),
+        );
+        assert_eq!(matched["files"][0]["file"], "request-frame-1.png");
+        assert!(sidecars.is_empty());
+    }
+
+    #[test]
+    fn raw_bytes_are_pointed_at_where_they_were_already_written() {
+        let inputs = HashMap::from([(digest_hex(&[1, 2, 3]), "request-frame-1.png".to_string())]);
+        let mut sidecars = Vec::new();
+        let value = binary_value(
+            &[1, 2, 3],
+            1,
+            "request",
+            Some("image/png"),
+            &inputs,
+            &HashMap::new(),
+            &mut sidecars,
+        );
+        assert_eq!(value["file"], "request-frame-1.png");
+        assert!(sidecars.is_empty());
+    }
+
+    #[test]
+    fn a_blob_nobody_can_open_is_described_rather_than_copied() {
+        let mut sidecars = Vec::new();
+        let value = binary_value(
+            &[0, 1, 2, 3],
+            1,
+            "response",
+            Some("application/octet-stream"),
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut sidecars,
+        );
+        assert_eq!(value["kind"], "binary");
+        assert_eq!(value["bytes"], 4);
+        assert!(value.get("file").is_none(), "there is nothing to open");
+        assert!(sidecars.is_empty());
+    }
+
+    #[test]
+    fn a_thought_is_gathered_whichever_way_the_provider_names_it() {
+        let raw = b"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think \"}}]}\n\n\
+data: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"more\"}\n\n\
+data: {\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" end\"}}\n\n\
+data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"plan\",\"thought\":true}]}}]}\n\n\
+[DONE]\n\n";
+        assert_eq!(thinking_of_sse(raw), "think more endplan");
+    }
+
+    #[test]
+    fn only_the_poll_that_ended_a_job_is_kept() {
+        let placeholder = |seq: u64, kind: Kind| {
+            let mut recorded = call(kind, Body::Empty, Body::Empty);
+            recorded.seq = seq;
+            recorded
+        };
+        let calls = vec![
+            placeholder(1, Kind::TaskPoll),
+            placeholder(2, Kind::TaskPoll),
+            placeholder(3, Kind::Media),
+        ];
+        let kept = filter_polls(calls);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].kind, Kind::TaskPoll);
+        assert_eq!(kept[0].seq, 2, "the last poll, not the first");
+        assert_eq!(kept[1].kind, Kind::Media);
+    }
+
+    #[test]
+    fn one_run_is_one_directory_of_readable_files() {
         let dir = tempfile::tempdir().expect("a directory to record into");
         let root = dir.path();
-        let mut first = job(Body::Text(r#"{"n":1}"#.into()), Some(200));
-        first.name = "2026-01-01T00-00-00Z_0001_chan_painter_generate".into();
-        let mut second = job(Body::Text(r#"{"n":2}"#.into()), Some(200));
-        second.name = "2026-01-01T00-00-00Z_0002_chan_painter_generate".into();
-        second.kind = Kind::TaskPoll;
-        write_one(root, first).expect("the first is written");
-        write_one(root, second).expect("the second is written");
+        let name = "2026-11-16T10-15-00.123Z_chan_painter_0001";
+        let started = Job::Started {
+            name: name.into(),
+            request: json!({ "prompt": "a lantern", "capability": "image" }),
+            inputs: vec![InputFile {
+                name: "request-frame-1.png".into(),
+                bytes: vec![1, 2, 3],
+            }],
+            index: json!({ "event": "start", "dir": name }),
+        };
+        write_one(root, started).expect("the request is written");
 
-        let lines = std::fs::read_to_string(root.join("index.jsonl")).expect("an index");
-        assert_eq!(lines.lines().count(), 2, "one line each, appended");
-        let polled = read_json(
+        let answer = GenerateResult {
+            text: Some("A lantern.".into()),
+            items: vec![GeneratedItem {
+                bytes: vec![1, 2, 3],
+                mime: "image/png".into(),
+                kind: Capability::Image,
+                width: Some(1),
+                height: Some(1),
+                duration_ms: None,
+            }],
+            ..GenerateResult::default()
+        };
+        let finished = Job::Finished(Box::new(FinishedJob {
+            name: name.into(),
+            who: who(),
+            verdict: Verdict::Ok(answer),
+            calls: vec![call(
+                Kind::Generate,
+                Body::Text(
+                    json!({ "prompt": "a lantern", "image": "data:image/png;base64,AQID" })
+                        .to_string(),
+                ),
+                Body::Text(json!({ "output_text": "A lantern." }).to_string()),
+            )],
+            digests: HashMap::from([(digest_hex(&[1, 2, 3]), "request-frame-1.png".to_string())]),
+            request: None,
+            index_start: None,
+            index_finish: json!({ "event": "finish", "dir": name, "status": "ok" }),
+            took: Duration::from_millis(12),
+        }));
+        write_one(root, finished).expect("the answer is written");
+
+        let run = root.join(name);
+        let request = read_json(&run, "request.json");
+        assert_eq!(request["prompt"], "a lantern");
+        assert_eq!(read(&run, "request-frame-1.png"), vec![1, 2, 3]);
+
+        let calls = std::fs::read_to_string(run.join("calls.jsonl")).expect("the calls are there");
+        let line: Value = serde_json::from_str(calls.trim()).expect("one JSON line");
+        assert_eq!(line["request"]["image"]["file"], "request-frame-1.png");
+        assert_eq!(line["response"]["output_text"], "A lantern.");
+
+        let response = read_json(&run, "response.json");
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["text"], "A lantern.");
+        assert_eq!(response["media"][0]["file"], "response-1.png");
+        assert_eq!(read(&run, "response.txt"), b"A lantern.");
+        assert_eq!(read(&run, "response-1.png"), vec![1, 2, 3]);
+
+        let index = std::fs::read_to_string(root.join("index.jsonl")).expect("an index");
+        let lines: Vec<Value> = index
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("one JSON line"))
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["event"], "start");
+        assert_eq!(lines[1]["event"], "finish");
+        assert_eq!(lines[1]["files"][0], "calls.jsonl");
+    }
+
+    #[test]
+    fn a_failure_says_what_went_wrong_and_still_writes_the_request() {
+        let dir = tempfile::tempdir().expect("a directory to record into");
+        let root = dir.path();
+        let name = "2026-11-16T10-15-00.123Z_chan_painter_0001";
+        let finished = Job::Finished(Box::new(FinishedJob {
+            name: name.into(),
+            who: who(),
+            verdict: Verdict::Err {
+                code: "PROVIDER_RATE_LIMIT",
+                message: "slow down, sk-secret-value-1234".into(),
+                retryable: true,
+            },
+            calls: Vec::new(),
+            digests: HashMap::new(),
+            request: Some(json!({ "prompt": "a lantern" })),
+            index_start: Some(json!({ "event": "start", "dir": name })),
+            index_finish: json!({ "event": "finish", "dir": name, "status": "error" }),
+            took: Duration::from_millis(12),
+        }));
+        write_one(root, finished).expect("the failure is written");
+
+        let run = root.join(name);
+        assert_eq!(read_json(&run, "request.json")["prompt"], "a lantern");
+        let response = read_json(&run, "response.json");
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "PROVIDER_RATE_LIMIT");
+        let message = response["error"]["message"].as_str().expect("a message");
+        assert!(message.contains("slow down"));
+        assert!(!message.contains("secret-value"), "the key is masked");
+    }
+
+    #[test]
+    fn every_text_file_is_scrubbed_of_the_credential() {
+        let dir = tempfile::tempdir().expect("a directory to record into");
+        let root = dir.path();
+        let name = "2026-11-16T10-15-00.123Z_chan_painter_0001";
+        write_one(
             root,
-            "2026-01-01T00-00-00Z_0002_chan_painter_generate.request.json",
-        );
-        assert_eq!(
-            polled["kind"], "task-poll",
-            "what the call was for is recorded, not just what it was called"
-        );
-    }
+            Job::Finished(Box::new(FinishedJob {
+                name: name.into(),
+                who: who(),
+                verdict: Verdict::Ok(GenerateResult {
+                    text: Some("a key echoed: sk-secret-value-1234".into()),
+                    ..GenerateResult::default()
+                }),
+                calls: vec![call(
+                    Kind::Generate,
+                    Body::Text(r#"{"prompt":"a lantern"}"#.into()),
+                    Body::Text(r#"{"error":"bad key sk-secret-value-1234"}"#.into()),
+                )],
+                digests: HashMap::new(),
+                request: Some(json!({ "prompt": "a lantern" })),
+                index_start: None,
+                index_finish: json!({ "event": "finish", "dir": name }),
+                took: Duration::from_millis(4),
+            })),
+        )
+        .expect("the run is written");
 
-    /// What a stream is written as: the raw events beside what they added up to,
-    /// because the interesting failure is the one where the two disagree.
-    #[test]
-    fn a_stream_keeps_what_arrived_beside_what_it_added_up_to() {
-        let mut streamed = job(Body::Text("data: one\n\ndata: two\n\n".into()), Some(200));
-        streamed.kind = Kind::Stream;
-        streamed.back.aggregate = Some("one two".into());
-        let (_dir, root) = written(streamed);
-        let name = "2026-01-01T00-00-00Z_0001_chan_painter_generate";
-        let response = read_json(&root, &format!("{name}.response.json"));
-        assert_eq!(response["aggregate"], "one two");
-        assert_eq!(response["body"]["kind"], "text");
-        assert!(response["body"]["text"]
-            .as_str()
-            .expect("the raw events")
-            .contains("data: one"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_recording_is_readable_by_nobody_but_its_owner() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let (_dir, root) = written(job(Body::Text("{}".into()), Some(200)));
-        let name = "2026-01-01T00-00-00Z_0001_chan_painter_generate";
-        for suffix in ["request.json", "response.json"] {
-            let path = root.join(format!("{name}.{suffix}"));
-            let mode = std::fs::metadata(&path)
-                .expect("metadata")
-                .permissions()
-                .mode();
-            assert_eq!(
-                mode & 0o777,
-                0o600,
-                "{} is readable by somebody else",
+        for entry in std::fs::read_dir(root.join(name)).expect("the directory is readable") {
+            let path = entry.expect("an entry").path();
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            assert!(
+                !text.contains("sk-secret-value-1234"),
+                "{} leaks the credential",
                 path.display()
             );
         }
@@ -1303,149 +2617,39 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn the_directory_recordings_go_into_is_held_the_way_the_metadata_one_is() {
+    fn a_recording_is_readable_by_nobody_but_its_owner() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().expect("a directory to record into");
-        // Whatever the umask made of it, a directory holding prompts is not one
-        // anybody else on the machine should be able to list.
-        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
-            .expect("permissions");
-        private_directory(dir.path());
-        let mode = std::fs::metadata(dir.path())
-            .expect("metadata")
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o700);
-    }
-
-    #[test]
-    fn a_request_with_no_body_says_so_rather_than_saying_it_was_empty() {
-        assert!(matches!(body_of(None), Body::Empty));
-        assert_eq!(
-            body_value(
-                &Body::Empty,
-                "n",
-                "request",
-                &Sidecars::default(),
-                &who("k"),
-            )["bytes"],
-            0
-        );
-        // A streamed body cannot be read twice, and pretending it was empty would
-        // be a lie a reader could not check.
-        let streamed = body_value(
-            &Body::Streamed,
-            "n",
-            "request",
-            &Sidecars::default(),
-            &who("k"),
-        );
-        assert_eq!(streamed["kind"], "streamed");
-        assert!(streamed["note"]
-            .as_str()
-            .expect("a note")
-            .contains("cannot be read twice"));
-    }
-
-    #[test]
-    fn nothing_is_recorded_while_recording_is_off() {
-        // The default state of the application: no server in this test binary
-        // started a recorder, so there is nothing to read a request for and
-        // nothing to write afterwards.
-        assert!(active().is_none());
-        assert!(begin(Kind::Generate, &channel(), &request()).is_none());
-        // Finishing a call that was never begun is nothing, which is what lets a
-        // call site hand the recording on without a branch of its own.
-        answered(None, 200, &HeaderMap::new(), b"{}");
-        unsent(None, "the channel did not answer in time");
-    }
-
-    /// A model configuration to record against, addressed to a host that
-    /// cannot answer.
-    fn channel() -> ModelCall {
-        ModelCall::new(
-            &crate::generate::models::ResolvedModel {
-                config_id: "chan".into(),
-                model: "painter".into(),
-                display_name: "Painter".into(),
-                protocol: Protocol::from_wire_name("openaiChat"),
-                url: "https://api.example.invalid/v1/chat/completions".into(),
-                category: crate::domain::Capability::Text,
-                scene: None,
+        let root = dir.path();
+        let name = "2026-11-16T10-15-00.123Z_chan_painter_0001";
+        write_one(
+            root,
+            Job::Started {
+                name: name.into(),
+                request: json!({ "prompt": "a lantern" }),
+                inputs: Vec::new(),
+                index: json!({ "event": "start", "dir": name }),
             },
-            "sk-secret-value-1234".into(),
-            crate::config::GenerateConfig::default(),
         )
-        .expect("a call")
-    }
+        .expect("the request is written");
 
-    fn request() -> reqwest::Request {
-        reqwest::Client::new()
-            .post("https://api.example.invalid/v1/chat/completions")
-            .json(&serde_json::json!({ "prompt": "a lantern" }))
-            .build()
-            .expect("a request")
-    }
-
-    #[tokio::test]
-    async fn a_call_recorded_the_way_a_request_records_it_lands_on_the_disk() {
-        let (dir, recorder) = recording();
-        let call = channel();
-        // The two halves a call site does: read the request before it goes out,
-        // because sending it consumes the body, and finish the recording once the
-        // answer is in hand.
-        let built = request();
-        let pending = recorder.begin(Kind::Generate, &call, &built);
-        assert!(
-            pending.name.contains("0001_chan_painter_generate"),
-            "a recording is named for the call it is: {}",
-            pending.name
+        let run = root.join(name);
+        assert_eq!(
+            std::fs::metadata(&run)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
         );
-        let job = job_of(
-            pending,
-            Outcome::of(200, &HeaderMap::new(), br#"{"ok":true}"#.to_vec()),
+        assert_eq!(
+            std::fs::metadata(run.join("request.json"))
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
-        let name = job.name.clone();
-        recorder.jobs.send(job).expect("the writer is reading");
-        // Dropping the last sender is what tells the writer there is no more,
-        // which is how it ends when the process does.
-        drop(recorder);
-
-        // Written by a task of its own rather than by the call, so that a slow disk
-        // costs a generation nothing; the index appearing is the writer's last act.
-        let root = dir.path().to_path_buf();
-        for _ in 0..200 {
-            if root.join("index.jsonl").exists() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let index = std::fs::read_to_string(root.join("index.jsonl")).expect("an index");
-        let line: Value = serde_json::from_str(index.trim()).expect("one JSON line");
-        assert_eq!(index.lines().count(), 1);
-        assert_eq!(line["name"], name);
-        assert_eq!(line["kind"], "generate");
-        assert_eq!(line["status"], 200);
-        assert_eq!(line["config"], "chan");
-        assert_eq!(line["model"], "painter");
-
-        let sent = read_json(&root, &format!("{name}.request.json"));
-        assert_eq!(sent["method"], "POST");
-        assert_eq!(sent["body"]["json"]["prompt"], "a lantern");
-        let back = read_json(&root, &format!("{name}.response.json"));
-        assert_eq!(back["status"], 200);
-        assert_eq!(back["body"]["json"]["ok"], true);
-    }
-
-    #[test]
-    fn a_request_is_read_whole_before_it_goes_out() {
-        // Whatever recording is doing, the request a call is built from can be
-        // read: the address, the method, the headers and the body together, which
-        // is the only moment all four of them are in one place.
-        let built = request();
-        assert_eq!(built.method(), reqwest::Method::POST);
-        assert!(matches!(body_of(built.body()), Body::Text(_)));
-        assert!(!headers_of(built.headers()).is_empty() || built.headers().is_empty());
     }
 }

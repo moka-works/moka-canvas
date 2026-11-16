@@ -278,9 +278,10 @@ pub(crate) async fn exchange(
     request: reqwest::RequestBuilder,
     deadline: Duration,
     ceiling: u64,
+    run: Option<&debug::Run>,
 ) -> Result<Reply, ProviderError> {
     let built = build(request.timeout(deadline))?;
-    let recording = debug::begin(kind, call, &built);
+    let recording = debug::capture(run, kind, &built);
     let response = match send(call, built).await {
         Ok(response) => response,
         Err(error) => {
@@ -368,7 +369,7 @@ pub(crate) enum Opened {
     /// answer is not finished until the stream is. Boxed because a whole request
     /// — address, headers, body — is a large thing to size an enum by, and this
     /// variant is read once and handed back to the recorder.
-    Streaming(reqwest::Response, Option<Box<debug::Pending>>),
+    Streaming(reqwest::Response, Option<Box<debug::Capture>>),
     Refused(Reply),
 }
 
@@ -381,9 +382,10 @@ pub(crate) async fn open_stream(
     kind: Kind,
     call: &ModelCall,
     request: reqwest::RequestBuilder,
+    run: Option<&debug::Run>,
 ) -> Result<Opened, ProviderError> {
     let built = build(request)?;
-    let recording = debug::begin(kind, call, &built);
+    let recording = debug::capture(run, kind, &built);
     let response = match send(call, built).await {
         Ok(response) => response,
         Err(error) => {
@@ -426,7 +428,7 @@ pub(crate) async fn open_stream(
 /// what the provider sent is evidence, and what was made of it is an opinion.
 pub(crate) async fn read_stream<F>(
     response: reqwest::Response,
-    recording: Option<debug::Pending>,
+    recording: Option<debug::Capture>,
     sink: &DeltaSink,
     cancel: &Cancel,
     deadline: Duration,
@@ -472,13 +474,7 @@ where
     match ended {
         Ok(()) => match reader.finish() {
             Ok(result) => {
-                debug::streamed(
-                    recording,
-                    status,
-                    &headers,
-                    raw,
-                    result.text.clone().unwrap_or_default(),
-                );
+                debug::streamed(recording, status, &headers, &result, raw);
                 Ok(result)
             }
             // A complaint that arrived with the stream is refused the same way
