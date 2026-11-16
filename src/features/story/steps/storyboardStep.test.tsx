@@ -727,6 +727,27 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-kf-slot-0")).toBeDefined();
   });
 
+  it("keeps an act folded when the reader steps away and comes back", () => {
+    openAtBoard(boarded());
+    fireEvent.click(screen.getByTestId("story-act-fold-0"));
+    expect(screen.queryByTestId("story-table")).toBeNull();
+
+    // Another step and back: the board is found as it was left rather than
+    // every act standing open again.
+    act(() => useStoryStore.getState().goStep("elements"));
+    act(() => useStoryStore.getState().goStep("storyboard"));
+    expect(screen.getByTestId("story-act-0")).toBeDefined();
+    expect(screen.queryByTestId("story-table")).toBeNull();
+
+    // Nor does looking at the episode beside it bring the act back open.
+    fireEvent.click(screen.getByTestId("story-board-chapter-1"));
+    fireEvent.click(screen.getByTestId("story-board-chapter-0"));
+    expect(screen.queryByTestId("story-table")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-act-fold-0"));
+    expect(screen.getByTestId("story-table")).toBeDefined();
+  });
+
   it("keeps a drawn frame short: the shoot role among the tools, the rest behind More", () => {
     openAtBoard(boarded());
     const row = screen.getByTestId("story-kf-0");

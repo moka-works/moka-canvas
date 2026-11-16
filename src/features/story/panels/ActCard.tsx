@@ -48,6 +48,7 @@ import {
   useStoryWavesRun,
   type ActRun,
 } from "../stores/storyJobStore";
+import { actFoldAt, rememberActFold } from "../stores/storyStore";
 import { KeyframeTable } from "./KeyframeTable";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { StoryPicks } from "./StoryPicks";
@@ -152,8 +153,10 @@ export function ActCard({
   const models = useModelStore((state) => state.view);
   // Whether this act is folded down to its head, which is how a long board is
   // read act by act without the height of every table. A place on the page,
-  // not a thing the document keeps.
-  const [folded, setFolded] = useState(false);
+  // not a thing the document keeps — kept past the card so a step or a page
+  // away and back finds the board as it was left.
+  const foldKey = `${story.id}:${chapterId}:${act.id}`;
+  const [folded, setFolded] = useState(() => actFoldAt(foldKey));
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [pickingVoice, setPickingVoice] = useState(false);
@@ -461,7 +464,10 @@ export function ActCard({
           )}
           className="story-act-fold"
           data-testid={`story-act-fold-${index}`}
-          onClick={() => setFolded(!folded)}
+          onClick={() => {
+            rememberActFold(foldKey, !folded);
+            setFolded(!folded);
+          }}
           title={t(
             folded ? "story:storyboard.unfoldAct" : "story:storyboard.foldAct",
             { index: index + 1 },

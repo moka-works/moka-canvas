@@ -103,6 +103,27 @@ export function rememberStepScroll(key: string, top: number): void {
   stepScrolls.set(key, top);
 }
 
+/**
+ * Which acts of a board were folded down, by story, chapter and act.
+ *
+ * Folding is also a place on the page rather than a thing the document keeps:
+ * a reader who stepped to another step or another page and came back finds the
+ * board as they left it, rather than every act standing open again. Held
+ * outside the store's own state because nothing drawn depends on it.
+ */
+const actFolds = new Map<string, boolean>();
+
+/** Whether an act was left folded, or standing open as a fresh board's are. */
+export function actFoldAt(key: string): boolean {
+  return actFolds.get(key) ?? false;
+}
+
+/** Keeps an act folded or unfolded as the reader left it. */
+export function rememberActFold(key: string, folded: boolean): void {
+  if (folded) actFolds.set(key, true);
+  else actFolds.delete(key);
+}
+
 /** The place this machine remembers for a project, which may be nowhere. */
 export function rememberedPlace(projectId: string):
   | {
@@ -319,6 +340,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
 
     forget() {
       stepScrolls.clear();
+      actFolds.clear();
       set({
         storyId: null,
         step: "idea",

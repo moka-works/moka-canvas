@@ -323,6 +323,16 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await firstAct.getByTestId("story-act-fold-0").click();
     await expect(firstAct.getByTestId("story-table")).toHaveCount(0);
     await expect(firstAct.getByTestId("story-act-title-0")).toBeVisible();
+
+    // Stepping away and back finds the act as it was left rather than unfolded.
+    await page.getByTestId("story-step-outline").click();
+    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
+    await page.getByTestId("story-step-storyboard").click();
+    await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
+    await expect(
+      page.getByTestId("story-act-0").getByTestId("story-table"),
+    ).toHaveCount(0);
+
     await firstAct.getByTestId("story-act-fold-0").click();
     await expect(firstAct.getByTestId("story-table")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-size-0")).toBeVisible();
