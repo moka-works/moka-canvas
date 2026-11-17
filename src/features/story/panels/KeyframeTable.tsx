@@ -706,6 +706,10 @@ function KeyframeRow({
               keepFrame(story, chapterId, act, keyframe, assetId)
             }
             onGenerate={draw}
+            onNotNeededChange={(notNeeded) =>
+              write({ artNotNeeded: notNeeded })
+            }
+            notNeeded={keyframe.artNotNeeded === true}
             onPickFromLibrary={() => setPicking(true)}
             sourcesInMenu
             onRemove={(assetId) =>

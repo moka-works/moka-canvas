@@ -464,6 +464,9 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
   if (keyframe.filmRole !== undefined && keyframe.filmRole !== "reference") {
     doc.filmRole = keyframe.filmRole;
   }
+  if (keyframe.artNotNeeded === true) {
+    doc.artNotNeeded = true;
+  }
   if (keyframe.voices !== undefined && keyframe.voices.length > 0) {
     doc.voices = keyframe.voices.map((take) => ({
       lineId: take.lineId,
@@ -1557,6 +1560,7 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
       "reference",
     );
   }
+  if (doc.artNotNeeded === true) keyframe.artNotNeeded = true;
   const voices = decodeStoryVoices(doc.voices);
   if (voices !== undefined) keyframe.voices = voices;
   const references = decodeStoryReferences(

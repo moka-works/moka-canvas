@@ -132,6 +132,7 @@ fn frame(index: usize) -> StoryKeyframe {
         dialogue: Vec::new(),
         duration_ms: 1_000,
         art: empty_slot(),
+        art_not_needed: false,
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
@@ -255,6 +256,7 @@ fn story_document() -> MokaFile {
                 created_at: NOW.into(),
             }],
         },
+        art_not_needed: false,
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
@@ -272,6 +274,7 @@ fn story_document() -> MokaFile {
         dialogue: Vec::new(),
         duration_ms: 3_000,
         art: empty_slot(),
+        art_not_needed: false,
         video: empty_slot(),
         voices: None,
         variant_choices: Default::default(),
@@ -1639,6 +1642,54 @@ fn keeps_a_shots_role_in_filming_on_the_side_of_the_plain_word() {
     assert!(!serde_json::to_string(&keyframes[1])
         .unwrap()
         .contains("filmRole"));
+}
+
+/// A shot the reader says needs no picture is written down as exactly that:
+/// the waiver is off the page until it is said, and saying otherwise takes it
+/// back off again.
+#[test]
+fn keeps_a_shots_picture_waiver_and_takes_it_back() {
+    let moka = story_document();
+    let plain = serde_json::to_string(story_of(&moka)).unwrap();
+    assert!(!plain.contains("artNotNeeded"));
+
+    let waived = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                art_not_needed: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    let frame = &story_of(&waived).chapters[0].acts[0].keyframes[1];
+    assert!(frame.art_not_needed);
+    assert!(serde_json::to_string(frame)
+        .unwrap()
+        .contains("artNotNeeded"));
+
+    let asked_again = round_trip(
+        &waived,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                art_not_needed: Some(false),
+                ..Default::default()
+            },
+        }],
+    );
+    let frame = &story_of(&asked_again).chapters[0].acts[0].keyframes[1];
+    assert!(!frame.art_not_needed);
+    assert!(!serde_json::to_string(frame)
+        .unwrap()
+        .contains("artNotNeeded"));
 }
 
 #[test]

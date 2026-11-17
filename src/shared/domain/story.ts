@@ -103,11 +103,21 @@ export function actPlannedMs(act: StoryAct): number {
   return act.keyframes.reduce((sum, keyframe) => sum + keyframe.durationMs, 0);
 }
 
+/**
+ * Whether a shot's frame is answered: drawn, or said not to be needed.
+ *
+ * A shot without a picture is work still to do, unless the reader has said
+ * this one needs none — which closes the same gap without a file behind it.
+ */
+export function frameSettled(keyframe: StoryKeyframe): boolean {
+  return keyframe.art.takes.length > 0 || keyframe.artNotNeeded === true;
+}
+
 /** Whether every shot in an act has a frame drawn for it. */
 export function actHasAllArt(act: StoryAct): boolean {
   return (
     act.keyframes.length > 0 &&
-    act.keyframes.every((keyframe) => keyframe.art.takes.length > 0)
+    act.keyframes.every((keyframe) => frameSettled(keyframe))
   );
 }
 
@@ -604,8 +614,7 @@ export function stepGaps(
       const frames = acts.reduce(
         (sum, act) =>
           sum +
-          act.keyframes.filter((keyframe) => keyframe.art.takes.length === 0)
-            .length,
+          act.keyframes.filter((keyframe) => !frameSettled(keyframe)).length,
         0,
       );
       if (frames > 0) gaps.push({ kind: "framesMissing", count: frames });

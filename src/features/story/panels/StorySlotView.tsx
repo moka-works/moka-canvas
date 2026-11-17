@@ -99,6 +99,8 @@ export function StorySlotView({
   onPickFromLibrary,
   onUpload,
   sourcesInMenu = false,
+  notNeeded,
+  onNotNeededChange,
   testId,
 }: {
   slot: StorySlot;
@@ -128,6 +130,10 @@ export function StorySlotView({
    * card draws, and the empty place still offers them where they are needed.
    */
   sourcesInMenu?: boolean;
+  /** Whether the place has been said to need no picture at all. */
+  notNeeded?: boolean;
+  /** Says the place needs a picture again, or needs none. */
+  onNotNeededChange?: (notNeeded: boolean) => void;
   testId?: string;
 }) {
   const { t } = useTranslation();
@@ -154,6 +160,30 @@ export function StorySlotView({
               {busy.state === "running" && <span className="story-spin" />}
               {placeText(t, busy)}
             </span>
+          ) : notNeeded === true && onNotNeededChange !== undefined ? (
+            <>
+              <span className="story-slot-label">{label}</span>
+              <span
+                className="story-hint"
+                data-testid={
+                  testId === undefined
+                    ? undefined
+                    : `${testId}-not-needed-state`
+                }
+              >
+                {t("story:panels.notNeededHint")}
+              </span>
+              <button
+                className="link"
+                data-testid={
+                  testId === undefined ? undefined : `${testId}-need`
+                }
+                onClick={() => onNotNeededChange(false)}
+                type="button"
+              >
+                {t("story:panels.needPicture")}
+              </button>
+            </>
           ) : (
             <>
               <span className="story-slot-label">{label}</span>
@@ -174,6 +204,18 @@ export function StorySlotView({
                 onUpload={onUpload}
                 testId={testId}
               />
+              {onNotNeededChange !== undefined && (
+                <button
+                  className="link"
+                  data-testid={
+                    testId === undefined ? undefined : `${testId}-not-needed`
+                  }
+                  onClick={() => onNotNeededChange(true)}
+                  type="button"
+                >
+                  {t("story:panels.notNeeded")}
+                </button>
+              )}
             </>
           )}
         </div>

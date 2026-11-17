@@ -389,6 +389,17 @@ describe("what a step is still waiting for", () => {
     ]);
   });
 
+  it("does not count a shot said to need no picture as missing", () => {
+    const story = createStory("新的故事", { idea: "一句话" });
+    const act = createActFor(ids.chapterFirst);
+    const shot = createKeyframe(0);
+    shot.artNotNeeded = true;
+    act.keyframes = [shot];
+    act.video = { takes: [take(ids.actVideo)] };
+    story.chapters = [{ ...createChapter("一"), acts: [act] }];
+    expect(stepGaps(story, "storyboard")).toEqual([]);
+  });
+
   it("counts the acts and the shots a mixed board is short of", () => {
     const story = createStory("新的故事", { idea: "一句话" });
     const whole = createActFor(ids.chapterFirst);

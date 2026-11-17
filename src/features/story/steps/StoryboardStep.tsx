@@ -10,6 +10,7 @@ import {
   chapterRevision,
   chunkWaves,
   formatDuration,
+  frameSettled,
   keyframeCount,
   targetKey,
   type StoryAct,
@@ -176,7 +177,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
       act.keyframes
         .filter(
           (keyframe) =>
-            keyframe.art.takes.length === 0 &&
+            !frameSettled(keyframe) &&
             !drawing({
               chapterId: held.id,
               actId: act.id,

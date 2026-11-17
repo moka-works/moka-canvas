@@ -602,6 +602,7 @@ fn keyframe_from(
             dialogue: Vec::new(),
             duration_ms: 4_000,
             art: empty_slot(),
+            art_not_needed: false,
             video: empty_slot(),
             voices: None,
             variant_choices: Default::default(),

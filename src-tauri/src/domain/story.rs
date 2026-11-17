@@ -185,6 +185,10 @@ fn is_plain_film_role(role: &StoryFilmRole) -> bool {
     *role == StoryFilmRole::Reference
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 // -----------------------------------------------------------------------------
 // What a telling is made of
 // -----------------------------------------------------------------------------
@@ -429,6 +433,13 @@ pub struct StoryKeyframe {
     pub dialogue: Vec<StoryDialogueLine>,
     pub duration_ms: i64,
     pub art: StorySlot,
+    /// Whether the reader has said this shot needs no picture at all.
+    ///
+    /// A shot without a picture is otherwise work not done yet; this closes
+    /// that gap without a file behind it. Left off when false, which is what
+    /// a board written before the reader could say means.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub art_not_needed: bool,
     pub video: StorySlot,
     /// The lines of this shot read aloud, each in its own speaker's voice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -919,6 +930,9 @@ pub struct StoryKeyframePatch {
     pub dialogue: Option<Vec<StoryDialogueLine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<i64>,
+    /// Whether this shot says it needs no picture; false asks for one again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub art_not_needed: Option<bool>,
     /// The form each mentioned element travels as; an empty map clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_choices: Option<BTreeMap<String, String>>,
@@ -2620,6 +2634,7 @@ pub fn apply_story_command(
                 content: patch.content.as_ref().map(|_| keyframe.content.clone()),
                 dialogue: patch.dialogue.as_ref().map(|_| keyframe.dialogue.clone()),
                 duration_ms: patch.duration_ms.map(|_| keyframe.duration_ms),
+                art_not_needed: patch.art_not_needed.map(|_| keyframe.art_not_needed),
                 variant_choices: patch
                     .variant_choices
                     .as_ref()
@@ -2669,6 +2684,9 @@ pub fn apply_story_command(
                         }
                         if let Some(duration) = patch.duration_ms {
                             frame.duration_ms = duration;
+                        }
+                        if let Some(not_needed) = patch.art_not_needed {
+                            frame.art_not_needed = not_needed;
                         }
                         if let Some(choices) = &patch.variant_choices {
                             frame.variant_choices = choices.clone();

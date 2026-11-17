@@ -6,6 +6,7 @@ import {
   actGranularity,
   actPlannedMs,
   currentTake,
+  frameSettled,
   takeFile,
   type StoryGuess,
   voiceHoldsLine,
@@ -287,9 +288,7 @@ export function ActCard({
     (element) => currentTake(element.main) === undefined,
   );
 
-  const missing = act.keyframes.filter(
-    (keyframe) => keyframe.art.takes.length === 0,
-  );
+  const missing = act.keyframes.filter((keyframe) => !frameSettled(keyframe));
   // What this card's own draw button hands over: the shots still missing a
   // picture that are not already being drawn, since asking for a shot twice
   // pays for it twice. It is also what the button counts, so its number is the
@@ -302,7 +301,9 @@ export function ActCard({
   // the draw button does not count them, but worth drawing again from the
   // pictures the story uses now.
   const stale = staleFrames(story, act, (id) => busyKeyframes.has(id));
-  const drawn = act.keyframes.length - missing.length;
+  const drawn = act.keyframes.filter(
+    (keyframe) => keyframe.art.takes.length > 0,
+  ).length;
   // A clip is made from the pictures of the act: every shot of it is drawn
   // first, since what a clip of half-drawn shots would be made from is the
   // words alone. Whether those pictures are liked is not for the room to ask.

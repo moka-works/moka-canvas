@@ -878,6 +878,15 @@ export interface StoryKeyframe {
   durationMs: number;
   /** The frame drawn for this shot. */
   art: StorySlot;
+  /**
+   * Whether the reader has said this shot needs no picture at all.
+   *
+   * A shot without a frame is otherwise work not done yet; this is the reader
+   * closing that gap on purpose, so the board stops asking for a drawing
+   * without putting a picture in its place. A frame that arrives afterwards
+   * stands as the answer, and the flag remains only as what was said before.
+   */
+  artNotNeeded?: boolean;
   /** This shot's own clip, when the story is boarded a shot at a time. */
   video: StorySlot;
   /**
@@ -1411,6 +1420,8 @@ export interface StoryKeyframePatch {
   variantChoices?: Record<string, string>;
   /** The picture model drawn of this frame; a null hands it to the step's own. */
   imageModel?: string | null;
+  /** Whether this shot says it needs no picture; false asks for one again. */
+  artNotNeeded?: boolean;
 }
 
 /**

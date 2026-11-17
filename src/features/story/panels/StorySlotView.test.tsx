@@ -67,6 +67,25 @@ describe("a place with nothing in it", () => {
     fireEvent.click(screen.getByTestId("story-slot-main-generate"));
     expect(onGenerate).toHaveBeenCalledTimes(1);
   });
+
+  it("can be said to need no picture at all, and asked for one again", () => {
+    const onNotNeededChange = vi.fn();
+    draw({ onNotNeededChange });
+    fireEvent.click(screen.getByTestId("story-slot-main-not-needed"));
+    expect(onNotNeededChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows a shot said to need no picture, and a way back", () => {
+    const onNotNeededChange = vi.fn();
+    draw({ notNeeded: true, onNotNeededChange });
+    expect(
+      screen.getByTestId("story-slot-main-not-needed-state").textContent,
+    ).toContain("needs no picture");
+    expect(screen.queryByTestId("story-slot-main-generate")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-slot-main-need"));
+    expect(onNotNeededChange).toHaveBeenCalledWith(false);
+  });
 });
 
 describe("a place being drawn", () => {
