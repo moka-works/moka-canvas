@@ -58,7 +58,13 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import type { StoryJobItem, StoryJobRecord } from "../../../api/story";
-import { ELEMENT_MERGE_ID, jobKey, type ElementRepeat } from "./plan";
+import {
+  ELEMENT_MERGE_ID,
+  jobKey,
+  videoCeiling,
+  withRequiredReferences,
+  type ElementRepeat,
+} from "./plan";
 
 /** What the room knows about a batch that the record alone does not say. */
 export interface ApplyContext {
@@ -369,6 +375,7 @@ export function readBoardAnswer(
   const parsed = parseStoryboard(read.value, {
     elements: story.elements,
     targetDurationMs: chapter?.targetDurationMs ?? 0,
+    maxVideoSeconds: videoCeiling(),
   });
   if (!parsed.ok) {
     return { warnings: [], guesses: [], error: parsed.error };
@@ -624,7 +631,7 @@ export function applyParsedActs(
   const acts = mergeActs(chapter.acts, drafts).map((act) => ({
     ...act,
     keyframes: act.keyframes.map((keyframe) =>
-      recognizeKeyframeReferences(story, keyframe),
+      withRequiredReferences(act, recognizeKeyframeReferences(story, keyframe)),
     ),
   }));
   return [
@@ -733,6 +740,7 @@ function commandsFor(
         ? parseStoryboard(read.value, {
             elements: story.elements,
             targetDurationMs: chapter?.targetDurationMs ?? 0,
+            maxVideoSeconds: videoCeiling(),
           })
         : undefined;
       if (parsed === undefined || !parsed.ok || chapter === undefined) {

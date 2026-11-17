@@ -24,6 +24,7 @@ import {
   MAX_ACTS_PER_CHAPTER,
   MAX_KEYFRAMES_PER_ACT,
   MAX_KEYFRAME_MS,
+  MAX_VIDEO_SECONDS,
   MIN_KEYFRAME_MS,
 } from "../constants";
 import type { StoryChapterDraft, StoryElementDraft } from "../story";
@@ -109,9 +110,79 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
 }
 
-/** The whole number of milliseconds a shot is held for, inside the bounds. */
-function shotLength(value: number): number {
-  return Math.round(clamp(value, MIN_KEYFRAME_MS, MAX_KEYFRAME_MS));
+/**
+ * The whole number of milliseconds a shot is held for, inside the bounds.
+ *
+ * The upper bound is also the clip the shot is filmed in: a shot longer than
+ * one clip cannot be cut anywhere inside itself, so keeping it inside is what
+ * keeps the plan honest.
+ */
+function shotLength(value: number, ceilingMs: number): number {
+  const high = Math.max(MIN_KEYFRAME_MS, Math.min(MAX_KEYFRAME_MS, ceilingMs));
+  return Math.round(clamp(value, MIN_KEYFRAME_MS, high));
+}
+
+/** A length in seconds, as a warning says it. */
+function secondsText(ms: number): string {
+  return `${Math.round(ms / 100) / 10}`;
+}
+
+/**
+ * An act's shots fitted inside the clip that films them.
+ *
+ * A board that plans an act longer than one clip is a board that will be shot
+ * in pieces nobody planned; rather than let the length drift, the act's own
+ * proportions are kept and the shots are shortened to the window. An act whose
+ * shots cannot all fit even at their shortest is left as it is and said out
+ * loud, since dropping a shot is not a thing the reading may do.
+ */
+function fitActShots(
+  shots: KeyframeDraft[],
+  ceilingMs: number,
+  at: number,
+  warnings: string[],
+): KeyframeDraft[] {
+  const total = shots.reduce((sum, shot) => sum + shot.durationMs, 0);
+  if (total <= ceilingMs) return shots;
+  if (shots.length * MIN_KEYFRAME_MS > ceilingMs) {
+    warnings.push(
+      `act ${at} runs ${secondsText(total)} s, and its ${shots.length} shots cannot be held within the ${secondsText(ceilingMs)} s one clip films without dropping one`,
+    );
+    return shots;
+  }
+  const scale = ceilingMs / total;
+  const fitted = shots.map((shot) => ({
+    ...shot,
+    durationMs: Math.max(
+      MIN_KEYFRAME_MS,
+      Math.round((shot.durationMs * scale) / 100) * 100,
+    ),
+  }));
+  // Rounding and the shot floor can leave the sum a hair over the window;
+  // shave it from the longest shots a tenth of a second at a time.
+  let sum = fitted.reduce((held, shot) => held + shot.durationMs, 0);
+  while (sum > ceilingMs) {
+    let longest = -1;
+    for (let index = 0; index < fitted.length; index += 1) {
+      const shot = fitted[index];
+      if (
+        shot.durationMs > MIN_KEYFRAME_MS &&
+        (longest < 0 || shot.durationMs > fitted[longest].durationMs)
+      ) {
+        longest = index;
+      }
+    }
+    if (longest < 0) break;
+    fitted[longest] = {
+      ...fitted[longest],
+      durationMs: fitted[longest].durationMs - 100,
+    };
+    sum -= 100;
+  }
+  warnings.push(
+    `act ${at} ran ${secondsText(total)} s, longer than the ${secondsText(ceilingMs)} s one clip films, and its shots were shortened to fit`,
+  );
+  return fitted;
 }
 
 // -----------------------------------------------------------------------------
@@ -348,6 +419,8 @@ export interface BoardContext {
   elements: StoryElement[];
   /** How long the episode runs, which is what missing shot lengths share. */
   targetDurationMs: number;
+  /** How long one clip may run, in seconds: the video model's own window. */
+  maxVideoSeconds?: number;
 }
 
 /** The acts, shots and spoken lines a boarded episode holds. */
@@ -366,10 +439,33 @@ export function parseStoryboard(
     );
   }
 
+  const kept = raw.slice(0, MAX_ACTS_PER_CHAPTER);
+  // What a shot does not say about its length is shared out of the episode
+  // across every shot it boards, not once per act: an act that says nothing
+  // about its own length is a hole in the episode, not a second episode.
+  const shotCount = kept.reduce<number>((sum, entry) => {
+    if (!isObject(entry) || !Array.isArray(entry.keyframes)) return sum;
+    return sum + Math.min(entry.keyframes.length, MAX_KEYFRAMES_PER_ACT);
+  }, 0);
+  const plannedMs =
+    shotCount === 0 ? ctx.targetDurationMs : ctx.targetDurationMs / shotCount;
+  // The video model's own window bounds both a shot and an act: a shot longer
+  // than one clip cannot be cut, and an act longer than one is filmed in pieces
+  // the board never planned.
+  const ceilingMs = Math.max(
+    MIN_KEYFRAME_MS,
+    Math.min(
+      ctx.maxVideoSeconds === undefined
+        ? MAX_VIDEO_SECONDS
+        : ctx.maxVideoSeconds,
+      MAX_VIDEO_SECONDS,
+    ) * 1000,
+  );
+
   const acts: ActDraft[] = [];
-  raw.slice(0, MAX_ACTS_PER_CHAPTER).forEach((entry, index) => {
+  kept.forEach((entry, index) => {
     const at = index + 1;
-    const act = readAct(entry, at, ctx, warnings);
+    const act = readAct(entry, at, ctx, warnings, plannedMs, ceilingMs);
     if (act !== undefined) acts.push(act);
   });
 
@@ -382,6 +478,8 @@ function readAct(
   at: number,
   ctx: BoardContext,
   warnings: string[],
+  plannedMs: number,
+  ceilingMs: number,
 ): ActDraft | undefined {
   if (!isObject(value)) {
     warnings.push(`act ${at} was not an object`);
@@ -406,16 +504,11 @@ function readAct(
 
   const kept = keyframes.slice(0, MAX_KEYFRAMES_PER_ACT);
   const guesses: StoryGuess[] = [];
-  // What a shot does not say about its length is shared out of the episode,
-  // which is the only thing that knows how long the whole is.
-  const plannedMs =
-    kept.length === 0
-      ? ctx.targetDurationMs
-      : ctx.targetDurationMs / kept.length;
   const shots: KeyframeDraft[] = kept.flatMap((entry, index) => {
     const shot = readShot(
       entry,
       plannedMs,
+      ceilingMs,
       at,
       index + 1,
       ctx,
@@ -424,6 +517,7 @@ function readAct(
     );
     return shot === undefined ? [] : [shot];
   });
+  const fitted = fitActShots(shots, ceilingMs, at, warnings);
   const scene = matchedNames(
     value.scene === undefined ? [] : [value.scene],
     ctx.elements,
@@ -463,7 +557,7 @@ function readAct(
     // The shots are read before the act is written out, since reading them is
     // what fills in the marks: an act written first would carry the empty list.
     ...(guesses.length === 0 ? {} : { guessed: guesses }),
-    keyframes: shots,
+    keyframes: fitted,
   };
 }
 
@@ -543,6 +637,7 @@ function matchElement(
 function readShot(
   value: unknown,
   plannedMs: number,
+  ceilingMs: number,
   actAt: number,
   at: number,
   ctx: BoardContext,
@@ -594,6 +689,13 @@ function readShot(
     given === undefined || given <= 0
       ? Math.round(plannedMs / 100) * 100
       : given;
+  const fitted = shotLength(durationMs, ceilingMs);
+  if (given !== undefined && given > 0 && given > fitted) {
+    const clipSeconds = secondsText(Math.min(MAX_KEYFRAME_MS, ceilingMs));
+    warnings.push(
+      `shot ${at} of act ${actAt} was held for ${secondsText(given)} s, longer than the ${clipSeconds} s one clip films, and was cut to ${clipSeconds} s`,
+    );
+  }
 
   return {
     shotSize: shotSize ?? "medium",
@@ -601,7 +703,7 @@ function readShot(
     angle: angle ?? "eyeLevel",
     content: cut(content, CONTENT_MAX, `shot ${at} of act ${actAt}`, warnings),
     dialogue: readDialogue(value.dialogue, ctx.elements, actAt, at, warnings),
-    durationMs: shotLength(durationMs),
+    durationMs: fitted,
   };
 }
 

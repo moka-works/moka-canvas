@@ -40,7 +40,7 @@ Change only what the new outline makes wrong. A frame whose words still tell the
 - If the change needs an act or a frame added, removed or reordered, say so with "needsRebuild": true and change nothing.
 - If the change is a fact no shot's words can carry, put it in "unmapped" and change nothing about it.
 - Bridges between acts are not listed here; a change that belongs on one goes in "unmapped".
-- When a frame's content changes, name cast members in backticks as before, and only names from the cast list.
+- When a frame's content or dialogue changes, name the act's place and every speaker in backticks as before, unless the frame is a close-up or has no place, and only names from the cast list.
 - When a frame's dialogue changes, send the frame's whole list. Keep the id of every line that stays; leave the id off a new line.
 - Framing must come from these lists, written exactly as listed:
   shotSize: {% for size in shotSizes %}{{ size }}{% if not loop.last %}, {% endif %}{% endfor %}

@@ -16,7 +16,7 @@ import type {
   StoryElement,
   StoryKeyframe,
 } from "../../../shared/domain/types";
-import { actDefaultReferences, keyframeCast } from "../jobs/plan";
+import { keyframeCastFor } from "../jobs/plan";
 
 /**
  * The elements whose picture is newer than the frame that was drawn with it.
@@ -33,13 +33,7 @@ export function staleReferences(
 ): StoryElement[] {
   const frame = currentTake(keyframe.art);
   if (frame === undefined) return [];
-  return keyframeCast(
-    story,
-    keyframe.content,
-    keyframe.references,
-    keyframe.variantChoices ?? {},
-    actDefaultReferences(act),
-  ).carried.flatMap((reference) => {
+  return keyframeCastFor(story, act, keyframe).carried.flatMap((reference) => {
     // A file reference has no newer version to be stale against.
     if (reference.element === undefined) return [];
     const held = currentTake(

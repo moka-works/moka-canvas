@@ -54,7 +54,7 @@ import {
   drawnFrames,
   filmRoleOf,
   jobKey,
-  keyframeCast,
+  keyframeCastFor,
   planKeyframeArtWaves,
   planKeyframeVideoWaves,
   settledRoleFrames,
@@ -1104,13 +1104,7 @@ function KeyframePromptCell({
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
-  const cast = keyframeCast(
-    story,
-    content.value,
-    heldReferences,
-    variantChoices,
-    fallbackReferences,
-  );
+  const cast = keyframeCastFor(story, act, keyframe, content.value);
   // The names the words may mention: the shot's own references, and the
   // elements the act keeps at its top — mentioning one takes it into the shot.
   const actElements = actCast(story, act);
@@ -1388,7 +1382,7 @@ function KeyframePromptCell({
 /** How each name the words mention stands in this frame's ask. */
 function mentionKinds(
   story: StoryDocument,
-  cast: ReturnType<typeof keyframeCast>,
+  cast: ReturnType<typeof keyframeCastFor>,
   content: string,
   references: StoryKeyframeReference[],
 ): Record<string, MentionKind> {

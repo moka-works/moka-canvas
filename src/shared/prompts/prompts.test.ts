@@ -380,6 +380,7 @@ describe("story prompts", () => {
       number: 2,
       chapter: { title: "第二章 车厢", text: "车厢比站台更暗。" },
       targetDurationMs: 60_000,
+      maxVideoSeconds: 8,
       elements: [
         { kind: "character", name: "林", description: "四十岁上下。" },
         { kind: "scene", name: "末班车车厢", description: "灯管忽明忽暗。" },
@@ -392,6 +393,10 @@ describe("story prompts", () => {
     expect(prompt).toContain("- 林 (character) — 四十岁上下。");
     expect(prompt).toContain("- 末班车车厢 (scene) — 灯管忽明忽暗。");
     expect(prompt).toContain("60 seconds");
+    expect(prompt).toContain("between 400 ms and 8 seconds");
+    expect(prompt).toContain("at most 8 seconds");
+    expect(prompt).toContain("close-up");
+    expect(prompt).toContain("Every character who speaks");
     expect(prompt).toContain("mediumClose, wide");
     expect(prompt).toContain("static, pushIn");
     expect(prompt).toContain("eyeLevel, high");
@@ -734,6 +739,7 @@ describe("story prompts", () => {
         number: 1,
         chapter: { title: "…", text: "…" },
         targetDurationMs: 1000,
+        maxVideoSeconds: 60,
         elements: [],
         shotSizes: [],
         cameraMoves: [],
