@@ -63,10 +63,11 @@ install: ## Install npm dependencies
 fonts: ## Fetch the clip burn-in faces this checkout lacks
 	node scripts/fetch-fonts.mjs
 
+# The build typechecks as part of itself (`tsc -b && vite build`), so the gate
+# does not repeat it; `npm run typecheck` stays for a standalone reading.
 check: web-build check-boundaries fonts ## Run the full pre-commit gate
 	npm run format:check
 	npm run lint
-	npm run typecheck
 	npm test
 	cargo fmt --manifest-path $(CARGO_MANIFEST) -- --check
 	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
