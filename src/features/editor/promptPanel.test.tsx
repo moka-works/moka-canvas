@@ -114,6 +114,16 @@ const DEMO_MODELS: ModelsView["models"] = [
     enabled: true,
     apiKey: { set: true, masked: "sk-…abcd" },
   },
+  {
+    id: "filmer",
+    category: "video",
+    protocol: "openaiVideos",
+    url: "https://demo.test/v1/videos",
+    model: "filmer-1",
+    displayName: "Filmer",
+    enabled: true,
+    apiKey: { set: true, masked: "sk-…abcd" },
+  },
 ];
 
 interface MockApi {
@@ -672,6 +682,52 @@ describe("the generation panel", () => {
           name: "Prompt for Reference image",
         }).textContent,
       ).toContain("A poster of the lake."),
+    );
+    text.mockRestore();
+  });
+
+  it("rewrites a video prompt against the model's contract", async () => {
+    const empty = withEmptyNodes();
+    await openEditor();
+    selectNode(empty.video);
+    await settle();
+    useModelStore.setState({
+      protocols: {
+        video: {
+          openaiVideos: {
+            script: "video/openaiVideos/openai-videos.lua",
+            displayName: "OpenAI Videos",
+            urlExample: "https://demo.test/v1/videos",
+            promptRewrite: {
+              guide: "VIDEO CONTRACT GUIDE",
+              checks: { negativeBait: true },
+              version: 1,
+            },
+          },
+        },
+      },
+    });
+    const text = vi.spyOn(generateApi, "text").mockResolvedValue({
+      status: "succeeded",
+      outputs: [],
+      text: "A shot of the lake.",
+    } as GenerateResponse);
+
+    const prompt = within(panel()).getByRole("textbox", {
+      name: "Prompt for Video",
+    });
+    write(prompt, "A shot of the lake, filmed at dusk.");
+    fireEvent.click(screen.getByTestId("prompt-panel-rewrite"));
+
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    expect(text.mock.calls[0]![0].system).toContain("VIDEO CONTRACT GUIDE");
+    expect(text.mock.calls[0]![0].prompt).toContain('"pictures": "frames"');
+    await waitFor(() =>
+      expect(
+        within(panel()).getByRole("textbox", {
+          name: "Prompt for Video",
+        }).textContent,
+      ).toContain("A shot of the lake."),
     );
     text.mockRestore();
   });

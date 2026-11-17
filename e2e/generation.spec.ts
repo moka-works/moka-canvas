@@ -5,6 +5,7 @@ import {
   addNode,
   APP,
   CHANNEL_KEY,
+  configureTheWholeStudio,
   configureWordsAndPictures,
   createProject,
   openRecent,
@@ -19,6 +20,7 @@ import {
   providerCalls,
   SENTENCE,
   STORYTELLER,
+  VIDEOGRAPHER,
 } from "./mock-provider";
 
 interface ServedAsset {
@@ -127,7 +129,7 @@ async function openWithASpec(
   page: Page,
   name: string,
   directory: string,
-  kind: "Image" | "Text",
+  kind: "Image" | "Text" | "Video",
   spec: Record<string, unknown>,
 ): Promise<string> {
   await page.goto("/");
@@ -222,6 +224,56 @@ test("an image prompt is rewritten for its model's contract before it runs", asy
       async () =>
         (await providerCalls())
           .filter((call) => call.path === "/v1/images/generations")
+          .at(-1)?.prompt,
+      { timeout: 30_000 },
+    )
+    .toBe(SENTENCE);
+});
+
+test("a video prompt is rewritten for its model's contract before it runs", async ({
+  page,
+}) => {
+  await fetch(`${PROVIDER_ORIGIN}/__reset`, { method: "POST" });
+  await configureTheWholeStudio();
+
+  const prompt = "A lantern over a quiet lake.";
+  await openWithASpec(
+    page,
+    "Rewritten Video",
+    join(projectHome("generation-video-rewrite"), "project"),
+    "Video",
+    {
+      capability: "video",
+      mode: "generate",
+      model: VIDEOGRAPHER,
+      prompt,
+      inputMode: "manual",
+      params: {
+        seconds: 5,
+        ratio: "16:9",
+        resolution: "720",
+        mode: "auto",
+      },
+      referenceNodeIds: [],
+    },
+  );
+
+  const panel = page.getByTestId("prompt-panel");
+  const field = panel.getByRole("textbox", { name: /Prompt for/ });
+  await expect(field).toContainText(prompt);
+
+  await panel.getByTestId("prompt-panel-rewrite").click();
+  await expect(field).toHaveText(SENTENCE, { timeout: 30_000 });
+  expect(
+    (await providerCalls()).filter((call) => call.path === "/v1/videos").length,
+  ).toBe(0);
+
+  await panel.getByRole("button", { name: "Run", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await providerCalls())
+          .filter((call) => call.path === "/v1/videos")
           .at(-1)?.prompt,
       { timeout: 30_000 },
     )

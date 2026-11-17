@@ -34,7 +34,10 @@ import { buildIssueIndex, buildResourceIndex } from "../canvas/mediaCards";
 import { mentionChoices, mentionToken } from "../canvas/mentions";
 import {
   canvasImagePromptRewrite,
+  canvasVideoPromptContext,
+  canvasVideoPromptRewrite,
   rewriteCanvasImagePrompt,
+  rewriteCanvasVideoPrompt,
 } from "../promptRewrite";
 import {
   attachAssetsToNode,
@@ -455,7 +458,9 @@ export function PromptPanel() {
   const rewriteGuide =
     asked === "image"
       ? canvasImagePromptRewrite(view, protocols, spec.model || null)
-      : null;
+      : asked === "video"
+        ? canvasVideoPromptRewrite(view, protocols, spec.model || null)
+        : null;
   const mentioned = mentionNodeIds(prompt);
   const referenceIds = [
     ...new Set([
@@ -485,6 +490,17 @@ export function PromptPanel() {
       ];
     }),
   };
+  const videoContext =
+    asked === "video"
+      ? canvasVideoPromptContext({
+          canvas,
+          node,
+          spec: { ...spec, params: panelParams },
+          resources,
+          inputMode,
+          prompt,
+        })
+      : null;
   const models = modelOptionsFor(view, asked);
   const going = stepStatus !== null && isActive(stepStatus);
   const stopping = run !== null && going && run.cancelRequested;
@@ -730,13 +746,22 @@ export function PromptPanel() {
     setRewriteIssues([]);
     setRewriteBefore(prompt);
     try {
-      const rewritten = await rewriteCanvasImagePrompt({
-        prompt,
-        context: imageContext,
-        guide: rewriteGuide,
-        model: rewriteModel,
-        signal: controller.signal,
-      });
+      const rewritten =
+        asked === "video" && videoContext !== null
+          ? await rewriteCanvasVideoPrompt({
+              prompt,
+              context: videoContext,
+              guide: rewriteGuide,
+              model: rewriteModel,
+              signal: controller.signal,
+            })
+          : await rewriteCanvasImagePrompt({
+              prompt,
+              context: imageContext,
+              guide: rewriteGuide,
+              model: rewriteModel,
+              signal: controller.signal,
+            });
       if (controller.signal.aborted) return;
       setPrompt(rewritten.prompt);
       setRewriteIssues(rewritten.issues);
