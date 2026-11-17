@@ -762,6 +762,7 @@
     "insertShotHere": "在这一格上方插入分镜",
     "moveShotUp": "上移",
     "moveShotDown": "下移",
+    "duplicateShot": "复制这一格",
     "addReference": "添加参考",
     "reference": "参考图",
     "removeReference": "移除这条参考"

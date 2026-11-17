@@ -444,6 +444,21 @@ function KeyframeRow({
     next.splice(index, 0, createKeyframe(index));
     writeKeyframes(story, chapterId, act, next);
   };
+  // A copy is a new shot holding what the row says and shows — words, framing,
+  // lines, references, the frame drawn and the clip filmed for it. Its lines
+  // are new lines, so nothing read aloud is claimed by the copy.
+  const duplicate = () => {
+    const copy: StoryKeyframe = {
+      ...structuredClone(keyframe),
+      id: newId(),
+      title: `#${index + 2}`,
+      dialogue: keyframe.dialogue.map((line) => ({ ...line, id: newId() })),
+    };
+    delete copy.voices;
+    const next = [...act.keyframes];
+    next.splice(index + 1, 0, copy);
+    writeKeyframes(story, chapterId, act, next);
+  };
   const move = (by: number) => {
     const to = index + by;
     if (to < 0 || to >= act.keyframes.length) return;
@@ -898,6 +913,16 @@ function KeyframeRow({
                 type="button"
               >
                 ↓
+              </button>
+              <button
+                aria-label={cell(t("story:storyboard.duplicateShot"))}
+                className="story-kf-move"
+                data-testid={`story-kf-copy-${index}`}
+                onClick={duplicate}
+                title={t("story:storyboard.duplicateShot")}
+                type="button"
+              >
+                ⧉
               </button>
             </span>
             {/*

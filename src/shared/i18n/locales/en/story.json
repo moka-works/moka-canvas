@@ -762,6 +762,7 @@
     "insertShotHere": "Insert a shot above this one",
     "moveShotUp": "Move up",
     "moveShotDown": "Move down",
+    "duplicateShot": "Duplicate this shot",
     "addReference": "Add a reference",
     "reference": "Reference",
     "removeReference": "Remove this reference"

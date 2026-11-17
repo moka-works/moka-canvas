@@ -1835,6 +1835,59 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.keyframes).toHaveLength(2);
   });
 
+  it("copies a shot below itself, words, lines and pictures included", async () => {
+    const moka = withEveryFrame();
+    const source = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    source.filmRole = "firstFrame";
+    source.voices = [
+      {
+        lineId: ids.lineFirst,
+        text: "车已经停运了。",
+        voice: "平静",
+        slot: { takes: [{ assetIds: ["asset-line-voice"], createdAt: T0 }] },
+      },
+    ];
+    openAtBoard(moka);
+
+    fireEvent.click(screen.getByTestId("story-kf-copy-0"));
+    await waitFor(() => expect(acts()[0]?.keyframes).toHaveLength(3));
+
+    const frames = acts()[0]!.keyframes;
+    const copy = frames[1]!;
+    // The copy stands right below the shot it was made from; the shot that
+    // stood second keeps its place after it.
+    expect(frames[0]?.id).toBe(ids.frameFirst);
+    expect(frames[2]?.id).toBe(ids.frameSecond);
+    expect(copy.id).not.toBe(source.id);
+    expect(copy.content).toBe(source.content);
+    expect(copy.shotSize).toBe(source.shotSize);
+    expect(copy.cameraMove).toBe(source.cameraMove);
+    expect(copy.angle).toBe(source.angle);
+    expect(copy.durationMs).toBe(source.durationMs);
+    expect(copy.filmRole).toBe("firstFrame");
+    expect(copy.references).toEqual(source.references);
+    // The frame drawn for the shot shows in the copy as well.
+    expect(copy.art.takes[0]?.assetIds[0]).toBe(ids.frameArt);
+    expect(
+      screen
+        .getByTestId("story-kf-slot-1")
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toContain(ids.frameArt);
+    // Its lines say what the shot said, under names of their own: what was
+    // read aloud belongs to the shot's lines, not to the copy's.
+    expect(copy.dialogue.map((line) => line.text)).toEqual(
+      source.dialogue.map((line) => line.text),
+    );
+    expect(copy.dialogue[0]?.id).not.toBe(ids.lineFirst);
+    expect(copy.voices).toBeUndefined();
+
+    act(() => {
+      undo();
+    });
+    expect(acts()[0]?.keyframes).toHaveLength(2);
+  });
+
   it("moves a shot up and down the act, and the ends say so", async () => {
     openAtBoard(boarded());
     const first = acts()[0]!.keyframes[0]!;
