@@ -417,6 +417,76 @@ mod tests {
         }
     }
 
+    /// The services that rewrite a prompt themselves are told not to unless
+    /// the model says so, and the one that cannot take the flag is not sent it.
+    #[test]
+    fn image_protocols_send_their_prompt_switch_only_when_it_is_asked_for() {
+        let runtime = LuaRuntime::new().unwrap();
+        let body = |id: &str, model: &str, params: serde_json::Value| -> serde_json::Value {
+            let def = BUILTIN_SCRIPTS
+                .iter()
+                .find(|def| def.id == id)
+                .unwrap_or_else(|| panic!("{id} is not built in"));
+            let script = runtime.load_source(id, def.script).unwrap();
+            let reply = runtime
+                .call_json_value(
+                    &script,
+                    "build_request",
+                    vec![
+                        serde_json::json!({"url": "https://example.com", "model": model}),
+                        serde_json::json!({"prompt": "A lantern.", "params": params}),
+                        serde_json::json!([]),
+                    ],
+                )
+                .unwrap_or_else(|e| panic!("{id} did not build a request: {e}"));
+            serde_json::from_str(
+                reply
+                    .get("body")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_else(|| panic!("{id} built no body")),
+            )
+            .unwrap()
+        };
+
+        // Bailian's own default is on, so an absent switch is sent off.
+        let absent = body("bailianImage", "wan2.6-image", serde_json::json!({}));
+        assert_eq!(absent["parameters"]["prompt_extend"], false);
+        let on = body(
+            "bailianImage",
+            "wan2.6-image",
+            serde_json::json!({"prompt_extend": true}),
+        );
+        assert_eq!(on["parameters"]["prompt_extend"], true);
+        // Wan 2.7 image models do not read the flag at all.
+        let newer = body(
+            "bailianImage",
+            "wan2.7-image",
+            serde_json::json!({"prompt_extend": true}),
+        );
+        assert!(newer["parameters"].get("prompt_extend").is_none());
+
+        let minimax = body(
+            "minimaxImage",
+            "image-01",
+            serde_json::json!({"prompt_optimizer": false}),
+        );
+        assert_eq!(minimax["prompt_optimizer"], false);
+
+        // Seedream states its optimization as a mode, and its absence is off.
+        let off = body(
+            "volcengineImage",
+            "seedream-4",
+            serde_json::json!({"optimize_prompt": false}),
+        );
+        assert!(off.get("optimize_prompt_options").is_none());
+        let on = body(
+            "volcengineImage",
+            "seedream-4",
+            serde_json::json!({"optimize_prompt": true}),
+        );
+        assert_eq!(on["optimize_prompt_options"]["mode"], "standard");
+    }
+
     #[tokio::test]
     async fn deploys_every_built_in_converter_under_its_capability() {
         let dir = tempfile::tempdir().unwrap();
