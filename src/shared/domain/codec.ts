@@ -65,7 +65,7 @@ import type {
   StoryKeyframe,
   StorySlot,
   StoryTake,
-  StoryVideoPromptOverride,
+  StoryPromptOverride,
   StoryVoiceProfile,
   StoryVoiceTake,
   TextClipStyle,
@@ -649,18 +649,34 @@ function encodeStory(story: StoryDocument): Record<string, unknown> {
     story.videoPromptOverrides !== undefined &&
     Object.keys(story.videoPromptOverrides).length > 0
   ) {
-    // Keys are written in order so the same telling gives the same bytes.
-    const overrides: Record<string, Record<string, unknown>> = {};
-    for (const askId of Object.keys(story.videoPromptOverrides).sort()) {
-      const override = story.videoPromptOverrides[askId]!;
-      overrides[askId] = {
-        prompt: override.prompt,
-        auto: override.auto,
-      };
-    }
-    doc.videoPromptOverrides = overrides;
+    doc.videoPromptOverrides = encodePromptOverrides(
+      story.videoPromptOverrides,
+    );
+  }
+  if (
+    story.imagePromptOverrides !== undefined &&
+    Object.keys(story.imagePromptOverrides).length > 0
+  ) {
+    doc.imagePromptOverrides = encodePromptOverrides(
+      story.imagePromptOverrides,
+    );
   }
   return doc;
+}
+
+/** Hand-written prompts, with keys written in order so the same telling gives the same bytes. */
+function encodePromptOverrides(
+  held: Record<string, StoryPromptOverride>,
+): Record<string, Record<string, unknown>> {
+  const overrides: Record<string, Record<string, unknown>> = {};
+  for (const askId of Object.keys(held).sort()) {
+    const override = held[askId]!;
+    overrides[askId] = {
+      prompt: override.prompt,
+      auto: override.auto,
+    };
+  }
+  return overrides;
 }
 
 function encodeProbe(
@@ -1940,13 +1956,14 @@ function decodeSteps(
   return steps;
 }
 
-function decodeVideoPromptOverrides(
+function decodePromptOverrides(
   value: unknown,
-): Record<string, StoryVideoPromptOverride> {
-  const doc = asRecord(value, "stories[].videoPromptOverrides");
-  const overrides: Record<string, StoryVideoPromptOverride> = {};
+  field: string,
+): Record<string, StoryPromptOverride> {
+  const doc = asRecord(value, field);
+  const overrides: Record<string, StoryPromptOverride> = {};
   for (const [askId, held] of Object.entries(doc)) {
-    const at = `stories[].videoPromptOverrides.${askId}`;
+    const at = `${field}.${askId}`;
     const entry = asRecord(held, at);
     overrides[askId] = {
       prompt: asString(entry.prompt, `${at}.prompt`),
@@ -1995,8 +2012,14 @@ function decodeStory(value: unknown): StoryDocument {
       "stories[].narrator",
     );
   if (doc.videoPromptOverrides !== undefined)
-    story.videoPromptOverrides = decodeVideoPromptOverrides(
+    story.videoPromptOverrides = decodePromptOverrides(
       doc.videoPromptOverrides,
+      "stories[].videoPromptOverrides",
+    );
+  if (doc.imagePromptOverrides !== undefined)
+    story.imagePromptOverrides = decodePromptOverrides(
+      doc.imagePromptOverrides,
+      "stories[].imagePromptOverrides",
     );
   // A shot's words and its reference list are two views of one thing: a
   // document written before the list existed still says which pictures its

@@ -37,7 +37,7 @@ import type {
   StorySlotTarget,
   StoryShotSize,
   StoryTake,
-  StoryVideoPromptOverride,
+  StoryPromptOverride,
   StoryVoiceProfile,
   StoryVoiceTake,
 } from "./types";
@@ -1435,7 +1435,7 @@ export function targetKey(target: StorySlotTarget): string {
 export function videoPromptOverride(
   story: StoryDocument,
   askId: string,
-): StoryVideoPromptOverride | undefined {
+): StoryPromptOverride | undefined {
   return story.videoPromptOverrides?.[askId];
 }
 
@@ -1451,6 +1451,30 @@ export function withoutVideoPromptOverrides(
   if (story.videoPromptOverrides === undefined) return story;
   const next = { ...story };
   delete next.videoPromptOverrides;
+  return next;
+}
+
+/** The words a reader wrote for one picture's ask, where they wrote any. */
+export function imagePromptOverride(
+  story: StoryDocument,
+  askId: string,
+): StoryPromptOverride | undefined {
+  return story.imagePromptOverrides?.[askId];
+}
+
+/**
+ * The same telling with every hand-written picture prompt taken away.
+ *
+ * What a picture would be asked for in the board's own words is read from
+ * this: planning against the telling as it stands reads the words the reader
+ * wrote.
+ */
+export function withoutImagePromptOverrides(
+  story: StoryDocument,
+): StoryDocument {
+  if (story.imagePromptOverrides === undefined) return story;
+  const next = { ...story };
+  delete next.imagePromptOverrides;
   return next;
 }
 

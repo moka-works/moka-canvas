@@ -158,6 +158,7 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
                 edit: StoryEdit::default(),
                 narrator: None,
                 video_prompt_overrides: None,
+                image_prompt_overrides: None,
                 created_at: now.clone(),
                 updated_at: now,
             };

@@ -7,7 +7,7 @@ import { fnv1a } from "../../../shared/domain/digest";
 import { actAt, videoPromptOverride } from "../../../shared/domain/story";
 import type {
   StoryDocument,
-  StoryVideoPromptOverride,
+  StoryPromptOverride,
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -16,8 +16,8 @@ import {
   planActVideoWaves,
   planKeyframeVideoWaves,
 } from "../jobs/plan";
-import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
+import { PromptIssues } from "./PromptIssues";
 import { liveStory } from "./removeOldTake";
 import {
   useVideoPromptSessions,
@@ -147,7 +147,7 @@ export function VideoPromptDialog({
         return;
       }
     }
-    const prompts: Record<string, StoryVideoPromptOverride | null> = {};
+    const prompts: Record<string, StoryPromptOverride | null> = {};
     shown.forEach((ask, at) => {
       const text = values[at] ?? "";
       const auto = autoPrompt(ask.id, ask.prompt);
@@ -193,29 +193,6 @@ export function VideoPromptDialog({
     // over words that were just saved.
     drop(key);
     onClose();
-  };
-
-  const issueText = (issue: PromptContractIssue): string => {
-    switch (issue.code) {
-      case "empty":
-        return t("common:promptIssues.empty");
-      case "tooLong":
-        return t("common:promptIssues.tooLong", { max: issue.max });
-      case "unbalancedTags":
-        return t("common:promptIssues.tags", { tag: issue.tag });
-      case "dialogueMissing":
-        return t("common:promptIssues.line", { line: issue.line });
-      case "unknownSpeaker":
-        return t("common:promptIssues.speaker", { ref: issue.ref });
-      case "bodyNotEnglish":
-        return t("common:promptIssues.language", { sample: issue.sample });
-      case "negativeInstruction":
-        return t("common:promptIssues.negative", { phrase: issue.phrase });
-      case "mentionMissing":
-        return t("common:promptIssues.mentionMissing", { token: issue.token });
-      case "mentionUnknown":
-        return t("common:promptIssues.mentionUnknown", { token: issue.token });
-    }
   };
 
   return createPortal(
@@ -315,22 +292,7 @@ export function VideoPromptDialog({
           </p>
         )}
 
-        {issues.length > 0 && (
-          <div
-            className="story-video-prompt-issues"
-            data-testid="story-video-prompt-issues"
-            role="status"
-          >
-            <span className="story-video-prompt-issues-title">
-              {t("common:promptIssues.title")}
-            </span>
-            <ul>
-              {issues.map((issue, at) => (
-                <li key={`${issue.code}-${at}`}>{issueText(issue)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <PromptIssues issues={issues} testId="story-video-prompt-issues" />
 
         {rewriteError !== null && (
           <div

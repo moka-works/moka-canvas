@@ -775,14 +775,14 @@ export interface StoryTake {
 }
 
 /**
- * One video prompt a reader wrote by hand, in place of the one the board
- * would render for that piece.
+ * One prompt a reader wrote by hand, in place of the one the board would
+ * render for that piece.
  *
  * `auto` is the short reading of the automatic prompt the piece had when the
  * words were written, so the room can say when the board has moved on and the
  * hand-written words no longer come from what stands there now.
  */
-export interface StoryVideoPromptOverride {
+export interface StoryPromptOverride {
   prompt: string;
   auto: string;
 }
@@ -1220,7 +1220,17 @@ export interface StoryDocument {
    * would render. Absent means every clip is asked for in the board's own
    * words; a key the board no longer plans is simply never read.
    */
-  videoPromptOverrides?: Record<string, StoryVideoPromptOverride>;
+  videoPromptOverrides?: Record<string, StoryPromptOverride>;
+  /**
+   * Prompts the reader has written by hand for the pictures this board draws,
+   * keyed by the ask they belong to.
+   *
+   * A picture asked for again, in a batch, or after a failure is asked for
+   * with these words for as long as they stand, rather than with the ones the
+   * board would render. Absent means every picture is asked for in the board's
+   * own words; a key the board no longer plans is simply never read.
+   */
+  imagePromptOverrides?: Record<string, StoryPromptOverride>;
   edit: StoryEdit;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
@@ -1808,7 +1818,18 @@ export type DocumentCommand =
   | {
       type: "setStoryVideoPromptOverrides";
       storyId: string;
-      prompts: Record<string, StoryVideoPromptOverride | null>;
+      prompts: Record<string, StoryPromptOverride | null>;
+    }
+  /**
+   * Picture prompts written by hand, keyed by the ask they replace.
+   *
+   * Whole entries move: a null takes one away and the board's own words stand
+   * again. Keys the board no longer plans may be taken away with the rest.
+   */
+  | {
+      type: "setStoryImagePromptOverrides";
+      storyId: string;
+      prompts: Record<string, StoryPromptOverride | null>;
     }
   | {
       type: "updateStoryKeyframe";

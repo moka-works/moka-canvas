@@ -21,6 +21,7 @@ import {
   type ElementView,
 } from "./elementPictures";
 import { relativeTime } from "../relativeTime";
+import { ImagePromptDialog } from "./ImagePromptDialog";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StoryEditDialog } from "./StoryEditDialog";
 
@@ -63,6 +64,7 @@ export function ElementPictureInspector({
   const jobs = useStoryJobs(story.id);
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const variant = elementForm(element, variantId);
   const description =
@@ -231,6 +233,14 @@ export function ElementPictureInspector({
                 {t("story:panels.edit")}
               </button>
               <button
+                data-testid="story-inspector-image-prompt"
+                disabled={busy !== undefined || !canGenerate}
+                onClick={() => setEditingPrompt(true)}
+                type="button"
+              >
+                {t("story:storyboard.imagePromptEdit")}
+              </button>
+              <button
                 data-testid="story-inspector-library"
                 onClick={() => setPicking(true)}
                 type="button"
@@ -328,6 +338,24 @@ export function ElementPictureInspector({
           </div>
         </div>
       </div>
+
+      {editingPrompt && (
+        <ImagePromptDialog
+          onClose={() => setEditingPrompt(false)}
+          place={{
+            kind: "element",
+            elementId: element.id,
+            view,
+            ...(variant === undefined ? {} : { variantId: variant.id }),
+            name: `${element.name}${variant === undefined ? "" : ` · ${variant.name}`} · ${t(
+              view === "main"
+                ? "story:storyboard.imagePromptElementMain"
+                : "story:storyboard.imagePromptElementTurnaround",
+            )}`,
+          }}
+          story={story}
+        />
+      )}
 
       {picking && (
         <StoryLibraryPicker

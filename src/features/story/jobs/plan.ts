@@ -42,6 +42,7 @@ import {
   formAspect,
   formDescription,
   formName,
+  imagePromptOverride,
   keyframeAt,
   neighbourVideos,
   pictureReferenceAsset,
@@ -889,13 +890,15 @@ export function planElementArt(
       story,
       form?.reference ?? element.reference,
     );
+    const id = jobKey(target);
     return [
       {
-        id: jobKey(target),
+        id,
         target,
         capability: "image",
         prompt:
-          view === "turnaround"
+          imagePromptOverride(story, id)?.prompt ??
+          (view === "turnaround"
             ? storyElementTurnaroundPrompt({
                 ...look,
                 name: formName(element, form),
@@ -907,7 +910,7 @@ export function planElementArt(
                 name: formName(element, form),
                 description: formDescription(element, form),
                 hasReference: reference !== undefined,
-              }),
+              })),
         // A main picture is drawn from its description, and from the
         // reference its card names where one is named. A turn-around is drawn
         // from the picture of that same form, which is the drawing it shows
@@ -1192,26 +1195,29 @@ export function planKeyframeArt(
       actId,
       keyframeId,
     };
+    const id = jobKey(target);
     return [
       {
-        id: jobKey(target),
+        id,
         target,
         capability: "image",
-        prompt: storyKeyframePrompt({
-          ...look,
-          chapter: { title: chapter.title },
-          act: { summary: act.summary },
-          keyframe: {
-            content: keyframe.content,
-            shotSize: keyframe.shotSize,
-            cameraMove: keyframe.cameraMove,
-            angle: keyframe.angle,
-          },
-          cast: cast.map(({ name, description }) => ({
-            name,
-            description,
-          })),
-        }),
+        prompt:
+          imagePromptOverride(story, id)?.prompt ??
+          storyKeyframePrompt({
+            ...look,
+            chapter: { title: chapter.title },
+            act: { summary: act.summary },
+            keyframe: {
+              content: keyframe.content,
+              shotSize: keyframe.shotSize,
+              cameraMove: keyframe.cameraMove,
+              angle: keyframe.angle,
+            },
+            cast: cast.map(({ name, description }) => ({
+              name,
+              description,
+            })),
+          }),
         inputs: cast.map(({ assetId }) => ({
           role: "reference" as const,
           assetId,

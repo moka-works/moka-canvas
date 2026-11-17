@@ -81,6 +81,7 @@ import { StorySlotView } from "./StorySlotView";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
+import { ImagePromptDialog } from "./ImagePromptDialog";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 import { ModelPicker } from "../../settings/ModelPicker";
 
@@ -313,6 +314,7 @@ function KeyframeRow({
   const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
     null,
   );
+  const [editingImagePrompt, setEditingImagePrompt] = useState(false);
   const [playing, setPlaying] = useState(false);
   // The row's own short menu, and the file it files from this computer.
   const moreMenu = useRef<HTMLDetailsElement>(null);
@@ -381,6 +383,14 @@ function KeyframeRow({
     keyframeId: keyframe.id,
   });
   const promptEdited = story.videoPromptOverrides?.[promptId] !== undefined;
+  const imagePromptId = jobKey({
+    kind: "keyframeArt",
+    chapterId,
+    actId: act.id,
+    keyframeId: keyframe.id,
+  });
+  const imagePromptEdited =
+    story.imagePromptOverrides?.[imagePromptId] !== undefined;
   const given = (field: StoryGuess["field"]) =>
     guesses.find((guess) => guess.field === field);
 
@@ -719,6 +729,17 @@ function KeyframeRow({
               {t("story:storyboard.staleRef")}
             </span>
           )}
+          <button
+            className="link"
+            data-testid={`story-kf-image-prompt-${index}`}
+            onClick={() => setEditingImagePrompt(true)}
+            type="button"
+          >
+            {t("story:storyboard.imagePromptEdit")}
+            {imagePromptEdited
+              ? ` · ${t("story:storyboard.imagePromptEdited")}`
+              : ""}
+          </button>
         </td>
         {perShot && (
           <td>
@@ -955,6 +976,19 @@ function KeyframeRow({
         <StoryEditDialog
           onClose={() => setEditing(false)}
           place={{ kind: "keyframe", chapterId, act, keyframe }}
+          story={story}
+        />
+      )}
+      {editingImagePrompt && (
+        <ImagePromptDialog
+          onClose={() => setEditingImagePrompt(false)}
+          place={{
+            kind: "keyframe",
+            chapterId,
+            actId: act.id,
+            keyframeId: keyframe.id,
+            name: t("story:storyboard.imagePromptFrame", { index: at }),
+          }}
           story={story}
         />
       )}

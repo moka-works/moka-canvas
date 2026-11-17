@@ -26,7 +26,7 @@ import type {
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { ModelPicker } from "../../settings/ModelPicker";
-import { planElementArtWaves, resolveVoice } from "../jobs/plan";
+import { jobKey, planElementArtWaves, resolveVoice } from "../jobs/plan";
 import type { PlaceBusy } from "../jobs/places";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -44,6 +44,7 @@ import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StorySlotView } from "./StorySlotView";
 import { ElementVariantDialog } from "./ElementVariantDialog";
 import { ElementReferencePicker } from "./ElementReferencePicker";
+import { ImagePromptDialog } from "./ImagePromptDialog";
 import { useField } from "./useField";
 import { VoiceFields } from "./VoiceFields";
 
@@ -106,6 +107,10 @@ export const ElementCard = memo(function ElementCard({
   const [picking, setPicking] = useState<"main" | "turnaround" | null>(null);
   // The place whose picture is being changed rather than drawn again.
   const [editing, setEditing] = useState<"main" | "turnaround" | null>(null);
+  // The picture whose prompt is being read and changed.
+  const [editingImagePrompt, setEditingImagePrompt] = useState<
+    "main" | "turnaround" | null
+  >(null);
   // The dialog that names the picture this form's drawing is made from.
   const [pickingReference, setPickingReference] = useState(false);
   const run = useStoryWavesAsk();
@@ -138,6 +143,25 @@ export const ElementCard = memo(function ElementCard({
               : `${held.name} · ${form.name}`;
           })();
   const main = currentTake(mainSlot);
+  const formChoice = variant === undefined ? {} : { variantId: variant.id };
+  const mainPromptEdited =
+    story.imagePromptOverrides?.[
+      jobKey({
+        kind: "elementArt",
+        elementId: element.id,
+        view: "main",
+        ...formChoice,
+      })
+    ] !== undefined;
+  const turnaroundPromptEdited =
+    story.imagePromptOverrides?.[
+      jobKey({
+        kind: "elementArt",
+        elementId: element.id,
+        view: "turnaround",
+        ...formChoice,
+      })
+    ] !== undefined;
   const character = element.kind === "character";
   const description = useField(activeDescription, (value) => {
     if (value !== activeDescription) writeForm({ description: value });
@@ -276,14 +300,27 @@ export const ElementCard = memo(function ElementCard({
       <div className="story-element-pictures">
         <StorySlotView
           actions={
-            <button
-              className="link"
-              data-testid="story-slot-edit-main"
-              onClick={() => setEditing("main")}
-              type="button"
-            >
-              {t("story:panels.edit")}
-            </button>
+            <>
+              <button
+                className="link"
+                data-testid="story-slot-edit-main"
+                onClick={() => setEditing("main")}
+                type="button"
+              >
+                {t("story:panels.edit")}
+              </button>
+              <button
+                className="link"
+                data-testid="story-slot-image-prompt-main"
+                onClick={() => setEditingImagePrompt("main")}
+                type="button"
+              >
+                {t("story:storyboard.imagePromptEdit")}
+                {mainPromptEdited
+                  ? ` · ${t("story:storyboard.imagePromptEdited")}`
+                  : ""}
+              </button>
+            </>
           }
           busy={busyMain}
           canGenerate
@@ -308,14 +345,33 @@ export const ElementCard = memo(function ElementCard({
         {character && (
           <StorySlotView
             actions={
-              <button
-                className="link"
-                data-testid="story-slot-edit-turnaround"
-                onClick={() => setEditing("turnaround")}
-                type="button"
-              >
-                {t("story:panels.edit")}
-              </button>
+              <>
+                <button
+                  className="link"
+                  data-testid="story-slot-edit-turnaround"
+                  onClick={() => setEditing("turnaround")}
+                  type="button"
+                >
+                  {t("story:panels.edit")}
+                </button>
+                <button
+                  className="link"
+                  data-testid="story-slot-image-prompt-turnaround"
+                  disabled={main === undefined}
+                  onClick={() => setEditingImagePrompt("turnaround")}
+                  title={
+                    main === undefined
+                      ? t("story:elements.needMainFirst")
+                      : undefined
+                  }
+                  type="button"
+                >
+                  {t("story:storyboard.imagePromptEdit")}
+                  {turnaroundPromptEdited
+                    ? ` · ${t("story:storyboard.imagePromptEdited")}`
+                    : ""}
+                </button>
+              </>
             }
             busy={busyTurnaround}
             canGenerate={main !== undefined}
@@ -521,6 +577,24 @@ export const ElementCard = memo(function ElementCard({
         <StoryEditDialog
           onClose={() => setEditing(null)}
           place={{ kind: "element", element, view: editing, variant }}
+          story={story}
+        />
+      )}
+
+      {editingImagePrompt !== null && (
+        <ImagePromptDialog
+          onClose={() => setEditingImagePrompt(null)}
+          place={{
+            kind: "element",
+            elementId: element.id,
+            view: editingImagePrompt,
+            ...(variant === undefined ? {} : { variantId: variant.id }),
+            name: `${element.name}${variant === undefined ? "" : ` · ${variant.name}`} · ${t(
+              editingImagePrompt === "main"
+                ? "story:storyboard.imagePromptElementMain"
+                : "story:storyboard.imagePromptElementTurnaround",
+            )}`,
+          }}
           story={story}
         />
       )}

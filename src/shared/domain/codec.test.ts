@@ -448,6 +448,29 @@ describe("moka codec", () => {
     ).toBe(false);
   });
 
+  it("keeps the words a reader wrote for a picture's prompt", () => {
+    const story = buildStoryMokaFile();
+    story.stories![0].imagePromptOverrides = {
+      "keyframe:chapter:act:frame": {
+        prompt: "A still frame of the lantern.",
+        auto: "0badcafe",
+      },
+    };
+    expect(
+      decodeMokaFile(encodeMokaFile(story)).stories![0].imagePromptOverrides,
+    ).toEqual({
+      "keyframe:chapter:act:frame": {
+        prompt: "A still frame of the lantern.",
+        auto: "0badcafe",
+      },
+    });
+    // A telling nobody wrote for keeps the absence, not an empty map.
+    expect(
+      "imagePromptOverrides" in
+        decodeMokaFile(encodeMokaFile(buildStoryMokaFile())).stories![0]!,
+    ).toBe(false);
+  });
+
   it("reads a story's reference limit whole, and one beyond the bound as the bound", () => {
     const story = buildStoryMokaFile();
     story.stories![0].maxReferenceImages = 7;

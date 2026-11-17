@@ -10,8 +10,8 @@ use moka_canvas::domain::commands::apply_commands;
 use moka_canvas::domain::story::{
     self, StoryAct, StoryActSound, StoryBrief, StoryChapter, StoryDialogueLine, StoryDocument,
     StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind, StoryElementPatch,
-    StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryShotGranularity, StoryShotSize,
-    StorySlot, StorySlotTarget, StoryTake, StoryVideoPromptOverride, MAX_ACTS_PER_CHAPTER,
+    StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryPromptOverride, StoryShotGranularity,
+    StoryShotSize, StorySlot, StorySlotTarget, StoryTake, MAX_ACTS_PER_CHAPTER,
     MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT,
     MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
 };
@@ -386,6 +386,7 @@ fn story_document() -> MokaFile {
         },
         narrator: None,
         video_prompt_overrides: None,
+        image_prompt_overrides: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }]);
@@ -1366,7 +1367,7 @@ fn keeps_hand_written_clip_prompts_and_takes_them_away_again() {
     let mut prompts = BTreeMap::new();
     prompts.insert(
         ask.clone(),
-        Some(StoryVideoPromptOverride {
+        Some(StoryPromptOverride {
             prompt: "Only the lantern moves.".into(),
             auto: "0badcafe".into(),
         }),
@@ -1401,7 +1402,7 @@ fn keeps_hand_written_clip_prompts_and_takes_them_away_again() {
     let mut blank = BTreeMap::new();
     blank.insert(
         ask.clone(),
-        Some(StoryVideoPromptOverride {
+        Some(StoryPromptOverride {
             prompt: "   ".into(),
             auto: "0badcafe".into(),
         }),
@@ -1420,7 +1421,7 @@ fn keeps_hand_written_clip_prompts_and_takes_them_away_again() {
     let mut long = BTreeMap::new();
     long.insert(
         ask,
-        Some(StoryVideoPromptOverride {
+        Some(StoryPromptOverride {
             prompt: "x".repeat(MAX_PROMPT_LENGTH + 1),
             auto: "0badcafe".into(),
         }),
@@ -1429,6 +1430,84 @@ fn keeps_hand_written_clip_prompts_and_takes_them_away_again() {
         code_of(
             &moka,
             DocumentCommand::SetStoryVideoPromptOverrides {
+                story_id: STORY.into(),
+                prompts: long,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
+fn keeps_hand_written_picture_prompts_and_takes_them_away_again() {
+    let moka = story_document();
+    let ask = format!("keyframe:{CHAPTER_FIRST}:{ACT}:{FRAME_FIRST}");
+    let mut prompts = BTreeMap::new();
+    prompts.insert(
+        ask.clone(),
+        Some(StoryPromptOverride {
+            prompt: "A still frame of the lantern.".into(),
+            auto: "0badcafe".into(),
+        }),
+    );
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SetStoryImagePromptOverrides {
+            story_id: STORY.into(),
+            prompts,
+        }],
+    );
+    let held = story_of(&next)
+        .image_prompt_overrides
+        .as_ref()
+        .expect("the words are kept with the telling");
+    assert_eq!(
+        held.get(&ask).map(|override_| override_.prompt.as_str()),
+        Some("A still frame of the lantern.")
+    );
+
+    let mut remove = BTreeMap::new();
+    remove.insert(ask.clone(), None);
+    let gone = round_trip(
+        &next,
+        vec![DocumentCommand::SetStoryImagePromptOverrides {
+            story_id: STORY.into(),
+            prompts: remove,
+        }],
+    );
+    assert!(story_of(&gone).image_prompt_overrides.is_none());
+
+    let mut blank = BTreeMap::new();
+    blank.insert(
+        ask.clone(),
+        Some(StoryPromptOverride {
+            prompt: "   ".into(),
+            auto: "0badcafe".into(),
+        }),
+    );
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryImagePromptOverrides {
+                story_id: STORY.into(),
+                prompts: blank,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+
+    let mut long = BTreeMap::new();
+    long.insert(
+        ask,
+        Some(StoryPromptOverride {
+            prompt: "x".repeat(MAX_PROMPT_LENGTH + 1),
+            auto: "0badcafe".into(),
+        }),
+    );
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryImagePromptOverrides {
                 story_id: STORY.into(),
                 prompts: long,
             }
@@ -2255,6 +2334,7 @@ fn create_story(name: &str) -> StoryDocument {
         edit: StoryEdit::default(),
         narrator: None,
         video_prompt_overrides: None,
+        image_prompt_overrides: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }

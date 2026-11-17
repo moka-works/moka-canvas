@@ -77,7 +77,7 @@ import type {
   StoryKeyframe,
   StorySlot,
   StorySlotTarget,
-  StoryVideoPromptOverride,
+  StoryPromptOverride,
   StoryVoiceProfile,
   TimelineClip,
   TimelineDocument,
@@ -2621,41 +2621,37 @@ function applyOne(
 
     case "setStoryVideoPromptOverrides": {
       const story = storyOf(moka, command.storyId);
-      const entries = Object.entries(command.prompts);
-      const previous: Record<string, StoryVideoPromptOverride | null> = {};
-      for (const [askId, override] of entries) {
-        if (askId.trim() === "" || askId.length > MAX_VIDEO_PROMPT_KEY_LENGTH)
-          throw new CommandError(
-            "VALIDATION_FAILED",
-            i18n.t("errors:command.storyVideoPromptKeyInvalid"),
-          );
-        if (override !== null) checkVideoPromptOverride(override);
-        previous[askId] = story.videoPromptOverrides?.[askId] ?? null;
-      }
-      const overrides: Record<string, StoryVideoPromptOverride> = {
-        ...(story.videoPromptOverrides ?? {}),
-      };
-      for (const [askId, override] of entries) {
-        if (override === null) delete overrides[askId];
-        else overrides[askId] = override;
-      }
-      // A telling with no hand-written words keeps no map at all, so the
-      // document says nobody has written any rather than holding an empty one.
-      const next = { ...story };
-      if (Object.keys(overrides).length === 0) delete next.videoPromptOverrides;
-      else {
-        if (Object.keys(overrides).length > MAX_VIDEO_PROMPT_OVERRIDES)
-          throw new CommandError(
-            "STORY_VIDEO_PROMPT_LIMIT",
-            i18n.t("errors:command.storyVideoPromptLimit"),
-          );
-        next.videoPromptOverrides = overrides;
-      }
+      const { next, previous } = writePromptOverrides(
+        story,
+        "videoPromptOverrides",
+        command.prompts,
+        "video",
+      );
       return {
         next: replaceStory(moka, next),
         inverse: [
           {
             type: "setStoryVideoPromptOverrides",
+            storyId: command.storyId,
+            prompts: previous,
+          },
+        ],
+      };
+    }
+
+    case "setStoryImagePromptOverrides": {
+      const story = storyOf(moka, command.storyId);
+      const { next, previous } = writePromptOverrides(
+        story,
+        "imagePromptOverrides",
+        command.prompts,
+        "image",
+      );
+      return {
+        next: replaceStory(moka, next),
+        inverse: [
+          {
+            type: "setStoryImagePromptOverrides",
             storyId: command.storyId,
             prompts: previous,
           },
@@ -3535,48 +3531,118 @@ function checkPictureReference(
     );
 }
 
-/** A video prompt written by hand: what it says, and when the board said it. */
-function checkVideoPromptOverride(override: StoryVideoPromptOverride) {
+const PROMPT_OVERRIDE_INVALID = {
+  video: "errors:command.storyVideoPromptInvalid",
+  image: "errors:command.storyImagePromptInvalid",
+} as const;
+
+const PROMPT_OVERRIDE_KEY_INVALID = {
+  video: "errors:command.storyVideoPromptKeyInvalid",
+  image: "errors:command.storyImagePromptKeyInvalid",
+} as const;
+
+const PROMPT_OVERRIDE_LIMIT = {
+  video: "errors:command.storyVideoPromptLimit",
+  image: "errors:command.storyImagePromptLimit",
+} as const;
+
+/** A prompt written by hand: what it says, and when the board said it. */
+function checkPromptOverride(
+  override: StoryPromptOverride,
+  medium: "video" | "image",
+) {
   if (
     override.prompt.trim() === "" ||
     Array.from(override.prompt).length > MAX_PROMPT_LENGTH
   )
     throw new CommandError(
       "VALIDATION_FAILED",
-      i18n.t("errors:command.storyVideoPromptInvalid"),
+      i18n.t(PROMPT_OVERRIDE_INVALID[medium]),
     );
   if (override.auto.trim() === "" || override.auto.length > 64)
     throw new CommandError(
       "VALIDATION_FAILED",
-      i18n.t("errors:command.storyVideoPromptInvalid"),
+      i18n.t(PROMPT_OVERRIDE_INVALID[medium]),
     );
 }
 
-/** Every hand-written clip prompt a telling keeps, as the document may carry it. */
-function checkVideoPromptOverrides(
-  overrides: StoryDocument["videoPromptOverrides"],
+/** Every hand-written prompt a telling keeps, as the document may carry it. */
+function checkPromptOverrides(
+  overrides: Record<string, StoryPromptOverride> | undefined,
+  medium: "video" | "image",
 ) {
   if (overrides === undefined) return;
   const entries = Object.entries(overrides);
   if (entries.length > MAX_VIDEO_PROMPT_OVERRIDES)
     throw new CommandError(
-      "STORY_VIDEO_PROMPT_LIMIT",
-      i18n.t("errors:command.storyVideoPromptLimit"),
+      medium === "image"
+        ? "STORY_IMAGE_PROMPT_LIMIT"
+        : "STORY_VIDEO_PROMPT_LIMIT",
+      i18n.t(PROMPT_OVERRIDE_LIMIT[medium]),
     );
   for (const [askId, override] of entries) {
     if (askId.trim() === "" || askId.length > MAX_VIDEO_PROMPT_KEY_LENGTH)
       throw new CommandError(
         "VALIDATION_FAILED",
-        i18n.t("errors:command.storyVideoPromptKeyInvalid"),
+        i18n.t(PROMPT_OVERRIDE_KEY_INVALID[medium]),
       );
-    checkVideoPromptOverride(override);
+    checkPromptOverride(override, medium);
   }
+}
+
+/**
+ * One map of hand-written prompts with a command's entries applied.
+ *
+ * The previous values travel back as the inverse, and an emptied map is
+ * removed entirely: a telling with none says nobody has written any rather
+ * than holding an empty one.
+ */
+function writePromptOverrides(
+  story: StoryDocument,
+  field: "videoPromptOverrides" | "imagePromptOverrides",
+  prompts: Record<string, StoryPromptOverride | null>,
+  medium: "video" | "image",
+): {
+  next: StoryDocument;
+  previous: Record<string, StoryPromptOverride | null>;
+} {
+  const held = story[field] ?? {};
+  const entries = Object.entries(prompts);
+  const previous: Record<string, StoryPromptOverride | null> = {};
+  for (const [askId, override] of entries) {
+    if (askId.trim() === "" || askId.length > MAX_VIDEO_PROMPT_KEY_LENGTH)
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t(PROMPT_OVERRIDE_KEY_INVALID[medium]),
+      );
+    if (override !== null) checkPromptOverride(override, medium);
+    previous[askId] = held[askId] ?? null;
+  }
+  const overrides: Record<string, StoryPromptOverride> = { ...held };
+  for (const [askId, override] of entries) {
+    if (override === null) delete overrides[askId];
+    else overrides[askId] = override;
+  }
+  const next = { ...story };
+  if (Object.keys(overrides).length === 0) delete next[field];
+  else {
+    if (Object.keys(overrides).length > MAX_VIDEO_PROMPT_OVERRIDES)
+      throw new CommandError(
+        medium === "image"
+          ? "STORY_IMAGE_PROMPT_LIMIT"
+          : "STORY_VIDEO_PROMPT_LIMIT",
+        i18n.t(PROMPT_OVERRIDE_LIMIT[medium]),
+      );
+    next[field] = overrides;
+  }
+  return { next, previous };
 }
 
 /** A story's own guardrails, read before anything of it is written down. */
 function checkStory(story: StoryDocument) {
   checkStoryName(story.name);
-  checkVideoPromptOverrides(story.videoPromptOverrides);
+  checkPromptOverrides(story.videoPromptOverrides, "video");
+  checkPromptOverrides(story.imagePromptOverrides, "image");
   if (story.schemaVersion > STORY_SCHEMA_VERSION)
     throw new CommandError(
       "STORY_SCHEMA_NEWER",

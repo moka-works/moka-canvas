@@ -1068,6 +1068,44 @@ describe("planning the clips", () => {
     expect(item.prompt).toBe("A slow push through the rain.");
   });
 
+  it("asks a frame's picture with the words a reader wrote for it", () => {
+    const held: StoryDocument = {
+      ...drawnStory(),
+      imagePromptOverrides: {
+        [`keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`]: {
+          prompt: "A still frame of the lantern.",
+          auto: "0badcafe",
+        },
+      },
+    };
+
+    const [item] = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.prompt).toBe("A still frame of the lantern.");
+  });
+
+  it("asks an element's picture with the words a reader wrote for it", () => {
+    const held: StoryDocument = {
+      ...story(),
+      imagePromptOverrides: {
+        [`element:main:${ids.hero}`]: {
+          prompt: "A portrait of the lantern keeper.",
+          auto: "0badcafe",
+        },
+      },
+    };
+
+    const [item] = planElementArt(held, [
+      { elementId: ids.hero, view: "main" },
+    ]);
+    expect(item.prompt).toBe("A portrait of the lantern keeper.");
+  });
+
   it("asks a shot with the words a reader wrote for it", () => {
     const held: StoryDocument = {
       ...drawnStory(),

@@ -1749,6 +1749,54 @@ describe("the board commands", () => {
     ).toBe("VALIDATION_FAILED");
   });
 
+  it("keeps hand-written picture prompts, takes them away, and survives undo", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const ask = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`;
+    const written = expectRoundTrip(moka, {
+      type: "setStoryImagePromptOverrides",
+      storyId: ids.story,
+      prompts: {
+        [ask]: { prompt: "A still frame of the lantern.", auto: "0badcafe" },
+      },
+    });
+    expect(storyOfFile(written).imagePromptOverrides).toEqual({
+      [ask]: { prompt: "A still frame of the lantern.", auto: "0badcafe" },
+    });
+
+    const gone = expectRoundTrip(written, {
+      type: "setStoryImagePromptOverrides",
+      storyId: ids.story,
+      prompts: { [ask]: null },
+    });
+    // A telling with no hand-written words says so by holding no map at all.
+    expect("imagePromptOverrides" in storyOfFile(gone)).toBe(false);
+
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "setStoryImagePromptOverrides",
+          storyId: ids.story,
+          prompts: { [ask]: { prompt: "   ", auto: "0badcafe" } },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "setStoryImagePromptOverrides",
+          storyId: ids.story,
+          prompts: {
+            [ask]: {
+              prompt: "x".repeat(MAX_PROMPT_LENGTH + 1),
+              auto: "0badcafe",
+            },
+          },
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
   it("moves only the fields an act patch names, replacing a sound whole", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();
