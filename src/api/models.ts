@@ -34,6 +34,10 @@ export interface SubModel {
  * category offers, the complete endpoint URL, the model name the provider
  * knows, and a display name. There is no provider grouping.
  */
+/** The values a model may carry for its protocol's declared parameters. */
+export type ModelParamValue = boolean | number | string;
+export type ModelParams = Record<string, ModelParamValue>;
+
 export interface ModelView {
   id: string;
   category: Capability;
@@ -60,6 +64,8 @@ export interface ModelView {
   maxTokens?: number | null;
   /** How freely a text model may depart from its likeliest answer. */
   temperature?: number | null;
+  /** Values for the protocol's declared parameters, when the model sets any. */
+  params?: ModelParams;
   /**
    * The scenarios this configuration's own model answers, where the deployment
    * routes them. Empty claims nothing: with no sub-models either, the model
@@ -174,6 +180,8 @@ export interface ModelDraft {
   reasoningEffort?: string | null;
   maxTokens?: number | null;
   temperature?: number | null;
+  /** Values for the protocol's declared parameters; omitted sets none. */
+  params?: ModelParams;
   /**
    * The scenarios the configuration's own model answers; omitted claims
    * nothing, which beside no sub-models leaves it answering everything.
@@ -229,6 +237,18 @@ function modelPath(id: string, suffix = ""): string {
   return `/api/v1/models/${encodeURIComponent(id)}${suffix}`;
 }
 
+/** One switch a protocol declares for a model configuration to set. */
+export interface ProtocolParameter {
+  key: string;
+  type: "boolean" | "integer" | "number" | "text";
+  /** The name it goes by per language; the key stands in when none is given. */
+  label?: Record<string, string>;
+  /** One line about what it does, per language. */
+  hint?: Record<string, string>;
+  /** What the model sends when the configuration says nothing. */
+  default?: ModelParamValue;
+}
+
 /**
  * One protocol entry from the converter registry. The capability it serves
  * is the key its group hangs under, not a field of its own.
@@ -250,6 +270,11 @@ export interface ProtocolEntry {
    * instance.
    */
   features?: Record<string, boolean>;
+  /**
+   * The protocol switches a model configuration may set, in the order a form
+   * draws them.
+   */
+  parameters?: ProtocolParameter[];
   /**
    * The model's own contract for a prompt, where the protocol declares one.
    *

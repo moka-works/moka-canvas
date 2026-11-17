@@ -380,6 +380,7 @@ impl MetadataStore for FileMetadataStore {
             reasoning_effort: draft.reasoning_effort.clone(),
             max_tokens: draft.max_tokens,
             temperature: draft.temperature,
+            params: draft.params.clone(),
             scenes: draft.scenes.clone(),
             sub_models: draft.sub_models.clone(),
             enabled: draft.enabled,

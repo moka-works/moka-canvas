@@ -35,6 +35,11 @@ const MAX_VIDEO_SECONDS: u32 = 600;
 const MAX_TEXT_TOKENS: u32 = 1_000_000;
 const MAX_TEMPERATURE: f64 = 2.0;
 const MAX_EFFORT_LEN: usize = 32;
+/// How many protocol parameters one configuration may carry. A converter
+/// declares the handful its endpoint takes; a longer list is a mistake.
+const MAX_MODEL_PARAMS: usize = 32;
+const MAX_MODEL_PARAM_KEY_LEN: usize = 64;
+const MAX_MODEL_PARAM_TEXT_LEN: usize = 4_000;
 
 /// How many scenario rows one configuration may carry. The scenes a category
 /// has are few, and a list longer than this is a form somebody filled by
@@ -103,6 +108,9 @@ pub struct ModelView {
     pub max_tokens: Option<u32>,
     /// How freely a text model may depart from its likeliest answer.
     pub temperature: Option<f64>,
+    /// Values for the parameters the protocol declares.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub params: std::collections::BTreeMap<String, serde_json::Value>,
     /// The scenarios this configuration's own model answers, where the
     /// deployment routes them.
     pub scenes: Vec<Scene>,
@@ -192,6 +200,7 @@ impl ModelRepo {
                 reasoning_effort: model.reasoning_effort,
                 max_tokens: model.max_tokens,
                 temperature: model.temperature,
+                params: model.params,
                 scenes: model.scenes,
                 sub_models: model.sub_models,
                 enabled: model.enabled,
@@ -258,6 +267,7 @@ impl ModelRepo {
         // refused, since what it asks for is a form that never had the field.
         draft.max_video_seconds = check_video_ceiling(draft.category, draft.max_video_seconds)?;
         check_text_params(&mut draft)?;
+        check_model_params(&mut draft)?;
         check_scene_claims(&mut draft)?;
         Ok(self.metadata.upsert_model(&draft).await?)
     }
@@ -818,6 +828,56 @@ fn check_text_params(draft: &mut ModelDraft) -> Result<(), ProviderError> {
     Ok(())
 }
 
+/// The values a configuration carries for its protocol's own parameters.
+///
+/// The host merges them into every request as ordinary parameters, so a
+/// converter reads them without knowing a settings form exists. Only the
+/// three shapes a form can draw are kept — a flag, a finite number, a line of
+/// text — because anything nested has no field to edit and no obvious meaning
+/// in a converter's parameter table.
+fn check_model_params(draft: &mut ModelDraft) -> Result<(), ProviderError> {
+    if draft.params.len() > MAX_MODEL_PARAMS {
+        return Err(ProviderError::invalid(format!(
+            "a model may carry at most {MAX_MODEL_PARAMS} protocol parameters"
+        )));
+    }
+    for (key, value) in &draft.params {
+        let shaped = !key.trim().is_empty()
+            && key.chars().count() <= MAX_MODEL_PARAM_KEY_LEN
+            && key.chars().all(|held| {
+                held.is_ascii_alphanumeric() || held == '_' || held == '-' || held == '.'
+            });
+        if !shaped {
+            return Err(ProviderError::invalid(format!(
+                "protocol parameter name '{key}' must be at most {MAX_MODEL_PARAM_KEY_LEN} characters of letters, digits, '_', '-' or '.'"
+            )));
+        }
+        match value {
+            serde_json::Value::Bool(_) => {}
+            serde_json::Value::Number(number) => {
+                if !number.as_f64().is_some_and(f64::is_finite) {
+                    return Err(ProviderError::invalid(format!(
+                        "protocol parameter '{key}' must be a finite number"
+                    )));
+                }
+            }
+            serde_json::Value::String(text) => {
+                if text.chars().count() > MAX_MODEL_PARAM_TEXT_LEN {
+                    return Err(ProviderError::invalid(format!(
+                        "protocol parameter '{key}' must be at most {MAX_MODEL_PARAM_TEXT_LEN} characters"
+                    )));
+                }
+            }
+            _ => {
+                return Err(ProviderError::invalid(format!(
+                    "protocol parameter '{key}' must be a flag, a number, or text"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Bounds the numbers that reach a provider call. The rest of the
 /// preferences are free text the provider gets to reject.
 fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> {
@@ -865,6 +925,7 @@ mod tests {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: Default::default(),
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
@@ -983,6 +1044,7 @@ mod tests {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: Default::default(),
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,

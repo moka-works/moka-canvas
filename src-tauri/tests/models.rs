@@ -72,6 +72,7 @@ fn draft(id: &str, category: Capability) -> ModelDraft {
         reasoning_effort: None,
         max_tokens: None,
         temperature: None,
+        params: Default::default(),
         scenes: Vec::new(),
         sub_models: Vec::new(),
         enabled: true,
@@ -283,6 +284,60 @@ async fn a_lua_protocol_the_converter_registry_offers_is_accepted() {
         repo.upsert(invented).await.unwrap_err().code(),
         "VALIDATION_FAILED"
     );
+}
+
+#[tokio::test]
+async fn a_models_protocol_parameters_keep_the_three_shapes_a_form_draws() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = repo(root.path());
+
+    let mut filmer = draft("filmer", Capability::Video);
+    filmer
+        .params
+        .insert("prompt_extend".into(), serde_json::json!(false));
+    filmer.params.insert("seed".into(), serde_json::json!(42));
+    filmer
+        .params
+        .insert("style".into(), serde_json::json!("documentary"));
+    repo.upsert(filmer).await.unwrap();
+
+    let view = repo.view().await.unwrap();
+    let stored = view
+        .models
+        .iter()
+        .find(|model| model.id == "filmer")
+        .unwrap();
+    assert_eq!(
+        stored.params.get("prompt_extend"),
+        Some(&serde_json::json!(false))
+    );
+    assert_eq!(stored.params.get("seed"), Some(&serde_json::json!(42)));
+    assert_eq!(
+        stored.params.get("style"),
+        Some(&serde_json::json!("documentary"))
+    );
+
+    // A nested value has no field to edit and no obvious meaning in a
+    // converter's parameter table, so it is refused rather than stored.
+    let mut nested = draft("nested", Capability::Video);
+    nested
+        .params
+        .insert("extra".into(), serde_json::json!({"a": 1}));
+    let error = repo.upsert(nested).await.unwrap_err();
+    assert_eq!(error.code(), "VALIDATION_FAILED");
+    assert!(
+        error.to_string().contains("flag, a number, or text"),
+        "{error}"
+    );
+
+    // A key is a parameter name rather than free text.
+    let mut unshaped = draft("unshaped", Capability::Video);
+    unshaped
+        .params
+        .insert("not a key".into(), serde_json::json!(true));
+    let error = repo.upsert(unshaped).await.unwrap_err();
+    assert_eq!(error.code(), "VALIDATION_FAILED");
+    assert!(error.to_string().contains("not a key"), "{error}");
 }
 
 #[tokio::test]

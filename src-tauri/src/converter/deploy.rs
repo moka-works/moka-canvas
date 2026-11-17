@@ -286,6 +286,22 @@ mod tests {
             .checks
             .as_ref()
             .is_none_or(|checks| checks.get("dialogueTag").is_none()));
+
+        // The one switch the Wan protocol offers a configuration: letting the
+        // service expand the prompt, which a structured rewrite usually wants
+        // to turn off.
+        let entry = registry.find("bailianVideo").unwrap();
+        let switch = entry
+            .parameters
+            .iter()
+            .find(|parameter| parameter.key == "prompt_extend")
+            .expect("Bailian offers its prompt-expansion switch");
+        assert_eq!(switch.kind, "boolean");
+        assert_eq!(switch.default, Some(serde_json::Value::Bool(true)));
+        assert_eq!(
+            switch.label.get("zh").map(String::as_str),
+            Some("提示词智能改写")
+        );
     }
 
     #[tokio::test]

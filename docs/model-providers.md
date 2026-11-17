@@ -91,7 +91,7 @@
 | Runway        | `runwayVideo`     | `Authorization: Bearer` + `X-Runway-Version`；`text_to_video` / `image_to_video` 由端点决定 |
 | 可灵 Kling    | `klingVideo`      | `Authorization: Bearer`（新版 API Key）；`text2video` / `image2video` 由端点决定            |
 | 智谱 GLM      | `zhipuVideo`      | `Authorization: Bearer`；结果在 `/async-result/{id}`                                        |
-| 阿里云百炼    | `bailianVideo`    | —                                                                                           |
+| 阿里云百炼    | `bailianVideo`    | Wan 3.0；`prompt_extend` 可在模型参数里关闭                                                 |
 | 火山方舟      | `volcengineVideo` | —                                                                                           |
 | MiniMax       | `minimaxVideo`    | H3 v2：`/v2/video_generation` + `content[]`，结果直接从查询返回，无文件中转                 |
 
@@ -120,6 +120,28 @@
 核对。内置转换器里 MiniMax 用 H3 的三段式契约，百炼用 Wan 3.0 的单镜头、参考图编号
 与声音描述契约；没有声明 `promptRewrite` 的协议保持直接生成；「编辑提示词」按钮始终
 可用。
+
+### 模型参数
+
+转换器还可以在 `model.json` 里声明模型级开关，添加或编辑模型时自动出现在「模型参数」
+一栏；值保存在该模型配置里，网关按「请求 > 模型 > 全局偏好」的顺序合并，脚本从
+`req.params` 读取它：
+
+```json
+"parameters": [
+  {
+    "key": "prompt_extend",
+    "type": "boolean",
+    "label": { "en": "Prompt extension", "zh": "提示词智能改写" },
+    "hint": { "en": "…", "zh": "…" },
+    "default": true
+  }
+]
+```
+
+`type` 支持 `boolean`、`integer`、`number`、`text`；`default` 是一个还没有存储值的
+模型打开时的取值，留空或不在界面里改动时保持协议自己的默认。请求里已带同名参数时，
+模型参数不覆盖它。
 
 ## 音乐
 

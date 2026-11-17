@@ -473,6 +473,42 @@ mod tests {
     }
 
     #[test]
+    fn the_bailian_video_script_carries_the_models_own_switches() {
+        let rt = test_runtime();
+        let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");
+        let video = rt
+            .load(&scripts.join("models/video/bailianVideo/bailian-video.lua"))
+            .unwrap();
+        let built = rt
+            .call_json_value(
+                &video,
+                "build_task_request",
+                vec![
+                    serde_json::json!({
+                        "url": "https://ws.test/video-synthesis",
+                        "model": "wan3.0-video",
+                    }),
+                    serde_json::json!({
+                        "prompt": "a lantern drifts",
+                        "params": {
+                            "seconds": 5,
+                            "resolution": "720",
+                            "prompt_extend": false,
+                        },
+                    }),
+                    serde_json::json!([]),
+                ],
+            )
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(built["body"].as_str().unwrap()).expect("a JSON body");
+        // A model's declared switch arrives as an ordinary request parameter
+        // and is forwarded under the service's own name.
+        assert_eq!(body["parameters"]["prompt_extend"], false);
+        assert_eq!(body["parameters"]["resolution"], "720P");
+    }
+
+    #[test]
     fn the_bailian_scripts_build_their_requests() {
         let rt = test_runtime();
         let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");

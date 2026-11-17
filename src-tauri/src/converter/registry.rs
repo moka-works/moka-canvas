@@ -81,6 +81,79 @@ fn default_prompt_rewrite_version() -> u32 {
     1
 }
 
+/// One setting a converter declares: a switch of the protocol that belongs to
+/// a model configuration rather than to any one ask.
+///
+/// The declaration says enough for a settings form to draw the field without
+/// knowing the protocol — a key, one of the three shapes a form can draw, the
+/// words it goes by, and what leaving it alone means. The value a reader sets
+/// travels with the model and is merged into every request that does not
+/// state the key itself, so the converter reads it as an ordinary parameter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterDecl {
+    /// The parameter name the script reads, and the key a model stores.
+    pub key: String,
+    /// `boolean`, `integer`, `number`, or `text`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The name it goes by per language, keyed by locale; the key stands in
+    /// where no label for the reader's language is given.
+    #[serde(default)]
+    pub label: HashMap<String, String>,
+    /// One line about what it does, per language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<HashMap<String, String>>,
+    /// What the model sends when the configuration says nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+}
+
+/// Whether a declared parameter is one a form can draw and a model can store.
+///
+/// A key is a parameter name, so it is a short token rather than free text; a
+/// default has to be the kind the declaration names, or a form would show one
+/// shape and send another.
+fn parameter_declared_well(parameter: &ParameterDecl) -> bool {
+    let key = parameter.key.trim();
+    let key_ok = !key.is_empty()
+        && key.chars().count() <= 64
+        && key
+            .chars()
+            .all(|held| held.is_ascii_alphanumeric() || held == '_' || held == '-' || held == '.');
+    let kind_ok = matches!(
+        parameter.kind.as_str(),
+        "boolean" | "integer" | "number" | "text"
+    );
+    let labels_well = |labels: &HashMap<String, String>| {
+        labels
+            .iter()
+            .all(|(locale, label)| !locale.trim().is_empty() && !label.trim().is_empty())
+    };
+    let labels_ok =
+        labels_well(&parameter.label) && parameter.hint.as_ref().is_none_or(labels_well);
+    let default_ok = parameter
+        .default
+        .as_ref()
+        .is_none_or(|value| match parameter.kind.as_str() {
+            "boolean" => value.is_boolean(),
+            "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+            "number" => value.as_f64().is_some_and(f64::is_finite),
+            "text" => value.is_string(),
+            _ => false,
+        });
+    key_ok && kind_ok && labels_ok && default_ok
+}
+
+/// Whether a converter's parameters are a declaration a form can offer: each
+/// one is drawable, and no two claim the same key.
+fn parameters_declared_well(parameters: &[ParameterDecl]) -> bool {
+    let mut keys = std::collections::HashSet::new();
+    parameters
+        .iter()
+        .all(|parameter| parameter_declared_well(parameter) && keys.insert(parameter.key.trim()))
+}
+
 /// What a converter's `model.json` declares about rewriting a prompt before
 /// it is sent: the file beside it that holds the model's own contract, the
 /// parts of that contract this build can check, and the version of both.
@@ -201,6 +274,11 @@ pub struct ModelConfig {
     /// read by whichever part of the program knows that feature.
     #[serde(default)]
     pub features: Features,
+    /// The protocol switches a model configuration may set, in the order a
+    /// form draws them. Empty leaves the configuration with nothing of its
+    /// own to say beyond the fields every model has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ParameterDecl>,
     /// The model's own contract for a prompt, where the protocol has one: a
     /// prompt written for it may have to be rewritten into a shape the model
     /// reads rather than one a provider's wire format suggests.
@@ -227,6 +305,9 @@ pub struct ProtocolEntry {
     pub order: u32,
     pub auth: AuthSpec,
     pub features: Features,
+    /// The protocol switches a configuration may set, as it declared them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ParameterDecl>,
     /// The protocol's prompt contract, with the guide's words already read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_rewrite: Option<PromptRewrite>,
@@ -264,7 +345,7 @@ fn declared_well(config: &ModelConfig) -> bool {
         .labels
         .iter()
         .all(|(locale, label)| !locale.trim().is_empty() && !label.trim().is_empty());
-    labelled && config.auth.is_sendable()
+    labelled && config.auth.is_sendable() && parameters_declared_well(&config.parameters)
 }
 
 /// Holds the loaded registry state.
@@ -359,6 +440,7 @@ impl ConverterRegistry {
             order: config.order,
             auth: config.auth,
             features: config.features,
+            parameters: config.parameters,
             prompt_rewrite,
         })
     }
@@ -599,6 +681,77 @@ mod tests {
                 registry.find(id).unwrap().prompt_rewrite.is_none(),
                 "{id} should offer no prompt contract"
             );
+        }
+    }
+
+    #[test]
+    fn a_declared_parameter_is_read_into_the_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("video"),
+            "filmer",
+            r#"{
+              "displayName": "Filmer",
+              "urlExample": "https://example.com/video",
+              "script": "filmer.lua",
+              "parameters": [
+                {
+                  "key": "prompt_extend",
+                  "type": "boolean",
+                  "label": {"en": "Prompt extension", "zh": "提示词智能改写"},
+                  "hint": {"en": "Let the service rewrite the prompt."},
+                  "default": true
+                }
+              ]
+            }"#,
+            Some("filmer.lua"),
+        );
+
+        let entry = ConverterRegistry::load(dir.path())
+            .find("filmer")
+            .cloned()
+            .unwrap();
+        assert_eq!(entry.parameters.len(), 1);
+        let switch = &entry.parameters[0];
+        assert_eq!(switch.key, "prompt_extend");
+        assert_eq!(switch.kind, "boolean");
+        assert_eq!(
+            switch.label.get("zh").map(String::as_str),
+            Some("提示词智能改写")
+        );
+        assert_eq!(switch.default, Some(serde_json::Value::Bool(true)));
+    }
+
+    #[test]
+    fn a_parameter_a_form_cannot_draw_leaves_the_protocol_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("video");
+        for (id, parameters) in [
+            ("unknown-type", r#"[{"key": "a", "type": "colour"}]"#),
+            (
+                "default-mismatch",
+                r#"[{"key": "a", "type": "boolean", "default": "yes"}]"#,
+            ),
+            ("blank-key", r#"[{"key": " ", "type": "text"}]"#),
+            (
+                "duplicate",
+                r#"[{"key": "a", "type": "boolean"}, {"key": "a", "type": "text"}]"#,
+            ),
+        ] {
+            write(
+                &video,
+                id,
+                &format!(
+                    r#"{{"displayName": "{id}", "urlExample": "https://example.com", "script": "{id}.lua",
+                        "parameters": {parameters}}}"#
+                ),
+                Some(&format!("{id}.lua")),
+            );
+        }
+
+        let registry = ConverterRegistry::load(dir.path());
+        for id in ["unknown-type", "default-mismatch", "blank-key", "duplicate"] {
+            assert!(registry.find(id).is_none(), "{id} should not be offered");
         }
     }
 

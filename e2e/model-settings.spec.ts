@@ -207,6 +207,51 @@ test("a video model's scenario groups are stored and kept", async ({
 });
 
 /**
+ * A protocol's own switches, drawn from its document and kept with the model.
+ *
+ * What a component test cannot show is that the declaration reaches the form
+ * through the real registry, and that the value a reader sets is still the
+ * one the form opens on after the page is thrown away.
+ */
+test("a video model's declared switches are drawn and kept", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+
+  await dialog.getByRole("tab", { name: "Video" }).click();
+  await dialog.getByRole("button", { name: "New video model" }).click();
+  await dialog.getByLabel("Display name").fill("Wan Filmer");
+  await dialog.getByLabel("Model name").fill("wan3.0-video");
+  await dialog.getByLabel("Protocol").selectOption("bailianVideo");
+
+  // The switch is the Wan protocol's own, drawn with its declared words and
+  // opened at its declared default.
+  await expect(dialog.getByTestId("model-protocol-params")).toBeVisible();
+  const swtch = dialog.getByTestId("model-param-prompt_extend");
+  await expect(swtch).toBeChecked();
+  await swtch.uncheck();
+  await dialog.getByRole("button", { name: "Save model" }).click();
+  await expect(
+    dialog.locator("strong", { hasText: /^Wan Filmer$/ }),
+  ).toBeVisible();
+
+  // The choice travels with the model rather than with this page.
+  await page.reload();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await dialog.getByRole("tab", { name: "Video" }).click();
+  const kept = page.locator("li.model-card").filter({
+    has: page.locator("strong", { hasText: /^Wan Filmer$/ }),
+  });
+  await kept.getByRole("button", { name: "Edit" }).click();
+  await expect(
+    dialog.getByTestId("model-param-prompt_extend"),
+  ).not.toBeChecked();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+});
+
+/**
  * The window keeps its place while its tabs are turned over.
  *
  * A dialog that grows to whatever the tab holds moves under the pointer with

@@ -190,6 +190,12 @@ pub struct ModelConfig {
     /// leaves the value to the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Values for the parameters the model's protocol declares — a switch a
+    /// provider has that belongs to the configuration rather than to one ask.
+    /// The host adds each one to a request that does not state the same key
+    /// itself, so a converter reads it from its ordinary parameters.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, serde_json::Value>,
     /// The scenarios the model above answers, where the deployment splits its
     /// work by scenario. Empty claims nothing, which with no sub-models either
     /// leaves the model above answering every request — the way every
@@ -224,6 +230,9 @@ pub struct ModelDraft {
     pub max_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Values for the protocol's declared parameters; see [`ModelConfig`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenes: Vec<Scene>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -857,6 +866,7 @@ mod tests {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: BTreeMap::new(),
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,

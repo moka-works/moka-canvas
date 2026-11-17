@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ModelDraft,
+  ModelParams,
   ModelView,
   ProtocolGroups,
+  ProtocolParameter,
   SubModel,
 } from "../../api";
 import {
@@ -19,8 +21,10 @@ import {
   type ModelScene,
 } from "../../shared/domain";
 import {
+  localizedText,
   protocolChoices,
   protocolLabel,
+  protocolParameters,
   protocolUrlExample,
   useModelStore,
 } from "./modelStore";
@@ -63,6 +67,8 @@ interface FormState {
   maxTokens: string;
   /** How freely a text model may answer, as text so blank can mean none. */
   temperature: string;
+  /** The protocol's declared switches, as the form holds them. */
+  params: Record<string, boolean | string>;
   /** The scenarios the first group's own model answers. */
   scenes: ModelScene[];
   /** Whether the first group's fields show. */
@@ -152,6 +158,31 @@ function draftGroups(subModels: SubModel[] | undefined): GroupDraft[] {
   }));
 }
 
+/**
+ * The protocol's declared switches with what the model stored, or the
+ * declaration's own default where it stored nothing. A flag is a checkbox; a
+ * number or a line of text stays text while it is typed, so a blank field can
+ * mean "the model's default" rather than zero or an empty word.
+ */
+function initialParams(
+  protocols: ProtocolGroups | null,
+  protocol: string,
+  stored: ModelParams | null | undefined,
+): Record<string, boolean | string> {
+  const values: Record<string, boolean | string> = {};
+  for (const declaration of protocolParameters(protocols, protocol)) {
+    const held = stored?.[declaration.key];
+    const value = held === undefined ? declaration.default : held;
+    values[declaration.key] =
+      declaration.type === "boolean"
+        ? value === true
+        : value === undefined || value === null
+          ? ""
+          : String(value);
+  }
+  return values;
+}
+
 function initialForm(
   model: ModelView | null,
   copySource: ModelView | null,
@@ -173,6 +204,7 @@ function initialForm(
       reasoningEffort: copySource.reasoningEffort || "auto",
       maxTokens: numberText(copySource.maxTokens),
       temperature: numberText(copySource.temperature),
+      params: initialParams(protocols, copySource.protocol, copySource.params),
       scenes: initialScenes(category, copySource),
       open: true,
       groups: draftGroups(copySource.subModels),
@@ -194,6 +226,7 @@ function initialForm(
       reasoningEffort: "auto",
       maxTokens: "",
       temperature: "",
+      params: initialParams(protocols, choice?.id ?? "", undefined),
       scenes: initialScenes(category, null),
       open: true,
       groups: [],
@@ -210,6 +243,7 @@ function initialForm(
     reasoningEffort: model.reasoningEffort || "auto",
     maxTokens: numberText(model.maxTokens),
     temperature: numberText(model.temperature),
+    params: initialParams(protocols, model.protocol, model.params),
     scenes: initialScenes(category, model),
     open: true,
     groups: draftGroups(model.subModels),
@@ -309,7 +343,19 @@ export function ModelEditor({
       form.url.trim() === "" || form.url.trim() === previousExample
         ? nextExample
         : form.url;
-    edit({ protocol, url });
+    // The switches belong to the shape that was chosen: a stored value is
+    // read back only when the form returns to the shape it was stored for.
+    const stored =
+      model !== null && protocol === model.protocol
+        ? model.params
+        : copySource !== null && protocol === copySource.protocol
+          ? copySource.params
+          : undefined;
+    edit({
+      protocol,
+      url,
+      params: initialParams(protocols, protocol, stored),
+    });
   };
 
   // The registry may land after the form was opened, which is the only case a
@@ -321,8 +367,9 @@ export function ModelEditor({
       ...state,
       protocol: choices[0].id,
       url: choices[0].urlExample,
+      params: initialParams(protocols, choices[0].id, undefined),
     }));
-  }, [choices, form.protocol]);
+  }, [choices, form.protocol, protocols]);
 
   /** Whether a stored configuration already answers to an identifier. */
   const isTaken = useCallback(
@@ -363,6 +410,23 @@ export function ModelEditor({
       Number.isFinite(temperatureNumber) &&
       temperatureNumber >= 0 &&
       temperatureNumber <= MAX_TEMPERATURE);
+  // A declared switch is valid as it stands; a number has to be one the
+  // converter could read, and a blank field means the declaration's default.
+  const declaredParams = protocolParameters(protocols, form.protocol);
+  const paramOk = (declaration: ProtocolParameter): boolean => {
+    if (declaration.type === "boolean" || declaration.type === "text") {
+      return true;
+    }
+    const held = form.params[declaration.key];
+    const text = typeof held === "string" ? held.trim() : "";
+    if (text === "") return true;
+    const number = Number(text);
+    return (
+      Number.isFinite(number) &&
+      (declaration.type !== "integer" || Number.isInteger(number))
+    );
+  };
+  const paramsOk = declaredParams.every(paramOk);
   // The scenarios a routed category has that no group answers for, and whether
   // any group answers for one at all. A configuration claiming nothing would
   // answer everything by the server's oldest rule, which is not what an
@@ -380,6 +444,7 @@ export function ModelEditor({
     ceilingOk &&
     tokensOk &&
     temperatureOk &&
+    paramsOk &&
     urlShaped &&
     !claimedEmpty &&
     form.groups.every((group) => groupProblem(group) === null);
@@ -414,6 +479,23 @@ export function ModelEditor({
       displayName: form.displayName.trim(),
       enabled: form.enabled,
     };
+    // The protocol's own switches travel with the model. A blank number or
+    // line is the declaration's default and is left out; a flag is always a
+    // stated choice, because unchecked is a value the provider can tell from
+    // "nobody decided".
+    const protocolParams: ModelParams = {};
+    for (const declaration of declaredParams) {
+      const held = form.params[declaration.key];
+      if (declaration.type === "boolean") {
+        protocolParams[declaration.key] = held === true;
+      } else if (typeof held === "string" && held.trim() !== "") {
+        protocolParams[declaration.key] =
+          declaration.type === "text" ? held : Number(held);
+      }
+    }
+    if (Object.keys(protocolParams).length > 0) {
+      draft.params = protocolParams;
+    }
     // Only a video model keeps a ceiling: the other categories have no such
     // window, and a form that never showed the field leaves it out entirely.
     if (category === "video" && ceilingNumber !== null) {
@@ -746,6 +828,85 @@ export function ModelEditor({
                     })}
               </p>
             </>
+          )}
+
+          {declaredParams.length > 0 && (
+            <section
+              className="settings-section"
+              data-testid="model-protocol-params"
+            >
+              <h3 className="settings-heading">
+                {t("settings:editor.protocolParams")}
+              </h3>
+              <p className="settings-hint">
+                {t("settings:editor.protocolParamsHint")}
+              </p>
+              {declaredParams.map((declaration) => {
+                const label = localizedText(declaration.label, declaration.key);
+                const hint = declaration.hint
+                  ? localizedText(declaration.hint, "")
+                  : "";
+                const held = form.params[declaration.key];
+                return (
+                  <div key={declaration.key}>
+                    {declaration.type === "boolean" ? (
+                      <label className="settings-check">
+                        <input
+                          aria-label={label}
+                          checked={held === true}
+                          data-testid={`model-param-${declaration.key}`}
+                          onChange={(event) =>
+                            edit({
+                              params: {
+                                ...form.params,
+                                [declaration.key]: event.target.checked,
+                              },
+                            })
+                          }
+                          type="checkbox"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ) : (
+                      <label className="dialog-field">
+                        <span>{label}</span>
+                        <input
+                          aria-label={label}
+                          data-testid={`model-param-${declaration.key}`}
+                          onChange={(event) =>
+                            edit({
+                              params: {
+                                ...form.params,
+                                [declaration.key]: event.target.value,
+                              },
+                            })
+                          }
+                          step={
+                            declaration.type === "integer"
+                              ? 1
+                              : declaration.type === "number"
+                                ? "any"
+                                : undefined
+                          }
+                          type={declaration.type === "text" ? "text" : "number"}
+                          value={typeof held === "string" ? held : ""}
+                        />
+                      </label>
+                    )}
+                    {hint !== "" && <p className="settings-hint">{hint}</p>}
+                    {!paramOk(declaration) && (
+                      <p className="settings-hint" role="alert">
+                        {t(
+                          declaration.type === "integer"
+                            ? "settings:editor.paramInteger"
+                            : "settings:editor.paramNumber",
+                        )}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
           )}
 
           {keyField}

@@ -177,6 +177,7 @@ fn draft(id: &str, category: Capability) -> ModelDraft {
         reasoning_effort: None,
         max_tokens: None,
         temperature: None,
+        params: Default::default(),
         scenes: Vec::new(),
         sub_models: Vec::new(),
         enabled: true,

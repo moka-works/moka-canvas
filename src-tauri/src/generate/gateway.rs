@@ -661,23 +661,21 @@ fn merged(mut request: GenerateRequest, preferences: &Preferences) -> GenerateRe
     request
 }
 
-/// A text model's own sampling settings, over what the preferences offered
-/// and under what the ask carried.
+/// The model's own parameters, over what the preferences offered and under
+/// what the ask carried.
 ///
 /// The gap-filling merge above cannot do this: preferences are filled before
 /// the model is resolved, and a model's setting is more specific than a
 /// machine-wide preference while less specific than the ask. So an explicit
 /// key is left alone, and anything else the model names replaces whatever the
-/// preference put there.
+/// preference put there. This covers the protocol parameters a converter
+/// declares as well as the sampling settings text models have always had.
 fn with_model_params(
     mut request: GenerateRequest,
     snapshot: &ModelsSnapshot,
     resolved: &ResolvedModel,
     explicit: &[String],
 ) -> GenerateRequest {
-    if request.capability != Capability::Text {
-        return request;
-    }
     let Some(config) = snapshot
         .models
         .iter()
@@ -686,6 +684,14 @@ fn with_model_params(
         return request;
     };
     let asked = |key: &str| explicit.iter().any(|held| held == key);
+    for (key, value) in &config.params {
+        if !asked(key) {
+            request.params.insert(key.clone(), value.clone());
+        }
+    }
+    if request.capability != Capability::Text {
+        return request;
+    }
     if !asked("reasoningEffort") {
         if let Some(effort) = &config.reasoning_effort {
             request
@@ -1019,6 +1025,7 @@ mod tests {
                 reasoning_effort: Some("low".into()),
                 max_tokens: Some(2048),
                 temperature: Some(0.5),
+                params: Default::default(),
                 scenes: Vec::new(),
                 sub_models: Vec::new(),
                 enabled: true,
@@ -1053,6 +1060,61 @@ mod tests {
         assert_eq!(placed.params["reasoningEffort"], "max");
         assert_eq!(placed.params["temperature"], 1.0);
         assert_eq!(placed.params["maxTokens"], 2048, "the rest still applies");
+    }
+
+    #[test]
+    fn a_models_protocol_parameters_apply_to_every_request_under_the_ask() {
+        let snapshot = ModelsSnapshot {
+            models: vec![crate::metadata::ModelConfig {
+                id: "filmer".into(),
+                category: Capability::Video,
+                protocol: Protocol::new("bailianVideo"),
+                url: "https://provider.test/video-synthesis".into(),
+                model: "wan3.0-video".into(),
+                display_name: "Filmer".into(),
+                max_video_seconds: None,
+                reasoning_effort: None,
+                max_tokens: None,
+                temperature: None,
+                params: [
+                    ("prompt_extend".to_string(), Value::Bool(false)),
+                    ("watermark".to_string(), Value::Bool(false)),
+                ]
+                .into_iter()
+                .collect(),
+                scenes: Vec::new(),
+                sub_models: Vec::new(),
+                enabled: true,
+            }],
+            ..Default::default()
+        };
+        let resolved = resolve_within(&snapshot, "filmer", Capability::Video, None).unwrap();
+
+        // The model's switch reaches a request that names none of its own,
+        // and is more specific than the machine-wide preference.
+        let placed = with_model_params(
+            merged(request(Capability::Video, json!({})), &preferences()),
+            &snapshot,
+            &resolved,
+            &[],
+        );
+        assert_eq!(placed.params["prompt_extend"], false);
+        assert_eq!(placed.params["watermark"], false);
+
+        // What the ask carried itself is left alone.
+        let asked = request(
+            Capability::Video,
+            json!({ "prompt_extend": true, "watermark": true }),
+        );
+        let explicit: Vec<String> = asked.params.keys().cloned().collect();
+        let placed = with_model_params(
+            merged(asked, &preferences()),
+            &snapshot,
+            &resolved,
+            &explicit,
+        );
+        assert_eq!(placed.params["prompt_extend"], true);
+        assert_eq!(placed.params["watermark"], true);
     }
 
     #[test]

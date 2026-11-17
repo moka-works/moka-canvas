@@ -179,6 +179,7 @@ async fn configured(harness: &Harness, base_url: &str) {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: Default::default(),
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,

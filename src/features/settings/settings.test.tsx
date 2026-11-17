@@ -9,7 +9,12 @@ import {
   within,
 } from "@testing-library/react";
 import App from "../../App";
-import type { ModelDraft, ModelsView, ModelView } from "../../api";
+import type {
+  ModelDraft,
+  ModelsView,
+  ModelView,
+  ProtocolGroups,
+} from "../../api";
 import { i18n } from "../../shared/i18n";
 import { protocolChoices, protocolLabel, useModelStore } from "./modelStore";
 
@@ -35,7 +40,7 @@ const MASKED = "sk-…abcd";
  * capability they serve — one entry per converter directory, each carrying
  * what its own model.json declares about itself.
  */
-const REGISTRY = {
+const REGISTRY: ProtocolGroups = {
   text: {
     openaiChat: {
       script: "text/openai-chat.lua",
@@ -126,6 +131,18 @@ const REGISTRY = {
       displayName: "Alibaba Cloud · Bailian Video",
       urlExample: "https://ws.cn-beijing.maas.aliyuncs.com/video-synthesis",
       order: 30,
+      parameters: [
+        {
+          key: "prompt_extend",
+          type: "boolean",
+          label: { en: "Prompt extension", zh: "提示词智能改写" },
+          hint: {
+            en: "Let Wan rewrite the prompt before filming.",
+            zh: "让万相在生成前自动改写提示词。",
+          },
+          default: true,
+        },
+      ],
     },
   },
 };
@@ -560,6 +577,49 @@ describe("model settings", () => {
       await screen.findByRole("button", { name: "New text model" }),
     );
     expect(screen.queryByLabelText("Longest clip (seconds)")).toBeNull();
+  });
+
+  it("draws the switches a protocol declares and sends the model's choices", async () => {
+    await openSettings();
+    fireEvent.click(await screen.findByRole("tab", { name: "Video" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New video model" }),
+    );
+
+    fireEvent.change(await screen.findByLabelText("Display name"), {
+      target: { value: "Filmer" },
+    });
+    fireEvent.change(screen.getByLabelText("Model name"), {
+      target: { value: "wan3.0-video" },
+    });
+    const protocol = screen.getByLabelText("Protocol") as HTMLSelectElement;
+    fireEvent.change(protocol, { target: { value: "bailianVideo" } });
+
+    // The switch comes from the converter's own document, drawn with the
+    // words it declares and opened at what it says the model sends by
+    // default.
+    await screen.findByTestId("model-protocol-params");
+    const toggle = (await screen.findByLabelText(
+      "Prompt extension",
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect(screen.getByText(/Let Wan rewrite the prompt/)).toBeTruthy();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Save model" }));
+    await screen.findByText("Filmer");
+
+    const [write] = writesTo("/api/v1/models");
+    expect(write.body).toMatchObject({
+      protocol: "bailianVideo",
+      params: { prompt_extend: false },
+    });
+
+    // A shape that declares no switches asks for none.
+    fireEvent.click(await screen.findByRole("tab", { name: "Video" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New video model" }),
+    );
+    expect(screen.queryByTestId("model-protocol-params")).toBeNull();
   });
 
   it("routes a video model's scenarios through its groups", async () => {

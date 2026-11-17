@@ -111,6 +111,7 @@ impl Rig {
                     reasoning_effort: None,
                     max_tokens: None,
                     temperature: None,
+                    params: Default::default(),
                     scenes: Vec::new(),
                     sub_models: Vec::new(),
                     enabled: true,
@@ -928,6 +929,7 @@ async fn a_model_with_no_stored_key_is_reported_before_anything_is_sent() {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: Default::default(),
             scenes: Vec::new(),
             sub_models: Vec::new(),
             enabled: true,
@@ -1743,6 +1745,7 @@ async fn a_shot_is_placed_with_the_sub_model_its_scene_names() {
             reasoning_effort: None,
             max_tokens: None,
             temperature: None,
+            params: Default::default(),
             scenes: Vec::new(),
             sub_models: vec![SubModel {
                 model: "happy-ref".into(),

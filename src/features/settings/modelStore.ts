@@ -7,6 +7,7 @@ import {
   type ModelsView,
   type PreferencesPatch,
   type ProtocolGroups,
+  type ProtocolParameter,
   type SecretStorageChoice,
 } from "../../api";
 import type { Capability } from "../../shared/domain";
@@ -128,9 +129,28 @@ export function protocolLabel(
 ): string {
   const entry = findProtocol(protocols, id);
   if (!entry) return id;
-  const labels = entry.labels ?? {};
+  return localizedText(entry.labels, entry.displayName || id);
+}
+
+/**
+ * One piece of a declaration as the interface's language reads it: the
+ * reader's own words first, then English, then the fallback.
+ */
+export function localizedText(
+  labels: Record<string, string> | undefined,
+  fallback: string,
+): string {
+  if (!labels) return fallback;
   const language = (i18n.resolvedLanguage ?? "en").split("-")[0];
-  return labels[language] || labels.en || entry.displayName || id;
+  return labels[language] || labels.en || fallback;
+}
+
+/** The switches a protocol declares for a model configuration to set. */
+export function protocolParameters(
+  protocols: ProtocolGroups | null,
+  id: string,
+): ProtocolParameter[] {
+  return findProtocol(protocols, id)?.parameters ?? [];
 }
 
 /**

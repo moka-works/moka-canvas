@@ -10,5 +10,20 @@
     "checks": { "negativeBait": true },
     "version": 1
   },
-  "version": 5
+  "parameters": [
+    {
+      "key": "prompt_extend",
+      "type": "boolean",
+      "label": {
+        "en": "Prompt extension",
+        "zh": "提示词智能改写"
+      },
+      "hint": {
+        "en": "Let Wan rewrite the prompt before filming. Turn it off to send the words as they are.",
+        "zh": "让万相在生成前自动改写提示词；关闭后按原样发送。"
+      },
+      "default": true
+    }
+  ],
+  "version": 6
 }
