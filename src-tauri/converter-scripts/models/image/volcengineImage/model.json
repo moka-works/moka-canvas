@@ -5,5 +5,25 @@
   "script": "volcengine-image.lua",
   "order": 30,
   "features": { "imageInput": true },
-  "version": 2
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "parameters": [
+    {
+      "key": "optimize_prompt",
+      "type": "boolean",
+      "label": {
+        "en": "Prompt optimization",
+        "zh": "提示词智能优化"
+      },
+      "hint": {
+        "en": "Ask Seedream to optimize the prompt in standard mode. Off by default; supported by Seedream 4.0 and later.",
+        "zh": "让 Seedream 以标准模式优化提示词；默认关闭，Seedream 4.0 及之后支持。"
+      },
+      "default": false
+    }
+  ],
+  "version": 3
 }

@@ -6,5 +6,10 @@
   "order": 50,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
   "features": { "job": true, "imageInput": true },
-  "version": 2
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "version": 3
 }

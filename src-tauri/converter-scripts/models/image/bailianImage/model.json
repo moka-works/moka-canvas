@@ -6,5 +6,25 @@
   "order": 20,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
   "features": { "imageInput": true },
-  "version": 2
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "parameters": [
+    {
+      "key": "prompt_extend",
+      "type": "boolean",
+      "label": {
+        "en": "Prompt extension",
+        "zh": "提示词智能改写"
+      },
+      "hint": {
+        "en": "Let the service expand the prompt before drawing. Off by default. Wan 2.7 image models do not accept this switch.",
+        "zh": "让服务在生成前自动扩写提示词；默认关闭。万相 2.7 图像模型不支持此开关。"
+      },
+      "default": false
+    }
+  ],
+  "version": 3
 }

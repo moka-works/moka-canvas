@@ -99,7 +99,15 @@ local function integer_param(params, key)
   return nil
 end
 
-local function image_parameters(req)
+-- Wan 2.7 image models do not read prompt_extend; their own thinking mode is
+-- a different switch. Every other model in this family takes the flag, and a
+-- request that says nothing gets it off so the words are sent as they are.
+local function accepts_prompt_extend(model)
+  local lowered = tostring(model or ""):lower()
+  return lowered:find("wan2.7-image", 1, true) == nil
+end
+
+local function image_parameters(req, model)
   local told = {}
   local size = size_of(req.params.size)
   if size ~= nil then
@@ -108,6 +116,9 @@ local function image_parameters(req)
   local count = integer_param(req.params, "count")
   if count ~= nil and count > 0 then
     told.n = count
+  end
+  if accepts_prompt_extend(model) then
+    told.prompt_extend = req.params.prompt_extend == true
   end
   return told
 end
@@ -158,7 +169,7 @@ function build_request(call, req, inputs)
     body = json.encode({
       model = call.model,
       input = {messages = {{role = "user", content = content_of(req, inputs)}}},
-      parameters = image_parameters(req),
+      parameters = image_parameters(req, call.model),
     }),
   }
 end

@@ -156,6 +156,12 @@ function build_request(call, req, inputs)
   if background ~= nil then
     body.background = background
   end
+  -- The service states its prompt optimization as a mode, not a flag; the
+  -- switch this model offers turns the standard mode on and says nothing
+  -- when it is off, which is the service's own way of leaving words alone.
+  if req.params.optimize_prompt == true then
+    body.optimize_prompt_options = {mode = "standard"}
+  end
   local pictures = pictures_of(inputs)
   if #pictures > 0 then
     body.image = pictures

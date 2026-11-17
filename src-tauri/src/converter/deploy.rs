@@ -349,6 +349,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_image_converter_deploys_its_prompt_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        deploy(dir.path()).await;
+
+        let registry = ConverterRegistry::load(dir.path());
+        // Every built-in image protocol offers the rewrite step, so a reader
+        // drawing a picture is always given the contract its model reads.
+        for def in BUILTIN_SCRIPTS
+            .iter()
+            .filter(|def| def.capability == "image")
+        {
+            let entry = registry
+                .find(def.id)
+                .unwrap_or_else(|| panic!("{} was not deployed", def.id));
+            assert!(
+                entry.prompt_rewrite.is_some(),
+                "{} draws images and should declare a prompt contract",
+                def.id
+            );
+        }
+
+        for (id, marker) in [
+            ("openaiImages", "GPT Image"),
+            ("bailianImage", "Wan and Qwen-Image"),
+            ("blackForestLabsImage", "FLUX"),
+            ("lumaImage", "Luma Uni"),
+            ("minimaxImage", "MiniMax"),
+            ("volcengineImage", "Seedream"),
+            ("zhipuImage", "CogView"),
+        ] {
+            let rewrite = registry
+                .find(id)
+                .and_then(|entry| entry.prompt_rewrite.as_ref())
+                .unwrap_or_else(|| panic!("{id} declares a prompt contract"));
+            assert!(
+                rewrite.guide.contains(marker),
+                "{id} should deploy its {marker} guide"
+            );
+            assert_eq!(
+                rewrite
+                    .checks
+                    .as_ref()
+                    .and_then(|checks| checks.get("negativeBait"))
+                    .and_then(serde_json::Value::as_bool),
+                Some(true),
+                "{id} should warn that negative phrasing names the frame"
+            );
+        }
+
+        // The services that can rewrite a prompt on their own offer the switch,
+        // and every one of them starts off: a prompt the client wrote is the
+        // one that should reach the model.
+        for (id, key) in [
+            ("bailianImage", "prompt_extend"),
+            ("minimaxImage", "prompt_optimizer"),
+            ("volcengineImage", "optimize_prompt"),
+        ] {
+            let entry = registry.find(id).unwrap();
+            let switch = entry
+                .parameters
+                .iter()
+                .find(|parameter| parameter.key == key)
+                .unwrap_or_else(|| panic!("{id} offers its prompt switch"));
+            assert_eq!(switch.kind, "boolean");
+            assert_eq!(switch.default, Some(serde_json::Value::Bool(false)));
+        }
+    }
+
+    #[tokio::test]
     async fn deploys_every_built_in_converter_under_its_capability() {
         let dir = tempfile::tempdir().unwrap();
         deploy(dir.path()).await;

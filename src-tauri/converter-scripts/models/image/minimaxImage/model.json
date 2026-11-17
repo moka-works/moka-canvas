@@ -5,5 +5,25 @@
   "script": "minimax-image.lua",
   "order": 40,
   "features": { "imageInput": true },
-  "version": 2
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "parameters": [
+    {
+      "key": "prompt_optimizer",
+      "type": "boolean",
+      "label": {
+        "en": "Prompt optimizer",
+        "zh": "提示词智能优化"
+      },
+      "hint": {
+        "en": "Let MiniMax rewrite the prompt before drawing. Off by default.",
+        "zh": "让 MiniMax 在生成前自动优化提示词；默认关闭。"
+      },
+      "default": false
+    }
+  ],
+  "version": 3
 }

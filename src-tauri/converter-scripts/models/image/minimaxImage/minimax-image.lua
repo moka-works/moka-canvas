@@ -145,6 +145,9 @@ function build_request(call, req, inputs)
     end
     body.n = count
   end
+  if req.params.prompt_optimizer ~= nil then
+    body.prompt_optimizer = req.params.prompt_optimizer == true
+  end
   local references = references_of(inputs)
   if #references > 0 then
     body.subject_reference = references
