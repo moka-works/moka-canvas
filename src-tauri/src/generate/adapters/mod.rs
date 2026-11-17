@@ -298,9 +298,17 @@ pub(crate) async fn exchange(
             debug::answered(recording, status, &headers, &reply.body);
             Ok(reply)
         }
-        Err(error) => {
-            debug::broken(recording, &error.to_string(), status, &headers);
-            Err(error)
+        Err(incomplete) => {
+            // What had arrived is often the provider's own explanation, so it
+            // is written beside the reason the reading stopped.
+            debug::broken(
+                recording,
+                &incomplete.error.to_string(),
+                status,
+                &headers,
+                &incomplete.body,
+            );
+            Err(incomplete.error)
         }
     }
 }
@@ -325,20 +333,34 @@ async fn send(
     call.client.execute(request).await.map_err(transport)
 }
 
-pub(crate) async fn drain(
-    response: reqwest::Response,
-    ceiling: u64,
-) -> Result<Reply, ProviderError> {
+/// A body that did not arrive whole, with the part that did.
+///
+/// The part matters as much as the reason: a provider that fails in the middle
+/// of an error document has usually already said what went wrong in it.
+pub(crate) struct Incomplete {
+    pub(crate) error: ProviderError,
+    pub(crate) body: Vec<u8>,
+}
+
+pub(crate) async fn drain(response: reqwest::Response, ceiling: u64) -> Result<Reply, Incomplete> {
     let status = response.status().as_u16();
     let headers = response.headers().clone();
     let mut response = response;
     let mut body: Vec<u8> = Vec::new();
-    while let Some(chunk) = next_chunk(&mut response).await? {
+    loop {
+        let chunk = match next_chunk(&mut response).await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(error) => return Err(Incomplete { error, body }),
+        };
         body.extend_from_slice(&chunk);
         if body.len() as u64 > ceiling {
-            return Err(ProviderError::Rejected(format!(
-                "the answer is larger than {ceiling} bytes"
-            )));
+            return Err(Incomplete {
+                error: ProviderError::Rejected(format!(
+                    "the answer is larger than {ceiling} bytes"
+                )),
+                body,
+            });
         }
     }
     Ok(Reply {
@@ -355,7 +377,7 @@ async fn next_chunk(response: &mut reqwest::Response) -> Result<Option<Vec<u8>>,
         .chunk()
         .await
         .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
-        .map_err(|error| ProviderError::Unreachable(error.to_string()))
+        .map_err(|error| ProviderError::Unreachable(describe(&error)))
 }
 
 /// An opened stream, or the answer that refused to open one.
@@ -406,9 +428,15 @@ pub(crate) async fn open_stream(
             debug::answered(recording, status, &headers, &reply.body);
             Ok(Opened::Refused(reply))
         }
-        Err(error) => {
-            debug::broken(recording, &error.to_string(), status, &headers);
-            Err(error)
+        Err(incomplete) => {
+            debug::broken(
+                recording,
+                &incomplete.error.to_string(),
+                status,
+                &headers,
+                &incomplete.body,
+            );
+            Err(incomplete.error)
         }
     }
 }
@@ -769,16 +797,40 @@ pub(crate) fn media_item(
 
 fn transport(error: reqwest::Error) -> ProviderError {
     if error.is_timeout() {
-        ProviderError::Timeout("the channel did not answer in time".to_string())
+        ProviderError::Timeout(format!(
+            "the channel did not answer in time: {}",
+            describe(&error)
+        ))
     } else if error.is_builder() {
         // A credential carrying a newline is a stored-value problem rather
         // than an outage, and saying so stops a client from retrying it.
-        ProviderError::invalid(error.to_string())
+        ProviderError::invalid(describe(&error))
     } else {
-        // reqwest names the address and the reason here. Neither is secret:
-        // credentials travel in headers, never in a URL.
-        ProviderError::Unreachable(error.to_string())
+        // The address and the reason, neither of which is secret: credentials
+        // travel in headers, never in a URL.
+        ProviderError::Unreachable(describe(&error))
     }
+}
+
+/// The whole of what a transport failure says, including the layers under it.
+///
+/// reqwest's own Display names only the outermost layer — "error sending
+/// request for url (...)" — which is the one that says least: whether a proxy
+/// refused the tunnel, a name did not resolve, or a certificate was rejected
+/// is one `source()` down. A record that kept only the outer line would answer
+/// none of the questions it was made for.
+fn describe(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut said = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let line = cause.to_string();
+        if !line.is_empty() && !said.contains(&line) {
+            said.push_str(": ");
+            said.push_str(&line);
+        }
+        source = cause.source();
+    }
+    said
 }
 
 /// Maps a provider's answer onto a code the client can act on.
