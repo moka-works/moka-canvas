@@ -5,5 +5,10 @@
   "script": "bailian-video.lua",
   "order": 30,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "version": 4
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "version": 5
 }

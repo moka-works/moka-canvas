@@ -51,6 +51,19 @@ describe("a rewritten prompt, before it is sent", () => {
     ]);
   });
 
+  it("looks for a line anywhere when the contract names no tag", () => {
+    const quoted =
+      "A woman at a bus stop says: “车已经停运了。” No background music.";
+    expect(
+      promptContractIssues(quoted, CONTEXT, { negativeBait: true }),
+    ).toEqual([]);
+    expect(
+      promptContractIssues("A woman waits. No dialogue.", CONTEXT, {
+        negativeBait: true,
+      }),
+    ).toEqual([{ code: "dialogueMissing", line: "车已经停运了。" }]);
+  });
+
   it("names a speaker the material does not have", () => {
     const prompt = asked(
       "[Shot 1] A woman (S7) says: <d>[Chinese] 车已经停运了。</d>",

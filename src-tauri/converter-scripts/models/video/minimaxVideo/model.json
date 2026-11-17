@@ -4,5 +4,14 @@
   "urlExample": "https://api.minimaxi.com/v1/video_generation",
   "script": "minimax-video.lua",
   "order": 50,
-  "version": 1
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": {
+      "bodyLanguage": "en",
+      "dialogueTag": "d",
+      "negativeBait": true
+    },
+    "version": 1
+  },
+  "version": 2
 }

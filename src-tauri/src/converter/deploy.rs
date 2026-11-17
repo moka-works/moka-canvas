@@ -256,6 +256,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_video_converters_that_declare_a_prompt_contract_deploy_its_guide() {
+        let dir = tempfile::tempdir().unwrap();
+        deploy(dir.path()).await;
+
+        let registry = ConverterRegistry::load(dir.path());
+        let minimax = registry
+            .find("minimaxVideo")
+            .and_then(|entry| entry.prompt_rewrite.as_ref())
+            .expect("MiniMax video declares the H3 prompt contract");
+        assert!(minimax.guide.contains("integrated_multimodal_description"));
+        assert_eq!(
+            minimax
+                .checks
+                .as_ref()
+                .and_then(|checks| checks.get("dialogueTag"))
+                .and_then(serde_json::Value::as_str),
+            Some("d")
+        );
+
+        let bailian = registry
+            .find("bailianVideo")
+            .and_then(|entry| entry.prompt_rewrite.as_ref())
+            .expect("Bailian video declares the Wan 3.0 prompt contract");
+        assert!(bailian.guide.contains("Wan 3.0"));
+        // Wan writes its lines in quotes rather than in a tag, so the client
+        // looks for them anywhere in the prompt.
+        assert!(bailian
+            .checks
+            .as_ref()
+            .is_none_or(|checks| checks.get("dialogueTag").is_none()));
+    }
+
+    #[tokio::test]
     async fn deploys_every_built_in_converter_under_its_capability() {
         let dir = tempfile::tempdir().unwrap();
         deploy(dir.path()).await;

@@ -103,7 +103,8 @@ const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
  * beside the words, and the reader may still send them. A missing line is the
  * one worth reading twice — it is what a model drops when it translates —
  * so each line the material holds is looked for, character for character,
- * inside a spoken-word block.
+ * inside the contract's spoken-word block, or anywhere in the prompt when the
+ * contract names no tag.
  */
 export function promptContractIssues(
   prompt: string,
@@ -131,6 +132,10 @@ export function promptContractIssues(
     blocks = [
       ...held.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "g")),
     ].map((match) => match[1] ?? "");
+  } else {
+    // A contract that names no tag keeps its lines some other way — Wan 3.0
+    // quotes them — so the whole prompt is where a line is looked for.
+    blocks = [held];
   }
 
   for (const line of context?.dialogue ?? []) {
