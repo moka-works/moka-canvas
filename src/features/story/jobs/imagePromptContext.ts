@@ -15,6 +15,7 @@ import {
   formDescription,
   formName,
   keyframeAt,
+  stripStoryMentions,
 } from "../../../shared/domain/story";
 import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
 import { actDefaultReferences, keyframeCast, planElementArt } from "./plan";
@@ -47,7 +48,7 @@ export function keyframeArtPromptContext(
     frame: {
       chapter: chapter.title,
       act: act.summary,
-      content: keyframe.content,
+      content: stripStoryMentions(keyframe.content),
       shotSize: keyframe.shotSize,
       cameraMove: keyframe.cameraMove,
       angle: keyframe.angle,

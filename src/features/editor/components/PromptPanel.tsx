@@ -474,6 +474,8 @@ export function PromptPanel() {
       const source = findNode(canvas, id);
       if (source === undefined) return [];
       const token = mentioned.includes(id) ? mentionToken(id) : undefined;
+      // A node wired in only to carry words is not a reference picture.
+      if (token === undefined && !holdsAnImage(source, resources)) return [];
       return [
         {
           name: source.title,
@@ -599,6 +601,10 @@ export function PromptPanel() {
    */
   const changePrompt = (next: string) => {
     setPrompt(next);
+    // The checks belong to the words the model wrote; once the reader changes
+    // them they are no longer about these.
+    setRewriteIssues([]);
+    setRewriteError(null);
   };
 
   /**
