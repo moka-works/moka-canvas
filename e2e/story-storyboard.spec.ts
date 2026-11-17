@@ -1085,3 +1085,55 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
     forgetHome(home);
   }
 });
+
+/**
+ * A picture's words, rewritten for the model's contract before they are drawn.
+ *
+ * The image model speaks a protocol that declares a prompt contract, so the
+ * dialog shows the whole ask, the text model may be asked to rewrite it, what
+ * it writes lands back in the field, and the reader's own press draws.
+ */
+test("a picture's words are rewritten for the model's contract before it is drawn", async ({
+  page,
+}) => {
+  const home = projectHome("story-image-prompt-rewrite");
+  await forgetProjects();
+  await configureModels([
+    { id: PAINTER, capability: "image", alias: "Painter" },
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+  ]);
+  try {
+    await toTheBoard(page, home, "Painted Ask", "Story");
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await firstAct.getByTestId("story-kf-image-prompt-0").click();
+    const dialog = page.getByTestId("story-image-prompt-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
+      /This shot/,
+    );
+
+    await dialog.getByTestId("story-image-prompt-rewrite").click();
+    await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
+      SENTENCE,
+      { timeout: 30_000 },
+    );
+
+    // Nothing is drawn until the reader presses the button over the words.
+    await dialog.getByTestId("story-image-prompt-draw").click();
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path.startsWith("/v1/images/"))
+            .at(-1)?.prompt,
+        { timeout: 60_000 },
+      )
+      .toBe(SENTENCE);
+  } finally {
+    forgetHome(home);
+  }
+});
