@@ -9,6 +9,8 @@ import {
   describeFramingPrompt,
   historyLinePrompt,
   historyPrompt,
+  imagePromptRewriteAsk,
+  imagePromptRewriteSystem,
   rewriteSystemPrompt,
   storyActVideoPrompt,
   storyElementMainPrompt,
@@ -818,5 +820,30 @@ describe("story prompts", () => {
   it("says the material is absent rather than leaving a hole", () => {
     const prompt = storyPromptRewriteAsk({ prompt: "Shoot this shot." });
     expect(prompt).toContain("(none)");
+  });
+
+  it("asks an image rewrite under the model's own contract", () => {
+    const system = imagePromptRewriteSystem(
+      "Describe the frame as a photograph.",
+    );
+    expect(system).toContain("Describe the frame as a photograph.");
+    expect(system).toContain("Keep every node token written as `@[node:...]`");
+    expect(system).toContain("Output the rewritten prompt alone");
+    expect(system.endsWith("\n")).toBe(false);
+  });
+
+  it("hands an image rewrite its material and the words as they stand", () => {
+    const prompt = imagePromptRewriteAsk({
+      prompt: "Paint @[node:a] beside @[node:b].",
+      context: {
+        kind: "canvas",
+        mode: "generate",
+        aspect: "16:9",
+        references: [{ name: "林", token: "@[node:a]" }],
+      },
+    });
+    expect(prompt).toContain("Paint @[node:a] beside @[node:b].");
+    expect(prompt).toContain('"token": "@[node:a]"');
+    expect(prompt).not.toContain("{{");
   });
 });

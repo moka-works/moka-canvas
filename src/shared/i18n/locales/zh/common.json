@@ -1,3 +1,16 @@
 {
-  "retry": "重试"
+  "retry": "重试",
+  "promptIssues": {
+    "title": "改写结果还有这些问题",
+    "empty": "提示词是空的",
+    "tooLong": "提示词超过 {{max}} 字",
+    "tags": "台词标记 <{{tag}}> 没有成对",
+    "line": "这句台词没有逐字保留：{{line}}",
+    "speaker": "用了素材里没有的说话人编号 {{ref}}",
+    "language": "台词标记外还有中文：{{sample}}",
+    "negative": "否定说法容易被模型当成画面内容：{{phrase}}",
+    "mentionMissing": "引用的节点 {{token}} 没有保留",
+    "mentionUnknown": "改写结果里多出了素材中没有的引用：{{token}}",
+    "detail": "完整描述"
+  }
 }

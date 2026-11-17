@@ -8,8 +8,7 @@
  * where they are read. Nothing here decides what is sent: the reader does, in
  * front of the words, with what is wrong named beside them.
  */
-import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
-import type { StoryPromptContext } from "../../../shared/prompts/story/promptContext";
+import { MAX_PROMPT_LENGTH } from "../domain/constants";
 
 /** The checkable part of a protocol's prompt contract. */
 export interface PromptContractChecks {
@@ -29,7 +28,22 @@ export type PromptContractIssue =
   | { code: "dialogueMissing"; line: string }
   | { code: "unknownSpeaker"; ref: string }
   | { code: "bodyNotEnglish"; sample: string }
-  | { code: "negativeInstruction"; phrase: string };
+  | { code: "negativeInstruction"; phrase: string }
+  | { code: "mentionMissing"; token: string }
+  | { code: "mentionUnknown"; token: string };
+
+/**
+ * The material a rewrite was made from, as far as the checks read it.
+ *
+ * A story passes the clip's own facts; a canvas node passes the prompt it
+ * rewrote, whose node tokens are addresses and have to survive the trip.
+ */
+export interface PromptContractMaterial {
+  dialogue?: ReadonlyArray<{ text: string; ref?: string }>;
+  cast?: ReadonlyArray<{ ref: string }>;
+  /** The prompt before rewriting, for tokens that must survive it. */
+  sourcePrompt?: string;
+}
 
 /** The checks a protocol declared, read into their own shape. */
 export function readPromptContractChecks(
@@ -96,6 +110,8 @@ const NEGATIVE_INSTRUCTIONS = [
 
 const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
 
+const MENTION = /@\[node:[^\]]*\]/g;
+
 /**
  * What a rewritten prompt gets wrong, in the order a reader would fix it.
  *
@@ -108,8 +124,8 @@ const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
  */
 export function promptContractIssues(
   prompt: string,
-  context: StoryPromptContext | undefined,
   checks: PromptContractChecks,
+  material?: PromptContractMaterial,
 ): PromptContractIssue[] {
   const issues: PromptContractIssue[] = [];
   const held = prompt.trim();
@@ -138,7 +154,7 @@ export function promptContractIssues(
     blocks = [held];
   }
 
-  for (const line of context?.dialogue ?? []) {
+  for (const line of material?.dialogue ?? []) {
     const said = line.text.trim();
     if (said === "") continue;
     if (!blocks.some((block) => block.includes(said))) {
@@ -146,10 +162,10 @@ export function promptContractIssues(
     }
   }
 
-  if (context !== undefined && context.cast.length > 0) {
+  if (material !== undefined && (material.cast?.length ?? 0) > 0) {
     const allowed = new Set<string>();
-    for (const member of context.cast) allowed.add(member.ref);
-    for (const line of context.dialogue) {
+    for (const member of material.cast ?? []) allowed.add(member.ref);
+    for (const line of material.dialogue ?? []) {
       if (line.ref !== undefined) allowed.add(line.ref);
     }
     const used = held.match(/\(S\d+(?:\s*,\s*S\d+)*\)/g) ?? [];
@@ -160,11 +176,11 @@ export function promptContractIssues(
     }
   }
 
-  if (checks.bodyLanguage === "en" && tag !== undefined) {
-    const body = held.replace(
-      new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"),
-      "",
-    );
+  if (checks.bodyLanguage === "en") {
+    const body =
+      tag === undefined
+        ? held
+        : held.replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), "");
     const found = body.match(HAN);
     if (found !== null) {
       const at = body.indexOf(found[0]);
@@ -182,6 +198,26 @@ export function promptContractIssues(
     );
     if (phrase !== undefined)
       issues.push({ code: "negativeInstruction", phrase });
+  }
+
+  // A node token is an address the run resolves, not prose. One that vanished
+  // sends nothing for itself; one that appeared points at a picture the
+  // material never gave.
+  if (material?.sourcePrompt !== undefined) {
+    const before: string[] = [...(material.sourcePrompt.match(MENTION) ?? [])];
+    const after: string[] = [...(held.match(MENTION) ?? [])];
+    const count = (list: string[], token: string) =>
+      list.filter((each) => each === token).length;
+    for (const token of new Set(before)) {
+      if (count(after, token) < count(before, token)) {
+        issues.push({ code: "mentionMissing", token });
+      }
+    }
+    for (const token of new Set(after)) {
+      if (!before.includes(token)) {
+        issues.push({ code: "mentionUnknown", token });
+      }
+    }
   }
 
   return issues;

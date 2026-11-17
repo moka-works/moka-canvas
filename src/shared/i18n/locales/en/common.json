@@ -1,3 +1,16 @@
 {
-  "retry": "Retry"
+  "retry": "Retry",
+  "promptIssues": {
+    "title": "The rewrite still has these problems",
+    "empty": "The prompt is empty",
+    "tooLong": "The prompt is longer than {{max}} characters",
+    "tags": "The spoken-word tags <{{tag}}> are not paired",
+    "line": "This line was not kept word for word: {{line}}",
+    "speaker": "Speaker id {{ref}} is not in the material",
+    "language": "There is still Chinese outside the spoken-word tags: {{sample}}",
+    "negative": "A negative phrasing is likely to be read as picture content: {{phrase}}",
+    "mentionMissing": "The node reference {{token}} was not kept",
+    "mentionUnknown": "The rewrite added a node reference the material does not have: {{token}}",
+    "detail": "Full details"
+  }
 }

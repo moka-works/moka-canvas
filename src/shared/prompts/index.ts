@@ -29,6 +29,9 @@ import historyLine from "./assistant/history-line.tmpl?raw";
 import rewriteSystem from "./assistant/rewrite-system.tmpl?raw";
 import describeFraming from "./editor/describe-framing.tmpl?raw";
 import describeDefault from "./editor/describe-default.tmpl?raw";
+import imageRewriteAsk from "./image/prompt-rewrite.tmpl?raw";
+import imageRewriteSystem from "./image/prompt-rewrite-system.tmpl?raw";
+import type { ImagePromptContext } from "./image/promptContext";
 import storySystem from "./story/system.tmpl?raw";
 import storyFacts from "./story/facts.tmpl?raw";
 import storyOutline from "./story/outline.tmpl?raw";
@@ -563,6 +566,29 @@ export function storyPromptRewriteAsk(input: {
   context?: StoryPromptContext;
 }): string {
   return render(promptRewrite, {
+    prompt: input.prompt,
+    context:
+      input.context === undefined ? "" : JSON.stringify(input.context, null, 2),
+  });
+}
+
+/**
+ * The instruction one image prompt is rewritten under.
+ *
+ * The contract travels in the guide, as it does for a clip; the rules around
+ * it keep the material's subjects, references, node tokens, and quoted words
+ * intact while the shape follows the target model.
+ */
+export function imagePromptRewriteSystem(guide: string): string {
+  return render(imageRewriteSystem, { guide: guide.trim() });
+}
+
+/** One image's rewrite ask: the material it is written from, and the words as they stand. */
+export function imagePromptRewriteAsk(input: {
+  prompt: string;
+  context?: ImagePromptContext;
+}): string {
+  return render(imageRewriteAsk, {
     prompt: input.prompt,
     context:
       input.context === undefined ? "" : JSON.stringify(input.context, null, 2),

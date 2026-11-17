@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { StoryPromptContext } from "../../../shared/prompts/story/promptContext";
 import {
   cleanRewrittenPrompt,
   promptContractIssues,
   readPromptContractChecks,
 } from "./promptContract";
+import type { StoryPromptContext } from "./story/promptContext";
 
 const CONTEXT: StoryPromptContext = {
   kind: "shot",
@@ -41,12 +41,12 @@ describe("a rewritten prompt, before it is sent", () => {
     const prompt = asked(
       "[Shot 1] A woman at a bus stop (S1) says: <d>[Chinese] 车已经停运了。</d> Her lips move, then close.",
     );
-    expect(promptContractIssues(prompt, CONTEXT, CHECKS)).toEqual([]);
+    expect(promptContractIssues(prompt, CHECKS, CONTEXT)).toEqual([]);
   });
 
   it("names a line the rewrite dropped", () => {
     const prompt = asked("[Shot 1] A woman waits at a bus stop.");
-    expect(promptContractIssues(prompt, CONTEXT, CHECKS)).toEqual([
+    expect(promptContractIssues(prompt, CHECKS, CONTEXT)).toEqual([
       { code: "dialogueMissing", line: "车已经停运了。" },
     ]);
   });
@@ -55,12 +55,14 @@ describe("a rewritten prompt, before it is sent", () => {
     const quoted =
       "A woman at a bus stop says: “车已经停运了。” No background music.";
     expect(
-      promptContractIssues(quoted, CONTEXT, { negativeBait: true }),
+      promptContractIssues(quoted, { negativeBait: true }, CONTEXT),
     ).toEqual([]);
     expect(
-      promptContractIssues("A woman waits. No dialogue.", CONTEXT, {
-        negativeBait: true,
-      }),
+      promptContractIssues(
+        "A woman waits. No dialogue.",
+        { negativeBait: true },
+        CONTEXT,
+      ),
     ).toEqual([{ code: "dialogueMissing", line: "车已经停运了。" }]);
   });
 
@@ -68,7 +70,7 @@ describe("a rewritten prompt, before it is sent", () => {
     const prompt = asked(
       "[Shot 1] A woman (S7) says: <d>[Chinese] 车已经停运了。</d>",
     );
-    expect(promptContractIssues(prompt, CONTEXT, CHECKS)).toContainEqual({
+    expect(promptContractIssues(prompt, CHECKS, CONTEXT)).toContainEqual({
       code: "unknownSpeaker",
       ref: "S7",
     });
@@ -78,22 +80,55 @@ describe("a rewritten prompt, before it is sent", () => {
     const prompt = asked(
       "[Shot 1] 雨中的站台。(S1) says: <d>[Chinese] 车已经停运了。</d>",
     );
-    const issues = promptContractIssues(prompt, CONTEXT, CHECKS);
+    const issues = promptContractIssues(prompt, CHECKS, CONTEXT);
     expect(issues.map((issue) => issue.code)).toContain("bodyNotEnglish");
+  });
+
+  it("checks the whole body when no tag is named", () => {
+    expect(
+      promptContractIssues("雨中的站台。", { bodyLanguage: "en" }),
+    ).toContainEqual({ code: "bodyNotEnglish", sample: "雨中的站台。" });
   });
 
   it("finds an instruction about subtitles, which invites them", () => {
     const prompt = `${asked(
       "[Shot 1] A woman (S1) says: <d>[Chinese] 车已经停运了。</d>",
     )} No subtitles.`;
-    expect(promptContractIssues(prompt, CONTEXT, CHECKS)).toContainEqual({
+    expect(promptContractIssues(prompt, CHECKS, CONTEXT)).toContainEqual({
       code: "negativeInstruction",
       phrase: "no subtitles",
     });
   });
 
+  it("keeps every node token a canvas prompt carried, and only those", () => {
+    const source = "Paint @[node:a] beside @[node:b].";
+    expect(
+      promptContractIssues(
+        "A poster of @[node:a] beside @[node:b].",
+        {},
+        { sourcePrompt: source },
+      ),
+    ).toEqual([]);
+    expect(
+      promptContractIssues(
+        "A poster of @[node:a].",
+        {},
+        {
+          sourcePrompt: source,
+        },
+      ),
+    ).toContainEqual({ code: "mentionMissing", token: "@[node:b]" });
+    expect(
+      promptContractIssues(
+        "A poster of @[node:a] beside @[node:b] and @[node:c].",
+        {},
+        { sourcePrompt: source },
+      ),
+    ).toContainEqual({ code: "mentionUnknown", token: "@[node:c]" });
+  });
+
   it("says nothing when the protocol asked for nothing", () => {
-    expect(promptContractIssues("anything at all", undefined, {})).toEqual([]);
+    expect(promptContractIssues("anything at all", {})).toEqual([]);
     expect(readPromptContractChecks(undefined)).toEqual({});
     expect(
       readPromptContractChecks({ dialogueTag: "d", negativeBait: true }),

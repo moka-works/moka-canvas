@@ -1,60 +1,70 @@
 /**
- * Rewriting a clip's prompt into the contract its video model reads.
+ * Rewriting a clip's or a picture's prompt into the contract its model reads.
  *
  * A protocol declares the contract and the client applies it: the guide's
- * words, the material the clip is made of, and the prompt as it stands are
+ * words, the material the ask is made of, and the prompt as it stands are
  * given to the room's own text model, and what comes back is put in front of
- * the reader before anything is sent. Nothing here sends a video ask, and
+ * the reader before anything is sent. Nothing here sends media ask, and
  * nothing writes into the document — the dialog owns both.
  */
-import { generateApi } from "../../../api/generate";
 import { i18n } from "../../../shared/i18n";
 import {
+  imagePromptRewriteAsk,
+  imagePromptRewriteSystem,
   storyPromptRewriteAsk,
   storyPromptRewriteSystem,
 } from "../../../shared/prompts";
+import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
+import {
+  promptContractIssues,
+  type PromptContractIssue,
+} from "../../../shared/prompts/promptContract";
+import {
+  promptRewriteGuide,
+  rewritePromptText,
+  type PromptRewriteGuide,
+} from "../../../shared/prompts/rewrite";
 import type { StoryPromptContext } from "../../../shared/prompts/story/promptContext";
 import { effectiveDefaultId, useModelStore } from "../../settings/modelStore";
 import { storyAskModel, storyTextModel } from "../stores/storyModels";
-import {
-  cleanRewrittenPrompt,
-  promptContractIssues,
-  readPromptContractChecks,
-  type PromptContractChecks,
-  type PromptContractIssue,
-} from "./promptContract";
 
-/** A video protocol's prompt contract, as the client applies it. */
-export interface PromptRewriteGuide {
-  guide: string;
-  checks: PromptContractChecks;
-  version: number;
-}
+export type { PromptRewriteGuide };
 
 /**
- * The contract the model this kind of clip is filmed by declares, or none.
+ * The contract the model this work is asked of declares, or none.
  *
  * The model is the one named for the place — an act may name the model that
- * films it — and otherwise the one the batch will actually be asked of: the
- * room's own choice where it has one, the deployment's default otherwise, so
- * the contract offered is the contract the words will be held to.
+ * films it, a frame or a form may name the one that draws it — and otherwise
+ * the one the batch will actually be asked of: the room's own choice where it
+ * has one, the deployment's default otherwise, so the contract offered is the
+ * contract the words will be held to.
  */
+function guideFor(
+  capability: "image" | "video",
+  model: string | null | undefined,
+): PromptRewriteGuide | null {
+  const { view, protocols } = useModelStore.getState();
+  if (view === null || protocols === null) return null;
+  const id = model ?? effectiveDefaultId(view, capability);
+  const held = view.models.find((each) => each.id === id);
+  if (held === undefined) return null;
+  return promptRewriteGuide(protocols, capability, held.protocol);
+}
+
+/** The contract the model this kind of clip is filmed by declares, or none. */
 export function videoPromptRewrite(
   kind: "actVideo" | "keyframeVideo",
   model?: string | null,
 ): PromptRewriteGuide | null {
-  const { view, protocols } = useModelStore.getState();
-  if (view === null || protocols === null) return null;
-  const id = model ?? storyAskModel(kind) ?? effectiveDefaultId(view, "video");
-  const held = view.models.find((each) => each.id === id);
-  if (held === undefined) return null;
-  const declared = protocols.video?.[held.protocol]?.promptRewrite;
-  if (declared === undefined) return null;
-  return {
-    guide: declared.guide,
-    checks: readPromptContractChecks(declared.checks),
-    version: declared.version,
-  };
+  return guideFor("video", model ?? storyAskModel(kind));
+}
+
+/** The contract the model this kind of picture is drawn by declares, or none. */
+export function imagePromptRewrite(
+  kind: "keyframeArt" | "elementArt",
+  model?: string | null,
+): PromptRewriteGuide | null {
+  return guideFor("image", model ?? storyAskModel(kind));
 }
 
 /** A rewritten prompt and what is wrong with it, once the model answered. */
@@ -80,26 +90,55 @@ export async function rewriteVideoPrompt(input: {
   signal?: AbortSignal;
 }): Promise<RewrittenPrompt> {
   const model = input.model ?? storyTextModel();
-  const answer = await generateApi.text(
-    {
-      capability: "text",
-      ...(model === null ? {} : { model }),
-      system: storyPromptRewriteSystem(input.guide.guide),
-      prompt: storyPromptRewriteAsk({
-        prompt: input.prompt,
-        ...(input.context === undefined ? {} : { context: input.context }),
-      }),
-      params: { temperature: 0.2 },
-    },
-    input.signal,
-  );
-  const said = answer.text?.trim() ?? "";
+  const said = await rewritePromptText({
+    system: storyPromptRewriteSystem(input.guide.guide),
+    prompt: storyPromptRewriteAsk({
+      prompt: input.prompt,
+      ...(input.context === undefined ? {} : { context: input.context }),
+    }),
+    model,
+    signal: input.signal,
+  });
   if (said === "") {
     throw new Error(i18n.t("story:storyboard.videoPromptRewriteEmpty"));
   }
-  const prompt = cleanRewrittenPrompt(said);
   return {
-    prompt,
-    issues: promptContractIssues(prompt, input.context, input.guide.checks),
+    prompt: said,
+    issues: promptContractIssues(said, input.guide.checks, input.context),
+  };
+}
+
+/**
+ * One picture's prompt, rewritten for its model.
+ *
+ * The material carries the frame or form it is drawn from; the prompt's node
+ * tokens, where a canvas node wrote any, are checked for survival here too.
+ */
+export async function rewriteImagePrompt(input: {
+  prompt: string;
+  context?: ImagePromptContext;
+  guide: PromptRewriteGuide;
+  /** The text model to ask, or none for the model the room is set to. */
+  model?: string | null;
+  signal?: AbortSignal;
+}): Promise<RewrittenPrompt> {
+  const model = input.model ?? storyTextModel();
+  const said = await rewritePromptText({
+    system: imagePromptRewriteSystem(input.guide.guide),
+    prompt: imagePromptRewriteAsk({
+      prompt: input.prompt,
+      ...(input.context === undefined ? {} : { context: input.context }),
+    }),
+    model,
+    signal: input.signal,
+  });
+  if (said === "") {
+    throw new Error(i18n.t("story:storyboard.imagePromptRewriteEmpty"));
+  }
+  return {
+    prompt: said,
+    issues: promptContractIssues(said, input.guide.checks, {
+      sourcePrompt: input.prompt,
+    }),
   };
 }

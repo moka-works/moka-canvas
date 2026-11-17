@@ -23,7 +23,7 @@ import {
 } from "../../../shared/domain/story";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { actVideoModel, planActVideos, planKeyframeVideos } from "../jobs/plan";
-import type { PromptContractIssue } from "../jobs/promptContract";
+import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { rewriteVideoPrompt, videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "../panels/removeOldTake";
 

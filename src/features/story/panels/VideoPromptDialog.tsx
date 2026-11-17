@@ -16,7 +16,7 @@ import {
   planActVideoWaves,
   planKeyframeVideoWaves,
 } from "../jobs/plan";
-import type { PromptContractIssue } from "../jobs/promptContract";
+import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { liveStory } from "./removeOldTake";
 import {
@@ -198,27 +198,23 @@ export function VideoPromptDialog({
   const issueText = (issue: PromptContractIssue): string => {
     switch (issue.code) {
       case "empty":
-        return t("story:storyboard.videoPromptIssueEmpty");
+        return t("common:promptIssues.empty");
       case "tooLong":
-        return t("story:storyboard.videoPromptIssueTooLong", {
-          max: issue.max,
-        });
+        return t("common:promptIssues.tooLong", { max: issue.max });
       case "unbalancedTags":
-        return t("story:storyboard.videoPromptIssueTags", { tag: issue.tag });
+        return t("common:promptIssues.tags", { tag: issue.tag });
       case "dialogueMissing":
-        return t("story:storyboard.videoPromptIssueLine", { line: issue.line });
+        return t("common:promptIssues.line", { line: issue.line });
       case "unknownSpeaker":
-        return t("story:storyboard.videoPromptIssueSpeaker", {
-          ref: issue.ref,
-        });
+        return t("common:promptIssues.speaker", { ref: issue.ref });
       case "bodyNotEnglish":
-        return t("story:storyboard.videoPromptIssueLanguage", {
-          sample: issue.sample,
-        });
+        return t("common:promptIssues.language", { sample: issue.sample });
       case "negativeInstruction":
-        return t("story:storyboard.videoPromptIssueNegative", {
-          phrase: issue.phrase,
-        });
+        return t("common:promptIssues.negative", { phrase: issue.phrase });
+      case "mentionMissing":
+        return t("common:promptIssues.mentionMissing", { token: issue.token });
+      case "mentionUnknown":
+        return t("common:promptIssues.mentionUnknown", { token: issue.token });
     }
   };
 
@@ -326,7 +322,7 @@ export function VideoPromptDialog({
             role="status"
           >
             <span className="story-video-prompt-issues-title">
-              {t("story:storyboard.videoPromptIssueTitle")}
+              {t("common:promptIssues.title")}
             </span>
             <ul>
               {issues.map((issue, at) => (
@@ -345,9 +341,7 @@ export function VideoPromptDialog({
             <p>{rewriteError.message}</p>
             {rewriteError.detail !== undefined && (
               <details>
-                <summary>
-                  {t("story:storyboard.videoPromptErrorDetail")}
-                </summary>
+                <summary>{t("common:promptIssues.detail")}</summary>
                 <pre>{rewriteError.detail}</pre>
               </details>
             )}
