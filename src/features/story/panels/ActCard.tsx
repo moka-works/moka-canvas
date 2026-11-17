@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -51,11 +51,13 @@ import {
 } from "../stores/storyJobStore";
 import { actFoldAt, rememberActFold } from "../stores/storyStore";
 import { KeyframeTable } from "./KeyframeTable";
-import { keepTake, removeTake, type TakePlace } from "./takePicks";
+import { addTake, keepTake, removeTake, type TakePlace } from "./takePicks";
 import { StoryPicks } from "./StoryPicks";
+import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { ElementDraftDialog } from "./ElementDraftDialog";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
+import { fileVideoFromComputer } from "./elementPictures";
 import { liveStory } from "./removeOldTake";
 import { RefPicker } from "./RefPicker";
 import { frameRatio } from "./ratios";
@@ -160,6 +162,8 @@ export function ActCard({
   const [folded, setFolded] = useState(() => actFoldAt(foldKey));
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
+  const [pickingClipLibrary, setPickingClipLibrary] = useState(false);
+  const clipFile = useRef<HTMLInputElement>(null);
   const [pickingVoice, setPickingVoice] = useState(false);
   const [pickingMusic, setPickingMusic] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -338,6 +342,18 @@ export function ActCard({
       "actVideo",
       planActVideoWaves(story, chapterId, [act.id]),
     );
+  };
+
+  // A clip the reader already has is kept without asking for one: nothing is
+  // filmed, so the frames inside the act are not a condition of taking it.
+  const keepClip = (assetId: string) => {
+    addTake(story.id, clipPlace, assetId);
+    setPickingClipLibrary(false);
+  };
+
+  const uploadClip = async (file: File) => {
+    const assetId = await fileVideoFromComputer(file);
+    if (assetId !== undefined) keepClip(assetId);
   };
 
   // What a switch would leave behind: every clip this act has, of either kind,
@@ -861,6 +877,41 @@ export function ActCard({
                         )}
                       </>
                     )}
+                    {/*
+                      A clip the reader already has is taken as it is: neither
+                      source films anything, so neither waits for the act's
+                      frames to be drawn.
+                    */}
+                    <button
+                      className="link"
+                      data-testid={`story-act-video-library-${index}`}
+                      disabled={videoBusy !== undefined}
+                      onClick={() => setPickingClipLibrary(true)}
+                      type="button"
+                    >
+                      {t("story:panels.fromLibrary")}
+                    </button>
+                    <button
+                      className="link"
+                      data-testid={`story-act-video-upload-${index}`}
+                      disabled={videoBusy !== undefined}
+                      onClick={() => clipFile.current?.click()}
+                      type="button"
+                    >
+                      {t("story:panels.fromFile")}
+                    </button>
+                    <input
+                      accept="video/*"
+                      data-testid={`story-act-video-upload-input-${index}`}
+                      hidden
+                      onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen !== undefined) void uploadClip(chosen);
+                      }}
+                      ref={clipFile}
+                      type="file"
+                    />
                   </span>
                 )}
                 {/* Which model films this act stands where the act is filmed from:
@@ -1076,6 +1127,16 @@ export function ActCard({
           onClose={() => setPlaying(false)}
           poster={clipPoster}
           video
+        />
+      )}
+
+      {pickingClipLibrary && (
+        <StoryLibraryPicker
+          current={takeFile(clip)}
+          kind="video"
+          label={t("story:storyboard.clip")}
+          onChoose={keepClip}
+          onClose={() => setPickingClipLibrary(false)}
         />
       )}
 

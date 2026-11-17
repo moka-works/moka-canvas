@@ -2,6 +2,7 @@ import {
   slotWithCurrent,
   slotWithoutTake,
   voiceTakeOf,
+  withTake,
 } from "../../../shared/domain";
 import type { StoryDocument, StorySlot } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
@@ -89,6 +90,28 @@ export function keepTake(
   const slot = live === undefined ? undefined : slotAt(live, place);
   if (live === undefined || slot === undefined) return;
   writeSlot(live, place, slotWithCurrent(slot, assetId));
+}
+
+/**
+ * A file from the shelf kept as the place's newest take.
+ *
+ * The file may be one the place has never held — a clip from another telling,
+ * or one brought in from this computer — so this keeps a take for it rather
+ * than walking a list of takes it is already among.
+ */
+export function addTake(
+  storyId: string,
+  place: TakePlace,
+  assetId: string,
+): void {
+  const live = liveStory(storyId);
+  const slot = live === undefined ? undefined : slotAt(live, place);
+  if (live === undefined || slot === undefined) return;
+  const next = withTake(slot, {
+    assetIds: [assetId],
+    createdAt: new Date().toISOString(),
+  });
+  if (next !== slot) writeSlot(live, place, next);
 }
 
 /**

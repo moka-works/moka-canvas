@@ -1,11 +1,12 @@
 /**
- * The ways an element's place takes a picture: one already kept, one from the
- * shelf, or one from this computer.
+ * The ways a place takes a file from outside: one from the shelf, or one from
+ * this computer that is filed there first.
  *
  * Step three's cards and step four's picture inspector are two doors to the
  * same places, so what binding a picture to a place means lives here rather
  * than on either door. Every write goes through the command pipeline, and the
- * upload files the picture on the shelf before the command can name it.
+ * upload files the picture on the shelf before the command can name it. An
+ * act's clip comes in the same way, through {@link fileVideoFromComputer}.
  */
 
 import { errorText } from "../../../api/client";
@@ -111,7 +112,7 @@ export function keepElementPicture(
 }
 
 /**
- * A picture from this computer, filed on the shelf.
+ * A file from this computer, filed on the shelf.
  *
  * The file is the project's before any place can name it, so what is waiting
  * to be saved goes first: a command pointing at a file the server has not been
@@ -119,8 +120,9 @@ export function keepElementPicture(
  * with nothing when it could not be filed — the reason is said where it is
  * known rather than read off a missing file afterwards.
  */
-export async function filePictureFromComputer(
+async function fileFromComputer(
   file: File,
+  category: "images" | "videos",
 ): Promise<string | undefined> {
   try {
     await useProjectStore.getState().flush();
@@ -132,7 +134,7 @@ export async function filePictureFromComputer(
         .pushToast("error", blocked.message, undefined, blocked.detail);
       return undefined;
     }
-    const filed = await assetsApi.upload(file, { categoryHint: "images" });
+    const filed = await assetsApi.upload(file, { categoryHint: category });
     useProjectStore.getState().integrateAssetEntry(filed.entry, {
       revision: filed.revision,
       updatedAt: filed.updatedAt,
@@ -150,6 +152,18 @@ export async function filePictureFromComputer(
       );
     return undefined;
   }
+}
+
+/** A picture from this computer, filed on the shelf. */
+export function filePictureFromComputer(
+  file: File,
+): Promise<string | undefined> {
+  return fileFromComputer(file, "images");
+}
+
+/** A clip from this computer, filed on the shelf. */
+export function fileVideoFromComputer(file: File): Promise<string | undefined> {
+  return fileFromComputer(file, "videos");
 }
 
 /**

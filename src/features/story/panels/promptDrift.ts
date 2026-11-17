@@ -102,6 +102,9 @@ export function actVideoPromptDrifted(
   if (act.transition !== undefined) return false;
   const take = currentTake(act.video);
   if (take === undefined) return false;
+  // A take brought in from the shelf or this computer was not asked for by a
+  // job, so there are no words behind it to have drifted from.
+  if (take.jobId === undefined) return false;
   const planned = planActVideos(story, chapterId, [act.id]).map(
     (item) => item.prompt,
   );

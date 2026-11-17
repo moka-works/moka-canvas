@@ -335,8 +335,10 @@
     "needPicture": "改为需要图",
     "library": "{{label}} — 从素材库挑选",
     "libraryEmpty": "项目里还没有图片",
+    "libraryVideoEmpty": "项目里还没有视频",
     "librarySearch": "搜索素材",
     "librarySearchEmpty": "素材库里没有与「{{query}}」相符的图片",
+    "libraryVideoSearchEmpty": "素材库里没有与「{{query}}」相符的视频",
     "fileFailed": "文件没能加入素材库"
   },
   "inspector": {

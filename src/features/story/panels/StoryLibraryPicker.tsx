@@ -10,28 +10,36 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 const LIBRARY_THUMB_WIDTH = 320;
 
 /**
- * The pictures a project already holds, as the place an element's drawing may
- * be taken from.
+ * The files a project already holds, as the place an element's drawing or an
+ * act's clip may be taken from.
  *
- * Nothing is generated here and nothing is filed: a reader who has the picture
+ * Nothing is generated here and nothing is filed: a reader who has the file
  * already — one drawn in another telling, or brought in from their own files —
- * binds it to the element the way a generated one would be bound, and the file
+ * binds it to the place the way a generated one would be bound, and the file
  * stays on the shelf for the next place that wants it.
  */
 export function StoryLibraryPicker({
   label,
   current,
+  kind = "image",
   onChoose,
   onClose,
 }: {
   label: string;
   /** The file the place is keeping just now, marked in the grid. */
   current: string | undefined;
+  /** What the place keeps: a picture, or a clip. */
+  kind?: "image" | "video";
   onChoose: (assetId: string) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const entries = useProjectStore(
+    (state) =>
+      (kind === "video"
+        ? state.moka?.resources.videos
+        : state.moka?.resources.images) ?? [],
+  );
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -43,7 +51,7 @@ export function StoryLibraryPicker({
   }, [onClose]);
 
   const search = query.trim().toLowerCase();
-  const shown = images.filter(
+  const shown = entries.filter(
     (entry) => search === "" || entry.name.toLowerCase().includes(search),
   );
 
@@ -63,7 +71,7 @@ export function StoryLibraryPicker({
         role="dialog"
       >
         <h2>{t("story:panels.library", { label })}</h2>
-        {images.length > 0 && (
+        {entries.length > 0 && (
           <input
             aria-label={t("story:panels.librarySearch")}
             className="story-search"
@@ -74,13 +82,22 @@ export function StoryLibraryPicker({
             value={query}
           />
         )}
-        {images.length === 0 ? (
+        {entries.length === 0 ? (
           <p className="story-hint" data-testid="story-library-empty">
-            {t("story:panels.libraryEmpty")}
+            {t(
+              kind === "video"
+                ? "story:panels.libraryVideoEmpty"
+                : "story:panels.libraryEmpty",
+            )}
           </p>
         ) : shown.length === 0 ? (
           <p className="story-hint" data-testid="story-library-no-match">
-            {t("story:panels.librarySearchEmpty", { query: query.trim() })}
+            {t(
+              kind === "video"
+                ? "story:panels.libraryVideoSearchEmpty"
+                : "story:panels.librarySearchEmpty",
+              { query: query.trim() },
+            )}
           </p>
         ) : (
           <div className="story-picks-grid">

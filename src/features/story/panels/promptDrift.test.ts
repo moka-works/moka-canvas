@@ -126,4 +126,22 @@ describe("whether a clip was filmed from older words", () => {
       ),
     ).toBe(true);
   });
+
+  it("says nothing about a clip taken from the shelf rather than filmed", () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0]!;
+    const chapter = story.chapters[0]!;
+    const act = chapter.acts[0]!;
+    act.video.takes[0]!.jobId = undefined;
+    act.summary = "站台上的灯忽然全灭了。";
+
+    expect(
+      actVideoPromptDrifted(
+        story,
+        chapter.id,
+        act,
+        promptSnapshots(moka.resources),
+      ),
+    ).toBe(false);
+  });
 });

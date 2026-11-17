@@ -335,8 +335,10 @@
     "needPicture": "Use a picture again",
     "library": "{{label}} — choose from assets",
     "libraryEmpty": "The project holds no pictures yet",
+    "libraryVideoEmpty": "The project holds no videos yet",
     "librarySearch": "Search the assets",
     "librarySearchEmpty": "No asset matches “{{query}}”",
+    "libraryVideoSearchEmpty": "No video matches “{{query}}”",
     "fileFailed": "The file could not be added"
   },
   "inspector": {

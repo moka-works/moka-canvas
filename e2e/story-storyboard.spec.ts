@@ -561,6 +561,24 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       firstAct.getByTestId("story-kf-slot-1-generate"),
     ).toBeEnabled();
 
+    // A clip the reader already has does not wait for the frames: its two
+    // sources stay open while the act's own ask is still held back.
+    await expect(firstAct.getByTestId("story-act-video-go-0")).toBeDisabled();
+    await expect(
+      firstAct.getByTestId("story-act-video-library-0"),
+    ).toBeEnabled();
+    await expect(
+      firstAct.getByTestId("story-act-video-upload-0"),
+    ).toBeEnabled();
+    await firstAct.getByTestId("story-act-video-library-0").click();
+    await expect(page.getByTestId("story-library-empty")).toContainText(
+      "no videos",
+    );
+    await page
+      .getByTestId("story-library")
+      .getByRole("button", { name: "Close" })
+      .click();
+
     // The rest of the act at once: with every frame drawn, the act's clip is
     // one press away — the pictures are what the clip waits on, not their
     // agreements, and there is nothing per frame to agree to.
@@ -630,6 +648,11 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       "Generate again",
     );
     await firstAct.getByTestId("story-act-video-again-0").click();
+    // Every film press stands behind the prompt that will be sent, the
+    // second one included.
+    const againDialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(againDialog).toBeVisible();
+    await againDialog.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-act-video-again-0")).toBeEnabled();
     await firstAct.getByTestId("story-act-video-0").click();
     const lightboxVideo = page.getByTestId("story-lightbox").locator("video");
@@ -650,7 +673,9 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       ".story-act-foot .story-act-clip-actions",
     );
     await expect(actActions).toHaveCSS("flex-direction", "column");
-    await expect(actActions.locator("button")).toHaveCount(3);
+    // The ask, the redraw, the takes, and the two sources a clip may come
+    // from without being filmed.
+    await expect(actActions.locator("button")).toHaveCount(5);
     await firstAct.getByTestId("story-act-video-pick-0").click();
     const archive = page.getByTestId("story-clip-picks");
     await expect(archive).toBeVisible();
@@ -713,6 +738,10 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await page.getByTestId("change-act-granularity-0-confirm").click();
     await expect(firstAct.getByTestId("story-kf-video-0")).toBeVisible();
     await firstAct.getByTestId("story-kf-video-0").click();
+    // A shot is filmed behind the same prompt the act is.
+    const shotFilmDialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(shotFilmDialog).toBeVisible();
+    await shotFilmDialog.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-kf-video-again-0")).toBeVisible({
       timeout: 60_000,
     });
@@ -750,6 +779,9 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       secondAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
     await secondAct.getByTestId("story-act-video-go-1").click();
+    const secondFilmDialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(secondFilmDialog).toBeVisible();
+    await secondFilmDialog.getByTestId("story-video-prompt-send").click();
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,
     });

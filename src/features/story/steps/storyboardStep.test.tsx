@@ -1383,6 +1383,36 @@ describe("writing an episode's board", () => {
     ).toContain("2 shots have no frame drawn yet");
   });
 
+  it("takes an act's clip off the shelf without waiting for its frames", async () => {
+    const moka = withUndrawnFrames();
+    moka.stories![0].chapters[0]!.acts[0]!.video = { takes: [] };
+    openAtBoard(moka);
+
+    const library = screen.getByTestId(
+      "story-act-video-library-0",
+    ) as HTMLButtonElement;
+    expect(library.disabled).toBe(false);
+    expect(
+      (screen.getByTestId("story-act-video-upload-0") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(
+      (
+        screen.getByTestId("story-act-video-upload-input-0") as HTMLInputElement
+      ).getAttribute("accept"),
+    ).toBe("video/*");
+
+    fireEvent.click(library);
+    expect(screen.getByTestId("story-library")).toBeDefined();
+    fireEvent.click(screen.getByTestId(`story-library-${ids.actVideo}`));
+
+    // The clip is kept as the act's own, with the frames still undrawn.
+    await waitFor(() =>
+      expect(acts()[0]?.video.takes.at(-1)?.assetIds).toEqual([ids.actVideo]),
+    );
+    expect(screen.getByTestId("story-act-video-0")).toBeDefined();
+  });
+
   it("films an act once its frames are drawn, for as long as it plans", async () => {
     // The video settings say what a canvas node asks for when nobody says:
     // three seconds here. What a board plans is its own, and the act is asked
