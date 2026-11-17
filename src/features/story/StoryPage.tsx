@@ -36,6 +36,7 @@ export function StoryPage() {
   // filed, a revision moved — none of it changes a telling, and subscribing to
   // the whole document would re-render every card for each of them.
   const stories = useProjectStore((state) => state.moka?.stories);
+  const projectOpen = useProjectStore((state) => state.moka !== null);
   const story = useActiveStory();
   const leftWidth = usePanelWidths((state) => state.left);
   const leftFolded = usePanelFolds((state) => state.left);
@@ -155,7 +156,18 @@ export function StoryPage() {
         {leftFolded ? <PanelUnfold side="left" /> : <StorySide />}
         {!leftFolded && <PanelResizer side="left" />}
         <main className="story-stage">
-          {story === null ? <StoryEmpty /> : <StoryFlow story={story} />}
+          {story !== null ? (
+            <StoryFlow story={story} />
+          ) : projectOpen && (stories?.length ?? 0) === 0 ? (
+            <StoryEmpty />
+          ) : (
+            // The document tells a story, but the room has not taken one up
+            // yet — it does so in an effect, after the first frame is drawn.
+            // Offering to begin the first story while the stories it already
+            // holds are being taken up is the wrong answer, and on a large
+            // telling a slow frame can keep it on screen.
+            <StoryLoading />
+          )}
         </main>
       </div>
 
@@ -200,6 +212,21 @@ function StoryEmpty() {
       <h2>{t("story:page.emptyTitle")}</h2>
       <p>{t("story:page.emptyHint")}</p>
       <NewStoryButton />
+    </div>
+  );
+}
+
+/** The document's own stories, while the room is taking one of them up. */
+function StoryLoading() {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-busy="true"
+      className="clip-empty clip-empty-first"
+      data-testid="story-loading"
+    >
+      <StoryIcon size={30} />
+      <p>{t("story:page.loading")}</p>
     </div>
   );
 }

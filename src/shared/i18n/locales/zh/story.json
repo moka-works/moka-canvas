@@ -5,6 +5,7 @@
   "page": {
     "emptyTitle": "还没有故事",
     "emptyHint": "故事在这里被讲出来：一段创意、它分成的一集集，以及最后成片",
+    "loading": "正在打开故事…",
     "newStory": "新建故事",
     "stepComing": "这一步还在建设中",
     "historyBoundary": "故事",
