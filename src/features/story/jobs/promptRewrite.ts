@@ -11,8 +11,8 @@ import { i18n } from "../../../shared/i18n";
 import {
   imagePromptRewriteAsk,
   imagePromptRewriteSystem,
-  storyPromptRewriteAsk,
-  storyPromptRewriteSystem,
+  videoPromptRewriteAsk,
+  videoPromptRewriteSystem,
 } from "../../../shared/prompts";
 import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
 import {
@@ -91,8 +91,8 @@ export async function rewriteVideoPrompt(input: {
 }): Promise<RewrittenPrompt> {
   const model = input.model ?? storyTextModel();
   const said = await rewritePromptText({
-    system: storyPromptRewriteSystem(input.guide.guide),
-    prompt: storyPromptRewriteAsk({
+    system: videoPromptRewriteSystem(input.guide.guide),
+    prompt: videoPromptRewriteAsk({
       prompt: input.prompt,
       ...(input.context === undefined ? {} : { context: input.context }),
     }),

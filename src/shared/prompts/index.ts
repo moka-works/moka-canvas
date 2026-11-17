@@ -53,6 +53,7 @@ import storyTransitionVideo from "./story/transition-video.tmpl?raw";
 import promptRewrite from "./story/prompt-rewrite.tmpl?raw";
 import promptRewriteSystem from "./story/prompt-rewrite-system.tmpl?raw";
 import type { StoryPromptContext } from "./story/promptContext";
+import type { CanvasVideoPromptContext } from "./video/promptContext";
 
 /**
  * The engine, configured once.
@@ -556,14 +557,18 @@ export function storyTransitionVideoPrompt(
  * were written, the ids stay the ones the material gave, and nothing is
  * invented to fill a gap.
  */
-export function storyPromptRewriteSystem(guide: string): string {
+export function videoPromptRewriteSystem(guide: string): string {
   return render(promptRewriteSystem, { guide: guide.trim() });
 }
 
-/** One clip's rewrite ask: the material it is written from, and the words as they stand. */
-export function storyPromptRewriteAsk(input: {
+/**
+ * One clip's rewrite ask: the material it is written from, and the words as
+ * they stand. A telling hands over its board and cast; a canvas hands over the
+ * media the node travels with.
+ */
+export function videoPromptRewriteAsk(input: {
   prompt: string;
-  context?: StoryPromptContext;
+  context?: StoryPromptContext | CanvasVideoPromptContext;
 }): string {
   return render(promptRewrite, {
     prompt: input.prompt,

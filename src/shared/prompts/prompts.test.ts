@@ -29,8 +29,8 @@ import {
   storyStoryboardPrompt,
   storyRevisionPrompt,
   storySystemPrompt,
-  storyPromptRewriteAsk,
-  storyPromptRewriteSystem,
+  videoPromptRewriteAsk,
+  videoPromptRewriteSystem,
   type StoryFacts,
 } from "./index";
 
@@ -790,15 +790,16 @@ describe("story prompts", () => {
   });
 
   it("asks a rewrite under the model's own contract and the rules that hold whatever it says", () => {
-    const system = storyPromptRewriteSystem("Write the body in English.");
+    const system = videoPromptRewriteSystem("Write the body in English.");
     expect(system).toContain("Write the body in English.");
     expect(system).toContain("Keep every spoken line exactly as written");
+    expect(system).toContain("Keep every node token written as `@[node:...]`");
     expect(system).toContain("Output the rewritten prompt alone");
     expect(system.endsWith("\n")).toBe(false);
   });
 
   it("hands a rewrite the material and the words as they stand", () => {
-    const prompt = storyPromptRewriteAsk({
+    const prompt = videoPromptRewriteAsk({
       prompt: "Shoot this shot.",
       context: {
         kind: "shot",
@@ -818,8 +819,33 @@ describe("story prompts", () => {
   });
 
   it("says the material is absent rather than leaving a hole", () => {
-    const prompt = storyPromptRewriteAsk({ prompt: "Shoot this shot." });
+    const prompt = videoPromptRewriteAsk({ prompt: "Shoot this shot." });
     expect(prompt).toContain("(none)");
+  });
+
+  it("hands a canvas video rewrite the media and node tokens it travels with", () => {
+    const prompt = videoPromptRewriteAsk({
+      prompt: "Film @[node:plate] as the opening frame.",
+      context: {
+        kind: "canvas",
+        pictures: "frames",
+        aspect: "16:9",
+        seconds: 5,
+        inputs: [
+          {
+            kind: "image",
+            role: "firstFrame",
+            name: "Opening",
+            description: "a lantern over a quiet lake",
+            token: "@[node:plate]",
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain("Film @[node:plate] as the opening frame.");
+    expect(prompt).toContain('"role": "firstFrame"');
+    expect(prompt).toContain('"token": "@[node:plate]"');
+    expect(prompt).not.toContain("{{");
   });
 
   it("asks an image rewrite under the model's own contract", () => {
