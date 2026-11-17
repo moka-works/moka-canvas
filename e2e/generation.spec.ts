@@ -179,6 +179,55 @@ function excerptUnder(page: Page, heading: string) {
     .locator(".inspector-text-excerpt");
 }
 
+test("an image prompt is rewritten for its model's contract before it runs", async ({
+  page,
+}) => {
+  await fetch(`${PROVIDER_ORIGIN}/__reset`, { method: "POST" });
+  await configureWordsAndPictures();
+
+  const prompt = "A poster of a lantern over a quiet lake.";
+  await openWithASpec(
+    page,
+    "Rewritten Image",
+    join(projectHome("generation-image-rewrite"), "project"),
+    "Image",
+    {
+      capability: "image",
+      mode: "generate",
+      model: PAINTER,
+      prompt,
+      inputMode: "manual",
+      params: { size: "1024x1024", count: 1 },
+      referenceNodeIds: [],
+    },
+  );
+
+  const panel = page.getByTestId("prompt-panel");
+  const field = panel.getByRole("textbox", { name: /Prompt for/ });
+  await expect(field).toContainText(prompt);
+
+  // The text model writes the contract's words back into the field; nothing is
+  // sent until the reader presses Run over what it wrote.
+  await panel.getByTestId("prompt-panel-rewrite").click();
+  await expect(field).toHaveText(SENTENCE, { timeout: 30_000 });
+  expect(
+    (await providerCalls()).filter((call) =>
+      call.path.startsWith("/v1/images/"),
+    ).length,
+  ).toBe(0);
+
+  await panel.getByRole("button", { name: "Run", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await providerCalls())
+          .filter((call) => call.path === "/v1/images/generations")
+          .at(-1)?.prompt,
+      { timeout: 30_000 },
+    )
+    .toBe(SENTENCE);
+});
+
 test("an image node asks the provider and files the answer as its own asset", async ({
   page,
 }) => {

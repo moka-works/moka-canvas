@@ -31,7 +31,7 @@ import {
 } from "../jobs/plan";
 import { imagePromptRewrite, rewriteImagePrompt } from "../jobs/promptRewrite";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
-import { PromptIssues } from "./PromptIssues";
+import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { liveStory } from "./removeOldTake";
 
 /** The picture whose prompt is being read and changed. */

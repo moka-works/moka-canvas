@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { runsApi, type GenerationPreview } from "../../../api";
+import { errorText } from "../../../api/client";
 import {
   CAPABILITY_LABELS,
   MAX_PROMPT_LENGTH,
@@ -23,11 +24,18 @@ import {
   type WorkflowNode,
 } from "../../../shared/domain";
 import { i18n } from "../../../shared/i18n";
+import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
+import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
+import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelOptionsFor, useModelStore } from "../../settings/modelStore";
 import { worldToClient } from "../canvas/canvasControl";
 import { buildIssueIndex, buildResourceIndex } from "../canvas/mediaCards";
-import { mentionChoices } from "../canvas/mentions";
+import { mentionChoices, mentionToken } from "../canvas/mentions";
+import {
+  canvasImagePromptRewrite,
+  rewriteCanvasImagePrompt,
+} from "../promptRewrite";
 import {
   attachAssetsToNode,
   disconnectEdge,
@@ -197,6 +205,7 @@ export function PromptPanel() {
   const activeCanvasId = useProjectStore((state) => state.activeCanvasId);
   const generationOn = useGenerationAvailable();
   const view = useModelStore((state) => state.view);
+  const protocols = useModelStore((state) => state.protocols);
   const run = useLatestRunForNode(open?.nodeId ?? null);
   // This node's own step, not the run's whole: a run that drove several nodes
   // stays going after one of them has landed, and this panel is about the one
@@ -212,6 +221,15 @@ export function PromptPanel() {
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
   const [reading, setReading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteModel, setRewriteModel] = useState<string | null>(null);
+  const [rewriteIssues, setRewriteIssues] = useState<PromptContractIssue[]>([]);
+  const [rewriteError, setRewriteError] = useState<{
+    message: string;
+    detail?: string;
+  } | null>(null);
+  const [rewriteBefore, setRewriteBefore] = useState<string | null>(null);
+  const rewriteAbort = useRef<AbortController | null>(null);
   /** The size the reader dragged the panel to, or null for its node's own. */
   const [size, setSize] = useState<{
     width: number;
@@ -287,10 +305,23 @@ export function PromptPanel() {
     }
   }, [selected]);
 
+  useEffect(
+    () => () => {
+      rewriteAbort.current?.abort();
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!nodeId || !node) return;
     const stored = (node.data as { generation?: GenerationSpec }).generation;
     setPrompt(stored?.prompt ?? "");
+    rewriteAbort.current?.abort();
+    rewriteAbort.current = null;
+    setRewriting(false);
+    setRewriteIssues([]);
+    setRewriteError(null);
+    setRewriteBefore(null);
     // Taking the keyboard is for an entry the user chose. Coming up because a
     // node was selected must not, or words would land in the prompt and Delete
     // would stop deleting the node.
@@ -421,6 +452,37 @@ export function PromptPanel() {
 
   const inputMode = inputModeFor();
   const mode = modeFor(inputMode);
+  const rewriteGuide =
+    asked === "image"
+      ? canvasImagePromptRewrite(view, protocols, spec.model || null)
+      : null;
+  const mentioned = mentionNodeIds(prompt);
+  const referenceIds = [
+    ...new Set([
+      ...mentioned,
+      ...spec.referenceNodeIds,
+      ...wired.map((edge) => edge.source.nodeId),
+    ]),
+  ];
+  const imageContext: ImagePromptContext = {
+    kind: "canvas",
+    mode: mode === "edit" ? "edit" : "generate",
+    ...(typeof spec.params.size === "string" && spec.params.size.trim() !== ""
+      ? { aspect: spec.params.size }
+      : {}),
+    references: referenceIds.flatMap((id) => {
+      const source = findNode(canvas, id);
+      if (source === undefined) return [];
+      const token = mentioned.includes(id) ? mentionToken(id) : undefined;
+      return [
+        {
+          name: source.title,
+          description: source.kind,
+          ...(token === undefined ? {} : { token }),
+        },
+      ];
+    }),
+  };
   const models = modelOptionsFor(view, asked);
   const going = stepStatus !== null && isActive(stepStatus);
   const stopping = run !== null && going && run.cancelRequested;
@@ -647,6 +709,49 @@ export function PromptPanel() {
    * been typed since still counts, and the two runs stay visible as one question
    * asked twice rather than as two with nothing to do with each other.
    */
+  /**
+   * Asks the text model to rewrite the draft into the contract its image model
+   * reads. What comes back goes into the field; nothing is sent until the
+   * reader presses Run over words they have seen.
+   */
+  const rewrite = async () => {
+    if (rewriteGuide === null || rewriting || prompt.trim() === "") return;
+    rewriteAbort.current?.abort();
+    const controller = new AbortController();
+    rewriteAbort.current = controller;
+    setRewriting(true);
+    setRewriteError(null);
+    setRewriteIssues([]);
+    setRewriteBefore(prompt);
+    try {
+      const rewritten = await rewriteCanvasImagePrompt({
+        prompt,
+        context: imageContext,
+        guide: rewriteGuide,
+        model: rewriteModel,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setPrompt(rewritten.prompt);
+      setRewriteIssues(rewritten.issues);
+    } catch (error) {
+      if (!controller.signal.aborted) setRewriteError(errorText(error));
+    } finally {
+      if (!controller.signal.aborted) {
+        rewriteAbort.current = null;
+        setRewriting(false);
+      }
+    }
+  };
+
+  const restoreRewrite = () => {
+    if (rewriteBefore === null) return;
+    setPrompt(rewriteBefore);
+    setRewriteBefore(null);
+    setRewriteIssues([]);
+    setRewriteError(null);
+  };
+
   const ask = async () => {
     setBusy(true);
     try {
@@ -858,6 +963,62 @@ export function PromptPanel() {
                   limit: MAX_PROMPT_LENGTH.toLocaleString(),
                 })}
               </p>
+            )}
+
+            {rewriteGuide !== null && (
+              <div className="prompt-panel-rewrite">
+                <button
+                  className="link"
+                  data-testid="prompt-panel-rewrite"
+                  disabled={rewriting || prompt.trim() === ""}
+                  onClick={() => void rewrite()}
+                  type="button"
+                >
+                  {rewriting
+                    ? t("editor:promptPanel.rewriting")
+                    : t("editor:promptPanel.rewrite")}
+                </button>
+                <ModelPicker
+                  capability="text"
+                  disabled={rewriting}
+                  label={t("editor:promptPanel.rewriteModel")}
+                  noneLabel={t("editor:promptPanel.rewriteModelNone")}
+                  onChange={setRewriteModel}
+                  testId="prompt-panel-rewrite-model"
+                  value={rewriteModel}
+                />
+                {rewriteBefore !== null && (
+                  <button
+                    className="link"
+                    data-testid="prompt-panel-rewrite-restore"
+                    onClick={restoreRewrite}
+                    type="button"
+                  >
+                    {t("editor:promptPanel.rewriteRestore")}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <PromptIssues
+              issues={rewriteIssues}
+              testId="prompt-panel-rewrite-issues"
+            />
+
+            {rewriteError !== null && (
+              <div
+                className="prompt-panel-warn"
+                data-testid="prompt-panel-rewrite-error"
+                role="alert"
+              >
+                <p>{rewriteError.message}</p>
+                {rewriteError.detail !== undefined && (
+                  <details>
+                    <summary>{t("common:promptIssues.detail")}</summary>
+                    <pre>{rewriteError.detail}</pre>
+                  </details>
+                )}
+              </div>
             )}
 
             {noModel ? (

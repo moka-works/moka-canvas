@@ -585,6 +585,12 @@
     "counter": "{{used}} of {{limit}} characters",
     "previewUnreadable": "What this node will send could not be read",
     "runFailedToStart": "Run failed to start",
+    "rewrite": "Rewrite prompt",
+    "rewriting": "Rewriting…",
+    "rewriteModel": "Text model for the rewrite",
+    "rewriteModelNone": "Use the deployment default",
+    "rewriteRestore": "Restore the draft",
+    "rewriteEmpty": "The text model answered with no prompt",
     "grip": "Drag to make the panel wider or taller"
   },
   "generationParams": {

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
+import type { PromptContractIssue } from "./promptContract";
 
 /**
  * What a rewrite still gets wrong, named beside the words it wrote.

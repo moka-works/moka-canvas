@@ -585,6 +585,12 @@
     "counter": "{{used}} / {{limit}} 字符",
     "previewUnreadable": "无法读取此节点将提交的内容",
     "runFailedToStart": "运行启动失败",
+    "rewrite": "改写提示词",
+    "rewriting": "改写中…",
+    "rewriteModel": "改写提示词的文本模型",
+    "rewriteModelNone": "跟随部署默认",
+    "rewriteRestore": "恢复改写前",
+    "rewriteEmpty": "文字模型没有返回提示词",
     "grip": "拖动以调整面板的宽高"
   },
   "generationParams": {

@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import App from "../../App";
@@ -22,6 +23,8 @@ import {
 import type { GenerationSpec, MokaFile, RunRecord } from "../../shared/domain";
 import { PROVIDER_EXECUTOR_KEY } from "../../shared/domain";
 import type { GenerationPreview, ModelsView } from "../../api";
+import { generateApi } from "../../api/generate";
+import type { GenerateResponse } from "../../api/generate";
 import { generationUnavailable, useAppStore } from "./stores/appStore";
 import { useEditorStore } from "./stores/editorStore";
 import { useHistoryStore } from "./stores/historyStore";
@@ -627,6 +630,50 @@ describe("the generation panel", () => {
       nodeIds: [ids.image],
     });
     expect(specOf(ids.image)?.prompt).toBe("A poster of the lake");
+  });
+
+  it("rewrites an image prompt against the model's contract", async () => {
+    await openEditor();
+    selectNode(ids.image);
+    await settle();
+    useModelStore.setState({
+      protocols: {
+        image: {
+          openaiImages: {
+            script: "image/openaiImages/openai-images.lua",
+            displayName: "OpenAI Images",
+            urlExample: "https://demo.test/v1/images/generations",
+            promptRewrite: {
+              guide: "IMAGE CONTRACT GUIDE",
+              checks: { negativeBait: true },
+              version: 1,
+            },
+          },
+        },
+      },
+    });
+    const text = vi.spyOn(generateApi, "text").mockResolvedValue({
+      status: "succeeded",
+      outputs: [],
+      text: "A poster of the lake.",
+    } as GenerateResponse);
+
+    const prompt = within(panel()).getByRole("textbox", {
+      name: "Prompt for Reference image",
+    });
+    write(prompt, "A poster of the lake, painted in ink.");
+    fireEvent.click(screen.getByTestId("prompt-panel-rewrite"));
+
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    expect(text.mock.calls[0]![0].system).toContain("IMAGE CONTRACT GUIDE");
+    await waitFor(() =>
+      expect(
+        within(panel()).getByRole("textbox", {
+          name: "Prompt for Reference image",
+        }).textContent,
+      ).toContain("A poster of the lake."),
+    );
+    text.mockRestore();
   });
 
   it("says on the button when this deployment cannot generate", async () => {

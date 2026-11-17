@@ -17,7 +17,7 @@ import {
   planKeyframeVideoWaves,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
-import { PromptIssues } from "./PromptIssues";
+import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { liveStory } from "./removeOldTake";
 import {
   useVideoPromptSessions,
