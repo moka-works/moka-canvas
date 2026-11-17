@@ -5,6 +5,7 @@
   "page": {
     "emptyTitle": "No story yet",
     "emptyHint": "A story is told here: a premise, the episodes it is told in, and the film it becomes",
+    "loading": "Opening the story…",
     "newStory": "New story",
     "stepComing": "This step is not built yet",
     "historyBoundary": "Story",
@@ -774,6 +775,7 @@
     "insertShotHere": "Insert a shot above this one",
     "moveShotUp": "Move up",
     "moveShotDown": "Move down",
+    "duplicateShot": "Duplicate this shot",
     "addReference": "Add a reference",
     "reference": "Reference",
     "removeReference": "Remove this reference"

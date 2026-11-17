@@ -15,6 +15,7 @@
  */
 import { Environment } from "nunjucks";
 
+import { MAX_KEYFRAME_MS } from "../domain/constants";
 import { formatDuration, stripStoryMentions } from "../domain/story";
 import type {
   StoryAspect,
@@ -315,6 +316,8 @@ export function storyStoryboardPrompt(
     number: number;
     chapter: { title: string; text: string };
     targetDurationMs: number;
+    /** How long one clip may run, in seconds: the video model's own window. */
+    maxVideoSeconds: number;
     elements: Array<{
       kind: StoryElementKind;
       name: string;
@@ -331,6 +334,7 @@ export function storyStoryboardPrompt(
       ...input,
       elements: storyElementsList(input.elements),
       seconds: Math.round(input.targetDurationMs / 1000),
+      maxShotSeconds: Math.min(MAX_KEYFRAME_MS / 1000, input.maxVideoSeconds),
     }),
   ].join("\n\n");
 }

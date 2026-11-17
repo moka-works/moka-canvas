@@ -445,6 +445,65 @@ describe("writing a batch's answers into the story", () => {
     expect(chapter?.acts[0].keyframes[0].content).toBe("周抬起头。");
   });
 
+  it("keeps a board's place and speakers in the shots that must carry them", () => {
+    const report = applyJobResults(
+      record("storyboard", [
+        item({
+          id: `storyboard:${ids.chapterSecond}`,
+          target: { kind: "storyboard", chapterId: ids.chapterSecond },
+          capability: "text",
+          text: JSON.stringify({
+            acts: [
+              {
+                title: "第 1 幕 车厢",
+                summary: "车厢比站台更暗。",
+                characters: ["周"],
+                scene: "末班车车厢",
+                props: [],
+                sound: { music: "", sfx: "车轮声" },
+                keyframes: [
+                  {
+                    shotSize: "medium",
+                    cameraMove: "pushIn",
+                    angle: "eyeLevel",
+                    // The words name the speaker and not the place: the frame
+                    // still stands in the act's place and carries their face.
+                    content: "`周`抬起头。",
+                    durationMs: 2000,
+                    dialogue: [{ speaker: "周", text: "到了吗？" }],
+                  },
+                  {
+                    // A close-up may stand without its place, but still carries
+                    // the one who speaks in it.
+                    shotSize: "close",
+                    cameraMove: "static",
+                    angle: "eyeLevel",
+                    content: "`林`转过头。",
+                    durationMs: 2000,
+                    dialogue: [{ speaker: "林", text: "没有。" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(1);
+    const chapter = story().chapters.find(
+      (each) => each.id === ids.chapterSecond,
+    );
+    const [first, second] = chapter?.acts[0].keyframes ?? [];
+    expect(first?.references?.map((reference) => reference.elementId)).toEqual([
+      ids.partner,
+      ids.scene,
+    ]);
+    expect(second?.references?.map((reference) => reference.elementId)).toEqual(
+      [ids.hero],
+    );
+  });
+
   it("files a clip where its act is, writing nothing down on the reader's behalf", () => {
     const report = applyJobResults(
       record("actVideo", [

@@ -727,6 +727,7 @@ export function planStoryboard(
             text: chapterWordsOf(chapter),
           },
           targetDurationMs: chapter.targetDurationMs,
+          maxVideoSeconds: videoCeiling(),
           elements: story.elements.map((element) => ({
             kind: element.kind,
             name: element.name,
@@ -1017,6 +1018,82 @@ export function actDefaultReferences(act: StoryAct): StoryKeyframeReference[] {
   ].map((elementId) => ({ elementId, name: "" }));
 }
 
+/** Whether a shot is framed so close that its frame may stand without a place. */
+export function isCloseShot(shotSize: string): boolean {
+  return shotSize === "close" || shotSize === "extremeClose";
+}
+
+/**
+ * The pictures a shot must carry besides what its words name: its act's place,
+ * unless the shot is a close-up, and everyone who speaks in it.
+ *
+ * A frame without its place loses the film's world around the people in it,
+ * and a speaker whose picture is not in the frame is a line given to the wrong
+ * face. Both are facts of the board rather than of the shot's prose, so they
+ * are kept whether or not the words happen to name them.
+ */
+export function requiredKeyframeElements(
+  act: StoryAct,
+  keyframe: Pick<StoryKeyframe, "shotSize" | "dialogue">,
+): string[] {
+  const ids: string[] = [];
+  if (act.sceneId !== undefined && !isCloseShot(keyframe.shotSize)) {
+    ids.push(act.sceneId);
+  }
+  for (const line of keyframe.dialogue) {
+    if (line.characterId !== undefined) ids.push(line.characterId);
+  }
+  return [...new Set(ids)];
+}
+
+/** The required pictures that stand on the shot's own reference list. */
+export function requiredCastReferences(
+  act: StoryAct,
+  keyframe: Pick<StoryKeyframe, "shotSize" | "dialogue">,
+  allowed: StoryKeyframeReference[],
+): StoryKeyframeReference[] {
+  const held = new Set(
+    allowed.flatMap((reference) =>
+      reference.elementId === undefined ? [] : [reference.elementId],
+    ),
+  );
+  return requiredKeyframeElements(act, keyframe)
+    .filter((elementId) => held.has(elementId))
+    .map((elementId) => ({ elementId, name: "" }));
+}
+
+/**
+ * A board's shot with the place and speakers it must carry kept among its
+ * references. It is how a board is written; from then on the list is the
+ * shot's own, and a reader who takes one out is not overruled by planning.
+ */
+export function withRequiredReferences(
+  act: StoryAct,
+  keyframe: StoryKeyframe,
+): StoryKeyframe {
+  const required = requiredKeyframeElements(act, keyframe);
+  if (required.length === 0) return keyframe;
+  const base =
+    keyframe.references ??
+    (storyMentions(keyframe.content).length === 0
+      ? actDefaultReferences(act)
+      : []);
+  const held = new Set(
+    base.flatMap((reference) =>
+      reference.elementId === undefined ? [] : [reference.elementId],
+    ),
+  );
+  const missing = required.filter((elementId) => !held.has(elementId));
+  if (missing.length === 0) return keyframe;
+  return {
+    ...keyframe,
+    references: [
+      ...base,
+      ...missing.map((elementId) => ({ elementId, name: "" })),
+    ],
+  };
+}
+
 /**
  * The cast a frame travels with, as the frame's own words name it.
  *
@@ -1024,9 +1101,10 @@ export function actDefaultReferences(act: StoryAct): StoryKeyframeReference[] {
  * name that is one of the shot's references is a reference here, in the order
  * it is first named, and a name the shot cannot draw is left to the words. A
  * picture the shot keeps but its words never name is not sent when the words
- * name other pictures: what is named decides. The order is the contract
- * between the numbered references in the prompt and the pictures that travel
- * with it, so it is decided once, here.
+ * name other pictures: what is named decides, except for the pictures the act
+ * and the spoken lines require, which travel behind the named ones. The order
+ * is the contract between the numbered references in the prompt and the
+ * pictures that travel with it, so it is decided once, here.
  *
  * A shot whose words name nothing is drawn from a list instead: the shot's own
  * references where it keeps any, and the act's cast where it has never kept a
@@ -1045,6 +1123,7 @@ export function keyframeCast(
   references?: StoryKeyframeReference[],
   variantChoices: Record<string, string> = {},
   fallback: StoryKeyframeReference[] = [],
+  required: StoryKeyframeReference[] = [],
 ): {
   /** The pictures that travel, in the order the content names them. */
   carried: StoryReference[];
@@ -1094,6 +1173,19 @@ export function keyframeCast(
       else drawn.push(reference);
     }
   }
+  // The pictures the act and the lines require travel whatever the words name:
+  // a frame without its place, or with a speaker missing from it, is a frame
+  // that cannot hold the shot together. They stand after the named pictures and
+  // share the story's own limit with them.
+  for (const reference of required) {
+    const carried = carriedReference(story, reference, variantChoices);
+    if (carried !== undefined) {
+      drawn.push(carried);
+      continue;
+    }
+    const name = referenceName(story, reference);
+    if (name !== "" && !undrawn.includes(name)) undrawn.push(name);
+  }
   const seenAssets = new Set<string>();
   const all = drawn.filter((reference) => {
     if (seenAssets.has(reference.assetId)) return false;
@@ -1106,6 +1198,31 @@ export function keyframeCast(
     beyond: all.slice(limit),
     undrawn,
   };
+}
+
+/**
+ * A frame's cast as every ask and every view of it reads: the pictures its
+ * words name, the pictures its act and its lines require, and the story's limit
+ * over both.
+ */
+export function keyframeCastFor(
+  story: StoryDocument,
+  act: StoryAct,
+  keyframe: StoryKeyframe,
+  content: string = keyframe.content,
+): ReturnType<typeof keyframeCast> {
+  const fallback = actDefaultReferences(act);
+  const allowed =
+    keyframe.references ??
+    (storyMentions(content).length === 0 ? fallback : []);
+  return keyframeCast(
+    story,
+    content,
+    keyframe.references,
+    keyframe.variantChoices ?? {},
+    fallback,
+    requiredCastReferences(act, keyframe, allowed),
+  );
 }
 
 /** A cast member by the name the words use, as the shot draws them. */
@@ -1182,13 +1299,7 @@ export function planKeyframeArt(
         : act.keyframes.find((held) => held.id === keyframeId);
     if (chapter === undefined || act === undefined || keyframe === undefined)
       return [];
-    const cast = keyframeCast(
-      story,
-      keyframe.content,
-      keyframe.references,
-      keyframe.variantChoices ?? {},
-      actDefaultReferences(act),
-    ).carried;
+    const cast = keyframeCastFor(story, act, keyframe).carried;
     const target: StoryTarget = {
       kind: "keyframeArt",
       chapterId,

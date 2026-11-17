@@ -30,8 +30,16 @@ const ELEMENTS: StoryElement[] = [
   element("el-prop", "旧车票", "prop"),
 ];
 
-function board(shaped: unknown, targetDurationMs = 20_000) {
-  return parseStoryboard(shaped, { elements: ELEMENTS, targetDurationMs });
+function board(
+  shaped: unknown,
+  targetDurationMs = 20_000,
+  maxVideoSeconds?: number,
+) {
+  return parseStoryboard(shaped, {
+    elements: ELEMENTS,
+    targetDurationMs,
+    ...(maxVideoSeconds === undefined ? {} : { maxVideoSeconds }),
+  });
 }
 
 function shot(overrides: Record<string, unknown> = {}) {
@@ -521,6 +529,95 @@ describe("how long a shot is held", () => {
         MAX_KEYFRAME_MS,
         MIN_KEYFRAME_MS,
       ]);
+    }
+  });
+
+  it("shares the episode across every shot, not once per act", () => {
+    const read = board(
+      {
+        acts: [
+          act({ keyframes: [shot({ durationMs: undefined })] }),
+          act({ keyframes: [shot({ durationMs: undefined })] }),
+        ],
+      },
+      20_000,
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      // Two shots share the twenty seconds: ten each, not twenty each.
+      expect(
+        read.value.flatMap((held) =>
+          held.keyframes.map((frame) => frame.durationMs),
+        ),
+      ).toEqual([10_000, 10_000]);
+    }
+  });
+
+  it("cuts a shot to the clip the video model films", () => {
+    const read = board(
+      { acts: [act({ keyframes: [shot({ durationMs: 30_000 })] })] },
+      20_000,
+      8,
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value[0].keyframes[0].durationMs).toBe(8000);
+      expect(read.warnings.join()).toContain("longer than the 8 s one clip");
+    }
+  });
+
+  it("shortens an act whose shots outrun one clip", () => {
+    const read = board(
+      {
+        acts: [
+          act({
+            keyframes: [
+              shot({ durationMs: 8_000 }),
+              shot({ durationMs: 8_000 }),
+            ],
+          }),
+        ],
+      },
+      20_000,
+      10,
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value[0].keyframes.map((frame) => frame.durationMs)).toEqual([
+        5_000, 5_000,
+      ]);
+      expect(read.warnings.join()).toContain(
+        "longer than the 10 s one clip films",
+      );
+    }
+  });
+
+  it("leaves an act that cannot fit without dropping a shot", () => {
+    // Four shots cannot all be held for a tenth of a second inside a one
+    // second clip, so they are left as they are and the loss is said out loud.
+    const read = board(
+      {
+        acts: [
+          act({
+            keyframes: [
+              shot({ durationMs: MIN_KEYFRAME_MS }),
+              shot({ durationMs: MIN_KEYFRAME_MS }),
+              shot({ durationMs: MIN_KEYFRAME_MS }),
+            ],
+          }),
+        ],
+      },
+      20_000,
+      1,
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value[0].keyframes.map((frame) => frame.durationMs)).toEqual([
+        MIN_KEYFRAME_MS,
+        MIN_KEYFRAME_MS,
+        MIN_KEYFRAME_MS,
+      ]);
+      expect(read.warnings.join()).toContain("without dropping one");
     }
   });
 });

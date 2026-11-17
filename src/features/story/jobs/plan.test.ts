@@ -700,7 +700,8 @@ describe("planning the drawings", () => {
 
   it("leaves a name nobody has drawn to the words", () => {
     // The prop has no drawing of its own, so the mention is prose: it is not
-    // numbered as a reference and no picture travels with the ask.
+    // numbered as a reference. The speaker of the shot's line still travels,
+    // since a frame without their face gives the line to a stranger.
     const items = planKeyframeArt(withContent("`旧车票`攥在手里。"), [
       {
         chapterId: ids.chapterFirst,
@@ -708,7 +709,9 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(items[0].inputs).toEqual([]);
+    expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: ids.heroMain },
+    ]);
     expect(items[0].prompt).not.toContain("旧车票 —");
     expect(items[0].prompt).toContain("旧车票攥在手里。");
   });
@@ -938,6 +941,52 @@ describe("planning the drawings", () => {
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
     expect(item.prompt).not.toContain("霓虹");
+  });
+
+  it("carries the act's place and a shot's speaker when its words name other pictures", () => {
+    const held = withContent("`周`转过身来。");
+    const frame = held.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.references = [
+      { elementId: ids.partner, name: "周" },
+      { elementId: ids.hero, name: "林" },
+      { elementId: ids.scene, name: "" },
+    ];
+    const [item] = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    // The words name 周; the act's place and the one who speaks are carried
+    // behind them, so the frame has a background and the line a face.
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.partnerMain,
+      ids.sceneMain,
+      ids.heroMain,
+    ]);
+  });
+
+  it("does not force a place into a close-up", () => {
+    const held = withContent("`周`转过身来。");
+    const frame = held.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.shotSize = "close";
+    frame.references = [
+      { elementId: ids.partner, name: "周" },
+      { elementId: ids.hero, name: "林" },
+      { elementId: ids.scene, name: "" },
+    ];
+    const [item] = planKeyframeArt(held, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+    ]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.partnerMain,
+      ids.heroMain,
+    ]);
   });
 
   it("carries the form a shot chose rather than the element's default", () => {

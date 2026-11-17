@@ -54,7 +54,7 @@ import {
   drawnFrames,
   filmRoleOf,
   jobKey,
-  keyframeCast,
+  keyframeCastFor,
   planKeyframeArtWaves,
   planKeyframeVideoWaves,
   settledRoleFrames,
@@ -442,6 +442,21 @@ function KeyframeRow({
   const insertAbove = () => {
     const next = [...act.keyframes];
     next.splice(index, 0, createKeyframe(index));
+    writeKeyframes(story, chapterId, act, next);
+  };
+  // A copy is a new shot holding what the row says and shows — words, framing,
+  // lines, references, the frame drawn and the clip filmed for it. Its lines
+  // are new lines, so nothing read aloud is claimed by the copy.
+  const duplicate = () => {
+    const copy: StoryKeyframe = {
+      ...structuredClone(keyframe),
+      id: newId(),
+      title: `#${index + 2}`,
+      dialogue: keyframe.dialogue.map((line) => ({ ...line, id: newId() })),
+    };
+    delete copy.voices;
+    const next = [...act.keyframes];
+    next.splice(index + 1, 0, copy);
     writeKeyframes(story, chapterId, act, next);
   };
   const move = (by: number) => {
@@ -903,6 +918,16 @@ function KeyframeRow({
               >
                 ↓
               </button>
+              <button
+                aria-label={cell(t("story:storyboard.duplicateShot"))}
+                className="story-kf-move"
+                data-testid={`story-kf-copy-${index}`}
+                onClick={duplicate}
+                title={t("story:storyboard.duplicateShot")}
+                type="button"
+              >
+                ⧉
+              </button>
             </span>
             {/*
               How a drawn frame is used when the act is shot stands among the
@@ -1083,13 +1108,7 @@ function KeyframePromptCell({
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
-  const cast = keyframeCast(
-    story,
-    content.value,
-    heldReferences,
-    variantChoices,
-    fallbackReferences,
-  );
+  const cast = keyframeCastFor(story, act, keyframe, content.value);
   // The names the words may mention: the shot's own references, and the
   // elements the act keeps at its top — mentioning one takes it into the shot.
   const actElements = actCast(story, act);
@@ -1367,7 +1386,7 @@ function KeyframePromptCell({
 /** How each name the words mention stands in this frame's ask. */
 function mentionKinds(
   story: StoryDocument,
-  cast: ReturnType<typeof keyframeCast>,
+  cast: ReturnType<typeof keyframeCastFor>,
   content: string,
   references: StoryKeyframeReference[],
 ): Record<string, MentionKind> {

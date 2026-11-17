@@ -375,6 +375,130 @@ async fn a_stream_that_could_not_be_placed_still_ends_with_an_explanation() {
     assert_eq!(done["error"]["retryable"], false);
 }
 
+/// A caller that wants the answer rather than the pieces still reads a stream:
+/// a connection with nothing on it for a minute is one a webview gives up on,
+/// which is what a single document cannot avoid. No pieces are written,
+/// because there is nobody to draw them for.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quiet_stream_answers_at_the_end_without_showing_pieces() {
+    let harness = harness().await;
+    let base_url = serve(Router::new().route(
+        "/v1/responses",
+        post(|| async { events(&["\"a \"", "\"lantern\""]) }),
+    ))
+    .await;
+    configured(&harness, &base_url, &[("gpt-5.5", Capability::Text)]).await;
+
+    let (status, headers, body) = send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/generate/text?quiet=true",
+            json!({ "capability": "text", "prompt": "describe a lantern" }),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "text/event-stream");
+    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    let stream = String::from_utf8(body).expect("the frames are text");
+    assert!(
+        !stream.contains("event: delta"),
+        "nothing was shown: {stream}"
+    );
+    let done = stream
+        .split("event: done\ndata: ")
+        .nth(1)
+        .expect("the stream ends with a done frame");
+    let done: Value =
+        serde_json::from_str(done.split("\n\n").next().expect("the frame ends")).expect("json");
+    assert_eq!(done["status"], "succeeded");
+    assert_eq!(done["text"], "a lantern");
+}
+
+/// A picture is wanted whole, but it still travels a stream so the local
+/// connection says it is still there while the provider draws.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quiet_picture_arrives_in_the_closing_frame() {
+    let harness = harness().await;
+    let picture = encoded(2, 2);
+    let answering = picture.clone();
+    let base_url = serve(Router::new().route(
+        "/v1/images/generations",
+        post(move || {
+            let picture = answering.clone();
+            async move {
+                Json(json!({
+                    "data": [{
+                        "b64_json": base64::engine::general_purpose::STANDARD.encode(&picture),
+                    }],
+                }))
+            }
+        }),
+    ))
+    .await;
+    configured(
+        &harness,
+        &base_url,
+        &[("an-image-model", Capability::Image)],
+    )
+    .await;
+
+    let (status, headers, body) = send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/generate/image?quiet=true",
+            json!({ "capability": "image", "prompt": "a red cube" }),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "text/event-stream");
+    let stream = String::from_utf8(body).expect("the frames are text");
+    let done = stream
+        .split("event: done\ndata: ")
+        .nth(1)
+        .expect("the stream ends with a done frame");
+    let done: Value =
+        serde_json::from_str(done.split("\n\n").next().expect("the frame ends")).expect("json");
+    assert_eq!(done["status"], "succeeded");
+    assert_eq!(done["outputs"][0]["kind"], "image");
+    assert_eq!(done["outputs"][0]["bytes"], picture.len() as u64);
+}
+
+/// The stream has already sent its status line, so a quiet answer that could
+/// not be placed names the failure in the closing frame rather than as a
+/// second status nobody can send.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quiet_answer_that_could_not_be_placed_ends_with_its_explanation() {
+    let harness = harness().await;
+
+    let (status, headers, body) = send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/generate/image?quiet=true",
+            json!({ "capability": "image", "prompt": "a red cube" }),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "the stream opened before it failed");
+    assert_eq!(headers[header::CONTENT_TYPE], "text/event-stream");
+    let stream = String::from_utf8(body).expect("the frames are text");
+    let done = stream
+        .split("event: done\ndata: ")
+        .nth(1)
+        .expect("the stream still ends properly");
+    let done: Value =
+        serde_json::from_str(done.split("\n\n").next().expect("the frame ends")).expect("json");
+    assert_eq!(done["error"]["code"], "PROVIDER_NOT_CONFIGURED");
+    assert_eq!(done["error"]["retryable"], false);
+}
+
 // ------------------------------------------------------------------- image
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

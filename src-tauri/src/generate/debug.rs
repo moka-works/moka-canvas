@@ -687,9 +687,32 @@ pub fn answered(capture: Option<Capture>, status: u16, headers: &HeaderMap, body
     });
 }
 
-/// Records a call that reached the provider and could not be read.
-pub fn broken(capture: Option<Capture>, error: &str, status: u16, headers: &HeaderMap) {
+/// How much of a body that did not arrive whole is worth writing down: enough
+/// for a provider's own explanation, not enough for an answer that was never
+/// going to be kept.
+const PARTIAL_BODY_BYTES: usize = 64 * 1024;
+
+/// Records a call that reached the provider and could not be read whole.
+///
+/// What had arrived by then is kept beside the reason the reading stopped: a
+/// provider that fails in the middle of its answer has usually already said
+/// why, and the part is often the only explanation there is.
+pub fn broken(
+    capture: Option<Capture>,
+    error: &str,
+    status: u16,
+    headers: &HeaderMap,
+    body: &[u8],
+) {
     let Some(capture) = capture else { return };
+    let response = if capture.kind == Kind::Media {
+        // The bytes of a media download are the answer's own item; half of one
+        // is not a file anybody can open, and the call already says how far it
+        // got.
+        Body::Empty
+    } else {
+        partial(body)
+    };
     capture.run.state.push(Call {
         seq: capture.seq,
         kind: capture.kind,
@@ -700,11 +723,25 @@ pub fn broken(capture: Option<Capture>, error: &str, status: u16, headers: &Head
         status: Some(status),
         took: capture.started.elapsed(),
         request: capture.body,
-        response: Body::Empty,
+        response,
         media: None,
         stream: None,
         error: Some(error.to_string()),
     });
+}
+
+/// The part of a body that arrived, as text a person can read, with the cut
+/// marked where it was one.
+fn partial(body: &[u8]) -> Body {
+    if body.is_empty() {
+        return Body::Empty;
+    }
+    let kept = &body[..body.len().min(PARTIAL_BODY_BYTES)];
+    let mut text = String::from_utf8_lossy(kept).into_owned();
+    if kept.len() < body.len() {
+        text.push_str(&format!("\n…[{} of {} bytes kept]", kept.len(), body.len()));
+    }
+    Body::Text(text)
 }
 
 /// Records a call that never left, which has no answer of any kind.

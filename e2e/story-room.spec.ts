@@ -110,10 +110,34 @@ test("a story is begun under a name and stood on at its first step", async ({
   );
 
   // The machine remembers the story that was being told, across a reload.
+  // The room takes its story up in an effect, after the first frame is drawn,
+  // so the reload is watched from before it: a story that is already there is
+  // never answered with the offer to begin one — not even for a frame.
+  await page.addInitScript({
+    content: `
+      window.__storyStage = { emptyAdded: false };
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            if (
+              node.matches('[data-testid="story-empty"]') ||
+              node.querySelector('[data-testid="story-empty"]')
+            ) {
+              window.__storyStage.emptyAdded = true;
+            }
+          }
+        }
+      }).observe(document, { childList: true, subtree: true });
+    `,
+  });
   await page.reload();
   await openRecent(page, "Story Begun");
   await openStoryRoom(page);
   await expect(page.locator(".story-head-name")).toHaveText("Rain at Night");
+  expect(
+    await page.evaluate<boolean>("window.__storyStage?.emptyAdded ?? false"),
+  ).toBe(false);
 
   forgetHome(home);
 });

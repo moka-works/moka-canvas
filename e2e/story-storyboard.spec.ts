@@ -968,6 +968,22 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
         "The `Old ticket` is held up to the light.",
       ]);
 
+    // A shot is copied whole beneath itself: the same words stand in the row
+    // below, and the shot that stood after it closes up behind the copy.
+    await firstAct.getByTestId("story-kf-copy-0").click();
+    await expect.poll(async () => (await persistedBoard(page)).frames).toBe(5);
+    await expect
+      .poll(async () => (await persistedBoard(page)).contents)
+      .toEqual([
+        "Rain over the platform, `Keeper` under the lamp.",
+        "Rain over the platform, `Keeper` under the lamp.",
+        "",
+        "`Traveller` turns.",
+        "The `Old ticket` is held up to the light.",
+      ]);
+    await firstAct.getByTestId("story-kf-remove-1").click();
+    await expect.poll(async () => (await persistedBoard(page)).frames).toBe(4);
+
     // What the server ends up holding: two acts, four shots, none of them
     // drawn — nobody asked for a picture in any of this.
     const board = await persistedBoard(page);

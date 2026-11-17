@@ -108,6 +108,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -141,6 +142,19 @@ describe("a project that tells no story yet", () => {
     // The question is asked once: the name is the only thing a new story is
     // asked for, and the premise is set in the step that is standing.
     expect(useStoryStore.getState().storyId).not.toBeNull();
+  });
+});
+
+describe("a project that tells a story already", () => {
+  it("does not say there is none while the room is taking it up", () => {
+    // The room picks its story in an effect, so the first frame is drawn with
+    // the document's stories here and none of them chosen yet: a large telling
+    // can hold that frame on screen while it is taken up.
+    vi.spyOn(useStoryStore.getState(), "adopt").mockImplementation(() => {});
+    openRoom(buildStoryMokaFile());
+    expect(screen.getByTestId("story-loading")).toBeTruthy();
+    expect(screen.queryByTestId("story-empty")).toBeNull();
+    expect(screen.queryByTestId("story-empty-new")).toBeNull();
   });
 });
 

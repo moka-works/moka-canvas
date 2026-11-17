@@ -18,7 +18,7 @@ import {
   stripStoryMentions,
 } from "../../../shared/domain/story";
 import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
-import { actDefaultReferences, keyframeCast, planElementArt } from "./plan";
+import { keyframeCastFor, planElementArt } from "./plan";
 
 /** One shot's picture, as the material it is drawn from. */
 export function keyframeArtPromptContext(
@@ -32,13 +32,7 @@ export function keyframeArtPromptContext(
   const keyframe = keyframeAt(story, { chapterId, actId, keyframeId });
   if (chapter === undefined || act === undefined || keyframe === undefined)
     return null;
-  const cast = keyframeCast(
-    story,
-    keyframe.content,
-    keyframe.references,
-    keyframe.variantChoices ?? {},
-    actDefaultReferences(act),
-  ).carried;
+  const cast = keyframeCastFor(story, act, keyframe).carried;
   return {
     kind: "frame",
     mode: cast.length > 0 ? "reference" : "generate",
