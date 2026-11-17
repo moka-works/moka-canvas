@@ -120,6 +120,8 @@ public:
   maxUploadBytes: 2147483648
   allowedMediaTypes: ["image", "audio", "video", "text", "model"]
 limits:
+  # May tighten the built-in document ceilings, never raise them: a larger
+  # value is clamped to the ceiling and a zero is read as one.
   maxNodesPerCanvas: 5000
   maxEdgesPerCanvas: 10000
   maxCanvasesPerProject: 64

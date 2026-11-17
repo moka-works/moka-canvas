@@ -35,6 +35,9 @@ const MEMORY_LIMIT: usize = 64 * 1024 * 1024;
 /// How large a value `json`/`base64` may carry in or out.
 const HELPER_BYTES: usize = 1024 * 1024;
 
+/// How much of one log line is kept before it is cut.
+const LOG_LINE_BYTES: usize = 4_000;
+
 /// One piece of media a model answered with, already filed in the project.
 #[derive(Debug, Clone, Default)]
 pub struct ModelItem {
@@ -129,8 +132,8 @@ impl LogWriter {
             _ => "info",
         };
         let mut text = message.replace(['\r', '\n'], " ");
-        if text.len() > 4_000 {
-            truncate_utf8(&mut text, 4_000);
+        if text.len() > LOG_LINE_BYTES {
+            truncate_utf8(&mut text, LOG_LINE_BYTES);
             text.push('…');
         }
         let mut entries = self.entries.lock().expect("log buffer poisoned");

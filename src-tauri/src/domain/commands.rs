@@ -5,11 +5,11 @@ use super::folders::{
     folder_canvases, folder_depth, folder_sibling_index, folders_of, subtree_depth,
 };
 use super::validate::{
-    bounds_valid, resource_path_valid, validate_edge_candidate, MAX_ASSISTANT_MESSAGES_PER_SESSION,
-    MAX_ASSISTANT_MESSAGE_LENGTH, MAX_ASSISTANT_SESSIONS_PER_CANVAS, MAX_ASSISTANT_TITLE_LENGTH,
-    MAX_CANVASES_PER_PROJECT, MAX_CANVAS_NAME_LENGTH, MAX_EDGES_PER_CANVAS,
-    MAX_FOLDERS_PER_PROJECT, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_NODES_PER_CANVAS,
-    MAX_TITLE_LENGTH, ZOOM_MAX, ZOOM_MIN,
+    bounds_valid, resource_path_valid, validate_edge_candidate, CanvasLimits,
+    MAX_ASSISTANT_MESSAGES_PER_SESSION, MAX_ASSISTANT_MESSAGE_LENGTH,
+    MAX_ASSISTANT_SESSIONS_PER_CANVAS, MAX_ASSISTANT_TITLE_LENGTH, MAX_CANVAS_NAME_LENGTH,
+    MAX_FOLDERS_PER_PROJECT, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_TITLE_LENGTH, ZOOM_MAX,
+    ZOOM_MIN,
 };
 use super::{
     story, timeline, AssistantMessage, AssistantSession, CanvasDocument, CanvasFolder,
@@ -301,10 +301,19 @@ pub fn apply_commands(
     moka: &MokaFile,
     commands: &[DocumentCommand],
 ) -> Result<(MokaFile, Vec<DocumentCommand>), CommandError> {
+    apply_commands_with_limits(moka, commands, &CanvasLimits::default())
+}
+
+/// Applies commands against the limits the open project was configured with.
+pub fn apply_commands_with_limits(
+    moka: &MokaFile,
+    commands: &[DocumentCommand],
+    limits: &CanvasLimits,
+) -> Result<(MokaFile, Vec<DocumentCommand>), CommandError> {
     let mut current = moka.clone();
     let mut inverses: Vec<DocumentCommand> = Vec::new();
     for command in commands {
-        let (next, inverse) = apply_one(&current, command)?;
+        let (next, inverse) = apply_one(&current, command, limits)?;
         current = next;
         // Later inverses must run first when unwinding.
         for item in inverse.into_iter().rev() {
@@ -317,6 +326,7 @@ pub fn apply_commands(
 fn apply_one(
     moka: &MokaFile,
     command: &DocumentCommand,
+    limits: &CanvasLimits,
 ) -> Result<(MokaFile, Vec<DocumentCommand>), CommandError> {
     match command {
         DocumentCommand::UpdateProjectMetadata { name, description } => {
@@ -349,7 +359,7 @@ fn apply_one(
             if canvas.node(&node.id).is_some() {
                 return Err(CommandError::new("CONFLICT", "Node id already exists"));
             }
-            if canvas.nodes.len() + 1 > MAX_NODES_PER_CANVAS {
+            if canvas.nodes.len() + 1 > limits.max_nodes_per_canvas {
                 return Err(CommandError::new(
                     "VALIDATION_FAILED",
                     "Canvas node limit reached",
@@ -634,7 +644,7 @@ fn apply_one(
             if canvas.edges.iter().any(|candidate| candidate.id == edge.id) {
                 return Err(CommandError::new("CONFLICT", "Edge id already exists"));
             }
-            if canvas.edges.len() + 1 > MAX_EDGES_PER_CANVAS {
+            if canvas.edges.len() + 1 > limits.max_edges_per_canvas {
                 return Err(CommandError::new(
                     "VALIDATION_FAILED",
                     "Canvas edge limit reached",
@@ -1072,7 +1082,7 @@ fn apply_one(
         }
 
         DocumentCommand::AddCanvas { canvas, index } => {
-            if moka.canvas.len() + 1 > MAX_CANVASES_PER_PROJECT {
+            if moka.canvas.len() + 1 > limits.max_canvases_per_project {
                 return Err(CommandError::new(
                     "VALIDATION_FAILED",
                     "Canvas limit reached",

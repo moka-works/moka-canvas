@@ -17,6 +17,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
+use crate::domain::validate::MAX_EXTENSION_PARAM_BYTES;
 use crate::domain::{Capability, Cardinality, DataType, PortDefinition, PortDirection};
 
 /// The host contract this build implements. A definition that declares a
@@ -32,9 +33,6 @@ pub const MAX_SCRIPTS_BYTES: u64 = 1024 * 1024;
 /// How many model slots and parameters one definition may declare.
 pub const MAX_MODEL_SLOTS: usize = 16;
 pub const MAX_PARAMETERS: usize = 32;
-
-/// How large resolved parameters may be, serialized.
-pub const MAX_PARAMETER_BYTES: usize = 64 * 1024;
 
 /// The default and ceiling of every step limit, in the order a definition
 /// states them. A definition may tighten a limit, never raise it past the
@@ -371,9 +369,9 @@ impl NodeDefinition {
         let bytes = serde_json::to_vec(&resolved)
             .map(|held| held.len())
             .unwrap_or(usize::MAX);
-        if bytes > MAX_PARAMETER_BYTES {
+        if bytes > MAX_EXTENSION_PARAM_BYTES {
             return Err(format!(
-                "parameters exceed {MAX_PARAMETER_BYTES} bytes once resolved"
+                "parameters exceed {MAX_EXTENSION_PARAM_BYTES} bytes once resolved"
             ));
         }
         Ok(resolved)

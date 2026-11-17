@@ -13,6 +13,44 @@ pub const MAX_CANVAS_NAME_LENGTH: usize = 80;
 pub const MAX_NODES_PER_CANVAS: usize = 5_000;
 pub const MAX_EDGES_PER_CANVAS: usize = 10_000;
 pub const MAX_CANVASES_PER_PROJECT: usize = 64;
+
+/// The limits one command applies when it would grow a document.
+///
+/// The constants above are the host's ceilings. A configured value may tighten
+/// one, never raise it, so a configuration asking for more cannot outrun the
+/// guard the server was built with. A configured zero is read as one: a limit
+/// that forbids the first node is a broken project rather than a tighter one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanvasLimits {
+    pub max_nodes_per_canvas: usize,
+    pub max_edges_per_canvas: usize,
+    pub max_canvases_per_project: usize,
+}
+
+impl Default for CanvasLimits {
+    fn default() -> Self {
+        Self {
+            max_nodes_per_canvas: MAX_NODES_PER_CANVAS,
+            max_edges_per_canvas: MAX_EDGES_PER_CANVAS,
+            max_canvases_per_project: MAX_CANVASES_PER_PROJECT,
+        }
+    }
+}
+
+impl CanvasLimits {
+    pub fn new(
+        max_nodes_per_canvas: usize,
+        max_edges_per_canvas: usize,
+        max_canvases_per_project: usize,
+    ) -> Self {
+        Self {
+            max_nodes_per_canvas: max_nodes_per_canvas.clamp(1, MAX_NODES_PER_CANVAS),
+            max_edges_per_canvas: max_edges_per_canvas.clamp(1, MAX_EDGES_PER_CANVAS),
+            max_canvases_per_project: max_canvases_per_project.clamp(1, MAX_CANVASES_PER_PROJECT),
+        }
+    }
+}
+
 /// How many directories one project's canvas tree holds.
 pub const MAX_FOLDERS_PER_PROJECT: usize = 256;
 pub const MAX_FOLDER_NAME_LENGTH: usize = 80;
@@ -682,13 +720,23 @@ fn session_issues(canvas: &CanvasDocument) -> Vec<ValidationIssue> {
 }
 
 pub fn validate_canvas(canvas: &CanvasDocument) -> Vec<ValidationIssue> {
+    validate_canvas_with_limits(canvas, &CanvasLimits::default())
+}
+
+pub fn validate_canvas_with_limits(
+    canvas: &CanvasDocument,
+    limits: &CanvasLimits,
+) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let canvas_id = Some(canvas.id.clone());
 
-    if canvas.nodes.len() > MAX_NODES_PER_CANVAS {
+    if canvas.nodes.len() > limits.max_nodes_per_canvas {
         issues.push(ValidationIssue {
             code: "VALIDATION_FAILED".into(),
-            message: format!("Canvas exceeds the node limit ({MAX_NODES_PER_CANVAS})"),
+            message: format!(
+                "Canvas exceeds the node limit ({})",
+                limits.max_nodes_per_canvas
+            ),
             canvas_id: canvas_id.clone(),
             node_id: None,
             port_id: None,
@@ -699,10 +747,13 @@ pub fn validate_canvas(canvas: &CanvasDocument) -> Vec<ValidationIssue> {
             transition_id: None,
         });
     }
-    if canvas.edges.len() > MAX_EDGES_PER_CANVAS {
+    if canvas.edges.len() > limits.max_edges_per_canvas {
         issues.push(ValidationIssue {
             code: "VALIDATION_FAILED".into(),
-            message: format!("Canvas exceeds the edge limit ({MAX_EDGES_PER_CANVAS})"),
+            message: format!(
+                "Canvas exceeds the edge limit ({})",
+                limits.max_edges_per_canvas
+            ),
             canvas_id: canvas_id.clone(),
             node_id: None,
             port_id: None,

@@ -1,8 +1,9 @@
 use crate::assets;
 use crate::config::AppConfig;
-use crate::domain::commands::{apply_commands, registry_errors};
+use crate::domain::commands::{apply_commands_with_limits, registry_errors};
 use crate::domain::validate::{
-    MAX_ASSET_KEYWORD_LENGTH, MAX_ASSET_NOTE_LENGTH, MAX_ASSET_TAGS, MAX_ASSET_TAG_LENGTH,
+    CanvasLimits, MAX_ASSET_KEYWORD_LENGTH, MAX_ASSET_NOTE_LENGTH, MAX_ASSET_TAGS,
+    MAX_ASSET_TAG_LENGTH,
 };
 use crate::domain::{
     new_id, now_iso, AssetProvenance, CanvasDocument, DocumentCommand, MokaFile, NodeKind,
@@ -275,7 +276,12 @@ impl FsProjectStore {
                 ),
             ));
         }
-        let (next, inverse) = apply_commands(&state.moka, &commands)
+        let limits = CanvasLimits::new(
+            self.config.limits.max_nodes_per_canvas,
+            self.config.limits.max_edges_per_canvas,
+            self.config.limits.max_canvases_per_project,
+        );
+        let (next, inverse) = apply_commands_with_limits(&state.moka, &commands, &limits)
             .map_err(|error| ProjectError::domain(error.code, error.to_string()))?;
         let saved = self.commit(state, next)?;
         Ok((saved, inverse))
@@ -1174,7 +1180,12 @@ impl ProjectStore for FsProjectStore {
                 ),
             ));
         }
-        let (next, _inverse) = apply_commands(&state.moka, &commands)
+        let limits = CanvasLimits::new(
+            self.config.limits.max_nodes_per_canvas,
+            self.config.limits.max_edges_per_canvas,
+            self.config.limits.max_canvases_per_project,
+        );
+        let (next, _inverse) = apply_commands_with_limits(&state.moka, &commands, &limits)
             .map_err(|error| ProjectError::domain(error.code, error.to_string()))?;
         self.commit(state, next)
     }

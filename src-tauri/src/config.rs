@@ -325,6 +325,28 @@ impl Default for LimitsConfig {
     }
 }
 
+impl LimitsConfig {
+    /// The document limits as they actually apply: a configured value may
+    /// tighten a host ceiling but never raise it, and a zero is read as one.
+    /// Clients are told these values rather than the raw ones so the room a
+    /// window offers cannot be room the server refuses.
+    pub fn effective(&self) -> Self {
+        Self {
+            max_nodes_per_canvas: self
+                .max_nodes_per_canvas
+                .clamp(1, crate::domain::validate::MAX_NODES_PER_CANVAS),
+            max_edges_per_canvas: self
+                .max_edges_per_canvas
+                .clamp(1, crate::domain::validate::MAX_EDGES_PER_CANVAS),
+            max_canvases_per_project: self
+                .max_canvases_per_project
+                .clamp(1, crate::domain::validate::MAX_CANVASES_PER_PROJECT),
+            max_package_bytes: self.max_package_bytes,
+            max_package_entries: self.max_package_entries,
+        }
+    }
+}
+
 fn default_bind() -> &'static str {
     "127.0.0.1:3000"
 }
@@ -363,13 +385,13 @@ fn default_allowed_media_types() -> Vec<String> {
     ]
 }
 fn default_max_nodes_per_canvas() -> usize {
-    5_000
+    crate::domain::validate::MAX_NODES_PER_CANVAS
 }
 fn default_max_edges_per_canvas() -> usize {
-    10_000
+    crate::domain::validate::MAX_EDGES_PER_CANVAS
 }
 fn default_max_canvases_per_project() -> usize {
-    64
+    crate::domain::validate::MAX_CANVASES_PER_PROJECT
 }
 fn default_max_package_bytes() -> u64 {
     4_294_967_296
@@ -861,6 +883,30 @@ mod tests {
                 "extension".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn configured_document_limits_can_tighten_but_never_outrun_the_host_ceilings() {
+        let config = LimitsConfig {
+            max_nodes_per_canvas: 50_000,
+            max_edges_per_canvas: 0,
+            max_canvases_per_project: 500,
+            max_package_bytes: default_max_package_bytes(),
+            max_package_entries: default_max_package_entries(),
+        };
+        let effective = config.effective();
+        assert_eq!(
+            effective.max_nodes_per_canvas,
+            crate::domain::validate::MAX_NODES_PER_CANVAS
+        );
+        assert_eq!(effective.max_edges_per_canvas, 1);
+        assert_eq!(
+            effective.max_canvases_per_project,
+            crate::domain::validate::MAX_CANVASES_PER_PROJECT
+        );
+        // Package ceilings are a separate question; they are passed through.
+        assert_eq!(effective.max_package_bytes, config.max_package_bytes);
+        assert_eq!(effective.max_package_entries, config.max_package_entries);
     }
 
     #[test]

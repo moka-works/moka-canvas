@@ -106,7 +106,7 @@ pub async fn public_config(State(state): State<ApiState>) -> Json<PublicConfigRe
         product_name: config.public.product_name.clone(),
         max_upload_bytes: config.public.max_upload_bytes,
         allowed_media_types: config.public.allowed_media_types.clone(),
-        limits: config.limits.clone(),
+        limits: config.limits.effective(),
         story_max_parallel_items: config.story.max_parallel_items,
         capabilities: CapabilitiesResponse {
             mode: state.mode.as_str().to_string(),
