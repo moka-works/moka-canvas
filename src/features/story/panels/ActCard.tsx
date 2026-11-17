@@ -51,7 +51,13 @@ import {
 } from "../stores/storyJobStore";
 import { actFoldAt, rememberActFold } from "../stores/storyStore";
 import { KeyframeTable } from "./KeyframeTable";
-import { addTake, keepTake, removeTake, type TakePlace } from "./takePicks";
+import {
+  addTake,
+  keepTake,
+  removeTake,
+  trimTake,
+  type TakePlace,
+} from "./takePicks";
 import { StoryPicks } from "./StoryPicks";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { ElementDraftDialog } from "./ElementDraftDialog";
@@ -1123,8 +1129,13 @@ export function ActCard({
       {playing && clip !== undefined && (
         <StoryLightbox
           assetIds={clip.assetIds}
+          inMs={clip.inMs}
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
+          onTrim={(inMs, outMs) =>
+            trimTake(story.id, clipPlace, { inMs, outMs })
+          }
+          outMs={clip.outMs}
           poster={clipPoster}
           video
         />

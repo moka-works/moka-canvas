@@ -771,6 +771,15 @@ export interface StoryTake {
   itemId?: string;
   /** What the ask said, in a line, for a reader deciding which take to keep. */
   note?: string;
+  /**
+   * The part of the take the room plays and the cut keeps, in milliseconds
+   * from the take's own start: the whole take when both are absent.
+   *
+   * An act filmed in pieces is one take, so the two offsets run across the
+   * pieces in play order rather than each file's own clock.
+   */
+  inMs?: number;
+  outMs?: number;
   createdAt: IsoTimestamp;
 }
 

@@ -266,6 +266,12 @@ pub struct StoryTake {
     pub job_id: Option<String>,
     pub item_id: Option<String>,
     pub note: Option<String>,
+    /// The part of the take the room plays and the cut keeps, in milliseconds
+    /// from the take's own start: the whole take when both are absent. An act
+    /// filmed in pieces is one take, so the offsets run across the pieces in
+    /// play order rather than each file's own clock.
+    pub in_ms: Option<i64>,
+    pub out_ms: Option<i64>,
     pub created_at: IsoTimestamp,
 }
 
@@ -285,6 +291,12 @@ impl Serialize for StoryTake {
         }
         if let Some(note) = &self.note {
             map.serialize_entry("note", note)?;
+        }
+        if let Some(in_ms) = self.in_ms {
+            map.serialize_entry("inMs", &in_ms)?;
+        }
+        if let Some(out_ms) = self.out_ms {
+            map.serialize_entry("outMs", &out_ms)?;
         }
         map.serialize_entry("createdAt", &self.created_at)?;
         map.end()
@@ -309,6 +321,10 @@ impl<'de> Deserialize<'de> for StoryTake {
             item_id: Option<String>,
             #[serde(default)]
             note: Option<String>,
+            #[serde(default)]
+            in_ms: Option<i64>,
+            #[serde(default)]
+            out_ms: Option<i64>,
             created_at: IsoTimestamp,
         }
         let wire = Wire::deserialize(deserializer)?;
@@ -328,6 +344,8 @@ impl<'de> Deserialize<'de> for StoryTake {
             job_id: wire.job_id,
             item_id: wire.item_id,
             note: wire.note,
+            in_ms: wire.in_ms,
+            out_ms: wire.out_ms,
             created_at: wire.created_at,
         })
     }

@@ -426,6 +426,8 @@ function encodeStoryTake(take: StoryTake): Record<string, unknown> {
   if (take.jobId !== undefined) doc.jobId = take.jobId;
   if (take.itemId !== undefined) doc.itemId = take.itemId;
   if (take.note !== undefined) doc.note = take.note;
+  if (take.inMs !== undefined) doc.inMs = asLong(take.inMs);
+  if (take.outMs !== undefined) doc.outMs = asLong(take.outMs);
   return doc;
 }
 
@@ -1505,6 +1507,10 @@ function decodeStoryTake(value: unknown): StoryTake {
   if (doc.jobId !== undefined) take.jobId = optionalString(doc.jobId);
   if (doc.itemId !== undefined) take.itemId = optionalString(doc.itemId);
   if (doc.note !== undefined) take.note = optionalString(doc.note);
+  const inMs = decodeLongField(doc.inMs);
+  if (inMs !== undefined) take.inMs = inMs;
+  const outMs = decodeLongField(doc.outMs);
+  if (outMs !== undefined) take.outMs = outMs;
   return take;
 }
 

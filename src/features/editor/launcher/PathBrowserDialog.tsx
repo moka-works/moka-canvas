@@ -191,7 +191,7 @@ export function PathBrowserDialog({
 
   return (
     <div
-      className="dialog-backdrop"
+      className="dialog-backdrop path-browser-backdrop"
       onClick={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}

@@ -73,6 +73,8 @@ fn take(asset_id: &str) -> StoryTake {
         job_id: None,
         item_id: None,
         note: None,
+        in_ms: None,
+        out_ms: None,
         created_at: NOW.into(),
     }
 }
@@ -253,6 +255,8 @@ fn story_document() -> MokaFile {
                 job_id: Some("job-1".into()),
                 item_id: Some(format!("keyframe:{CHAPTER_FIRST}:{ACT}:{FRAME_FIRST}")),
                 note: Some("按关键帧生成".into()),
+                in_ms: None,
+                out_ms: None,
                 created_at: NOW.into(),
             }],
         },
@@ -322,6 +326,8 @@ fn story_document() -> MokaFile {
                             job_id: Some("job-2".into()),
                             item_id: Some(format!("actVideo:{CHAPTER_FIRST}:{ACT}")),
                             note: Some("按幕生成，5.0s".into()),
+                            in_ms: None,
+                            out_ms: None,
                             created_at: NOW.into(),
                         }],
                     },
@@ -1730,6 +1736,36 @@ fn names_the_picture_model_one_frame_is_drawn_by() {
         story_of(&cleared).chapters[0].acts[0].keyframes[0].image_model,
         None
     );
+}
+
+#[test]
+fn keeps_the_window_a_take_was_cut_to_across_the_codec() {
+    let moka = story_document();
+    let mut cut = take("asset-act-video");
+    cut.in_ms = Some(1_000);
+    cut.out_ms = Some(3_500);
+    let slot = StorySlot { takes: vec![cut] };
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SetStorySlot {
+            story_id: STORY.into(),
+            target: StorySlotTarget::ActVideo {
+                chapter_id: CHAPTER_FIRST.into(),
+                act_id: ACT.into(),
+            },
+            slot,
+            read: None,
+        }],
+    );
+    let held = &story_of(&next).chapters[0].acts[0].video.takes[0];
+    assert_eq!((held.in_ms, held.out_ms), (Some(1_000), Some(3_500)));
+    let written = serde_json::to_string(held).unwrap();
+    assert!(written.contains(r#""inMs":1000"#));
+    assert!(written.contains(r#""outMs":3500"#));
+    // A whole take writes neither end, which is what every older document says.
+    let whole = serde_json::to_string(&take("asset-whole")).unwrap();
+    assert!(!whole.contains("inMs"));
+    assert!(!whole.contains("outMs"));
 }
 
 #[test]

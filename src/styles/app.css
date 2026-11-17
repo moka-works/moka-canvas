@@ -2915,6 +2915,12 @@ body.is-dragging-panel {
   max-width: min(620px, calc(100vw - 48px));
 }
 
+/* A file question may be asked from inside a full-window viewer, which stands
+   over the room with a veil of its own: the question is answered above it. */
+.path-browser-backdrop {
+  z-index: 70;
+}
+
 .path-browser-bar {
   display: flex;
   gap: 8px;
@@ -8146,6 +8152,71 @@ button > .story-spin {
   margin: 0 auto;
   max-height: 82vh;
   max-width: 100%;
+}
+
+/* The window a clip is kept to: one bar, a playhead, and two ends to drag. */
+.story-trim {
+  color: var(--ink);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.story-trim-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-trim-track {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  cursor: pointer;
+  height: 24px;
+  position: relative;
+  touch-action: none;
+  width: min(680px, 100%);
+}
+
+.story-trim-window {
+  background: var(--primary);
+  border-radius: 999px;
+  bottom: 0;
+  opacity: 0.22;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+}
+
+.story-trim-playhead {
+  background: var(--ink);
+  bottom: 2px;
+  margin-left: -1px;
+  pointer-events: none;
+  position: absolute;
+  top: 2px;
+  width: 2px;
+}
+
+.story-trim-handle {
+  background: var(--primary);
+  border: 2px solid var(--surface);
+  border-radius: 4px;
+  cursor: ew-resize;
+  height: 28px;
+  margin-left: -7px;
+  padding: 0;
+  position: absolute;
+  top: 50%;
+  touch-action: none;
+  transform: translateY(-50%);
+  width: 14px;
+}
+
+.story-trim-handle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .story-lightbox-foot {

@@ -65,6 +65,10 @@ export interface AssemblyUnit {
   startMs: number;
   /** How long it runs: what the material measures, or what it was planned for. */
   durationMs: number;
+  /** Where the window the take keeps opens in this file. */
+  inPointMs: number;
+  /** Where it closes in this file. */
+  outPointMs: number;
   /** The file of the fourth step that is laid down. */
   assetId: AssetId;
   /** What the shot was planned to run for, which is what its captions share. */
@@ -98,6 +102,8 @@ interface ShotSlot {
    */
   assetIds: AssetId[];
   plannedMs: number;
+  /** The take those files are, with the window the reader cut it to. */
+  take: StoryTake | undefined;
 }
 
 /**
@@ -117,16 +123,19 @@ function shotsOf(story: StoryDocument, act: StoryAct): ShotSlot[] {
       {
         assetIds: take?.assetIds ?? [],
         plannedMs: act.transition.durationMs,
+        take,
       },
     ];
   }
   if (actGranularity(act, story.shotGranularity) === "keyframe") {
     return act.keyframes.map((keyframe) => {
-      const file = takeFile(currentTake(keyframe.video));
+      const take = currentTake(keyframe.video);
+      const file = takeFile(take);
       return {
         keyframe,
         assetIds: file === undefined ? [] : [file],
         plannedMs: keyframe.durationMs,
+        take,
       };
     });
   }
@@ -135,6 +144,7 @@ function shotsOf(story: StoryDocument, act: StoryAct): ShotSlot[] {
     {
       assetIds: take?.assetIds ?? [],
       plannedMs: actPlannedMs(act),
+      take,
     },
   ];
 }
@@ -282,19 +292,40 @@ export function planAssembly(
         // A piece with no measured length stands in at its even share of the
         // act's plan, which is only ever read when the probe said nothing.
         const share = Math.round(shot.plannedMs / shot.assetIds.length);
-        for (const assetId of shot.assetIds) {
+        const parts = shot.assetIds.map((assetId) => {
           const resource = findResource(moka, assetId);
           if (resource === undefined) {
             // An asset the document no longer holds cannot be laid on a track:
             // the clip would be a hole with a name. Saying which one is the
             // useful part of finding out.
             warnings.push({ kind: "assetMissing", ...where });
-            continue;
-          }
-          if (resource.probe?.durationMs === undefined) {
+          } else if (resource.probe?.durationMs === undefined) {
             warnings.push({ kind: "noDuration", ...where });
           }
-          const durationMs = lengthOf(resource, share);
+          return {
+            assetId,
+            resource,
+            durationMs:
+              resource === undefined ? share : lengthOf(resource, share),
+          };
+        });
+        // The window the take was cut to runs across the pieces in play order;
+        // the whole take is what a take with no window says.
+        const fullMs = parts.reduce((sum, part) => sum + part.durationMs, 0);
+        const windowIn = Math.min(Math.max(shot.take?.inMs ?? 0, 0), fullMs);
+        const windowOut = Math.min(
+          Math.max(shot.take?.outMs ?? fullMs, windowIn),
+          fullMs,
+        );
+        let pieceAt = 0;
+        for (const part of parts) {
+          const pieceStart = pieceAt;
+          pieceAt += part.durationMs;
+          if (part.resource === undefined) continue;
+          const inPoint = Math.max(windowIn, pieceStart);
+          const outPoint = Math.min(windowOut, pieceStart + part.durationMs);
+          if (outPoint <= inPoint) continue;
+          const durationMs = outPoint - inPoint;
           units.push({
             actId: act.id,
             ...(shot.keyframe === undefined
@@ -304,7 +335,9 @@ export function planAssembly(
             actIndex: actAt + 1,
             startMs: at,
             durationMs,
-            assetId,
+            inPointMs: inPoint - pieceStart,
+            outPointMs: outPoint - pieceStart,
+            assetId: part.assetId,
             plannedMs: share,
           });
           at += durationMs;
@@ -521,8 +554,8 @@ function layDown(
     clips.push({
       ...clip,
       durationMs: unit.durationMs,
-      inPointMs: 0,
-      outPointMs: unit.durationMs,
+      inPointMs: unit.inPointMs,
+      outPointMs: unit.outPointMs,
     });
     clipByAct.push({
       actId: unit.actId,

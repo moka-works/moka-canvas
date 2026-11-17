@@ -643,6 +643,56 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .getByTestId("story-lightbox")
       .locator("video")
       .getAttribute("src");
+
+    // The clip on show is saved where the reader says, and the same window
+    // trims what is played and what the cut will lay down.
+    await page.getByTestId("story-lightbox-save").click();
+    await expect(page.getByTestId("path-browser")).toBeVisible();
+    await page.getByTestId("path-browser-choose").click();
+    await expect(page.getByTestId("path-browser")).toHaveCount(0);
+
+    const trimTrack = page.getByTestId("story-trim-track");
+    await expect(trimTrack).toBeVisible();
+    const trackBox = await trimTrack.boundingBox();
+    const handleBox = await page.getByTestId("story-trim-in").boundingBox();
+    if (trackBox === null || handleBox === null) {
+      throw new Error("the trimmer is laid out");
+    }
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2,
+      handleBox.y + handleBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      trackBox.x + trackBox.width * 0.2,
+      trackBox.y + trackBox.height / 2,
+      {
+        steps: 8,
+      },
+    );
+    await page.mouse.up();
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: {
+                  acts?: { video?: { takes?: { inMs?: number }[] } }[];
+                }[];
+              }[];
+            };
+          };
+          return (
+            body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.video?.takes?.at(
+              -1,
+            )?.inMs ?? 0
+          );
+        }),
+      )
+      .toBeGreaterThan(0);
+
     await page.getByTestId("story-lightbox-close").click();
     await expect(firstAct.getByTestId("story-act-video-again-0")).toHaveText(
       "Generate again",

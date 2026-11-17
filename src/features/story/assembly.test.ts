@@ -117,6 +117,61 @@ describe("planAssembly", () => {
     expect(plan.warnings).toEqual([]);
   });
 
+  it("lays down only the window a take was cut to", () => {
+    const moka = filmed();
+    const held = story(moka);
+    held.chapters[0]!.acts[0]!.video.takes[0]!.inMs = 1_000;
+    held.chapters[0]!.acts[0]!.video.takes[0]!.outMs = 3_500;
+
+    const plan = planAssembly(held, moka);
+    expect(
+      plan.units.map((unit) => [
+        unit.startMs,
+        unit.durationMs,
+        unit.inPointMs,
+        unit.outPointMs,
+      ]),
+    ).toEqual([[0, 2_500, 1_000, 3_500]]);
+
+    const { commands } = assemblyCommands(held, moka, plan, {
+      withSubtitles: false,
+    });
+    const command = commands[0];
+    if (command?.type !== "addTimeline") throw new Error("a timeline is added");
+    const clip = command.timeline.clips.find(
+      (held) => held.kind === "video" && held.assetId === ids.actVideo,
+    );
+    expect([clip?.inPointMs, clip?.outPointMs, clip?.durationMs]).toEqual([
+      1_000, 3_500, 2_500,
+    ]);
+  });
+
+  it("runs a take's window across the pieces it was filmed in", () => {
+    const moka = filmed({
+      videos: [video("piece-one", 5_000), video("piece-two", 4_000)],
+    });
+    const held = story(moka);
+    const take = held.chapters[0]!.acts[0]!.video.takes[0]!;
+    take.assetIds = ["piece-one", "piece-two"];
+    take.inMs = 4_000;
+    take.outMs = 6_500;
+
+    const plan = planAssembly(held, moka);
+    expect(
+      plan.units.map((unit) => [
+        unit.assetId,
+        unit.startMs,
+        unit.durationMs,
+        unit.inPointMs,
+        unit.outPointMs,
+      ]),
+    ).toEqual([
+      ["piece-one", 0, 1_000, 4_000, 5_000],
+      ["piece-two", 1_000, 1_500, 0, 1_500],
+    ]);
+    expect(plan.totalPlannedMs).toBe(2_500);
+  });
+
   it("lays an act filmed in pieces down as the pieces, in order", () => {
     // An act longer than one clip may be was filmed in two, the second opening
     // where the first closed: the track reads them one after another, and the

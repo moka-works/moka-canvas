@@ -114,6 +114,40 @@ export function addTake(
   if (next !== slot) writeSlot(live, place, next);
 }
 
+/** The window a take is cut to, or both absent for the whole take. */
+export interface TakeWindow {
+  inMs?: number;
+  outMs?: number;
+}
+
+/**
+ * Cuts the take a place is keeping to a window, written whole as one step.
+ *
+ * The window is what the room plays and what the cut lays down; the file is
+ * not touched. Read off the live document for the same reason choosing a take
+ * is: a slot is written whole, and a job may have landed a take meanwhile.
+ */
+export function trimTake(
+  storyId: string,
+  place: TakePlace,
+  window: TakeWindow,
+): void {
+  const live = liveStory(storyId);
+  const slot = live === undefined ? undefined : slotAt(live, place);
+  const take = slot?.takes.at(-1);
+  if (live === undefined || slot === undefined || take === undefined) return;
+  const next = { ...take };
+  if (window.inMs === undefined || window.inMs <= 0) delete next.inMs;
+  else next.inMs = Math.round(window.inMs);
+  if (window.outMs === undefined) delete next.outMs;
+  else next.outMs = Math.round(window.outMs);
+  if (next.inMs === take.inMs && next.outMs === take.outMs) return;
+  writeSlot(live, place, {
+    ...slot,
+    takes: [...slot.takes.slice(0, -1), next],
+  });
+}
+
 /**
  * Throws one of a place's old takes away: the whole take leaves the slot, and
  * every file it is made of leaves the shelf with it.

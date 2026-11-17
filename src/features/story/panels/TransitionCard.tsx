@@ -23,7 +23,7 @@ import {
   videoCeiling,
 } from "../jobs/plan";
 import { useStoryWavesAsk, type ActRun } from "../stores/storyJobStore";
-import { keepTake, removeTake, type TakePlace } from "./takePicks";
+import { keepTake, removeTake, trimTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
 import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
@@ -425,8 +425,13 @@ export function TransitionCard({
       {playing && clip !== undefined && (
         <StoryLightbox
           assetIds={clip.assetIds}
+          inMs={clip.inMs}
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
+          onTrim={(inMs, outMs) =>
+            trimTake(story.id, clipPlace, { inMs, outMs })
+          }
+          outMs={clip.outMs}
           poster={clipPoster}
           video
         />

@@ -964,6 +964,8 @@ fn set_slot(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                     job_id: None,
                     item_id: None,
                     note: None,
+                    in_ms: None,
+                    out_ms: None,
                     created_at: now_iso(),
                 },
             };
