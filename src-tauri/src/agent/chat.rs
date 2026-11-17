@@ -37,6 +37,11 @@ use super::protocol;
 const MAX_MESSAGES: usize = 60;
 const MAX_MESSAGE_CHARS: usize = 16_000;
 const STREAM_BUFFER_BYTES: usize = 64 * 1024;
+/// How often a quiet stream says it is still there, and the comment it says it
+/// with. A model deliberating before its first word can be silent for longer
+/// than a webview is willing to wait, so the connection has a voice of its own.
+const FOLLOW_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+const KEEP_ALIVE: &str = ": keep-alive\n\n";
 /// How much of a fallback conversation is folded into one prompt. A model
 /// with no native tool channel reads the transcript as text, and the whole of
 /// a long session does not fit any context; the recent part is what a step
@@ -419,10 +424,19 @@ fn stream_chat(
         }
 
         let mut pending = Box::pin(gateway.text(&_session.0, generate, &sink, &watching));
+        let mut ticker = tokio::time::interval(FOLLOW_INTERVAL);
+        // The first tick is immediate, and spent here so the loop's are spaced.
+        ticker.tick().await;
         let outcome = loop {
             tokio::select! {
                 Some(chunk) = received.recv() => {
                     if frame(&mut writer, "text", &json!({ "delta": chunk })).await.is_err() {
+                        watching.cancel();
+                        return;
+                    }
+                }
+                _ = ticker.tick() => {
+                    if writer.write_all(KEEP_ALIVE.as_bytes()).await.is_err() {
                         watching.cancel();
                         return;
                     }

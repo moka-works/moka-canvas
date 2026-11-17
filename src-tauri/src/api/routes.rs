@@ -21,8 +21,8 @@ use crate::domain::{
 };
 use crate::generate::models::ModelsView;
 use crate::generate::{
-    collect_generation_inputs, Cancel, DeltaSink, GenerateInput, GenerateRequest, GenerateResult,
-    ProviderError, TaskState,
+    collect_generation_inputs, Cancel, DeltaSink, GenerateInput, GenerateRequest, ProviderError,
+    TaskState,
 };
 use crate::imaging::{operate, OperatorReport, OperatorRequest};
 use crate::metadata::{RecentProject, UiPreferences, UiPrefsPatch};
@@ -1891,6 +1891,21 @@ pub async fn reset_ui_preferences(
 /// memory, large enough that a fast provider is not stalled by one frame.
 const STREAM_BUFFER_BYTES: usize = 64 * 1024;
 
+/// What a caller can ask of a generation endpoint besides the request itself.
+#[derive(Debug, Default, Deserialize)]
+pub struct WaitOptions {
+    /// The answer is wanted whole, but the connection it arrives over must not
+    /// sit silent while a model works. Such an answer travels as an event
+    /// stream with keep-alives, and its last frame is the answer or the
+    /// refusal in the same shape a problem body would have carried.
+    ///
+    /// A webview gives up on a request that has said nothing for a minute,
+    /// even while the provider is still working; a stream that is answered as
+    /// one document cannot say anything until the document is whole.
+    #[serde(default)]
+    quiet: bool,
+}
+
 /// Written text, sent whole or as it arrives.
 ///
 /// The two paths answer differently — a document or a stream — so the return
@@ -1898,14 +1913,15 @@ const STREAM_BUFFER_BYTES: usize = 64 * 1024;
 pub async fn generate_text(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
 ) -> Response {
     let request = match json_or_problem(json) {
         Ok(Json(request)) => request,
         Err(problem) => return problem.into_response(),
     };
-    if request.wants_stream() {
-        return stream_text(&state, Arc::clone(&session.0), request);
+    if options.quiet || request.wants_stream() {
+        return stream_text(&state, Arc::clone(&session.0), request, options.quiet);
     }
     match state
         .gateway
@@ -1920,40 +1936,91 @@ pub async fn generate_text(
 pub async fn generate_image(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
-) -> Result<Json<GenerateResponse>, Problem> {
-    let Json(request) = json_or_problem(json)?;
-    let result = state
+) -> Response {
+    let Json(request) = match json_or_problem(json) {
+        Ok(json) => json,
+        Err(problem) => return problem.into_response(),
+    };
+    if options.quiet {
+        let gateway = Arc::clone(&state.gateway);
+        let session = Arc::clone(&session.0);
+        return quiet_answer(async move {
+            gateway
+                .image(&session, request, &Cancel::new())
+                .await
+                .map(GenerateResponse::succeeded)
+        });
+    }
+    match state
         .gateway
         .image(&session.0, request, &Cancel::new())
-        .await?;
-    Ok(Json(GenerateResponse::succeeded(result)))
+        .await
+    {
+        Ok(result) => Json(GenerateResponse::succeeded(result)).into_response(),
+        Err(error) => Problem::from(error).into_response(),
+    }
 }
 
 pub async fn generate_speech(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
-) -> Result<Json<GenerateResponse>, Problem> {
-    let Json(request) = json_or_problem(json)?;
-    let result = state
+) -> Response {
+    let Json(request) = match json_or_problem(json) {
+        Ok(json) => json,
+        Err(problem) => return problem.into_response(),
+    };
+    if options.quiet {
+        let gateway = Arc::clone(&state.gateway);
+        let session = Arc::clone(&session.0);
+        return quiet_answer(async move {
+            gateway
+                .speech(&session, request, &Cancel::new())
+                .await
+                .map(GenerateResponse::succeeded)
+        });
+    }
+    match state
         .gateway
         .speech(&session.0, request, &Cancel::new())
-        .await?;
-    Ok(Json(GenerateResponse::succeeded(result)))
+        .await
+    {
+        Ok(result) => Json(GenerateResponse::succeeded(result)).into_response(),
+        Err(error) => Problem::from(error).into_response(),
+    }
 }
 
 pub async fn generate_music(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
-) -> Result<Json<GenerateResponse>, Problem> {
-    let Json(request) = json_or_problem(json)?;
-    let result = state
+) -> Response {
+    let Json(request) = match json_or_problem(json) {
+        Ok(json) => json,
+        Err(problem) => return problem.into_response(),
+    };
+    if options.quiet {
+        let gateway = Arc::clone(&state.gateway);
+        let session = Arc::clone(&session.0);
+        return quiet_answer(async move {
+            gateway
+                .music(&session, request, &Cancel::new())
+                .await
+                .map(GenerateResponse::succeeded)
+        });
+    }
+    match state
         .gateway
         .music(&session.0, request, &Cancel::new())
-        .await?;
-    Ok(Json(GenerateResponse::succeeded(result)))
+        .await
+    {
+        Ok(result) => Json(GenerateResponse::succeeded(result)).into_response(),
+        Err(error) => Problem::from(error).into_response(),
+    }
 }
 
 /// A shot, started rather than waited out: the handle comes back at once and
@@ -1961,14 +2028,31 @@ pub async fn generate_music(
 pub async fn generate_video(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
-) -> Result<Json<GenerateResponse>, Problem> {
-    let Json(request) = json_or_problem(json)?;
-    let task = state
+) -> Response {
+    let Json(request) = match json_or_problem(json) {
+        Ok(json) => json,
+        Err(problem) => return problem.into_response(),
+    };
+    if options.quiet {
+        let gateway = Arc::clone(&state.gateway);
+        let session = Arc::clone(&session.0);
+        return quiet_answer(async move {
+            gateway
+                .video(&session, request, &Cancel::new())
+                .await
+                .map(|task| GenerateResponse::started(&task, None))
+        });
+    }
+    match state
         .gateway
         .video(&session.0, request, &Cancel::new())
-        .await?;
-    Ok(Json(GenerateResponse::started(&task, None)))
+        .await
+    {
+        Ok(task) => Json(GenerateResponse::started(&task, None)).into_response(),
+        Err(error) => Problem::from(error).into_response(),
+    }
 }
 
 /// A recording, read back as words.
@@ -1980,14 +2064,31 @@ pub async fn generate_video(
 pub async fn generate_asr(
     State(state): State<ApiState>,
     session: ProjectSession,
+    Query(options): Query<WaitOptions>,
     json: Result<Json<GenerateRequest>, JsonRejection>,
-) -> Result<Json<GenerateResponse>, Problem> {
-    let Json(request) = json_or_problem(json)?;
-    let task = state
+) -> Response {
+    let Json(request) = match json_or_problem(json) {
+        Ok(json) => json,
+        Err(problem) => return problem.into_response(),
+    };
+    if options.quiet {
+        let gateway = Arc::clone(&state.gateway);
+        let session = Arc::clone(&session.0);
+        return quiet_answer(async move {
+            gateway
+                .transcribe(&session, request, &Cancel::new())
+                .await
+                .map(|task| GenerateResponse::started(&task, None))
+        });
+    }
+    match state
         .gateway
         .transcribe(&session.0, request, &Cancel::new())
-        .await?;
-    Ok(Json(GenerateResponse::started(&task, None)))
+        .await
+    {
+        Ok(task) => Json(GenerateResponse::started(&task, None)).into_response(),
+        Err(error) => Problem::from(error).into_response(),
+    }
 }
 
 /// One look at a job this server started.
@@ -2147,24 +2248,40 @@ fn ending(run: &RunRecord) -> serde_json::Value {
 /// The frames are written into one end of a pipe and served from the other,
 /// which is where a delta callback that cannot wait meets a response body that
 /// is a stream of bytes.
+///
+/// `quiet` asks for the answer rather than the pieces: the stream is still the
+/// shape it arrives in, because a connection with nothing on it for a minute
+/// is one a webview gives up on, but the deltas are dropped and only the
+/// closing frame is read.
 fn stream_text(
     state: &ApiState,
     session: Arc<FsProjectStore>,
     request: GenerateRequest,
+    quiet: bool,
 ) -> Response {
     let (mut writer, reader) = tokio::io::duplex(STREAM_BUFFER_BYTES);
     let (deltas, mut received) = mpsc::unbounded_channel::<String>();
-    let sink = DeltaSink::new(std::sync::Arc::new(move |chunk: &str| {
-        // A send that fails means the writer has gone, which the task notices
-        // when it tries the next frame.
-        let _ = deltas.send(chunk.to_string());
-    }));
+    let sink = if quiet {
+        // The provider is still asked for a stream where its converter can
+        // give one: a long answer held whole at the far end is the one a
+        // gateway gives up on, and the pieces here have no reader anyway.
+        DeltaSink::unwatched()
+    } else {
+        DeltaSink::new(std::sync::Arc::new(move |chunk: &str| {
+            // A send that fails means the writer has gone, which the task
+            // notices when it tries the next frame.
+            let _ = deltas.send(chunk.to_string());
+        }))
+    };
     let cancel = Cancel::new();
     let watching = cancel.clone();
     let gateway = state.gateway.clone();
 
     tokio::spawn(async move {
         let mut pending = Box::pin(gateway.text(&session, request, &sink, &watching));
+        let mut ticker = tokio::time::interval(FOLLOW_INTERVAL);
+        // The first tick is immediate, and spent here so the loop's are spaced.
+        ticker.tick().await;
         let outcome = loop {
             tokio::select! {
                 Some(chunk) = received.recv() => {
@@ -2172,6 +2289,15 @@ fn stream_text(
                         .await
                         .is_err()
                     {
+                        watching.cancel();
+                        return;
+                    }
+                }
+                _ = ticker.tick() => {
+                    // A model deliberating before its first word says nothing
+                    // for as long as it likes, and the caller's connection has
+                    // to hear that it is still there.
+                    if writer.write_all(KEEP_ALIVE.as_bytes()).await.is_err() {
                         watching.cancel();
                         return;
                     }
@@ -2191,6 +2317,47 @@ fn stream_text(
                 return;
             }
         }
+        let answer = outcome.map(GenerateResponse::succeeded);
+        let _ = frame(&mut writer, "done", &closing(answer)).await;
+    });
+
+    (
+        [
+            (header::CONTENT_TYPE, "text/event-stream"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        Body::from_stream(ReaderStream::new(reader)),
+    )
+        .into_response()
+}
+
+/// A whole answer sent over an event stream.
+///
+/// The keep-alive is the whole of why it is a stream: an answer that is one
+/// document cannot open its connection until the document is whole, and a
+/// webview gives up on a request that has said nothing for a minute. Deltas
+/// have no meaning for a picture or a sound, so the stream carries none.
+fn quiet_answer<F>(answer: F) -> Response
+where
+    F: std::future::Future<Output = Result<GenerateResponse, ProviderError>> + Send + 'static,
+{
+    let (mut writer, reader) = tokio::io::duplex(STREAM_BUFFER_BYTES);
+    tokio::spawn(async move {
+        let mut pending = Box::pin(answer);
+        let mut ticker = tokio::time::interval(FOLLOW_INTERVAL);
+        // The first tick is immediate, and spent here so the loop's are spaced.
+        ticker.tick().await;
+        let outcome = loop {
+            tokio::select! {
+                answered = &mut pending => break answered,
+                _ = ticker.tick() => {
+                    if writer.write_all(KEEP_ALIVE.as_bytes()).await.is_err() {
+                        // The caller has gone; nothing to say it to.
+                        return;
+                    }
+                }
+            }
+        };
         let _ = frame(&mut writer, "done", &closing(outcome)).await;
     });
 
@@ -2207,25 +2374,28 @@ fn stream_text(
 /// The frame that ends a stream.
 ///
 /// A failure travels inside it rather than as a problem body: the status line
-/// went out with the first delta, and there is no second one to send.
-fn closing(outcome: Result<GenerateResult, ProviderError>) -> serde_json::Value {
+/// went out with the first frame, and there is no second one to send.
+fn closing<T: serde::Serialize>(outcome: Result<T, ProviderError>) -> serde_json::Value {
     match outcome {
-        Ok(result) => serde_json::to_value(GenerateResponse::succeeded(result)).unwrap_or_default(),
-        Err(error) => {
-            // The message and what is behind it travel together, exactly as in
-            // a problem body: the frame is the whole of what a client reads
-            // when the stream it is listening to turns out to be a failure.
-            let mut failure = serde_json::json!({
-                "code": error.code(),
-                "message": error.to_string(),
-                "retryable": error.retryable(),
-            });
-            if let Some(details) = error.details() {
-                failure["details"] = details;
-            }
-            serde_json::json!({ "error": failure })
-        }
+        Ok(answer) => serde_json::to_value(answer).unwrap_or_default(),
+        Err(error) => serde_json::json!({ "error": failure(&error) }),
     }
+}
+
+/// The failure a closing frame names, in the shape a problem body would have
+/// carried: the message and what is behind it travel together, because the
+/// frame is the whole of what a client reads when the stream it is listening
+/// to turns out to be a failure.
+fn failure(error: &ProviderError) -> serde_json::Value {
+    let mut failure = serde_json::json!({
+        "code": error.code(),
+        "message": error.to_string(),
+        "retryable": error.retryable(),
+    });
+    if let Some(details) = error.details() {
+        failure["details"] = details;
+    }
+    failure
 }
 
 /// One server-sent event. The body is compact JSON, which is what the format
