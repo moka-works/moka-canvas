@@ -1,31 +1,26 @@
--- MiniMax video generation: a job started, looked at until it is done, and
--- collected from the address the finished job's file is left at.
+-- MiniMax video generation, H3 (v2): a task started with multimodal content,
+-- looked at until it is done, and collected from the address the finished
+-- task names.
 --
 -- API reference:
---   https://platform.minimax.io/docs/api-reference/video-generation-t2v
---   https://platform.minimax.io/docs/api-reference/video-generation-i2v
---   https://platform.minimax.io/docs/api-reference/video-generation-fl2v
---   https://platform.minimax.io/docs/api-reference/video-generation-s2v
---   https://platform.minimax.io/docs/api-reference/video-generation-query
---   https://platform.minimax.io/docs/api-reference/video-generation-download
+--   https://platform.minimax.io/docs/api-reference/video-generation-v2-create
+--   https://platform.minimax.io/docs/api-reference/video-generation-v2-query
 --
--- The address a configuration carries starts a job; looking at one and
--- collecting its film are paths that live beside it rather than inside it, so
--- both are derived from the configured address — its own directory is where
--- the query and the file retrieval sit.
+-- The configured address starts a task. Looking at one is a path derived from
+-- it: `/v2/video_generation` becomes `/v2/query/video_generation/<id>`. A
+-- finished task names its film directly, so unlike the older v1 shape there
+-- is no file handle to exchange.
 --
--- A shot is the words with the pictures the ports labelled: one end opens the
--- shot, and a second closes it. A shot built on a subject rather than on a
--- first frame — the request asked for references — hands the pictures over as
--- a subject reference instead. This service reads frames or a subject, never
--- both at once, so a picture that can be neither an end nor a reference is not
--- carried at all: the words are what say what it showed.
+-- One prompt is required. Pictures are either the frames a shot lands on or
+-- references the shot is made from, never both: the service refuses the two
+-- in one ask, so a reference ask sends every picture as a reference and a
+-- frame ask drops pictures that are neither end.
 --
--- Each look is two asks where the platform's own job would need one: the
--- status names a file rather than an address, and the address is asked for
--- beside it.
+-- A model's own switches — a prompt-expansion mode, for instance — reach the
+-- script as ordinary parameters beside the ask's own, so they are read from
+-- `req.params` and never from a table of this protocol's making.
 
-local POLL_MS = 5000
+local POLL_MS = 10000
 
 local function trimmed(text)
   return (text:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -56,9 +51,44 @@ local function text_param(params, key)
   return nil
 end
 
--- The window a shot is drawn in, as this service names its tiers: a bare
--- number of lines is the tier with a trailing P, and a tier already spelled
--- is read in the case the service writes.
+-- The document an answer carries, or nil when it carries something else. An
+-- error page is not JSON, and saying that is truer than a decode failure.
+local function decode(text)
+  local ok, payload = pcall(json.decode, text)
+  if not ok or type(payload) ~= "table" then
+    return nil
+  end
+  return payload
+end
+
+-- The complaint this service carries in an OpenAI-style error document.
+local function refusal(body)
+  local payload = decode(body)
+  if payload == nil then
+    return nil
+  end
+  local error = payload.error
+  if type(error) ~= "table" then
+    return nil
+  end
+  local said = trimmed(tostring(error.message or ""))
+  if said == "" then
+    return nil
+  end
+  return said
+end
+
+local function failed(status, body)
+  local said = refusal(body)
+  if said ~= nil then
+    return said
+  end
+  return "HTTP " .. tostring(status) .. ": " .. tostring(body)
+end
+
+-- A resolution as this service names its tiers. The room speaks short edges
+-- in the app's own numbers, and 720 is the same picture here as the
+-- service's 768P.
 local function window_of(value)
   if type(value) ~= "string" then
     return nil
@@ -67,14 +97,19 @@ local function window_of(value)
   if word == "" then
     return nil
   end
-  if string.match(word, "^%d+$") then
-    return word .. "P"
+  if word == "480" or word == "480P" then
+    return "480P"
+  end
+  if word == "720" or word == "720P" or word == "768" or word == "768P" then
+    return "768P"
+  end
+  if word == "1080" or word == "1080P" or word == "2K" then
+    return "2K"
   end
   return word
 end
 
--- A handle as the text it travelled as. This service numbers its files, and a
--- number written into an address is the same handle as the text of it.
+-- A handle as the text it travelled as.
 local function handle_of(value)
   if type(value) == "number" then
     return string.format("%d", value)
@@ -85,47 +120,30 @@ local function handle_of(value)
   return nil
 end
 
--- The complaint this platform carries inside an answer: its endpoints report
--- a refusal as a success whose own status says otherwise.
-local function refusal(payload)
-  local response = payload.base_resp
-  if type(response) ~= "table" then
-    return nil
+-- The media, split by what it is. A reference ask may carry all three; a
+-- frame ask only reads the pictures.
+local function media_of(inputs)
+  local images, videos, audios = {}, {}, {}
+  for _, input in ipairs(inputs or {}) do
+    local mime = input.mime or ""
+    if mime:sub(1, 6) == "image/" then
+      table.insert(images, input)
+    elseif mime:sub(1, 6) == "video/" then
+      table.insert(videos, input)
+    elseif mime:sub(1, 6) == "audio/" then
+      table.insert(audios, input)
+    end
   end
-  local code = tonumber(response.status_code or 0) or 0
-  if code == 0 then
-    return nil
-  end
-  local said = trimmed(tostring(response.status_msg or ""))
-  if said == "" then
-    said = "the service refused the request (code " .. tostring(response.status_code) .. ")"
-  end
-  return said
+  return images, videos, audios
 end
 
--- The pictures a shot is built on: the ends the ports labelled, and the
--- pictures given without a role filling the ends left over — one opens the
--- shot, two open and close it. A request that asked for references is given
--- references and nothing else.
-local function framed(req, inputs, all)
-  local pictures = {}
-  for _, input in ipairs(inputs or {}) do
-    if (input.mime or ""):sub(1, 6) == "image/" then
-      table.insert(pictures, input)
-    end
-  end
-
-  if text_param(req.params, "mode") == "reference" then
-    local references = {}
-    for _, picture in ipairs(pictures) do
-      table.insert(references, picture)
-    end
-    return {references = references}
-  end
-
+-- The two frames a shot lands on: the ends the ports labelled, and pictures
+-- given without a role filling the ends left over. A last frame with no
+-- opening is not a shot any service can film.
+local function frames_of(images)
   local opening, closing = nil, nil
   local unlabelled = {}
-  for _, picture in ipairs(pictures) do
+  for _, picture in ipairs(images) do
     if picture.role == "firstFrame" and opening == nil then
       opening = picture
     elseif picture.role == "lastFrame" and closing == nil then
@@ -134,7 +152,6 @@ local function framed(req, inputs, all)
       table.insert(unlabelled, picture)
     end
   end
-
   local at = 1
   if opening == nil and unlabelled[at] ~= nil then
     opening = unlabelled[at]
@@ -143,39 +160,92 @@ local function framed(req, inputs, all)
   if closing == nil and unlabelled[at] ~= nil then
     closing = unlabelled[at]
   end
-  return {opening = opening, closing = closing}
+  return opening, closing
 end
 
 function build_task_request(call, req, inputs)
-  local framed_inputs = framed(req, inputs)
-  local body = {model = call.model}
-  if req.prompt and trimmed(req.prompt) ~= "" then
-    body.prompt = req.prompt
+  local prompt = req.prompt
+  if type(prompt) ~= "string" or trimmed(prompt) == "" then
+    return {error = "MiniMax needs a prompt describing the clip"}
   end
-  if framed_inputs.references ~= nil then
-    local pictures = {}
-    for _, picture in ipairs(framed_inputs.references) do
-      table.insert(pictures, picture.data_url)
+  local seconds = integer_param(req.params, "seconds") or 5
+  if seconds < 4 or seconds > 15 then
+    return {
+      error = string.format(
+        "MiniMax-H3 films clips of 4 to 15 seconds; this ask is %d seconds",
+        seconds
+      ),
+    }
+  end
+
+  local images, videos, audios = media_of(inputs)
+  local has_media = #images + #videos + #audios > 0
+  local references = has_media
+    and (text_param(req.params, "mode") == "reference" or #videos > 0 or #audios > 0)
+
+  local content = {{type = "text", text = trimmed(prompt)}}
+  local ratio
+  if references then
+    for _, picture in ipairs(images) do
+      table.insert(content, {
+        type = "image_url",
+        image_url = {url = picture.data_url},
+        role = "reference_image",
+      })
     end
-    if #pictures > 0 then
-      body.subject_reference = {{type = "character", image = pictures}}
+    for _, film in ipairs(videos) do
+      table.insert(content, {
+        type = "video_url",
+        video_url = {url = film.data_url},
+        role = "reference_video",
+      })
     end
+    for _, sound in ipairs(audios) do
+      table.insert(content, {
+        type = "audio_url",
+        audio_url = {url = sound.data_url},
+        role = "reference_audio",
+      })
+    end
+    ratio = text_param(req.params, "ratio") or "adaptive"
   else
-    if framed_inputs.opening ~= nil then
-      body.first_frame_image = framed_inputs.opening.data_url
+    local opening, closing = frames_of(images)
+    if closing ~= nil and opening == nil then
+      return {error = "a last frame needs the first frame beside it"}
     end
-    if framed_inputs.closing ~= nil then
-      body.last_frame_image = framed_inputs.closing.data_url
+    if opening ~= nil then
+      table.insert(content, {
+        type = "image_url",
+        image_url = {url = opening.data_url},
+        role = "first_frame",
+      })
+    end
+    if closing ~= nil then
+      table.insert(content, {
+        type = "image_url",
+        image_url = {url = closing.data_url},
+        role = "last_frame",
+      })
+    end
+    if opening ~= nil then
+      -- The service reads the ratio off the picture and ignores another.
+      ratio = "adaptive"
+    else
+      -- Text-to-video needs a concrete ratio; adaptive is not one.
+      ratio = text_param(req.params, "ratio")
+      if ratio == nil or ratio:lower() == "adaptive" then
+        ratio = "16:9"
+      end
     end
   end
-  local seconds = integer_param(req.params, "seconds")
-  if seconds ~= nil then
-    body.duration = seconds
-  end
-  local resolution = window_of(req.params.resolution)
-  if resolution ~= nil then
-    body.resolution = resolution
-  end
+
+  local body = {
+    model = call.model,
+    content = content,
+    resolution = window_of(req.params.resolution) or "768P",
+    duration = seconds,
+    ratio = ratio,
+  }
 
   return {
     method = "POST",
@@ -186,10 +256,12 @@ function build_task_request(call, req, inputs)
 end
 
 function parse_task_response(status, headers, body)
-  local payload = json.decode(body)
-  local refused = refusal(payload)
-  if refused ~= nil then
-    return {error = refused}
+  if status < 200 or status >= 300 then
+    return {error = failed(status, body)}
+  end
+  local payload = decode(body)
+  if payload == nil then
+    return {error = "the service answered with a document that is not JSON"}
   end
   local handle = handle_of(payload.task_id)
   if handle == nil then
@@ -207,65 +279,46 @@ function build_poll_request(call, task)
     state = {base = base},
     request = {
       method = "GET",
-      url = url.set_query(url.append(base, "query/video_generation"), "task_id", task.reference),
+      url = url.append(base, "query/video_generation/" .. task.reference),
       headers = {},
     },
   }
 end
 
 function parse_poll_response(status, headers, body, state)
-  local payload = json.decode(body)
-  local refused = refusal(payload)
-  if refused ~= nil then
-    return {status = "failed", error = refused}
+  if status < 200 or status >= 300 then
+    return {status = "failed", error = failed(status, body)}
   end
-  local state_word = tostring(payload.status or ""):lower()
-  if state_word == "success" then
-    local handle = handle_of(payload.file_id)
-    if handle == nil then
-      return {status = "failed", error = "the job succeeded without a film"}
+  local payload = decode(body)
+  if payload == nil then
+    return {status = "failed", error = "the service answered with a document that is not JSON"}
+  end
+  -- The default response shape nests the task; the flat shape does not.
+  local task = payload.task or payload
+  local state_word = tostring(task.status or ""):lower()
+  if state_word == "succeeded" then
+    local content = task.content or {}
+    local address = content.url
+    if type(address) ~= "string" or trimmed(address) == "" then
+      return {status = "failed", error = "the job succeeded without naming a film"}
     end
-    -- The film sits behind the file's own name, and only the address that
-    -- knows the file can name where it was left: one more ask, and one more
-    -- reader.
     return {
-      next = {
-        request = {
-          method = "GET",
-          url = url.set_query(url.append((state or {}).base, "files/retrieve"), "file_id", handle),
-          headers = {},
-        },
-        handler = "parse_file_response",
-      },
+      status = "succeeded",
+      result = {items = {{url = address, mime = "video/mp4"}}},
     }
   end
-  if state_word == "fail" then
-    local explanation = trimmed(tostring((payload.base_resp or {}).status_msg or ""))
-    if explanation == "" then
-      explanation = "the job ended as " .. tostring(payload.status)
+  if state_word == "failed" then
+    local error = task.error or {}
+    local said = trimmed(tostring(error.message or ""))
+    if said == "" then
+      said = "the job failed (code " .. tostring(error.code or "unknown") .. ")"
     end
-    return {status = "failed", error = explanation}
+    return {status = "failed", error = said}
   end
-  -- Preparing, queued, processing, or a status this script has not met: the
-  -- job is not finished, and saying anything else would end it early.
+  if state_word == "cancelled" then
+    return {status = "failed", error = "the job was cancelled"}
+  end
+  -- Queued, running, or a status this script has not met: the job is not
+  -- finished, and saying anything else would end it early.
   return {status = "pending", poll_interval_ms = POLL_MS}
-end
-
-function parse_file_response(status, headers, body)
-  local payload = json.decode(body)
-  local refused = refusal(payload)
-  if refused ~= nil then
-    return {error = refused}
-  end
-  local file = payload.file or {}
-  local address = file.download_url
-  if type(address) ~= "string" or trimmed(address) == "" then
-    return {status = "failed", error = "the finished job named no film to collect"}
-  end
-  -- An address of the platform's own: the host fetches it, and the credential
-  -- follows the address rather than the script.
-  return {
-    status = "succeeded",
-    result = {items = {{url = address, mime = "video/mp4"}}},
-  }
 end

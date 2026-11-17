@@ -1,7 +1,7 @@
 {
   "displayName": "MiniMax · Video Generation (Hailuo)",
   "labels": { "zh": "MiniMax · 视频生成（海螺）" },
-  "urlExample": "https://api.minimaxi.com/v1/video_generation",
+  "urlExample": "https://api.minimax.io/v2/video_generation",
   "script": "minimax-video.lua",
   "order": 50,
   "promptRewrite": {
@@ -11,7 +11,7 @@
       "dialogueTag": "d",
       "negativeBait": true
     },
-    "version": 1
+    "version": 2
   },
-  "version": 2
+  "version": 3
 }

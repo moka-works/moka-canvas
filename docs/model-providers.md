@@ -93,7 +93,7 @@
 | 智谱 GLM      | `zhipuVideo`      | `Authorization: Bearer`；结果在 `/async-result/{id}`                                        |
 | 阿里云百炼    | `bailianVideo`    | —                                                                                           |
 | 火山方舟      | `volcengineVideo` | —                                                                                           |
-| MiniMax       | `minimaxVideo`    | —                                                                                           |
+| MiniMax       | `minimaxVideo`    | H3 v2：`/v2/video_generation` + `content[]`，结果直接从查询返回，无文件中转                 |
 
 ### 提示词契约
 

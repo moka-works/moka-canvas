@@ -64,11 +64,13 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 ```
 
 When the clip is built from reference pictures rather than frames, number them
-in the order the material gives them — `<Picture 1>`, `<Picture 2>`, … — and
-say what each one shows. Refer to a person or thing by the picture that carries
-it, and keep the appearance and clothing that picture shows.
+in the order the material gives them and refer to each as `reference image 1`,
+`reference image 2`, … and say what each one shows. Videos are
+`reference video 1`, … and audio is `reference audio 1`, …; images, videos, and
+audio are counted separately. Refer to a person or thing by the reference that
+carries it, and keep the appearance and clothing it shows.
 
-Refer to an input picture as `<Picture N>` in the narration, and keep the
+Refer to a frame given as input as `<Picture N>` in the narration, and keep the
 person and place as the picture shows them.
 
 ## What must not change

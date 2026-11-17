@@ -405,6 +405,74 @@ mod tests {
     }
 
     #[test]
+    fn the_minimax_video_script_writes_the_h3_content_array() {
+        let rt = test_runtime();
+        let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");
+        let video = rt
+            .load(&scripts.join("models/video/minimaxVideo/minimax-video.lua"))
+            .unwrap();
+        let ask = |params: serde_json::Value| {
+            let built = rt
+                .call_json_value(
+                    &video,
+                    "build_task_request",
+                    vec![
+                        serde_json::json!({
+                            "url": "https://provider.test/v2/video_generation",
+                            "model": "MiniMax-H3",
+                        }),
+                        serde_json::json!({"prompt": "a lantern drifts", "params": params}),
+                        serde_json::json!([]),
+                    ],
+                )
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(built["body"].as_str().unwrap())
+                .expect("a JSON body")
+        };
+
+        // Text-to-video is one text item, and it must name a concrete frame
+        // shape: the service refuses adaptive when no picture sets it.
+        let text = ask(serde_json::json!({
+            "seconds": 5, "ratio": "9:16", "resolution": "720",
+        }));
+        assert_eq!(
+            text["content"],
+            serde_json::json!([{"type": "text", "text": "a lantern drifts"}])
+        );
+        assert_eq!(text["ratio"], "9:16");
+        assert_eq!(text["resolution"], "768P");
+        assert_eq!(text["duration"], 5);
+
+        assert_eq!(
+            ask(serde_json::json!({"ratio": "adaptive"}))["ratio"],
+            "16:9"
+        );
+
+        // A length the model cannot film is refused here, with the range,
+        // rather than sent to be refused after an upload.
+        let short = rt
+            .call_json_value(
+                &video,
+                "build_task_request",
+                vec![
+                    serde_json::json!({
+                        "url": "https://provider.test/v2/video_generation",
+                        "model": "MiniMax-H3",
+                    }),
+                    serde_json::json!({"prompt": "a lantern drifts", "params": {"seconds": 3}}),
+                    serde_json::json!([]),
+                ],
+            )
+            .unwrap();
+        assert!(
+            short["error"]
+                .as_str()
+                .is_some_and(|said| said.contains("4 to 15 seconds")),
+            "{short}"
+        );
+    }
+
+    #[test]
     fn the_bailian_scripts_build_their_requests() {
         let rt = test_runtime();
         let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("converter-scripts");

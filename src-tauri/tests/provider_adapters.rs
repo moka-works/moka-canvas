@@ -3575,7 +3575,7 @@ fn minimax_channel(base_url: &str, model_id: &str, capability: Capability) -> Mo
         Capability::Image => ("minimaxImage", "/v1/image_generation"),
         Capability::Speech => ("minimaxSpeech", "/v1/t2a_v2"),
         Capability::Music => ("minimaxMusic", "/v1/music_generation"),
-        Capability::Video => ("minimaxVideo", "/v1/video_generation"),
+        Capability::Video => ("minimaxVideo", "/v2/video_generation"),
         Capability::Asr => ("minimaxAsr", "/v1/speech_to_text"),
     };
     at(id, base_url, model_id, capability, path)
@@ -3996,75 +3996,49 @@ async fn a_minimax_shot_is_started_looked_at_and_collected() {
     let recorded = Recorded::default();
     let started = recorded.clone();
     let polled = recorded.clone();
-    let retrieved = recorded.clone();
     let collected = recorded.clone();
     let looked_at = Arc::new(Mutex::new(Vec::new()));
     let polls_seen = Arc::clone(&looked_at);
-    let asked_about = Arc::new(Mutex::new(Vec::new()));
-    let files_seen = Arc::clone(&asked_about);
     let base_url = serve(
         Router::new()
             .route(
-                "/v1/video_generation",
+                "/v2/video_generation",
                 post(move |headers: HeaderMap, body: Bytes| {
                     let recorded = started.clone();
                     async move {
                         recorded.note("start", &headers, None);
                         recorded.note_body(&body);
-                        // A handle this service numbers rather than spells.
-                        Json(json!({
-                            "task_id": 176843862716480_i64,
-                            "base_resp": { "status_code": 0, "status_msg": "success" },
-                        }))
+                        Json(json!({ "task_id": "176843862716480" }))
                     }
                 }),
             )
             .route(
-                "/v1/query/video_generation",
-                get(move |RawQuery(query): RawQuery, headers: HeaderMap| {
+                "/v2/query/video_generation/{task_id}",
+                get(move |axum::extract::Path(task_id): axum::extract::Path<String>,
+                     headers: HeaderMap| {
                     let recorded = polled.clone();
                     let looked_at = Arc::clone(&polls_seen);
                     async move {
                         recorded.note("poll", &headers, None);
-                        looked_at
-                            .lock()
-                            .expect("not poisoned")
-                            .push(query.unwrap_or_default());
+                        looked_at.lock().expect("not poisoned").push(task_id);
                         // The first look finds work in progress; the second
-                        // finds the job finished and naming its file.
+                        // finds the job finished and naming its film.
                         if recorded.next_poll() == 0 {
                             return Json(json!({
-                                "task_id": "176843862716480",
-                                "status": "Processing",
-                                "base_resp": { "status_code": 0, "status_msg": "success" },
+                                "task": {
+                                    "id": "176843862716480",
+                                    "status": "running",
+                                },
                             }));
                         }
                         Json(json!({
-                            "task_id": "176843862716480",
-                            "status": "Success",
-                            "file_id": 987654321_i64,
-                            "video_width": 1280,
-                            "video_height": 720,
-                            "base_resp": { "status_code": 0, "status_msg": "success" },
-                        }))
-                    }
-                }),
-            )
-            .route(
-                "/v1/files/retrieve",
-                get(move |RawQuery(query): RawQuery, headers: HeaderMap| {
-                    let recorded = retrieved.clone();
-                    let asked_about = Arc::clone(&files_seen);
-                    async move {
-                        recorded.note("retrieve", &headers, None);
-                        asked_about
-                            .lock()
-                            .expect("not poisoned")
-                            .push(query.unwrap_or_default());
-                        let address = format!("http://{}/download/film.mp4", reached_on(&headers));
-                        Json(json!({
-                            "file": { "file_id": 987654321_i64, "download_url": address },
-                            "base_resp": { "status_code": 0, "status_msg": "success" },
+                            "task": {
+                                "id": "176843862716480",
+                                "status": "succeeded",
+                                "content": {
+                                    "url": format!("http://{}/download/film.mp4", reached_on(&headers)),
+                                },
+                            },
                         }))
                     }
                 }),
@@ -4085,7 +4059,7 @@ async fn a_minimax_shot_is_started_looked_at_and_collected() {
     )
     .await;
 
-    let call = minimax_channel(&base_url, "MiniMax-Hailuo-2.3", Capability::Video);
+    let call = minimax_channel(&base_url, "MiniMax-H3", Capability::Video);
     let cancel = Cancel::new();
     let inputs = [
         reference("opening", InputRole::FirstFrame),
@@ -4102,19 +4076,32 @@ async fn a_minimax_shot_is_started_looked_at_and_collected() {
         .await
         .expect("the job starts");
 
-    // A handle this service numbers is read as the text of it, and the ends
-    // the ports labelled are the frames the shot lands on.
+    // The prompt and the media travel in one content array, and the ends the
+    // ports labelled are the frames the shot lands on. The service reads 720
+    // as its own 768P tier and takes adaptive whenever a picture sets the
+    // ratio.
     assert_eq!(task.reference, "176843862716480");
     assert_eq!(task.protocol, Protocol::new("minimaxVideo"));
     assert_eq!(
         recorded.body(0),
         json!({
-            "model": "MiniMax-Hailuo-2.3",
-            "prompt": "a lantern drifts",
-            "first_frame_image": inputs[0].data_url(),
-            "last_frame_image": inputs[1].data_url(),
+            "model": "MiniMax-H3",
+            "content": [
+                { "type": "text", "text": "a lantern drifts" },
+                {
+                    "type": "image_url",
+                    "image_url": { "url": inputs[0].data_url() },
+                    "role": "first_frame",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": { "url": inputs[1].data_url() },
+                    "role": "last_frame",
+                },
+            ],
+            "resolution": "768P",
             "duration": 6,
-            "resolution": "720P",
+            "ratio": "adaptive",
         })
     );
 
@@ -4138,19 +4125,11 @@ async fn a_minimax_shot_is_started_looked_at_and_collected() {
         }
         other => panic!("expected the finished shot, got {other:?}"),
     }
-    assert_eq!(
-        recorded.asked(),
-        ["start", "poll", "poll", "retrieve", "film"]
-    );
-    // Looking at a job asks the query by the handle it was started with, and
-    // the film is asked for by the file the finished job named.
+    assert_eq!(recorded.asked(), ["start", "poll", "poll", "film"]);
+    // Looking at a job asks the query by the handle it was started with.
     assert_eq!(
         looked_at.lock().expect("not poisoned").as_slice(),
-        ["task_id=176843862716480", "task_id=176843862716480"]
-    );
-    assert_eq!(
-        asked_about.lock().expect("not poisoned").as_slice(),
-        ["file_id=987654321"]
+        ["176843862716480", "176843862716480"]
     );
 }
 
@@ -4159,19 +4138,19 @@ async fn a_minimax_shot_built_on_a_subject_asks_for_its_pictures_as_references()
     let recorded = Recorded::default();
     let answering = recorded.clone();
     let base_url = serve(Router::new().route(
-        "/v1/video_generation",
+        "/v2/video_generation",
         post(move |headers: HeaderMap, body: Bytes| {
             let recorded = answering.clone();
             async move {
                 recorded.note("start", &headers, None);
                 recorded.note_body(&body);
-                Json(json!({ "task_id": "s2v-1", "base_resp": { "status_code": 0 } }))
+                Json(json!({ "task_id": "s2v-1" }))
             }
         }),
     ))
     .await;
 
-    let call = minimax_channel(&base_url, "S2V-01", Capability::Video);
+    let call = minimax_channel(&base_url, "MiniMax-H3", Capability::Video);
     let inputs = [
         reference("hero", InputRole::Reference),
         reference("half", InputRole::Reference),
@@ -4191,43 +4170,54 @@ async fn a_minimax_shot_built_on_a_subject_asks_for_its_pictures_as_references()
         .await
         .expect("the job starts");
 
-    // A shot built on a subject reads its pictures as one character this
-    // service keeps, and asks for no frames beside them: it reads one or the
-    // other, never both.
+    // A shot built on a subject reads its pictures as references and asks
+    // for no frames beside them: the service takes one or the other, never
+    // both.
     let body = recorded.body(0);
     assert_eq!(
-        body["subject_reference"],
-        json!([{
-            "type": "character",
-            "image": [inputs[0].data_url(), inputs[1].data_url()],
-        }]),
+        body["content"],
+        json!([
+            { "type": "text", "text": "she turns to the camera" },
+            {
+                "type": "image_url",
+                "image_url": { "url": inputs[0].data_url() },
+                "role": "reference_image",
+            },
+            {
+                "type": "image_url",
+                "image_url": { "url": inputs[1].data_url() },
+                "role": "reference_image",
+            },
+        ]),
         "{body}"
     );
-    assert!(body.get("first_frame_image").is_none(), "{body}");
-    assert!(body.get("last_frame_image").is_none(), "{body}");
+    assert_eq!(body["ratio"], "adaptive");
+    assert_eq!(body["duration"], 5);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_minimax_job_that_failed_reports_the_platforms_explanation() {
     let base_url = serve(Router::new().route(
-        "/v1/query/video_generation",
+        "/v2/query/video_generation/{task_id}",
         get(|| async {
             Json(json!({
-                "task_id": "job-2",
-                "status": "Fail",
-                "base_resp": { "status_code": 1026, "status_msg": "the prompt was refused" },
+                "task": {
+                    "id": "job-2",
+                    "status": "failed",
+                    "error": { "code": "1026", "message": "the prompt was refused" },
+                },
             }))
         }),
     ))
     .await;
 
-    let call = minimax_channel(&base_url, "MiniMax-Hailuo-2.3", Capability::Video);
+    let call = minimax_channel(&base_url, "MiniMax-H3", Capability::Video);
     let task = moka_canvas::generate::AsyncTask {
         id: "task-4".into(),
         reference: "job-2".into(),
         protocol: Protocol::new("minimaxVideo"),
         capability: Capability::Video,
-        model: "MiniMax-Hailuo-2.3".into(),
+        model: "MiniMax-H3".into(),
         scene: None,
         created_at: "2026-01-01T00:00:00Z".into(),
         answer: None,
