@@ -95,6 +95,7 @@ export function StorySlotView({
   onRemove,
   note,
   actions,
+  promptAction,
   onPickFromLibrary,
   onUpload,
   sourcesInMenu = false,
@@ -115,6 +116,8 @@ export function StorySlotView({
   note?: string;
   /** The card's own controls, in the row under the picture. */
   actions?: ReactNode;
+  /** A control the place offers whether or not it holds a picture yet. */
+  promptAction?: ReactNode;
   /** Opens the project's own pictures, to keep one here. */
   onPickFromLibrary?: () => void;
   /** Files a picture from this computer on the shelf and keeps it here. */
@@ -232,10 +235,15 @@ export function StorySlotView({
             />
           )}
           {actions}
+          {promptAction}
           {note !== undefined && (
             <span className="story-hint">{note}</span>
           )}{" "}
         </div>
+      )}
+
+      {take === undefined && promptAction !== undefined && (
+        <div className="story-slot-actions">{promptAction}</div>
       )}
 
       {picking && (

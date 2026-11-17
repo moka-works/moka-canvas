@@ -163,6 +163,43 @@ describe("a picture's prompt written by hand", () => {
       screen.getByTestId("story-image-prompt-moved").textContent,
     ).toContain("The board has changed");
   });
+
+  it("keeps hand-written words for an element's picture too", () => {
+    useProjectStore.getState().hydrate({
+      moka: buildStoryMokaFile(),
+      root: "/tmp/moka-image-prompt-element-test",
+      selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
+    });
+    const onClose = vi.fn();
+    render(
+      <ImagePromptDialog
+        onClose={onClose}
+        place={{
+          kind: "element",
+          elementId: ids.hero,
+          view: "main",
+          name: "Keeper · main picture",
+        }}
+        story={useProjectStore.getState().moka!.stories![0]!}
+      />,
+    );
+    const field = screen.getByTestId(
+      "story-image-prompt-text",
+    ) as HTMLTextAreaElement;
+    expect(field.value.length).toBeGreaterThan(0);
+    fireEvent.change(field, {
+      target: { value: "A portrait of the keeper." },
+    });
+    fireEvent.click(screen.getByTestId("story-image-prompt-save"));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(
+      useProjectStore.getState().moka!.stories![0]!.imagePromptOverrides?.[
+        `element:main:${ids.hero}`
+      ]?.prompt,
+    ).toBe("A portrait of the keeper.");
+  });
 });
 
 describe("a picture's prompt before it is drawn", () => {

@@ -300,27 +300,27 @@ export const ElementCard = memo(function ElementCard({
       <div className="story-element-pictures">
         <StorySlotView
           actions={
-            <>
-              <button
-                className="link"
-                data-testid="story-slot-edit-main"
-                onClick={() => setEditing("main")}
-                type="button"
-              >
-                {t("story:panels.edit")}
-              </button>
-              <button
-                className="link"
-                data-testid="story-slot-image-prompt-main"
-                onClick={() => setEditingImagePrompt("main")}
-                type="button"
-              >
-                {t("story:storyboard.imagePromptEdit")}
-                {mainPromptEdited
-                  ? ` · ${t("story:storyboard.imagePromptEdited")}`
-                  : ""}
-              </button>
-            </>
+            <button
+              className="link"
+              data-testid="story-slot-edit-main"
+              onClick={() => setEditing("main")}
+              type="button"
+            >
+              {t("story:panels.edit")}
+            </button>
+          }
+          promptAction={
+            <button
+              className="link"
+              data-testid="story-slot-image-prompt-main"
+              onClick={() => setEditingImagePrompt("main")}
+              type="button"
+            >
+              {t("story:storyboard.imagePromptEdit")}
+              {mainPromptEdited
+                ? ` · ${t("story:storyboard.imagePromptEdited")}`
+                : ""}
+            </button>
           }
           busy={busyMain}
           canGenerate
@@ -345,33 +345,33 @@ export const ElementCard = memo(function ElementCard({
         {character && (
           <StorySlotView
             actions={
-              <>
-                <button
-                  className="link"
-                  data-testid="story-slot-edit-turnaround"
-                  onClick={() => setEditing("turnaround")}
-                  type="button"
-                >
-                  {t("story:panels.edit")}
-                </button>
-                <button
-                  className="link"
-                  data-testid="story-slot-image-prompt-turnaround"
-                  disabled={main === undefined}
-                  onClick={() => setEditingImagePrompt("turnaround")}
-                  title={
-                    main === undefined
-                      ? t("story:elements.needMainFirst")
-                      : undefined
-                  }
-                  type="button"
-                >
-                  {t("story:storyboard.imagePromptEdit")}
-                  {turnaroundPromptEdited
-                    ? ` · ${t("story:storyboard.imagePromptEdited")}`
-                    : ""}
-                </button>
-              </>
+              <button
+                className="link"
+                data-testid="story-slot-edit-turnaround"
+                onClick={() => setEditing("turnaround")}
+                type="button"
+              >
+                {t("story:panels.edit")}
+              </button>
+            }
+            promptAction={
+              <button
+                className="link"
+                data-testid="story-slot-image-prompt-turnaround"
+                disabled={main === undefined}
+                onClick={() => setEditingImagePrompt("turnaround")}
+                title={
+                  main === undefined
+                    ? t("story:elements.needMainFirst")
+                    : undefined
+                }
+                type="button"
+              >
+                {t("story:storyboard.imagePromptEdit")}
+                {turnaroundPromptEdited
+                  ? ` · ${t("story:storyboard.imagePromptEdited")}`
+                  : ""}
+              </button>
             }
             busy={busyTurnaround}
             canGenerate={main !== undefined}

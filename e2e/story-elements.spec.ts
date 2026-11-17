@@ -11,6 +11,7 @@ import {
   openStoryRoom,
   projectHome,
 } from "./helpers";
+import { SENTENCE, providerCalls } from "./mock-provider";
 
 /**
  * The third step: who and what the telling is made of.
@@ -393,6 +394,66 @@ test("the cast a reading left, and what the reader said since, outlast the room"
         { name: "Last carriage", described: true, drawn: false },
         { name: "Waiting room", described: true, drawn: false },
       ]);
+  } finally {
+    forgetHome(home);
+  }
+});
+
+/**
+ * An element's picture, rewritten for the model's contract before it is drawn.
+ *
+ * The card's own picture dialog shows the whole ask, the text model may be
+ * asked to rewrite it, and the reader's press draws with the words shown.
+ */
+test("an element's picture prompt is rewritten before it is drawn", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const home = projectHome("story-element-prompt-rewrite");
+  await forgetProjects();
+  await configureWordsAndPictures();
+  try {
+    await page.goto("/");
+    await createProject(page, join(home, "project"), "Story Element Prompt");
+    await openStoryRoom(page);
+    await newStory(page, "Rain at Night");
+    await page
+      .getByTestId("story-idea-input")
+      .fill("Eleven at night, and the last train stops where it should not.");
+    await page.getByTestId("story-idea-duration-3").click();
+    await page.getByTestId("story-confirm-idea").click();
+    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
+    await page.getByTestId("story-outline-start").click();
+    await expect(page.locator(".story-chapter")).toHaveCount(3, {
+      timeout: 30_000,
+    });
+    await page.getByTestId("story-confirm-outline").click();
+    await page.getByTestId("story-step-elements").click();
+    await page.getByTestId("story-elements-empty-recognise").click();
+    await expect(page.locator(".story-element")).toHaveCount(4, {
+      timeout: 30_000,
+    });
+
+    const keeper = card(page, "character", "Keeper");
+    await keeper.getByTestId("story-slot-image-prompt-main").click();
+    const dialog = page.getByTestId("story-image-prompt-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("story-image-prompt-rewrite").click();
+    await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
+      SENTENCE,
+      { timeout: 30_000 },
+    );
+
+    await dialog.getByTestId("story-image-prompt-draw").click();
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path.startsWith("/v1/images/"))
+            .at(-1)?.prompt,
+        { timeout: 60_000 },
+      )
+      .toBe(SENTENCE);
   } finally {
     forgetHome(home);
   }
