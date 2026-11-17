@@ -84,6 +84,15 @@ function serving(): void {
             headers: { "Content-Type": "application/json" },
           }),
         );
+      // A generation that is wanted whole still travels a stream, so the
+      // local connection can say it is still there while the model works.
+      const sse = (payload: unknown) =>
+        Promise.resolve(
+          new Response(`event: done\ndata: ${JSON.stringify(payload)}\n\n`, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        );
       if (url.includes("/story/jobs")) {
         // A batch's answer being written down as read: the record as it stands
         // with the room's note on it, which is what the server answers with.
@@ -178,7 +187,7 @@ function serving(): void {
         speechAsks.push(body);
         // A try-out writes nothing into the project, so the answer carries the
         // sound itself rather than naming a file on the shelf.
-        return json({
+        return sse({
           status: "succeeded",
           outputs: [
             {

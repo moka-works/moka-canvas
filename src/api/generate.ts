@@ -131,30 +131,32 @@ function parseFrame(frame: string): { event: string; data: string } | null {
 }
 
 /**
- * A written answer sent as it arrives.
+ * One answer over an event stream, read frame by frame.
  *
- * The caller sees each piece through `onDelta` and gets the whole answer back
- * at the end, because what is stored is the aggregate rather than the pieces
- * it was displayed as. A stream always answers 200 once it has opened, so a
- * failure arrives in the closing frame and is raised here as the same error
- * every other call raises.
+ * The caller sees each piece through `onDelta` when the route sends pieces,
+ * and gets the whole answer back at the end, because what is stored is the
+ * aggregate rather than the pieces it was displayed as. A stream always
+ * answers 200 once it has opened, so a failure arrives in the closing frame
+ * and is raised here as the same error every other call raises.
+ *
+ * A whole answer can travel this way too, quietly: the route sends keep-alives
+ * while a model works and only the closing frame carries anything, which is
+ * what keeps a webview from giving up on a source that has said nothing for a
+ * minute.
  */
-async function streamText(
+async function streamAnswer(
+  pathname: string,
   request: GenerateRequest,
   onDelta?: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<GenerateResponse> {
   let response: Response;
   try {
-    response = await fetch(path("text"), {
+    response = await fetch(pathname, {
       method: "POST",
       signal,
       headers: { "Content-Type": "application/json", ...projectHeaders() },
-      body: JSON.stringify({
-        ...request,
-        capability: "text",
-        params: { ...request.params, stream: true },
-      }),
+      body: JSON.stringify(request),
     });
   } catch (error) {
     if ((error as Error).name === "AbortError") throw error;
@@ -172,6 +174,9 @@ async function streamText(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // Where the last search stopped. An answer that arrives as one large frame
+  // must not be scanned from the start once more for every chunk.
+  let scanned = 0;
   let closing: GenerateResponse | null = null;
 
   for (;;) {
@@ -179,10 +184,11 @@ async function streamText(
     if (chunk.done) break;
     buffer += decoder.decode(chunk.value, { stream: true });
 
-    let boundary = buffer.indexOf("\n\n");
+    let boundary = buffer.indexOf("\n\n", scanned);
     while (boundary >= 0) {
       const frame = parseFrame(buffer.slice(0, boundary));
       buffer = buffer.slice(boundary + 2);
+      scanned = 0;
       boundary = buffer.indexOf("\n\n");
       if (!frame) continue;
 
@@ -205,6 +211,7 @@ async function streamText(
         closing = done;
       }
     }
+    scanned = Math.max(0, buffer.length - 3);
   }
 
   if (!closing) {
@@ -213,13 +220,25 @@ async function streamText(
   return closing;
 }
 
+/**
+ * A route whose answer is wanted whole, carried over a stream so the local
+ * connection can say it is still there while the model works.
+ */
+function quietPath(capability: Capability): string {
+  return `${path(capability)}?quiet=true`;
+}
+
 export const generateApi = {
+  /**
+   * One written answer, wanted whole.
+   *
+   * It travels as a quiet stream rather than one document: the local
+   * connection says it is still there while the model works, which a document
+   * cannot do until it is complete, and a webview gives up on a source that
+   * has said nothing for a minute.
+   */
   text(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("text"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("text"), request, undefined, signal);
   },
 
   textStream(
@@ -227,40 +246,33 @@ export const generateApi = {
     onDelta?: (text: string) => void,
     signal?: AbortSignal,
   ) {
-    return streamText(request, onDelta, signal);
+    return streamAnswer(
+      path("text"),
+      {
+        ...request,
+        capability: "text",
+        params: { ...request.params, stream: true },
+      },
+      onDelta,
+      signal,
+    );
   },
 
   image(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("image"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("image"), request, undefined, signal);
   },
 
   speech(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("speech"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("speech"), request, undefined, signal);
   },
 
   music(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("music"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("music"), request, undefined, signal);
   },
 
   /** Starts a shot rather than waiting it out; poll the handle it returns. */
   video(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("video"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("video"), request, undefined, signal);
   },
 
   /**
@@ -271,11 +283,7 @@ export const generateApi = {
    * transcript, in `text`.
    */
   asr(request: GenerateRequest, signal?: AbortSignal) {
-    return http.request<GenerateResponse>(path("asr"), {
-      method: "POST",
-      body: request,
-      signal,
-    });
+    return streamAnswer(quietPath("asr"), request, undefined, signal);
   },
 
   pollTask(id: string, signal?: AbortSignal) {

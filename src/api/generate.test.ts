@@ -151,9 +151,31 @@ describe("generation client", () => {
     ).rejects.toThrow(/ended before the answer/);
   });
 
-  it("sends the other capabilities as one document each", async () => {
-    const answer = { status: "succeeded", outputs: [] };
-    stub(() => json(answer));
+  it("asks for a whole written answer over a quiet stream", async () => {
+    // The connection has to survive a model that thinks for a while, which a
+    // single JSON document cannot do: nothing travels until the end.
+    stub(() =>
+      stream([
+        ": keep-alive\n\n",
+        'event: done\ndata: {"status":"succeeded","text":"a lantern","outputs":[]}\n\n',
+      ]),
+    );
+
+    const answer = await generateApi.text({
+      capability: "text",
+      prompt: "describe a lantern",
+    });
+
+    expect(sent[0].url).toBe("/api/v1/generate/text?quiet=true");
+    expect(sent[0].body?.params).toBeUndefined();
+    expect(answer.status).toBe("succeeded");
+    expect(answer.text).toBe("a lantern");
+  });
+
+  it("asks for the other capabilities over a quiet stream", async () => {
+    stub(() =>
+      stream(['event: done\ndata: {"status":"succeeded","outputs":[]}\n\n']),
+    );
 
     await generateApi.image({ capability: "image", prompt: "a red cube" });
     await generateApi.speech({
@@ -164,10 +186,10 @@ describe("generation client", () => {
     await generateApi.video({ capability: "video", prompt: "a slow pan" });
 
     expect(sent.map((call) => call.url)).toEqual([
-      "/api/v1/generate/image",
-      "/api/v1/generate/speech",
-      "/api/v1/generate/music",
-      "/api/v1/generate/video",
+      "/api/v1/generate/image?quiet=true",
+      "/api/v1/generate/speech?quiet=true",
+      "/api/v1/generate/music?quiet=true",
+      "/api/v1/generate/video?quiet=true",
     ]);
     expect(sent.every((call) => call.method === "POST")).toBe(true);
   });

@@ -48,6 +48,14 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/** A whole answer carried as a stream, which is how a generation is asked for. */
+function sse(body: unknown): Response {
+  return new Response(`event: done\ndata: ${JSON.stringify(body)}\n\n`, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 /** The fixture cut, with its shot standing where a test wants it. */
 function cutWith(over: Partial<TimelineClip> = {}): MokaFile {
   const moka = buildTimelineMokaFile();
@@ -101,9 +109,9 @@ function stubServer(poll: () => Promise<Response>): Sent[] {
       method: init?.method ?? "GET",
       body: typeof body === "string" ? JSON.parse(body) : undefined,
     });
-    if (url.endsWith("/api/v1/generate/asr")) {
+    if (url.endsWith("/api/v1/generate/asr?quiet=true")) {
       return Promise.resolve(
-        json({
+        sse({
           status: "pending",
           outputs: [],
           task: {
@@ -170,7 +178,7 @@ describe("start", () => {
 
     // What travels is the window, not the file: the whole of a shot that may
     // be an hour long is not what one subtitle was asked for.
-    expect(sent[0].url).toBe("/api/v1/generate/asr");
+    expect(sent[0].url).toBe("/api/v1/generate/asr?quiet=true");
     expect(sent[0].method).toBe("POST");
     expect(sent[0].body).toEqual({
       capability: "asr",
@@ -232,7 +240,7 @@ describe("start", () => {
     await first;
 
     expect(
-      sent.filter((each) => each.url.endsWith("/generate/asr")),
+      sent.filter((each) => each.url.endsWith("/generate/asr?quiet=true")),
     ).toHaveLength(1);
     expect(cut().clips.filter((clip) => clip.kind === "text")).toHaveLength(1);
   });
