@@ -256,11 +256,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_video_converters_that_declare_a_prompt_contract_deploy_its_guide() {
+    async fn every_video_converter_deploys_its_prompt_contract() {
         let dir = tempfile::tempdir().unwrap();
         deploy(dir.path()).await;
 
         let registry = ConverterRegistry::load(dir.path());
+        // Every built-in video protocol offers the rewrite step, so a reader
+        // filming a clip is always given the contract its model reads.
+        for def in BUILTIN_SCRIPTS
+            .iter()
+            .filter(|def| def.capability == "video")
+        {
+            let entry = registry
+                .find(def.id)
+                .unwrap_or_else(|| panic!("{} was not deployed", def.id));
+            assert!(
+                entry.prompt_rewrite.is_some(),
+                "{} films video and should declare a prompt contract",
+                def.id
+            );
+        }
+
+        for (id, marker) in [
+            ("openaiVideos", "Sora 2"),
+            ("geminiVideo", "Veo"),
+            ("lumaVideo", "Luma"),
+            ("runwayVideo", "Runway"),
+            ("klingVideo", "Kling"),
+            ("zhipuVideo", "CogVideoX"),
+            ("volcengineVideo", "Seedance"),
+        ] {
+            let rewrite = registry
+                .find(id)
+                .and_then(|entry| entry.prompt_rewrite.as_ref())
+                .unwrap_or_else(|| panic!("{id} declares a prompt contract"));
+            assert!(
+                rewrite.guide.contains(marker),
+                "{id} should deploy its {marker} guide"
+            );
+            assert_eq!(
+                rewrite
+                    .checks
+                    .as_ref()
+                    .and_then(|checks| checks.get("negativeBait"))
+                    .and_then(serde_json::Value::as_bool),
+                Some(true),
+                "{id} should warn that naming subtitles baits them"
+            );
+        }
+
         let minimax = registry
             .find("minimaxVideo")
             .and_then(|entry| entry.prompt_rewrite.as_ref())

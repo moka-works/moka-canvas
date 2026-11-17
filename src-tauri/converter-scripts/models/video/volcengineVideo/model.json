@@ -4,5 +4,10 @@
   "urlExample": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
   "script": "volcengine-video.lua",
   "order": 40,
-  "version": 1
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "version": 2
 }

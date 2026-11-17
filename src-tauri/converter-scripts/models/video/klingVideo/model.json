@@ -5,5 +5,10 @@
   "script": "kling-video.lua",
   "order": 80,
   "auth": { "header": "Authorization", "scheme": "Bearer" },
-  "version": 1
+  "promptRewrite": {
+    "guide": "prompt-guide.md",
+    "checks": { "negativeBait": true },
+    "version": 1
+  },
+  "version": 2
 }
