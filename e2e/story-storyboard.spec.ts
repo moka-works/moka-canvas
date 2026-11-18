@@ -774,6 +774,9 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       archive.getByTestId(`story-clip-pick-remove-${firstTake}`),
     ).toHaveCount(0);
+    // The removal is done when its ask is away: the files leave the shelf
+    // after the document has settled, and Close would only dismiss the ask.
+    await expect(page.getByTestId("story-pick-ask")).toHaveCount(0);
     await archive.getByRole("button", { name: "Close" }).click();
 
     // Handing the ask back to the board is a press too: the hand-written words
