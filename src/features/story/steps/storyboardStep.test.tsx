@@ -1062,6 +1062,9 @@ describe("writing an episode's board", () => {
     const lightbox = screen.getByTestId("story-lightbox");
     const piece = () => screen.getByTestId("story-lightbox-piece").textContent;
     expect(piece()).toBe("Part 1 of 2");
+    // The clip opens on its poster rather than playing itself: playback is
+    // the reader's to begin.
+    expect(lightbox.querySelector("video")?.autoplay).toBe(false);
     expect(lightbox.querySelector("video")?.getAttribute("src")).toContain(
       "asset-piece-one",
     );

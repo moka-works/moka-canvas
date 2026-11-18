@@ -133,6 +133,10 @@ export function StoryLightbox({
     };
   });
   const [at, setAt] = useState(() => (timed ? pieceAt(range.inMs) : 0));
+  // Whether the reader has begun watching: a clip opens on its poster and
+  // waits to be played, and only the pieces that follow one already being
+  // watched start by themselves.
+  const [started, setStarted] = useState(false);
   const [momentMs, setMomentMs] = useState(range.inMs);
   const [seeking, setSeeking] = useState<{
     index: number;
@@ -302,7 +306,7 @@ export function StoryLightbox({
         {video === true ? (
           <>
             <video
-              autoPlay={at > 0}
+              autoPlay={started && at > 0}
               controls
               key={file}
               onEnded={() => {
@@ -321,6 +325,7 @@ export function StoryLightbox({
                 }
               }}
               onPlay={(event) => {
+                setStarted(true);
                 if (trim !== 0 && momentMs >= range.outMs - 50) {
                   event.currentTarget.pause();
                   seekTo(range.inMs, true);

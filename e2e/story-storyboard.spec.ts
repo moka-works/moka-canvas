@@ -659,6 +659,10 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       .getByTestId("story-lightbox")
       .locator("video")
       .getAttribute("src");
+    // Opening a preview is not pressing play: the clip waits for the reader.
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).not.toHaveAttribute("autoplay", "");
 
     // The clip on show is saved where the reader says, and the same window
     // trims what is played and what the cut will lay down.
