@@ -35,7 +35,7 @@ export CARGO_INCREMENTAL ?= 0
 endif
 endif
 
-.PHONY: help install fonts check check-deps check-boundaries check-version release-check test web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
+.PHONY: help install fonts check check-deps check-boundaries check-version release-check test e2e-parallel web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
 
 .DEFAULT_GOAL := help
 
@@ -95,6 +95,9 @@ release-check: check-version check ## Verify the version, then run the full chec
 test: fonts ## Run the frontend and Rust test suites
 	npm test
 	cargo test --manifest-path $(CARGO_MANIFEST)
+
+e2e-parallel: web-build fonts ## Run the browser suite in isolated shards (MOKA_E2E_SHARDS, default 2)
+	npm run test:e2e:parallel
 
 # npm ci is a documented prerequisite. When it is skipped after a dependency
 # change, tsc reports a wall of unresolved-module errors instead of naming the

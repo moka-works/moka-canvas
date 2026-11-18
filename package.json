@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:parallel": "node scripts/e2e-parallel.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "format:check": "prettier --check .",
