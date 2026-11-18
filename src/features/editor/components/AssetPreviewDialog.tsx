@@ -4,6 +4,7 @@ import { assetThumbUrl, assetUrl } from "../../../api";
 import { buildResourceIndex, formatBytes } from "../canvas/mediaCards";
 import { useEditorStore } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
+import { AssetVideoPlayer } from "./AssetVideoPlayer";
 
 /** Full-size preview dialog for image/video/audio assets. */
 export function AssetPreviewDialog() {
@@ -50,12 +51,10 @@ export function AssetPreviewDialog() {
           <img alt={entry.name} className="preview-media" src={url} />
         )}
         {mime.startsWith("video/") && (
-          <video
-            autoPlay
-            className="preview-media"
-            controls
+          <AssetVideoPlayer
             poster={assetThumbUrl(entry.id, 1024)}
             src={url}
+            videoClassName="preview-media"
           />
         )}
         {mime.startsWith("audio/") && <audio autoPlay controls src={url} />}

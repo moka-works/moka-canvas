@@ -2397,7 +2397,7 @@ body.is-dragging-panel {
   cursor: pointer;
   flex: 1;
   height: 18px;
-  min-width: 0;
+  min-width: 72px;
   padding: 0;
 }
 
