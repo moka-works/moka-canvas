@@ -247,6 +247,24 @@ export async function openAssetsRoom(page: Page) {
   });
 }
 
+/**
+ * Film one act from its board, answering the prompt that stands in front of it.
+ *
+ * A model that declares a prompt contract shows the words a clip will be made
+ * from before they are sent. A test that films for another reason sends them as
+ * they stand, and leaves the dialog's own checks to the storyboard spec.
+ */
+export async function filmAct(
+  page: Page,
+  act: Locator,
+  index: number,
+): Promise<void> {
+  await act.getByTestId(`story-act-video-go-${index}`).click();
+  const asked = page.getByTestId("story-video-prompt-dialog");
+  await expect(asked).toBeVisible();
+  await asked.getByTestId("story-video-prompt-send").click();
+}
+
 /** Begin a story under a name, from the door that stands open. */
 export async function newStory(page: Page, name: string) {
   // Two doors do the same thing: the empty room's own button, and the + over

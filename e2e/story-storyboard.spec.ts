@@ -14,6 +14,7 @@ import {
   configureModels,
   configureTheWholeStudio,
   createProject,
+  filmAct,
   forgetHome,
   forgetProjects,
   newStory,
@@ -828,10 +829,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       secondAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
-    await secondAct.getByTestId("story-act-video-go-1").click();
-    const secondFilmDialog = page.getByTestId("story-video-prompt-dialog");
-    await expect(secondFilmDialog).toBeVisible();
-    await secondFilmDialog.getByTestId("story-video-prompt-send").click();
+    await filmAct(page, secondAct, 1);
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,
     });
