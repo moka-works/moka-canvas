@@ -897,6 +897,11 @@ describe("writing an episode's board", () => {
     moka.stories![0].chapters[0]!.acts[0]!.video = { takes: [] };
     openAtBoard(moka);
 
+    // The two sources a clip may come from wait behind the row's More; taken
+    // from either, the clip is kept as it is.
+    fireEvent.click(
+      within(screen.getByTestId("story-act-more-0")).getByText("More"),
+    );
     const library = screen.getByTestId(
       "story-act-video-library-0",
     ) as HTMLButtonElement;

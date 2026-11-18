@@ -568,6 +568,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // A clip the reader already has does not wait for the frames: its two
     // sources stay open while the act's own ask is still held back.
     await expect(firstAct.getByTestId("story-act-video-go-0")).toBeDisabled();
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await expect(
       firstAct.getByTestId("story-act-video-library-0"),
     ).toBeEnabled();
@@ -596,6 +597,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // not before the reader has seen, and may change, the whole ask that makes
     // it. What is written here is what the model is handed.
     const written = "A hand-written act: hold on the empty platform.";
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await firstAct.getByTestId("story-act-video-prompt-0").click();
     const askDialog = page.getByTestId("story-video-prompt-dialog");
     await expect(askDialog).toBeVisible();
@@ -738,7 +740,8 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     );
     await expect(actActions).toHaveCSS("flex-direction", "column");
     // The ask, the redraw, the takes, and the two sources a clip may come
-    // from without being filmed.
+    // from without being filmed stand behind one More beside the take.
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await expect(actActions.locator("button")).toHaveCount(5);
     await firstAct.getByTestId("story-act-video-pick-0").click();
     const archive = page.getByTestId("story-clip-picks");
@@ -757,6 +760,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
 
     // A take no longer wanted leaves the list and the shelf with it, while the
     // take in use is not the list's to throw away.
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await firstAct.getByTestId("story-act-video-pick-0").click();
     await archive.getByTestId(`story-clip-pick-remove-${secondTake}`).click();
     await expect(page.getByTestId("story-pick-ask")).toBeVisible();
@@ -769,6 +773,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
 
     // Handing the ask back to the board is a press too: the hand-written words
     // go with the tell, and the board's own words stand again.
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await firstAct.getByTestId("story-act-video-prompt-0").click();
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
@@ -954,6 +959,7 @@ test("a shot that needs no picture is still a moment of the clip", async ({
     // The clip is filmed from the one picture there is, and its ask carries
     // the pictureless shot as a moment at its own second — words, line and
     // all — for the model to fill from the picture beside it.
+    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
     await firstAct.getByTestId("story-act-video-prompt-0").click();
     const dialog = page.getByTestId("story-video-prompt-dialog");
     await expect(dialog).toBeVisible();

@@ -25,6 +25,7 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { MoreMenu } from "../components/MoreMenu";
 import { RunningBar } from "../components/RunningBar";
 import { FoldChevron } from "../components/StoryIcons";
 import { ModelPicker } from "../../settings/ModelPicker";
@@ -833,19 +834,6 @@ export function ActCard({
               <span className="story-act-film-side">
                 {!perShot && (
                   <span className="story-act-clip-actions">
-                    {everyFrameDrawn && (
-                      <button
-                        className="link"
-                        data-testid={`story-act-video-prompt-${index}`}
-                        onClick={() => setEditingPrompt("edit")}
-                        type="button"
-                      >
-                        {t("story:storyboard.videoPromptEdit")}
-                        {promptEdited
-                          ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                          : ""}
-                      </button>
-                    )}
                     {clip === undefined ? (
                       <button
                         data-testid={`story-act-video-go-${index}`}
@@ -863,65 +851,97 @@ export function ActCard({
                           : t("story:storyboard.filmAct")}
                       </button>
                     ) : (
-                      <>
-                        {/*
+                      /*
                       A clip already made is not the end of the ask that made
-                      it: the column that holds it keeps the ask beside the
+                      it: the ask that made it keeps its button beside the
                       take, so a take the reader does not like is asked over
-                      from where it stands.
-                    */}
-                        <button
-                          className="link"
-                          data-testid={`story-act-video-again-${index}`}
-                          disabled={videoBusy !== undefined}
-                          onClick={filmAct}
-                          type="button"
-                        >
-                          {videoBusy !== undefined
-                            ? placeText(t, videoBusy)
-                            : t("story:voice.again")}
-                        </button>
-                        {act.video.takes.length > 1 && (
-                          /*
-                        Every ask made another take and none of them was thrown
-                        away, so the column that plays one is also where the
-                        reader says which one the act is filmed by — and where
-                        an unwanted one leaves.
-                      */
+                      from where it stands. The rest of the ask — the words,
+                      the takes to choose from, and the sources a clip may
+                      come from without being filmed — waits behind More, so
+                      the column beside the picture stays two lines.
+                    */
+                      <button
+                        className="link"
+                        data-testid={`story-act-video-again-${index}`}
+                        disabled={videoBusy !== undefined}
+                        onClick={filmAct}
+                        type="button"
+                      >
+                        {videoBusy !== undefined
+                          ? placeText(t, videoBusy)
+                          : t("story:voice.again")}
+                      </button>
+                    )}
+                    <MoreMenu testId={`story-act-more-${index}`}>
+                      {(close) => (
+                        <>
+                          {everyFrameDrawn && (
+                            <button
+                              className="link"
+                              data-testid={`story-act-video-prompt-${index}`}
+                              onClick={() => {
+                                close();
+                                setEditingPrompt("edit");
+                              }}
+                              type="button"
+                            >
+                              {t("story:storyboard.videoPromptEdit")}
+                              {promptEdited
+                                ? ` · ${t("story:storyboard.videoPromptEdited")}`
+                                : ""}
+                            </button>
+                          )}
+                          {clip !== undefined && act.video.takes.length > 1 && (
+                            /*
+                            Every ask made another take and none of them was
+                            thrown away, so the menu that plays one is also
+                            where the reader says which one the act is filmed
+                            by — and where an unwanted one leaves.
+                          */
+                            <button
+                              className="link"
+                              data-testid={`story-act-video-pick-${index}`}
+                              onClick={() => {
+                                close();
+                                setPickingClip(true);
+                              }}
+                              type="button"
+                            >
+                              {t("story:panels.pickClip")}
+                            </button>
+                          )}
+                          {/*
+                          A clip the reader already has is taken as it is:
+                          neither source films anything, so neither waits for
+                          the act's frames to be drawn.
+                        */}
                           <button
                             className="link"
-                            data-testid={`story-act-video-pick-${index}`}
-                            onClick={() => setPickingClip(true)}
+                            data-testid={`story-act-video-library-${index}`}
+                            disabled={videoBusy !== undefined}
+                            onClick={() => {
+                              close();
+                              setPickingClipLibrary(true);
+                            }}
                             type="button"
                           >
-                            {t("story:panels.pickClip")}
+                            {t("story:panels.fromLibrary")}
                           </button>
-                        )}
-                      </>
-                    )}
-                    {/*
-                      A clip the reader already has is taken as it is: neither
-                      source films anything, so neither waits for the act's
-                      frames to be drawn.
-                    */}
-                    <button
-                      className="link"
-                      data-testid={`story-act-video-library-${index}`}
-                      disabled={videoBusy !== undefined}
-                      onClick={() => setPickingClipLibrary(true)}
-                      type="button"
-                    >
-                      {t("story:panels.fromLibrary")}
-                    </button>
-                    <button
-                      className="link"
-                      data-testid={`story-act-video-upload-${index}`}
-                      disabled={videoBusy !== undefined}
-                      onClick={() => clipFile.current?.click()}
-                      type="button"
-                    >
-                      {t("story:panels.fromFile")}
-                    </button>
+                          <button
+                            className="link"
+                            data-testid={`story-act-video-upload-${index}`}
+                            disabled={videoBusy !== undefined}
+                            onClick={() => {
+                              clipFile.current?.click();
+                              close();
+                            }}
+                            type="button"
+                          >
+                            {t("story:panels.fromFile")}
+                          </button>
+                        </>
+                      )}
+                    </MoreMenu>
                     <input
                       accept="video/*"
                       data-testid={`story-act-video-upload-input-${index}`}
