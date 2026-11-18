@@ -777,6 +777,16 @@
     "canvasNotExported": "无法导出画布",
     "playVideo": "播放 {{name}}"
   },
+  "player": {
+    "play": "播放",
+    "pause": "暂停",
+    "seek": "播放位置",
+    "mute": "静音",
+    "unmute": "取消静音",
+    "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
+    "failed": "视频无法播放"
+  },
   "holders": {
     "stillUsed": "无法删除：{{holders}}",
     "join": "、",

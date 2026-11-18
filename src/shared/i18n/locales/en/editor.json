@@ -777,6 +777,16 @@
     "canvasNotExported": "The canvas could not be exported",
     "playVideo": "Play {{name}}"
   },
+  "player": {
+    "play": "Play",
+    "pause": "Pause",
+    "seek": "Playback position",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Leave full screen",
+    "failed": "The film could not be played"
+  },
   "holders": {
     "stillUsed": "The asset cannot be deleted: {{holders}}",
     "join": ", ",

@@ -2346,6 +2346,72 @@ body.is-dragging-panel {
   width: 100%;
 }
 
+/* A film under the column's reading and on the files stage: the picture, then
+   the row that plays it. The controls are the room's own so the timeline is
+   wide enough to aim with and the same on every platform. */
+.asset-player {
+  display: grid;
+  gap: 6px;
+}
+
+.asset-player video {
+  cursor: pointer;
+}
+
+.asset-player-transport {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.asset-player-button {
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.asset-player-button:hover {
+  border-color: var(--primary);
+}
+
+.asset-player-clock {
+  color: var(--muted);
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-player-seek {
+  accent-color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+  height: 18px;
+  min-width: 0;
+  padding: 0;
+}
+
+.asset-player-seek:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.asset-player-failure {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0;
+}
+
 .inspector-media-broken {
   background: rgb(255 118 118 / 12%);
   border: 1px dashed var(--danger);

@@ -10,6 +10,7 @@ import {
   ASSET_KIND_LABELS,
 } from "../../../shared/domain";
 import { assetThumbUrl, assetUrl } from "../../../api";
+import { AssetVideoPlayer } from "../components/AssetVideoPlayer";
 import { i18n } from "../../../shared/i18n";
 import {
   buildIssueIndex,
@@ -254,15 +255,7 @@ export function AssetPreview({
     );
   }
   if (mime.startsWith("video/")) {
-    return (
-      <video
-        controls
-        data-testid="asset-preview-video"
-        poster={assetThumbUrl(entry.id, 768)}
-        preload="metadata"
-        src={url}
-      />
-    );
+    return <AssetVideoPlayer poster={assetThumbUrl(entry.id, 768)} src={url} />;
   }
   if (mime.startsWith("audio/")) {
     return (

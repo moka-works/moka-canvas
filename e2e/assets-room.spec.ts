@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "./fixtures";
 import {
   createProject,
@@ -11,6 +13,8 @@ import {
   projectHome,
   showAssets,
 } from "./helpers";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
  * The files room, walked from end to end.
@@ -328,6 +332,72 @@ test("a file takes a new name where it stands, and the shelf finds it by it", as
   await expect(rowFor(page, "quiet lake.png")).toBeVisible();
   await asked.fill("still");
   await expect(page.getByText("Nothing on this shelf says that")).toBeVisible();
+
+  forgetHome(home);
+});
+
+/**
+ * A film opens on its first frame, and its timeline is the way into the rest.
+ *
+ * The picture is the room's own player rather than the browser's: dragging the
+ * timeline steps the file through stills while it stays paused, and the play
+ * control starts from wherever the timeline was left.
+ */
+test("a film opens on its first frame and its timeline drags", async ({
+  page,
+}) => {
+  const home = projectHome("asset-film-player");
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, join(home, "project"), "Film Player");
+  await openAssetsRoom(page);
+
+  await page.getByTestId("asset-kind-video").click();
+  await page.getByLabel("Import files", { exact: true }).setInputFiles({
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    buffer: readFileSync(join(HERE, "fixtures", "clip.mp4")),
+  });
+  await expect(rowFor(page, "clip.mp4")).toBeVisible({ timeout: 10_000 });
+  await rowFor(page, "clip.mp4").click();
+
+  const video = page.getByTestId("asset-preview-video");
+  const paused = () =>
+    video.evaluate((element) => (element as HTMLVideoElement).paused);
+  const at = () =>
+    video.evaluate((element) => (element as HTMLVideoElement).currentTime);
+
+  // Nothing runs by itself: the file waits on its first frame with the room's
+  // own transport under it, and the browser's control bar is not in the way.
+  await expect(video).toBeVisible();
+  await expect(video).not.toHaveAttribute("controls", "");
+  await expect(page.getByTestId("asset-player-clock")).toHaveText(
+    "0:00 / 0:03",
+    { timeout: 10_000 },
+  );
+  expect(await paused()).toBe(true);
+
+  // A drag down the timeline steps the film forward and leaves it paused, so
+  // the moment shows as a still.
+  const seek = page.getByTestId("asset-player-seek");
+  const box = await seek.boundingBox();
+  if (!box) throw new Error("the timeline is not on screen to drag");
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.45, y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(at).toBeGreaterThan(1.1);
+  expect(await paused()).toBe(true);
+  await expect(page.getByTestId("asset-player-clock")).not.toHaveText(
+    "0:00 / 0:03",
+  );
+
+  // Play starts where the timeline stands rather than from the beginning.
+  const from = await at();
+  await page.getByTestId("asset-player-toggle").click();
+  await expect.poll(paused).toBe(false);
+  expect(await at()).toBeGreaterThanOrEqual(from);
 
   forgetHome(home);
 });
