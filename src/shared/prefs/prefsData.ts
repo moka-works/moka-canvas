@@ -36,6 +36,8 @@ export function defaultUiPrefs(): UiPreferences {
     stageSplit: 0.6,
     storyModels: {},
     storyPlaces: {},
+    storyActFolds: {},
+    storyStripFolds: {},
     storyParallel: 3,
     directorOnboarding: null,
     lastUpdateCheck: null,
@@ -81,6 +83,8 @@ export function applyUiPatch(
     clipViews: { ...current.clipViews },
     storyModels: { ...current.storyModels },
     storyPlaces: { ...current.storyPlaces },
+    storyActFolds: { ...current.storyActFolds },
+    storyStripFolds: { ...current.storyStripFolds },
   };
   if (patch.locale !== undefined) next.locale = patch.locale;
   if (patch.canvasTheme !== undefined) next.canvasTheme = patch.canvasTheme;
@@ -109,6 +113,8 @@ export function applyUiPatch(
   assignMap(next.clipViews, patch.clipViews);
   assignMap(next.storyModels, patch.storyModels);
   assignMap(next.storyPlaces, patch.storyPlaces);
+  assignMap(next.storyActFolds, patch.storyActFolds);
+  assignMap(next.storyStripFolds, patch.storyStripFolds);
   return next;
 }
 

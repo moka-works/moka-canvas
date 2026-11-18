@@ -149,6 +149,50 @@ async fn a_partial_write_keeps_what_it_does_not_name() {
 }
 
 #[tokio::test]
+async fn a_board_fold_is_kept_and_an_unfold_takes_its_row_away() {
+    let root = tempfile::tempdir().unwrap();
+    let app = harness(root.path());
+
+    // Folding an act and a strip of episodes is written with the interface's
+    // other choices, so a window that opens the project again reads it back.
+    let (status, folded) = send(
+        &app,
+        json_request(
+            "PATCH",
+            "/api/v1/ui-prefs",
+            json!({
+                "storyActFolds": { "s1:c1:a1": true },
+                "storyStripFolds": { "s1": true }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(folded["storyActFolds"]["s1:c1:a1"], true);
+    assert_eq!(folded["storyStripFolds"]["s1"], true);
+
+    // Unfolding sends the row back as null, and the row beside it stays.
+    let (status, unfolded) = send(
+        &app,
+        json_request(
+            "PATCH",
+            "/api/v1/ui-prefs",
+            json!({ "storyActFolds": { "s1:c1:a1": null } }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        unfolded["storyActFolds"].get("s1:c1:a1").is_none(),
+        "{unfolded}"
+    );
+    assert_eq!(unfolded["storyStripFolds"]["s1"], true);
+
+    let (_, reread) = send(&app, plain_request("GET", "/api/v1/ui-prefs")).await;
+    assert_eq!(reread, unfolded);
+}
+
+#[tokio::test]
 async fn a_reset_returns_the_defaults() {
     let root = tempfile::tempdir().unwrap();
     let app = harness(root.path());

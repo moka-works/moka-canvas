@@ -68,7 +68,11 @@ import {
   useStoryRun,
   useStoryWavesAsk,
 } from "../stores/storyJobStore";
-import { useStoryStore } from "../stores/storyStore";
+import {
+  rememberStripFold,
+  stripFoldAt,
+  useStoryStore,
+} from "../stores/storyStore";
 import { useField } from "../panels/useField";
 
 /** How many episodes one batch is asked to board at once. */
@@ -116,8 +120,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const [previewId, setPreviewId] = useState<string | null>(null);
   // Whether the strip of episodes stands open. Folded it keeps the episode
   // the board below belongs to, which is the one thing about the list that is
-  // still worth a line while its chips are away.
-  const [stripOpen, setStripOpen] = useState(true);
+  // still worth a line while its chips are away. A place on the page rather
+  // than a thing the document keeps, remembered with the interface's other
+  // choices so the board opens as it was left.
+  const [stripOpen, setStripOpen] = useState(() => !stripFoldAt(story.id));
   const starting = useRef(false);
 
   const index = Math.max(
@@ -551,7 +557,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             )}
             className="story-strip-fold"
             data-testid="story-board-strip-fold"
-            onClick={() => setStripOpen(!stripOpen)}
+            onClick={() => {
+              rememberStripFold(story.id, stripOpen);
+              setStripOpen(!stripOpen);
+            }}
             title={t(
               stripOpen
                 ? "story:storyboard.hideChapters"

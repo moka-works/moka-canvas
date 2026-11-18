@@ -499,6 +499,10 @@ pub struct UiPreferences {
     pub stage_split: f64,
     pub story_models: BTreeMap<String, String>,
     pub story_places: BTreeMap<String, StoryPlace>,
+    /// Which acts of a board are folded, by story, chapter and act.
+    pub story_act_folds: BTreeMap<String, bool>,
+    /// Whether each story's strip of episodes is folded, by story.
+    pub story_strip_folds: BTreeMap<String, bool>,
     /// How many generations the room may have in flight against one model.
     pub story_parallel: usize,
     pub director_onboarding: Option<String>,
@@ -522,6 +526,8 @@ impl Default for UiPreferences {
             stage_split: 0.6,
             story_models: BTreeMap::new(),
             story_places: BTreeMap::new(),
+            story_act_folds: BTreeMap::new(),
+            story_strip_folds: BTreeMap::new(),
             story_parallel: DEFAULT_STORY_PARALLEL,
             director_onboarding: None,
             last_update_check: None,
@@ -620,6 +626,26 @@ impl UiPreferences {
                 }
             }
         }
+        for (act, folded) in patch.story_act_folds {
+            match folded {
+                Some(folded) => {
+                    self.story_act_folds.insert(act, folded);
+                }
+                None => {
+                    self.story_act_folds.remove(&act);
+                }
+            }
+        }
+        for (story, folded) in patch.story_strip_folds {
+            match folded {
+                Some(folded) => {
+                    self.story_strip_folds.insert(story, folded);
+                }
+                None => {
+                    self.story_strip_folds.remove(&story);
+                }
+            }
+        }
     }
 }
 
@@ -645,6 +671,8 @@ pub struct UiPrefsPatch {
     pub clip_views: BTreeMap<String, Option<TimelineView>>,
     pub story_models: BTreeMap<String, Option<String>>,
     pub story_places: BTreeMap<String, Option<StoryPlace>>,
+    pub story_act_folds: BTreeMap<String, Option<bool>>,
+    pub story_strip_folds: BTreeMap<String, Option<bool>>,
 }
 
 /// Everything the generation path needs about model configurations, minus

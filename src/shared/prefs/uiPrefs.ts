@@ -69,6 +69,8 @@ function mergePatches(base: UiPrefsPatch, next: UiPrefsPatch): UiPrefsPatch {
     clipViews: mergeRows(base.clipViews, next.clipViews),
     storyModels: mergeRows(base.storyModels, next.storyModels),
     storyPlaces: mergeRows(base.storyPlaces, next.storyPlaces),
+    storyActFolds: mergeRows(base.storyActFolds, next.storyActFolds),
+    storyStripFolds: mergeRows(base.storyStripFolds, next.storyStripFolds),
   };
 }
 

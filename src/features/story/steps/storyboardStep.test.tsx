@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   act,
+  cleanup,
   fireEvent,
   screen,
   waitFor,
@@ -114,6 +115,12 @@ describe("writing an episode's board", () => {
       screen.getByTestId("story-board-chapter-1").getAttribute("aria-selected"),
     ).toBe("true");
 
+    // The app is closed and the project opened again: the strip is found as
+    // it was left rather than standing open.
+    cleanup();
+    openAtBoard(moka, 1);
+    expect(screen.queryByTestId("story-board-strip-current")).toBeNull();
+
     fireEvent.click(screen.getByTestId("story-board-strip-fold"));
     expect(screen.getByTestId("story-board-chapter-0")).toBeDefined();
   });
@@ -207,7 +214,8 @@ describe("writing an episode's board", () => {
   });
 
   it("keeps an act folded when the reader steps away and comes back", () => {
-    openAtBoard(boarded());
+    const moka = boarded();
+    openAtBoard(moka);
     fireEvent.click(screen.getByTestId("story-act-fold-0"));
     expect(screen.queryByTestId("story-table")).toBeNull();
 
@@ -221,6 +229,11 @@ describe("writing an episode's board", () => {
     // Nor does looking at the episode beside it bring the act back open.
     fireEvent.click(screen.getByTestId("story-board-chapter-1"));
     fireEvent.click(screen.getByTestId("story-board-chapter-0"));
+    expect(screen.queryByTestId("story-table")).toBeNull();
+
+    // Closing the app and opening the project again finds the act folded.
+    cleanup();
+    openAtBoard(moka);
     expect(screen.queryByTestId("story-table")).toBeNull();
 
     fireEvent.click(screen.getByTestId("story-act-fold-0"));

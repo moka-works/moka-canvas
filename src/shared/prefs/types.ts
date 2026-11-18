@@ -66,6 +66,10 @@ export interface UiPreferences {
   stageSplit: number;
   storyModels: Record<string, string>;
   storyPlaces: Record<string, StoryPlace>;
+  /** Which acts of a board are folded, by story, chapter and act. */
+  storyActFolds: Record<string, boolean>;
+  /** Whether each story's strip of episodes is folded, by story. */
+  storyStripFolds: Record<string, boolean>;
   /** How many generations the story room may have in flight against one model. */
   storyParallel: number;
   directorOnboarding: string | null;
@@ -94,4 +98,6 @@ export interface UiPrefsPatch {
   clipViews?: Record<string, TimelineViewPrefs | null>;
   storyModels?: Record<string, string | null>;
   storyPlaces?: Record<string, StoryPlace | null>;
+  storyActFolds?: Record<string, boolean | null>;
+  storyStripFolds?: Record<string, boolean | null>;
 }

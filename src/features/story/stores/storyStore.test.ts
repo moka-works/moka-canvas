@@ -8,12 +8,19 @@ import {
 } from "../../../shared/domain/fixtures";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import {
+  currentUiPrefs,
   defaultUiPrefs,
   replaceUiPrefs,
   resetUiPrefs,
 } from "../../../shared/prefs/prefsData";
 import type { UiPreferences } from "../../../shared/prefs/types";
-import { useStoryStore } from "./storyStore";
+import {
+  actFoldAt,
+  rememberActFold,
+  rememberStripFold,
+  stripFoldAt,
+  useStoryStore,
+} from "./storyStore";
 
 function store() {
   return useStoryStore.getState();
@@ -181,6 +188,25 @@ describe("where the room is standing", () => {
     expect(store().openChapterId).toBeNull();
     expect(store().expanded).toEqual([]);
     expect(store().newStoryOpen).toBe(false);
+  });
+
+  it("keeps a board's folds past the room being put down", () => {
+    rememberActFold("story:chapter:act", true);
+    rememberStripFold("story", true);
+    expect(actFoldAt("story:chapter:act")).toBe(true);
+    expect(stripFoldAt("story")).toBe(true);
+
+    // Putting the project down is not unfolding it: the folds are written
+    // with the interface's other choices and read back with them.
+    store().forget();
+    expect(actFoldAt("story:chapter:act")).toBe(true);
+    expect(stripFoldAt("story")).toBe(true);
+
+    // Unfolding takes the row out of the file rather than writing a `false`.
+    rememberActFold("story:chapter:act", false);
+    rememberStripFold("story", false);
+    expect(currentUiPrefs().storyActFolds).toEqual({});
+    expect(currentUiPrefs().storyStripFolds).toEqual({});
   });
 });
 

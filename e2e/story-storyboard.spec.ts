@@ -19,6 +19,7 @@ import {
   forgetProjects,
   newStory,
   openAssetsRoom,
+  openRecent,
   openSeededStory,
   openStoryRoom,
   projectHome,
@@ -921,6 +922,65 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
         )
         .toBe(0);
     }
+  } finally {
+    forgetHome(home);
+  }
+});
+
+test("a board's folds are kept across the app being closed", async ({
+  page,
+}) => {
+  const home = projectHome("story-fold-kept");
+  await forgetProjects();
+  try {
+    await openSeededStory(page, home, false);
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The strip of episodes and the first act are folded down.
+    await page.getByTestId("story-board-strip-fold").click();
+    await expect(page.getByTestId("story-board-strip-current")).toHaveCount(0);
+    await firstAct.getByTestId("story-act-fold-0").click();
+    await expect(firstAct.getByTestId("story-table")).toHaveCount(0);
+    // The fold reaches the file before the app is closed.
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/ui-prefs");
+          const body = (await response.json()) as {
+            storyActFolds?: Record<string, boolean>;
+            storyStripFolds?: Record<string, boolean>;
+          };
+          return [
+            Object.keys(body.storyActFolds ?? {}).length,
+            Object.keys(body.storyStripFolds ?? {}).length,
+          ];
+        }),
+      )
+      .toEqual([1, 1]);
+
+    // Closed and opened again, the project's board stands as it was left
+    // rather than every act and every episode unfolded.
+    await page.reload();
+    await openRecent(page, "Story Seed", "Story");
+    await page
+      .locator(".story-row-name")
+      .filter({ hasText: "Rain at Night" })
+      .click();
+    await page.getByTestId("story-step-storyboard").click();
+    await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
+    const reopened = page.getByTestId("story-act-0");
+    await expect(reopened).toBeVisible({ timeout: 30_000 });
+    await expect(reopened.getByTestId("story-table")).toHaveCount(0);
+    await expect(page.getByTestId("story-board-strip-current")).toHaveCount(0);
+
+    // Unfolding brings both back, and the board is the reader's again.
+    await page.getByTestId("story-board-strip-fold").click();
+    await expect(page.getByTestId("story-board-chapter-0")).toBeVisible();
+    await reopened.getByTestId("story-act-fold-0").click();
+    await expect(reopened.getByTestId("story-table")).toBeVisible();
   } finally {
     forgetHome(home);
   }
