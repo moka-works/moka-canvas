@@ -844,6 +844,7 @@ async fn what_a_reader_says_about_an_asset_reaches_the_disk() {
                 note: Some("  Kept for the opening shot.  ".into()),
                 favorite: Some(true),
                 keyword: None,
+                name: None,
             },
         )
         .await
