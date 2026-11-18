@@ -115,6 +115,12 @@ pub struct AssetShelfEdit {
     pub note: Option<String>,
     pub favorite: Option<bool>,
     pub keyword: Option<String>,
+    /// What the file is called on the shelf.
+    ///
+    /// The bytes underneath keep the path they were filed under: the name is
+    /// what a reader searches and reads by, and everything that points at the
+    /// file does so by id.
+    pub name: Option<String>,
 }
 
 pub struct PackageReport {

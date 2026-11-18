@@ -94,6 +94,8 @@ pub const MAX_ASSET_NOTE_LENGTH: usize = 2_000;
 /// What an asset is a picture of, in words: kept to the size of an ask rather
 /// than a document.
 pub const MAX_ASSET_KEYWORD_LENGTH: usize = 2_000;
+/// How long the name a reader calls a file by may be.
+pub const MAX_ASSET_NAME_LENGTH: usize = 200;
 
 pub fn bounds_valid(bounds: &super::Rect) -> bool {
     bounds.x.is_finite()

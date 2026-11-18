@@ -532,6 +532,10 @@ pub async fn effect(
                     .get("keyword")
                     .and_then(Value::as_str)
                     .map(|keyword| keyword.chars().take(2000).collect()),
+                name: patch
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
             };
             let change = session.0.update_asset_shelf(&asset_id, edit).await?;
             Ok(ToolOutcome {
@@ -651,6 +655,7 @@ pub async fn effect(
                                 note: note.clone(),
                                 favorite: None,
                                 keyword: None,
+                                name: None,
                             };
                             if let Ok(updated) = session.0.update_asset_shelf(&id, edit).await {
                                 revision = Some(updated.revision);

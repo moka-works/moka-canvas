@@ -1019,6 +1019,7 @@ async fn an_asset_takes_what_a_reader_says_about_it() {
                 "note": "Kept for the opening shot.",
                 "favorite": true,
                 "keyword": "A lantern floats over a quiet lake at dusk.",
+                "name": "  lake at dusk.png  ",
             }),
         ))
         .await
@@ -1033,6 +1034,14 @@ async fn an_asset_takes_what_a_reader_says_about_it() {
     assert_eq!(
         entry["keyword"],
         "A lantern floats over a quiet lake at dusk."
+    );
+    // What a reader calls the file is theirs to say; the bytes underneath keep
+    // the place they were filed under, slugged from the name they arrived with.
+    assert_eq!(entry["name"], "lake at dusk.png");
+    let path = entry["path"].as_str().unwrap();
+    assert!(
+        path.starts_with("assets/images/lake-") && path.ends_with(".png"),
+        "the file stays where it was filed: {path}"
     );
     assert_eq!(entry["origin"], "brought");
     assert!(change["revision"].is_number());
@@ -1062,6 +1071,22 @@ async fn an_asset_takes_what_a_reader_says_about_it() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body_json(response).await["code"], "VALIDATION_FAILED");
+
+    // A row with no name is a row a reader cannot find: blank is refused rather
+    // than written, and so is a name that would wrap the row it stands on.
+    for refused in [
+        json!({ "name": "   " }),
+        json!({ "name": "x".repeat(201) }),
+        json!({ "name": "two\nlines" }),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(json_request("PATCH", &shelf_uri, refused))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body_json(response).await["code"], "VALIDATION_FAILED");
+    }
 
     let response = app
         .oneshot(json_request(

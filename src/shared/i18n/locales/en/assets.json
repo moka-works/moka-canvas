@@ -25,7 +25,10 @@
     "kindMany": "{{files}} files · {{bytes}}"
   },
   "stage": {
-    "label": "The file, and what it is used by"
+    "label": "The file, and what it is used by",
+    "rename": "Rename",
+    "renameAria": "Rename {{name}}",
+    "nameAria": "File name"
   },
   "uses": {
     "heading": "Used by",

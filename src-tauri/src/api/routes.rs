@@ -774,10 +774,11 @@ pub async fn replace_asset(
     }))
 }
 
-/// Writes down what a reader says about an asset: the words it is filed under,
-/// what was noted about it, whether it is kept to hand, and what it is a picture
-/// of. The file underneath is not looked at, so saying a picture is a keeper
-/// costs nothing of the picture's and re-hashes nothing.
+/// Writes down what a reader says about an asset: the name it is known by, the
+/// words it is filed under, what was noted about it, whether it is kept to
+/// hand, and what it is a picture of. The file underneath is not looked at, so
+/// saying a picture is a keeper costs nothing of the picture's and re-hashes
+/// nothing.
 pub async fn patch_asset_shelf(
     session: ProjectSession,
     Path(id): Path<String>,
@@ -792,6 +793,7 @@ pub async fn patch_asset_shelf(
                 note: request.note,
                 favorite: request.favorite,
                 keyword: request.keyword,
+                name: request.name,
             },
         )
         .await?;

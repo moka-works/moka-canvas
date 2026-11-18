@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -102,7 +103,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("the file on the stage", () => {
   it("says every place the file is used, room by room", () => {
@@ -207,6 +211,51 @@ describe("the file on the stage", () => {
 
     expect(useEditorStore.getState().previewAssetId).toBe(
       goldenNodeIds().assetImage,
+    );
+  });
+
+  it("renames the file where it stands, so a search can find the new words", async () => {
+    const moka = buildGoldenMokaFile();
+    const lake = moka.resources.images[0];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_, init) => {
+      const asked = JSON.parse(String((init as RequestInit).body));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            entry: { ...lake, ...asked },
+            revision: 7,
+            updatedAt: "2026-01-01T00:00:05.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    show(moka, lake.id);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename lake.png" }));
+    const field = screen.getByLabelText("File name");
+    fireEvent.change(field, { target: { value: "  quiet lake  " } });
+    await act(async () => {
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+
+    expect(
+      JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)),
+    ).toEqual({ name: "quiet lake" });
+    expect(useProjectStore.getState().moka?.resources.images[0].name).toBe(
+      "quiet lake",
+    );
+
+    // Escape takes the words back rather than writing the half-typed name
+    // down: the blur that follows the key must not be a save.
+    fireEvent.click(screen.getByRole("button", { name: "Rename quiet lake" }));
+    const again = screen.getByLabelText("File name");
+    fireEvent.change(again, { target: { value: "gone" } });
+    fireEvent.keyDown(again, { key: "Escape" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(useProjectStore.getState().moka?.resources.images[0].name).toBe(
+      "quiet lake",
     );
   });
 });

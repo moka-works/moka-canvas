@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ASSET_CATEGORY_LABELS,
   ASSET_KIND_LABELS,
+  MAX_ASSET_NAME_LENGTH,
   findResource,
   type ResourceEntry,
 } from "../../../shared/domain";
@@ -11,6 +12,7 @@ import { AssetPreviewSection } from "../../editor/panels/AssetFacts";
 import { kindOfShelf } from "../../editor/panels/shelfFilter";
 import { shelfOf } from "../../editor/panels/canvasAssets";
 import {
+  editShelfEntry,
   markAssetKeeper,
   requestDeleteAsset,
   revealAsset,
@@ -91,7 +93,7 @@ function ChosenFile({ entry }: { entry: ResourceEntry }) {
   return (
     <div className="assets-chosen" data-testid="assets-stage-file">
       <header className="assets-stage-head">
-        <h2 title={entry.path}>{entry.name}</h2>
+        <NameHeading entry={entry} key={entry.id} />
         <span className="assets-stage-chips">
           {chips.map((chip) => (
             <span className="assets-chip" key={chip}>
@@ -182,5 +184,89 @@ function ChosenFile({ entry }: { entry: ResourceEntry }) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The file's name, read large and written where it stands.
+ *
+ * A name is how a reader finds the file again when a card asks for a
+ * reference, so it is theirs to change after the file has arrived. The bytes
+ * underneath keep the path they were filed under — everything that points at
+ * the file does so by id — and the write lands as a new revision the way
+ * every other shelf edit does.
+ */
+function NameHeading({ entry }: { entry: ResourceEntry }) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.name);
+  // Escape takes the field back before it loses focus; without this the blur
+  // that follows would write the abandoned words down as a rename.
+  const cancelled = useRef(false);
+
+  const start = () => {
+    cancelled.current = false;
+    setDraft(entry.name);
+    setEditing(true);
+  };
+
+  const finish = () => {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(entry.name);
+      return;
+    }
+    const name = draft.trim();
+    if (!name || name === entry.name) {
+      setDraft(entry.name);
+      return;
+    }
+    void editShelfEntry(entry, { name });
+  };
+
+  if (!editing) {
+    return (
+      <h2 className="assets-stage-name" title={entry.path}>
+        {entry.name}
+        <button
+          aria-label={t("assets:stage.renameAria", { name: entry.name })}
+          className="assets-stage-rename-open"
+          onClick={start}
+          title={t("assets:stage.rename")}
+          type="button"
+        >
+          ✎
+        </button>
+      </h2>
+    );
+  }
+
+  return (
+    <form
+      className="assets-stage-rename"
+      onSubmit={(event) => {
+        event.preventDefault();
+        finish();
+      }}
+    >
+      <input
+        aria-label={t("assets:stage.nameAria")}
+        autoFocus
+        maxLength={MAX_ASSET_NAME_LENGTH}
+        onBlur={finish}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            cancelled.current = true;
+            event.currentTarget.blur();
+          }
+        }}
+        value={draft}
+      />
+    </form>
   );
 }

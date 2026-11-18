@@ -279,6 +279,7 @@ pub struct AssetShelfRequest {
     pub note: Option<String>,
     pub favorite: Option<bool>,
     pub keyword: Option<String>,
+    pub name: Option<String>,
 }
 
 /// Which node to put on the shelf.

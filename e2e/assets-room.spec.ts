@@ -291,3 +291,43 @@ test("a project's files are read whole in one room and placed from the rooms tha
 
   forgetHome(home);
 });
+
+/**
+ * A file's name is the reader's to say, and it is what a search finds.
+ *
+ * The bytes keep the path they were filed under — everything that points at
+ * the file does so by id — so renaming is only the shelf's own word for it.
+ */
+test("a file takes a new name where it stands, and the shelf finds it by it", async ({
+  page,
+}) => {
+  const home = projectHome("asset-rename");
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, join(home, "project"), "Asset Rename");
+  await openAssetsRoom(page);
+
+  await importFile(page, "image", "still.png", "image/png", TINY_PNG);
+  await rowFor(page, "still.png").click();
+  await expect(page.locator(".assets-stage-name")).toContainText("still.png");
+
+  await page.getByRole("button", { name: "Rename still.png" }).click();
+  const field = page.getByLabel("File name");
+  await field.fill("quiet lake.png");
+  await field.press("Enter");
+
+  await expect(page.locator(".assets-stage-name")).toContainText(
+    "quiet lake.png",
+  );
+  await expect(rowFor(page, "quiet lake.png")).toBeVisible();
+
+  // The words a search finds the file by are the new ones, which is what makes
+  // renaming worth doing before a card asks for a reference.
+  const asked = page.getByTestId("shelf-asked");
+  await asked.fill("quiet");
+  await expect(rowFor(page, "quiet lake.png")).toBeVisible();
+  await asked.fill("still");
+  await expect(page.getByText("Nothing on this shelf says that")).toBeVisible();
+
+  forgetHome(home);
+});

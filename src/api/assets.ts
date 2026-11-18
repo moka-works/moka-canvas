@@ -34,6 +34,8 @@ export interface AssetShelfEdit {
   note?: string;
   favorite?: boolean;
   keyword?: string;
+  /** What the file is called on the shelf; the bytes keep their own path. */
+  name?: string;
 }
 
 export const assetsApi = {

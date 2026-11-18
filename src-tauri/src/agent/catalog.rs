@@ -839,9 +839,9 @@ fn asset_tools() -> Vec<ToolSpec> {
             ("assetId", "string", "Asset id"),
             ("include", "array", "metadata, probe, provenance, uses"),
         ])),
-        effect("asset.update", "assets", ToolRisk::Write, "Change an asset's tags, note, favourite, or keyword. Not undoable.", schema(&["assetId"], &[
+        effect("asset.update", "assets", ToolRisk::Write, "Change an asset's name, tags, note, favourite, or keyword. Not undoable.", schema(&["assetId"], &[
             ("assetId", "string", "Asset id"),
-            ("patch", "object", "tags, note, favorite, keyword"),
+            ("patch", "object", "name, tags, note, favorite, keyword"),
         ])),
         command("asset.detach_references", "assets", ToolRisk::Write, "Clear asset references from canvas nodes so the asset can be deleted. Undoable.", schema(&["assetId"], &[
             ("assetId", "string", "Asset id"),

@@ -2,8 +2,8 @@ use crate::assets;
 use crate::config::AppConfig;
 use crate::domain::commands::{apply_commands_with_limits, registry_errors};
 use crate::domain::validate::{
-    CanvasLimits, MAX_ASSET_KEYWORD_LENGTH, MAX_ASSET_NOTE_LENGTH, MAX_ASSET_TAGS,
-    MAX_ASSET_TAG_LENGTH,
+    CanvasLimits, MAX_ASSET_KEYWORD_LENGTH, MAX_ASSET_NAME_LENGTH, MAX_ASSET_NOTE_LENGTH,
+    MAX_ASSET_TAGS, MAX_ASSET_TAG_LENGTH,
 };
 use crate::domain::{
     new_id, now_iso, AssetProvenance, CanvasDocument, DocumentCommand, MokaFile, NodeKind,
@@ -1075,6 +1075,37 @@ fn shelf_phrase(text: &str, limit: usize, what: &str) -> Result<Option<String>, 
     })
 }
 
+/// The name a reader calls an asset by, pared to what the shelf holds.
+///
+/// A name is the one phrase on the shelf that cannot be taken back: a row with
+/// no name is a row a reader cannot find or ask for. Control characters are
+/// refused too, since a name is read in rows and headings rather than in a box
+/// that wraps them.
+fn shelf_asset_name(text: &str) -> Result<String, ProjectError> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(ProjectError::domain(
+            "VALIDATION_FAILED",
+            "An asset's name cannot be blank",
+        ));
+    }
+    if trimmed.chars().count() > MAX_ASSET_NAME_LENGTH {
+        return Err(ProjectError::domain(
+            "VALIDATION_FAILED",
+            format!(
+                "A name of more than {MAX_ASSET_NAME_LENGTH} characters will not fit on the shelf"
+            ),
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(ProjectError::domain(
+            "VALIDATION_FAILED",
+            "An asset's name cannot carry line breaks or other control characters",
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// The opening of a longer piece of text, kept so the shelf can be searched by
 /// what a file says without the whole file being read.
 ///
@@ -1369,6 +1400,10 @@ impl ProjectStore for FsProjectStore {
             Some(text) => Some(shelf_phrase(text, MAX_ASSET_KEYWORD_LENGTH, "summary")?),
             None => None,
         };
+        let said_name = match &edit.name {
+            Some(text) => Some(shelf_asset_name(text)?),
+            None => None,
+        };
 
         let mut guard = self.state.lock().expect("store poisoned");
         let state = guard
@@ -1390,6 +1425,9 @@ impl ProjectStore for FsProjectStore {
         }
         if let Some(favorite) = edit.favorite {
             entry.favorite = Some(favorite);
+        }
+        if let Some(name) = said_name {
+            entry.name = name;
         }
         entry.updated_at = now_iso();
         let updated = entry.clone();

@@ -135,6 +135,8 @@ export const MAX_ASSET_TAGS = 24;
 /** How long one of those words may be. */
 export const MAX_ASSET_TAG_LENGTH = 32;
 export const MAX_ASSET_NOTE_LENGTH = 2_000;
+/** How long the name a reader calls a file by may be. */
+export const MAX_ASSET_NAME_LENGTH = 200;
 
 // ---------------------------------------------------------------------------
 // The cutting room

@@ -6177,11 +6177,34 @@ body.is-dragging-split {
 }
 
 .assets-stage-head h2 {
+  align-items: center;
   color: var(--ink);
+  display: flex;
   font-size: 18px;
   font-weight: 600;
+  gap: 6px;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+/* The way to the name: a small mark beside it rather than a field always in
+   the way of the heading a reader came here to read. */
+.assets-stage-rename-open {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  padding: 2px 4px;
+}
+
+.assets-stage-rename-open:hover {
+  color: var(--primary);
+}
+
+.assets-stage-rename input {
+  max-width: min(420px, 60vw);
+  width: 420px;
 }
 
 .assets-stage-chips {

@@ -25,7 +25,10 @@
     "kindMany": "{{files}} 个文件 · {{bytes}}"
   },
   "stage": {
-    "label": "文件及其引用"
+    "label": "文件及其引用",
+    "rename": "重命名",
+    "renameAria": "重命名 {{name}}",
+    "nameAria": "文件名"
   },
   "uses": {
     "heading": "引用位置",
