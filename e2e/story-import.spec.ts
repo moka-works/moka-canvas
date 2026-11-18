@@ -1,12 +1,10 @@
-import { join } from "node:path";
 import { expect, test, type Page } from "./fixtures";
 import {
   configureTheWholeStudio,
-  createProject,
   filmAct,
   forgetHome,
   forgetProjects,
-  newStory,
+  openSeededStory,
   openStoryRoom,
   projectHome,
 } from "./helpers";
@@ -110,61 +108,13 @@ test("a telling is imported into a board, and into a cut of its own", async ({
   await forgetProjects();
   await configureTheWholeStudio();
   try {
-    await page.goto("/");
-    await createProject(page, join(home, "project"), "Story Import");
-    await openStoryRoom(page);
-    await newStory(page, "Rain at Night");
-
-    // A premise, the chapters it is told in, and the cast they hold.
-    await page
-      .getByTestId("story-idea-input")
-      .fill("Eleven at night, and the last train stops where it should not.");
-    await page.getByTestId("story-idea-duration-3").click();
-    await page.getByTestId("story-confirm-idea").click();
-    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
-    await page.getByTestId("story-outline-start").click();
-    await expect(page.locator(".story-chapter")).toHaveCount(3, {
-      timeout: 30_000,
-    });
-    await page.getByTestId("story-confirm-outline").click();
-
-    await page.getByTestId("story-step-elements").click();
-    await page.getByTestId("story-elements-recognise").click();
-    await expect(page.locator(".story-element")).toHaveCount(4, {
-      timeout: 30_000,
-    });
-    await page.getByTestId("story-elements-draw-all").click();
-    await expect(page.getByTestId("story-elements-views-all")).toBeEnabled({
-      timeout: 60_000,
-    });
-    await page.getByTestId("story-elements-views-all").click();
-    await expect(
-      page
-        .getByTestId("story-element-character-Keeper")
-        .getByTestId("story-slot-turnaround")
-        .locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await page.getByTestId("story-confirm-elements").click();
-    await expect(page.getByTestId("story-step-storyboard")).toBeEnabled({
-      timeout: 30_000,
-    });
-
-    // One episode is boarded, framed and filmed; the first act is voiced and
-    // scored as well, and the second act is framed and filmed so that the step
-    // settles and the fifth step's own import stands open.
-    await page.getByTestId("story-step-storyboard").click();
-    await page.getByTestId("story-board-generate").click();
+    // The telling stands at a boarded episode whose frames are drawn; what
+    // this walks is the films and sound that make it ready to hand over.
+    await openSeededStory(page, home);
     const firstAct = page.getByTestId("story-act-0");
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
     });
-    await firstAct.getByTestId("story-act-draw-0").click();
-    await expect(
-      firstAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await expect(
-      firstAct.getByTestId("story-kf-slot-1").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await filmAct(page, firstAct, 0);
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
@@ -179,10 +129,6 @@ test("a telling is imported into a board, and into a cut of its own", async ({
     });
 
     const secondAct = page.getByTestId("story-act-1");
-    await secondAct.getByTestId("story-act-draw-1").click();
-    await expect(
-      secondAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await filmAct(page, secondAct, 1);
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,

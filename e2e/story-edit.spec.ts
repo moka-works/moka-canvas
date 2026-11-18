@@ -1,13 +1,10 @@
-import { join } from "node:path";
 import { expect, test, type Page } from "./fixtures";
 import {
   configureTheWholeStudio,
-  createProject,
   filmAct,
   forgetHome,
   forgetProjects,
-  newStory,
-  openStoryRoom,
+  openSeededStory,
   projectHome,
 } from "./helpers";
 
@@ -68,63 +65,13 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
   await forgetProjects();
   await configureTheWholeStudio();
   try {
-    await page.goto("/");
-    await createProject(page, join(home, "project"), "Story Edit");
-    await openStoryRoom(page);
-    await newStory(page, "Rain at Night");
-
-    // Steps one to four: a premise, chapters, a cast, a board, both acts filmed.
-    await page
-      .getByTestId("story-idea-input")
-      .fill("Eleven at night, and the last train stops where it should not.");
-    await page.getByTestId("story-idea-duration-3").click();
-    await page.getByTestId("story-confirm-idea").click();
-    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
-    await page.getByTestId("story-outline-start").click();
-    await expect(page.locator(".story-chapter")).toHaveCount(3, {
-      timeout: 30_000,
-    });
-    await page.getByTestId("story-confirm-outline").click();
-
-    await page.getByTestId("story-step-elements").click();
-    await page.getByTestId("story-elements-recognise").click();
-    await expect(page.locator(".story-element")).toHaveCount(4, {
-      timeout: 30_000,
-    });
-    await page.getByTestId("story-elements-draw-all").click();
-    await expect(page.getByTestId("story-elements-views-all")).toBeEnabled({
-      timeout: 60_000,
-    });
-    await page.getByTestId("story-elements-views-all").click();
-    // The four views have to be back before the step settles: an element drawn
-    // only halfway is an element whose views are not part of the answer, and
-    // the press reads the document rather than the spinners.
-    await expect(
-      page
-        .getByTestId("story-element-character-Keeper")
-        .getByTestId("story-slot-turnaround")
-        .locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await page.getByTestId("story-confirm-elements").click();
-    await expect(page.getByTestId("story-step-storyboard")).toBeEnabled({
-      timeout: 30_000,
-    });
-
-    await page.getByTestId("story-step-storyboard").click();
-    await page.getByTestId("story-board-generate").click();
+    // The telling stands at a boarded episode whose frames are drawn; the
+    // films and sound below are what the fifth step lays down.
+    await openSeededStory(page, home);
     const firstAct = page.getByTestId("story-act-0");
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
     });
-    // Every frame of the act is drawn, and a clip is made once they are: the
-    // pictures are what the clip waits on, and nothing is agreed to per piece.
-    await firstAct.getByTestId("story-act-draw-0").click();
-    await expect(
-      firstAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await expect(
-      firstAct.getByTestId("story-kf-slot-1").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await filmAct(page, firstAct, 0);
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
@@ -179,10 +126,6 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
     // The second act is framed and filmed too, which is what the step's own
     // press reads before it opens step five.
     const secondAct = page.getByTestId("story-act-1");
-    await secondAct.getByTestId("story-act-draw-1").click();
-    await expect(
-      secondAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await filmAct(page, secondAct, 1);
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,

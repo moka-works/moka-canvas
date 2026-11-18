@@ -1,12 +1,9 @@
-import { join } from "node:path";
 import { expect, test, type Page } from "./fixtures";
 import {
   configureTheWholeStudio,
-  createProject,
   forgetHome,
   forgetProjects,
-  newStory,
-  openStoryRoom,
+  openSeededStory,
   projectHome,
 } from "./helpers";
 
@@ -43,61 +40,6 @@ async function persistedChapter(page: Page): Promise<{
   });
 }
 
-/**
- * The telling walked to a board whose first act has been drawn: enough for a
- * revision to have a picture to disagree with.
- */
-async function toADrawnBoard(page: Page, home: string): Promise<void> {
-  await page.goto("/");
-  await createProject(page, join(home, "project"), "Story Revision");
-  await openStoryRoom(page);
-  await newStory(page, "Rain at Night");
-
-  await page
-    .getByTestId("story-idea-input")
-    .fill("Eleven at night, and the last train stops where it should not.");
-  await page.getByTestId("story-idea-duration-3").click();
-  await page.getByTestId("story-confirm-idea").click();
-  await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
-  await page.getByTestId("story-outline-start").click();
-  await expect(page.locator(".story-chapter")).toHaveCount(3, {
-    timeout: 30_000,
-  });
-  await page.getByTestId("story-confirm-outline").click();
-
-  await page.getByTestId("story-step-elements").click();
-  await page.getByTestId("story-elements-recognise").click();
-  await expect(page.locator(".story-element")).toHaveCount(4, {
-    timeout: 30_000,
-  });
-  await page.getByTestId("story-elements-draw-all").click();
-  await expect(page.getByTestId("story-elements-views-all")).toBeEnabled({
-    timeout: 60_000,
-  });
-  await page.getByTestId("story-elements-views-all").click();
-  await expect(
-    page
-      .getByTestId("story-element-character-Keeper")
-      .getByTestId("story-slot-turnaround")
-      .locator("img"),
-  ).toBeVisible({ timeout: 60_000 });
-  await page.getByTestId("story-confirm-elements").click();
-  await expect(page.getByTestId("story-step-storyboard")).toBeEnabled({
-    timeout: 30_000,
-  });
-
-  await page.getByTestId("story-step-storyboard").click();
-  await page.getByTestId("story-board-generate").click();
-  const firstAct = page.getByTestId("story-act-0");
-  await expect(firstAct.getByTestId("story-table")).toBeVisible({
-    timeout: 60_000,
-  });
-  await firstAct.getByTestId("story-act-draw-0").click();
-  await expect(
-    firstAct.getByTestId("story-kf-slot-0").locator("img"),
-  ).toBeVisible({ timeout: 60_000 });
-}
-
 test("a revised outline updates one shot's words and keeps its picture", async ({
   page,
 }) => {
@@ -105,7 +47,9 @@ test("a revised outline updates one shot's words and keeps its picture", async (
   await forgetProjects();
   await configureTheWholeStudio();
   try {
-    await toADrawnBoard(page, home);
+    // The telling stands at a boarded episode whose frames are drawn: enough
+    // for a revision to have a picture to disagree with.
+    await openSeededStory(page, home);
 
     // The outline moves on after the board and its first act's pictures exist.
     await page.getByTestId("story-step-outline").click();

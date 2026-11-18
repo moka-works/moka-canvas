@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
 import {
   MUSICIAN,
@@ -245,6 +246,55 @@ export async function openAssetsRoom(page: Page) {
   await expect(page.getByTestId("assets-page")).toBeVisible({
     timeout: 10_000,
   });
+}
+
+/**
+ * Where the pre-boarded telling lives, copied into each test's own home: once
+ * just boarded, and once with every frame of the episode drawn.
+ */
+const SEEDED_STORIES = {
+  board: fileURLToPath(new URL("./fixtures/story-seed", import.meta.url)),
+  drawn: fileURLToPath(new URL("./fixtures/story-seed-drawn", import.meta.url)),
+};
+
+/**
+ * Open a telling that already stands at a boarded episode.
+ *
+ * The folders under e2e/fixtures are a project taken from a room walked once:
+ * premise, chapters, cast and board are what the steps before it make of the
+ * stand-in, and every ask since is the test's own. `drawn` opens the copy
+ * whose frames are already pictures; the plain one is what a test that only
+ * rearranges the board expects.
+ */
+export async function openSeededStory(
+  page: Page,
+  home: string,
+  drawn = true,
+): Promise<void> {
+  const root = join(home, "project");
+  cpSync(drawn ? SEEDED_STORIES.drawn : SEEDED_STORIES.board, root, {
+    recursive: true,
+  });
+  // Documents are written through a temporary file under the project's own
+  // tmp/ directory; a folder copied from a fixture does not carry that empty
+  // directory with it.
+  mkdirSync(join(root, "tmp"), { recursive: true });
+  const response = await fetch(`${APP}/api/v1/projects/open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: root }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `opening the seeded story: ${response.status} ${await response.text()}`,
+    );
+  }
+  await page.goto("/");
+  await openRecent(page, "Story Seed", "Story");
+  await page
+    .locator(".story-row-name")
+    .filter({ hasText: "Rain at Night" })
+    .click();
 }
 
 /**

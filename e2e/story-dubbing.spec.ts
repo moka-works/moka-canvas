@@ -1,13 +1,10 @@
-import { join } from "node:path";
 import { expect, test, type Page } from "./fixtures";
 import {
   configureModels,
-  createProject,
   filmAct,
   forgetHome,
   forgetProjects,
-  newStory,
-  openStoryRoom,
+  openSeededStory,
   projectHome,
 } from "./helpers";
 import {
@@ -166,29 +163,14 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
     },
   ]);
   try {
-    await page.goto("/");
-    await createProject(page, join(home, "project"), "Story Dubbing");
-    await openStoryRoom(page);
-    await newStory(page, "Rain at Night");
-
-    // Steps one and two: a premise, and the chapters it is told in.
-    await page
-      .getByTestId("story-idea-input")
-      .fill("Eleven at night, and the last train stops where it should not.");
-    await page.getByTestId("story-idea-duration-3").click();
-    await page.getByTestId("story-confirm-idea").click();
-    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
-    await page.getByTestId("story-outline-start").click();
-    await expect(page.locator(".story-chapter")).toHaveCount(3, {
-      timeout: 30_000,
-    });
-    await page.getByTestId("story-confirm-outline").click();
+    // The telling stands at a boarded episode whose frames are drawn; the
+    // voices and the readings are what this test makes of it.
+    await openSeededStory(page, home);
 
     // Step three: the cast, each speaking part with a voice of its own. Keeper
     // reads for a second and Traveller for four — the stand-in's own rule for
     // a voice named "long" — which is what the last part of this test needs.
     await page.getByTestId("story-step-elements").click();
-    await page.getByTestId("story-elements-recognise").click();
     await expect(page.locator(".story-element")).toHaveCount(4, {
       timeout: 30_000,
     });
@@ -240,25 +222,9 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
       ]),
     );
 
-    // The drawings the step waits on, and then the board.
-    await page.getByTestId("story-elements-draw-all").click();
-    await expect(page.getByTestId("story-elements-views-all")).toBeEnabled({
-      timeout: 60_000,
-    });
-    await page.getByTestId("story-elements-views-all").click();
-    await expect(
-      page
-        .getByTestId("story-element-character-Keeper")
-        .getByTestId("story-slot-turnaround")
-        .locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await page.getByTestId("story-confirm-elements").click();
-    await expect(page.getByTestId("story-step-storyboard")).toBeEnabled({
-      timeout: 30_000,
-    });
+    // The board the seed left is where the lines are read and the acts filmed.
     await page.getByTestId("story-step-storyboard").click();
     const firstAct = page.getByTestId("story-act-0");
-    await page.getByTestId("story-board-generate").click();
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
     });
@@ -326,24 +292,12 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
     ).toContainText("Read");
     await firstAct.getByTestId("story-kf-dialogue-0").click();
 
-    // Every frame of both acts is drawn and filmed, which is what the fifth
-    // step lays down.
-    await firstAct.getByTestId("story-act-draw-0").click();
-    await expect(
-      firstAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
-    await expect(
-      firstAct.getByTestId("story-kf-slot-1").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
+    // Both acts are filmed, which is what the fifth step lays down.
     await filmAct(page, firstAct, 0);
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
     const secondAct = page.getByTestId("story-act-1");
-    await secondAct.getByTestId("story-act-draw-1").click();
-    await expect(
-      secondAct.getByTestId("story-kf-slot-0").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await filmAct(page, secondAct, 1);
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,

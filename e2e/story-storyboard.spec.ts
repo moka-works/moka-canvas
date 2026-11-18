@@ -19,6 +19,7 @@ import {
   forgetProjects,
   newStory,
   openAssetsRoom,
+  openSeededStory,
   openStoryRoom,
   projectHome,
 } from "./helpers";
@@ -909,7 +910,7 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
   await forgetProjects();
   await configureTheWholeStudio();
   try {
-    await toTheBoard(page, home, "Story Board Edit");
+    await openSeededStory(page, home, false);
 
     // An act goes in at the seam the reader pointed at — above "The last
     // carriage", the act that stood second — and the room names it by the
@@ -1086,18 +1087,13 @@ test("a clip's words are rewritten for the model's contract before it is filmed"
     },
   ]);
   try {
-    // Straight into the story room: no canvas is mounted on the way in, so the
-    // model registry has to be one the app itself read.
-    await toTheBoard(page, home, "Rewritten Ask", "Story");
+    // A telling already boarded and drawn: what this checks is the ask that
+    // stands in front of the film, not the walk to the board.
+    await openSeededStory(page, home);
     const firstAct = page.getByTestId("story-act-0");
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
     });
-
-    await firstAct.getByTestId("story-act-draw-0").click();
-    await expect(
-      firstAct.getByTestId("story-kf-slot-1").locator("img"),
-    ).toBeVisible({ timeout: 60_000 });
     await expect(firstAct.getByTestId("story-act-video-go-0")).toBeEnabled();
 
     // The press films nothing yet: the words stand in front of it.
@@ -1199,7 +1195,7 @@ test("a picture's words are rewritten for the model's contract before it is draw
     { id: STORYTELLER, capability: "text", alias: "Storyteller" },
   ]);
   try {
-    await toTheBoard(page, home, "Painted Ask", "Story");
+    await openSeededStory(page, home);
     const firstAct = page.getByTestId("story-act-0");
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
