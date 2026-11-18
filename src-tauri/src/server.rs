@@ -253,6 +253,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/runtime", get(runtime))
         .merge(crate::api::router())
         .fallback_service(static_service)
+        .layer(middleware::from_fn(cache_static))
         .layer(middleware::from_fn(log_api_request))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -327,6 +328,36 @@ async fn ready(State(state): State<ApiState>) -> impl IntoResponse {
             },
         })),
     )
+}
+
+/// Keeps the loaded page from outliving the build it came from.
+///
+/// The desktop window keeps one origin across launches on purpose (see
+/// [`REMEMBERED_PORT_FILE`]), and its webview stores HTTP responses on disk: a
+/// rebuilt app whose `index.html` was still served from that cache would run
+/// yesterday's chunks against today's binary. The page and the SPA fallback are
+/// therefore never stored, while the content-hashed chunks under `/assets` may
+/// be kept — a new build names new hashes, and a hash that survives is the same
+/// bytes, so browsers still get their caching for the payload that costs.
+async fn cache_static(req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_owned();
+    let mut response = next.run(req).await;
+    if path.starts_with("/api/") {
+        return response;
+    }
+    let is_page = !path.starts_with("/assets/")
+        || response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/html"));
+    let value = if is_page {
+        HeaderValue::from_static("no-store")
+    } else {
+        HeaderValue::from_static("public, max-age=31536000, immutable")
+    };
+    response.headers_mut().insert(header::CACHE_CONTROL, value);
+    response
 }
 
 /// Emits one structured event per API request with a request id, duration,
@@ -475,6 +506,49 @@ mod tests {
             .into_response();
         let body = body_json(response).await;
         assert_eq!(body["delivery"], "network");
+    }
+
+    /// A rebuild replaces the hashed chunks the page names, while the desktop
+    /// window keeps one origin across launches. A stored copy of index.html
+    /// would therefore keep running an old frontend against the new binary, so
+    /// the page and the SPA fallback must refuse storage while the hashed
+    /// chunks keep theirs.
+    #[tokio::test]
+    async fn the_page_is_not_cacheable_but_its_hashed_chunks_are() {
+        use tower::ServiceExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let state = test_state(root.path());
+        let static_dir = state.config.server.static_dir.clone();
+        std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
+        std::fs::create_dir_all(static_dir.join("assets")).unwrap();
+        std::fs::write(static_dir.join("assets/chunk-abc.js"), "console.log(1)").unwrap();
+
+        for (path, expected) in [
+            ("/", "no-store"),
+            ("/story/anything", "no-store"),
+            (
+                "/assets/chunk-abc.js",
+                "public, max-age=31536000, immutable",
+            ),
+            // A chunk a stale page names and the build no longer has falls
+            // back to the page, and that answer must not be stored either.
+            ("/assets/gone-xyz.js", "no-store"),
+        ] {
+            let response = router(state.clone())
+                .oneshot(Request::get(path).body(axum::body::Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CACHE_CONTROL)
+                    .and_then(|value| value.to_str().ok()),
+                Some(expected),
+                "{path}"
+            );
+        }
     }
 
     #[tokio::test]

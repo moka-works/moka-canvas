@@ -35,7 +35,7 @@ export CARGO_INCREMENTAL ?= 0
 endif
 endif
 
-.PHONY: help install fonts check check-deps check-boundaries check-version release-check test e2e-parallel web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean
+.PHONY: help install fonts check check-deps check-boundaries check-version release-check test e2e-parallel web-build web-serve tauri-dev cli package-web package-macos package-macos-x86 package-macos-pkg package-windows package-linux cross-package-windows prepare-release set-version clean clean-webview-cache
 
 .DEFAULT_GOAL := help
 
@@ -206,3 +206,8 @@ prepare-release: ## Collect release artifacts (SOURCE -> DEST)
 
 clean: ## Remove build outputs
 	rm -rf dist release src-tauri/target node_modules/.tmp
+
+# Reinstalling does not clear the webview's on-disk cache: it belongs to the
+# bundle identifier under the user's cache directory. Quit the app first.
+clean-webview-cache: ## Clear the desktop window's cached frontend (quit the app first)
+	node scripts/clean-webview-cache.mjs
