@@ -335,6 +335,11 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
       firstAct.getByTestId("story-kf-slot-1").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
     await firstAct.getByTestId("story-act-video-go-0").click();
+    // The model speaks a protocol that declares a prompt contract, so every
+    // film press stands behind the words it will send.
+    const firstFilm = page.getByTestId("story-video-prompt-dialog");
+    await expect(firstFilm).toBeVisible();
+    await firstFilm.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
@@ -344,6 +349,9 @@ test("a telling is read line by line, each in the voice of whoever says it", asy
       secondAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
     await secondAct.getByTestId("story-act-video-go-1").click();
+    const secondFilm = page.getByTestId("story-video-prompt-dialog");
+    await expect(secondFilm).toBeVisible();
+    await secondFilm.getByTestId("story-video-prompt-send").click();
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,
     });

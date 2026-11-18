@@ -1078,6 +1078,7 @@ export function PromptPanel() {
                 capability={asked}
                 noneLabel={t("editor:promptPanel.providerDefault")}
                 onChange={(reference) => commit({ model: reference ?? "" })}
+                testId="prompt-panel-model"
                 value={spec.model || null}
               />
             )}

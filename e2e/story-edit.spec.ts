@@ -12,7 +12,7 @@ import {
 
 // The whole telling is walked in one test — five steps, every ask through a
 // stand-in — which needs longer than the suite's own budget for one case.
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 90_000 });
 
 /**
  * The fifth step: a telling's clips laid end to end as one timeline.
@@ -125,6 +125,11 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
       firstAct.getByTestId("story-kf-slot-1").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
     await firstAct.getByTestId("story-act-video-go-0").click();
+    // The model speaks a protocol that declares a prompt contract, so every
+    // film press stands behind the words it will send.
+    const firstFilm = page.getByTestId("story-video-prompt-dialog");
+    await expect(firstFilm).toBeVisible();
+    await firstFilm.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
@@ -183,6 +188,9 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
       secondAct.getByTestId("story-kf-slot-0").locator("img"),
     ).toBeVisible({ timeout: 60_000 });
     await secondAct.getByTestId("story-act-video-go-1").click();
+    const secondFilm = page.getByTestId("story-video-prompt-dialog");
+    await expect(secondFilm).toBeVisible();
+    await secondFilm.getByTestId("story-video-prompt-send").click();
     await expect(secondAct.getByTestId("story-act-video-1")).toBeVisible({
       timeout: 60_000,
     });

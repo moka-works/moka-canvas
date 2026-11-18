@@ -684,9 +684,7 @@ test("a panel squeezed small keeps the prompt box clear of what stands under it"
   const input = await panel
     .locator(".prompt-panel-prompt .prompt-panel-input")
     .boundingBox();
-  const picker = await panel
-    .locator(".prompt-panel-prompt select")
-    .boundingBox();
+  const picker = await panel.getByTestId("prompt-panel-model").boundingBox();
   if (!input || !picker)
     throw new Error("the panel lost its field or its model");
   expect(input.y + input.height).toBeLessThanOrEqual(picker.y + 1);
