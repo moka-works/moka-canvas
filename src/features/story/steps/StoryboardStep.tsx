@@ -202,6 +202,18 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     .filter((act) =>
       actComplete(act, actGranularity(act, story.shotGranularity)),
     ).length;
+  // A shot said to need no picture has no frame for a shot-at-a-time clip to
+  // open on, so a default that would reach such an act cannot be made
+  // shot-at-a-time. Acts with a choice of their own are not the default's to
+  // move, which is what the switch is told here.
+  const pinnedByPictures = story.chapters.some((held) =>
+    held.acts.some(
+      (act) =>
+        act.transition === undefined &&
+        act.shotGranularity === undefined &&
+        act.keyframes.some((keyframe) => keyframe.artNotNeeded === true),
+    ),
+  );
 
   // A telling longer than one batch is boarded in waves, the next one
   // beginning when the one before it is over rather than when the reader
@@ -243,6 +255,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
 
   const chooseGranularity = (next: StoryShotGranularity) => {
     if (next === story.shotGranularity) return;
+    if (next === "keyframe" && pinnedByPictures) return;
     if (videos > 0) {
       setGranularityTo(next);
       return;
@@ -432,19 +445,31 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             role="radiogroup"
             title={t("story:storyboard.granularityDefaultHint")}
           >
-            {STORY_GRANULARITY_OPTIONS.map((option) => (
-              <button
-                aria-checked={story.shotGranularity === option}
-                className={`story-choice${story.shotGranularity === option ? " is-on" : ""}`}
-                data-testid={`story-granularity-${option}`}
-                key={option}
-                onClick={() => chooseGranularity(option)}
-                role="radio"
-                type="button"
-              >
-                {t(`story:storyboard.granularity_${option}`)}
-              </button>
-            ))}
+            {STORY_GRANULARITY_OPTIONS.map((option) => {
+              const blocked =
+                option === "keyframe" &&
+                pinnedByPictures &&
+                story.shotGranularity !== "keyframe";
+              return (
+                <button
+                  aria-checked={story.shotGranularity === option}
+                  className={`story-choice${story.shotGranularity === option ? " is-on" : ""}`}
+                  data-testid={`story-granularity-${option}`}
+                  disabled={blocked}
+                  key={option}
+                  onClick={() => chooseGranularity(option)}
+                  role="radio"
+                  title={
+                    blocked
+                      ? t("story:storyboard.granularityPinned")
+                      : undefined
+                  }
+                  type="button"
+                >
+                  {t(`story:storyboard.granularity_${option}`)}
+                </button>
+              );
+            })}
           </span>
           <div className="story-step-actions">
             {redrawable.length > 0 && (

@@ -196,6 +196,11 @@ export function ActCard({
     useState<StoryShotGranularity | null>(null);
   const granularity = actGranularity(act, story.shotGranularity);
   const perShot = granularity === "keyframe";
+  // A shot said to need no picture has no frame for a shot-at-a-time clip to
+  // open on, so such an act is filmed whole and cannot be switched to shots.
+  const pictureless = act.keyframes.some(
+    (keyframe) => keyframe.artNotNeeded === true,
+  );
   const clip = currentTake(act.video);
   const clipPlace: TakePlace = {
     kind: "actVideo",
@@ -387,6 +392,7 @@ export function ActCard({
 
   const chooseGranularity = (next: StoryShotGranularity) => {
     if (next === granularity) return;
+    if (next === "keyframe" && pictureless) return;
     if (actVideos > 0) {
       setGranularityTo(next);
       return;
@@ -545,19 +551,29 @@ export function ActCard({
           className="story-granularity story-act-granularity"
           role="radiogroup"
         >
-          {GRANULARITY_OPTIONS.map((option) => (
-            <button
-              aria-checked={granularity === option}
-              className={`story-choice${granularity === option ? " is-on" : ""}`}
-              data-testid={`story-act-granularity-${option}-${index}`}
-              key={option}
-              onClick={() => chooseGranularity(option)}
-              role="radio"
-              type="button"
-            >
-              {t(`story:storyboard.granularity_${option}`)}
-            </button>
-          ))}
+          {GRANULARITY_OPTIONS.map((option) => {
+            const blocked =
+              option === "keyframe" &&
+              pictureless &&
+              granularity !== "keyframe";
+            return (
+              <button
+                aria-checked={granularity === option}
+                className={`story-choice${granularity === option ? " is-on" : ""}`}
+                data-testid={`story-act-granularity-${option}-${index}`}
+                disabled={blocked}
+                key={option}
+                onClick={() => chooseGranularity(option)}
+                role="radio"
+                title={
+                  blocked ? t("story:storyboard.granularityPinned") : undefined
+                }
+                type="button"
+              >
+                {t(`story:storyboard.granularity_${option}`)}
+              </button>
+            );
+          })}
         </span>
         {/* Where the act stands in the episode, and how it leaves: the board
             is the reader's to reorder and to cut down, not only to fill in. */}

@@ -45,6 +45,14 @@ import {
 beforeEach(resetStoryboard);
 afterEach(cleanupStoryboard);
 
+/** The telling with its first shot closed without a picture. */
+function withAPicturelessShot(): MokaFile {
+  const moka = withUndrawnFrames();
+  const act = moka.stories![0]!.chapters[0]!.acts[0]!;
+  act.keyframes[0]!.artNotNeeded = true;
+  return moka;
+}
+
 describe("editing an episode's board", () => {
   it("asks before writing an episode's board again, and lists what it costs", async () => {
     openAtBoard(boarded());
@@ -469,6 +477,52 @@ describe("editing an episode's board", () => {
       .getByTestId("story-transition-video-1")
       .querySelector("img");
     expect(preview?.getAttribute("src")).toContain("asset-actVideo");
+  });
+
+  it("keeps an act with a pictureless shot filmed whole", () => {
+    openAtBoard(withAPicturelessShot());
+
+    // The act cannot be made shot-at-a-time, and neither can the default that
+    // would reach it: a shot with no picture has no frame to open a clip on.
+    expect(
+      (
+        screen.getByTestId(
+          "story-act-granularity-keyframe-0",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId("story-granularity-keyframe") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    // The act-level choice stands, and the shot beside it can still be closed
+    // without a picture.
+    expect(
+      (screen.getByTestId("story-act-granularity-act-0") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(screen.getByTestId("story-kf-slot-1-not-needed")).toBeTruthy();
+  });
+
+  it("offers no pictureless shot to an act filmed shot by shot", () => {
+    const moka = withUndrawnFrames();
+    moka.stories![0]!.chapters[0]!.acts[0]!.shotGranularity = "keyframe";
+    openAtBoard(moka);
+
+    expect(screen.queryByTestId("story-kf-slot-0-not-needed")).toBeNull();
+    expect(screen.queryByTestId("story-kf-slot-1-not-needed")).toBeNull();
+  });
+
+  it("keeps the way back from a pictureless shot in a shot-by-shot act", () => {
+    const moka = withAPicturelessShot();
+    moka.stories![0]!.chapters[0]!.acts[0]!.shotGranularity = "keyframe";
+    openAtBoard(moka);
+
+    // A board written before the rule still reads as it stands, and its shot
+    // can take a picture again — the only way out of that corner.
+    expect(screen.getByTestId("story-kf-slot-0-not-needed-state")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("story-kf-slot-0-need"));
+    expect(acts()[0]?.keyframes[0]?.artNotNeeded).toBe(false);
   });
 
   it("moves an act up and down the episode, everything it holds travelling with it", async () => {

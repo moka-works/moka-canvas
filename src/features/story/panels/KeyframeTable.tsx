@@ -721,8 +721,15 @@ function KeyframeRow({
               keepFrame(story, chapterId, act, keyframe, assetId)
             }
             onGenerate={draw}
-            onNotNeededChange={(notNeeded) =>
-              write({ artNotNeeded: notNeeded })
+            // A shot filmed on its own needs its own frame to start from, so
+            // a pictureless shot has nothing to film in that mode: the choice
+            // is offered only where the act is filmed whole. A shot already
+            // marked so keeps the way back, so a board written before this
+            // rule can still be repaired.
+            onNotNeededChange={
+              !perShot || keyframe.artNotNeeded === true
+                ? (notNeeded) => write({ artNotNeeded: notNeeded })
+                : undefined
             }
             notNeeded={keyframe.artNotNeeded === true}
             onPickFromLibrary={() => setPicking(true)}

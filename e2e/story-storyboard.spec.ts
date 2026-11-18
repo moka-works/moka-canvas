@@ -935,6 +935,12 @@ test("a shot that needs no picture is still a moment of the clip", async ({
     await expect(
       firstAct.getByTestId("story-kf-slot-0-not-needed-state"),
     ).toBeVisible();
+    // The act is held to filming whole — by its own card and by the telling's
+    // default — because a shot with no picture has no frame to film alone.
+    await expect(
+      firstAct.getByTestId("story-act-granularity-keyframe-0"),
+    ).toBeDisabled();
+    await expect(page.getByTestId("story-granularity-keyframe")).toBeDisabled();
     await firstAct.getByTestId("story-act-draw-0").click();
     await expect(
       firstAct.getByTestId("story-kf-slot-1").locator("img"),

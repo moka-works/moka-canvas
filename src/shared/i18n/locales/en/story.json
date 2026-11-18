@@ -547,6 +547,7 @@
     "granularityDefaultTitle": "Make {{to}} the default?",
     "granularityBody": "The {{count}} clips already made stay on the shelf, but the fifth step assembles only the ones made {{to}}",
     "granularityNote": "The two kinds of clip are kept apart, so switching back and forth loses nothing",
+    "granularityPinned": "A shot marked as needing no picture has nothing to film on its own: such an act is filmed by act",
     "granularityConfirm": "Film {{to}}",
     "maxRefs": "Reference pictures",
     "maxRefsHint": "How many of a shot's referenced pictures travel with its ask, 0 to 9",
