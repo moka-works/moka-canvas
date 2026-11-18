@@ -600,6 +600,16 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
     ).toHaveValue(/Shoot this act/);
+    // Every shot is named at the second it opens, and the line said in one
+    // stands with it rather than in a paragraph of its own.
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(
+      /At 0s: Rain over the platform[^\n]*Keeper: "It stopped running years ago\."/,
+    );
+    await expect(
+      askDialog.getByTestId("story-video-prompt-text-0"),
+    ).toHaveValue(/At 3s: Traveller turns\. Traveller: "Then we walk\."/);
     await askDialog.getByTestId("story-video-prompt-text-0").fill(written);
     await askDialog.getByTestId("story-video-prompt-film").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
@@ -900,6 +910,62 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
         )
         .toBe(0);
     }
+  } finally {
+    forgetHome(home);
+  }
+});
+
+test("a shot that needs no picture is still a moment of the clip", async ({
+  page,
+}) => {
+  const home = projectHome("story-word-shot");
+  await forgetProjects();
+  await configureTheWholeStudio();
+  try {
+    await toTheBoard(page, home, "Word Shot");
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The reader closes the first shot without a picture: its words and its
+    // three seconds stay on the board, and the act waits only on the frames
+    // that are meant to be drawn.
+    await firstAct.getByTestId("story-kf-slot-0-not-needed").click();
+    await expect(
+      firstAct.getByTestId("story-kf-slot-0-not-needed-state"),
+    ).toBeVisible();
+    await firstAct.getByTestId("story-act-draw-0").click();
+    await expect(
+      firstAct.getByTestId("story-kf-slot-1").locator("img"),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(firstAct.getByTestId("story-act-video-go-0")).toBeEnabled();
+
+    // The clip is filmed from the one picture there is, and its ask carries
+    // the pictureless shot as a moment at its own second — words, line and
+    // all — for the model to fill from the picture beside it.
+    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    const dialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
+      /At 0s: Rain over the platform, Keeper under the lamp\. Keeper: "It stopped running years ago\."/,
+    );
+    await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
+      /At 3s: Traveller turns\. Traveller: "Then we walk\."/,
+    );
+    await dialog.getByTestId("story-video-prompt-film").click();
+    await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect
+      .poll(
+        async () =>
+          (await providerCalls())
+            .filter((call) => call.path === "/v1/videos")
+            .at(-1)?.prompt,
+        { timeout: 30_000 },
+      )
+      .toContain("At 0s: Rain over the platform");
   } finally {
     forgetHome(home);
   }

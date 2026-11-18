@@ -582,48 +582,59 @@ describe("story prompts", () => {
     expect(prompt).toContain("空站台。");
   });
 
-  it("shoots an act between the frames that were drawn for it", () => {
+  it("shoots an act moment by moment, each at the second it opens", () => {
     const prompt = storyActVideoPrompt({
       aspect: "16:9",
       style: "现代都市风",
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
-      first: "雨中的站台。",
-      last: "另一人转过身来。",
-      middle: "灯亮了。",
+      shots: [
+        { at: 0, content: "雨中的站台。" },
+        { at: 2, content: "灯亮了。" },
+        { at: 4, content: "另一人转过身来。" },
+      ],
       seconds: 5,
     });
     expect(prompt).toContain("about 5 seconds");
-    expect(prompt).toContain("It opens on: 雨中的站台。");
-    expect(prompt).toContain("It passes through: 灯亮了。");
-    expect(prompt).toContain("It ends on: 另一人转过身来。");
+    expect(prompt).toContain("At 0s: 雨中的站台。");
+    expect(prompt).toContain("At 2s: 灯亮了。");
+    expect(prompt).toContain("At 4s: 另一人转过身来。");
     expect(prompt).not.toContain("{{");
   });
 
-  it("puts the lines an act says into the clip, so the mouths move with them", () => {
+  it("puts the lines an act says under the moment each is spoken in", () => {
     const prompt = storyActVideoPrompt({
       aspect: "16:9",
       style: "现代都市风",
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
-      first: "雨中的站台。",
-      last: "另一人转过身来。",
-      middle: "",
-      seconds: 5,
-      dialogue: [
+      shots: [
         {
-          id: "line-1",
-          speaker: "林",
-          text: "车已经停运了。",
-          tone: "平静",
+          at: 0,
+          content: "雨中的站台。",
+          dialogue: [
+            {
+              id: "line-1",
+              speaker: "林",
+              text: "车已经停运了。",
+              tone: "平静",
+            },
+          ],
         },
-        { id: "line-2", speaker: "", text: "远处传来一声汽笛。" },
+        {
+          at: 3,
+          content: "另一人转过身来。",
+          dialogue: [{ id: "line-2", speaker: "", text: "远处传来一声汽笛。" }],
+        },
       ],
+      seconds: 5,
     });
-    expect(prompt).toContain(
-      'Said in it, in this order: 林 (平静): "车已经停运了。"; "远处传来一声汽笛。"',
-    );
-    expect(prompt).toContain("mouths move with these words");
+    expect(prompt).toContain('At 0s: 雨中的站台。 林 (平静): "车已经停运了。"');
+    expect(prompt).toContain('At 3s: 另一人转过身来。 "远处传来一声汽笛。"');
+    // The lines are not a paragraph of their own: each stands with the moment
+    // that says it, and the instruction keeps it there.
+    expect(prompt).not.toContain("Said in it");
+    expect(prompt).toContain("spoken inside the moment it stands with");
   });
 
   it("says nothing about words an act does not say", () => {
@@ -632,27 +643,18 @@ describe("story prompts", () => {
       style: "现代都市风",
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
-      first: "雨中的站台。",
-      last: "另一人转过身来。",
-      middle: "",
-      seconds: 4,
-      dialogue: [{ id: "line-1", speaker: "林", text: "   " }],
-    });
-    expect(prompt).not.toContain("Said in it");
-  });
-
-  it("shoots an act with nothing in the middle without saying it passes through nothing", () => {
-    const prompt = storyActVideoPrompt({
-      aspect: "16:9",
-      style: "现代都市风",
-      title: "第 1 幕 空站台",
-      summary: "站台上的灯一盏一盏亮起来。",
-      first: "雨中的站台。",
-      last: "另一人转过身来。",
-      middle: "",
+      shots: [
+        {
+          at: 0,
+          content: "雨中的站台。",
+          dialogue: [{ id: "line-1", speaker: "林", text: "   " }],
+        },
+        { at: 2, content: "另一人转过身来。" },
+      ],
       seconds: 4,
     });
-    expect(prompt).not.toContain("passes through");
+    expect(prompt).not.toContain('"');
+    expect(prompt).not.toContain("mouths move");
   });
 
   it("shoots a piece drawn from references without calling them frames to move between", () => {
@@ -661,19 +663,36 @@ describe("story prompts", () => {
       style: "现代都市风",
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
-      first: "雨中的站台。",
-      last: "另一人转过身来。",
-      middle: "雨中的站台。; 另一人转过身来。",
+      shots: [
+        { at: 0, content: "雨中的站台。" },
+        { at: 2, content: "另一人转过身来。" },
+      ],
       mode: "references",
       seconds: 5,
     });
     expect(prompt).toContain("about 5 seconds");
-    expect(prompt).toContain("It covers: 雨中的站台。; 另一人转过身来。");
+    expect(prompt).toContain("At 0s: 雨中的站台。");
+    expect(prompt).toContain("At 2s: 另一人转过身来。");
     expect(prompt).toContain("references the shots are drawn from");
     expect(prompt).not.toContain("frames it moves between");
-    expect(prompt).not.toContain("It opens on");
-    expect(prompt).not.toContain("It ends on");
     expect(prompt).not.toContain("{{");
+  });
+
+  it("asks for a piece of words alone when no picture travels", () => {
+    const prompt = storyActVideoPrompt({
+      aspect: "16:9",
+      style: "现代都市风",
+      title: "第 1 幕 空站台",
+      summary: "站台上的灯一盏一盏亮起来。",
+      shots: [{ at: 0, content: "灯灭了。" }],
+      mode: "words",
+      seconds: 4,
+    });
+    expect(prompt).toContain("about 4 seconds");
+    expect(prompt).toContain("At 0s: 灯灭了。");
+    expect(prompt).toContain("No pictures are given");
+    expect(prompt).not.toContain("frames it moves between");
+    expect(prompt).not.toContain("references the shots are drawn from");
   });
 
   it("shoots one shot from the frame it starts on", () => {
@@ -776,9 +795,7 @@ describe("story prompts", () => {
         style: "…",
         title: "…",
         summary: "…",
-        first: "…",
-        last: "…",
-        middle: "",
+        shots: [{ at: 0, content: "…" }],
         seconds: 1,
       }),
       storyKeyframeVideoPrompt({
@@ -813,7 +830,7 @@ describe("story prompts", () => {
         style: "live action",
         seconds: 5,
         ends: { first: true, last: false, references: false },
-        shots: [{ text: "A bus stop." }],
+        shots: [{ start: 0, text: "A bus stop." }],
         cast: [{ name: "林", ref: "S1", kind: "character", description: "…" }],
         dialogue: [{ speaker: "林", ref: "S1", text: "车已经停运了。" }],
       },
@@ -821,6 +838,10 @@ describe("story prompts", () => {
     expect(prompt).toContain("Shoot this shot.");
     expect(prompt).toContain('"ref": "S1"');
     expect(prompt).toContain("车已经停运了。");
+    // The shot's opening second travels with the material and is named as a
+    // fact the rewrite keeps.
+    expect(prompt).toContain('"start": 0');
+    expect(prompt).toContain("every shot with the second it opens at");
     expect(prompt).not.toContain("{{");
   });
 

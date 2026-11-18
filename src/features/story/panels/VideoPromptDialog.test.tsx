@@ -131,6 +131,42 @@ describe("a clip's prompt written by hand", () => {
       screen.getByTestId("story-video-prompt-moved-0").textContent,
     ).toContain("The board has changed");
   });
+
+  it("takes the board's new words when it is opened again after the board moved", () => {
+    const moka = buildStoryMokaFile();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    open(moka);
+    cleanup();
+
+    // The reader retimes the shot and rewrites it by hand while the dialog is
+    // closed: the words nobody touched follow the board, not the session.
+    frame.content = "雨中的站台，灯灭了。";
+    frame.durationMs = 5_000;
+    open(moka);
+    const field = screen.getByTestId(
+      "story-video-prompt-text-0",
+    ) as HTMLTextAreaElement;
+    expect(field.value).toContain("灯灭了。");
+    expect(field.value).toContain("about 5 seconds");
+  });
+
+  it("keeps the reader's own words when the board moves under them", () => {
+    const moka = buildStoryMokaFile();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    open(moka);
+    const field = screen.getByTestId(
+      "story-video-prompt-text-0",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "Hold on the lantern." } });
+    cleanup();
+
+    frame.content = "雨中的站台，灯灭了。";
+    open(moka);
+    expect(
+      (screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Hold on the lantern.");
+  });
 });
 
 /** A video model whose protocol declares a prompt contract. */

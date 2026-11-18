@@ -5,6 +5,7 @@ import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
 import type {
   StoryDocument,
   StoryFilmRole,
+  StoryKeyframe,
 } from "../../../shared/domain/types";
 import { storyMergeElementsPrompt } from "../../../shared/prompts";
 import { useModelStore } from "../../settings/modelStore";
@@ -1081,11 +1082,17 @@ describe("planning the clips", () => {
     // A line the shot says travels with the clip it is filmed as: the mouth
     // moves with the words, and the dubbing that comes later lines up.
     expect(items[0].prompt).toContain('林 (平静): "车已经停运了。"');
+    // Each shot is named by the second it opens, from the holds the board
+    // gives it, so a frame added or retimed by hand moves the ones after it.
+    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(items[0].prompt).toContain("At 2s: 周转过身来。");
+    // The line stands with the shot that says it rather than in a paragraph
+    // of its own.
+    expect(items[0].prompt).toContain(
+      'At 0s: 雨中的站台，林立在灯下。 林 (平静): "车已经停运了。"',
+    );
     // The pictures are references, and the prompt asks for a shot drawn from
     // them rather than one moving between frames.
-    expect(items[0].prompt).toContain(
-      "It covers: 雨中的站台，林立在灯下。; 周转过身来。",
-    );
     expect(items[0].prompt).toContain("references the shots are drawn from");
     expect(items[0].prompt).not.toContain("frames it moves between");
 
@@ -1097,9 +1104,157 @@ describe("planning the clips", () => {
       references: true,
       referenceCount: 2,
     });
-    expect(items[0].promptContext?.dialogue).toEqual([
-      { speaker: "林", ref: "S1", text: "车已经停运了。", tone: "平静" },
+    // It carries when each shot opens and which shot says which line, so a
+    // rewrite can keep the timing and the mouths in step.
+    expect(items[0].promptContext?.shots?.map((shot) => shot.start)).toEqual([
+      0, 2,
     ]);
+    expect(items[0].promptContext?.dialogue).toEqual([
+      {
+        speaker: "林",
+        ref: "S1",
+        text: "车已经停运了。",
+        tone: "平静",
+        shot: 1,
+      },
+    ]);
+  });
+
+  it("moves the times after a frame the reader adds and retimes", () => {
+    const base = drawnStory();
+    const act = base.chapters[0].acts[0];
+    const third: StoryKeyframe = {
+      ...act.keyframes[1],
+      id: "frame-third",
+      title: "#3",
+      content: "灯灭了。",
+      dialogue: [{ id: "line-third", speaker: "", text: "远处一声闷响。" }],
+      durationMs: 4_000,
+      art: {
+        takes: [
+          {
+            assetIds: ["asset-frame-third"],
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
+    };
+    const board: StoryDocument = {
+      ...base,
+      chapters: base.chapters.map((chapter) => ({
+        ...chapter,
+        acts: chapter.acts.map((held) =>
+          held.id === act.id
+            ? { ...held, keyframes: [...held.keyframes, third] }
+            : held,
+        ),
+      })),
+    };
+
+    const [item] = planActVideos(board, ids.chapterFirst, [ids.act]);
+    // The added shot's four seconds make the clip nine, and every shot after
+    // it opens where its own hold puts it.
+    expect(item.params?.seconds).toBe(9);
+    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(item.prompt).toContain("At 2s: 周转过身来。");
+    // The line the added shot says stands with that shot, at its own second.
+    expect(item.prompt).toContain('At 5s: 灯灭了。 "远处一声闷响。"');
+  });
+
+  it("carries a shot that needs no picture as a moment of the clip", () => {
+    const board = story();
+    const act = board.chapters[0].acts[0];
+    // The second shot is closed without a drawing: its words and seconds are
+    // the act's, and only the first shot travels as a picture.
+    act.keyframes = act.keyframes.map((keyframe, at) =>
+      at === 1
+        ? {
+            ...keyframe,
+            artNotNeeded: true,
+            dialogue: [
+              { id: "line-second", speaker: "", text: "远处一声汽笛。" },
+            ],
+          }
+        : keyframe,
+    );
+
+    const [item] = planActVideos(board, ids.chapterFirst, [ids.act]);
+    // The pictureless shot still holds its three seconds: the clip is the five
+    // the board planned, and the two moments open where their holds put them.
+    expect(item.params?.seconds).toBe(5);
+    expect(item.params?.mode).toBe("reference");
+    expect(item.inputs).toEqual([{ role: "reference", assetId: ids.frameArt }]);
+    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(item.prompt).toContain('At 2s: 周转过身来。 "远处一声汽笛。"');
+    // The material a rewrite reads keeps the moment and the line it says.
+    expect(item.promptContext?.shots?.map((shot) => shot.text)).toEqual([
+      "雨中的站台，林立在灯下。",
+      "周转过身来。",
+    ]);
+    expect(item.promptContext?.dialogue?.map((line) => line.shot)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it("films an act of words alone when no shot keeps a picture", () => {
+    const board = story();
+    const act = board.chapters[0].acts[0];
+    act.keyframes = act.keyframes.map((keyframe) => ({
+      ...keyframe,
+      art: { takes: [] },
+      artNotNeeded: true,
+    }));
+
+    const [item] = planActVideos(board, ids.chapterFirst, [ids.act]);
+    expect(item.params?.seconds).toBe(5);
+    expect(item.inputs).toEqual([]);
+    expect(item.prompt).toContain("No pictures are given");
+    expect(item.prompt).toContain("At 2s: 周转过身来。");
+  });
+
+  it("keeps words that open an act apart from a piece opening on a picture", () => {
+    const board = drawnStory();
+    const act = board.chapters[0].acts[0];
+    act.keyframes = act.keyframes.map((keyframe, at) => {
+      if (at === 0)
+        return { ...keyframe, art: { takes: [] }, artNotNeeded: true };
+      return { ...keyframe, filmRole: "firstFrame" as const };
+    });
+
+    const items = planActVideos(board, ids.chapterFirst, [ids.act]);
+    // The words cannot stand before a piece pinned on a picture, so they are
+    // a clip of their own; the drawn piece opens the act's picture from zero.
+    expect(items.map((item) => item.params?.seconds)).toEqual([2, 3]);
+    expect(items[0].inputs).toEqual([]);
+    expect(items[0].prompt).toContain("No pictures are given");
+    expect(items[1].inputs).toEqual([
+      { role: "firstFrame", assetId: "asset-frame-second" },
+    ]);
+    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
+  });
+
+  it("keeps words that filled a clip before a picture made as words alone", () => {
+    useModelStore.setState({ view: settingsWithVideoCeiling(5) });
+    const board = drawnStory();
+    const act = board.chapters[0].acts[0];
+    act.keyframes = act.keyframes.map((keyframe, at) =>
+      at === 0
+        ? {
+            ...keyframe,
+            durationMs: 4_000,
+            art: { takes: [] },
+            artNotNeeded: true,
+          }
+        : { ...keyframe, durationMs: 2_000 },
+    );
+
+    const items = planActVideos(board, ids.chapterFirst, [ids.act]);
+    // The four seconds of words fill the clip before the picture can join it,
+    // so that piece is words alone rather than a run referring to nothing.
+    expect(items.map((item) => item.params?.seconds)).toEqual([4, 2]);
+    expect(items[0].inputs).toEqual([]);
+    expect(items[0].prompt).toContain("No pictures are given");
+    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
   });
 
   it("asks with the words a reader wrote for the act's clip", () => {
@@ -1394,7 +1549,8 @@ describe("planning the clips", () => {
     expect(items[1].inputs).toEqual([
       { role: "firstFrame", assetId: "asset-frame-second" },
     ]);
-    expect(items[1].prompt).toContain("This part opens on: 周转过身来。");
+    expect(items[1].prompt).toContain("Shoot part 2 of 2 of this act");
+    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
     expect(items[1].prompt).not.toContain(
       "references the shots are drawn from",
     );
@@ -1416,9 +1572,26 @@ describe("planning the clips", () => {
       { role: "firstFrame", assetId: ids.frameArt },
       { role: "lastFrame", assetId: "asset-frame-second" },
     ]);
-    expect(items[0].prompt).toContain("It opens on: 雨中的站台，林立在灯下。");
-    expect(items[0].prompt).toContain("It ends on: 周转过身来。");
-    expect(items[0].prompt).not.toContain("passes through");
+    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(items[0].prompt).toContain("At 2s: 周转过身来。");
+  });
+
+  it("holds a pair's closing moment at the clip's end when the pair outruns the model", () => {
+    useModelStore.setState({ view: settingsWithVideoCeiling(15) });
+    const board = plannedShot(400_000);
+    const act = board.chapters[0].acts[0];
+    act.keyframes = act.keyframes.map((keyframe, at) =>
+      at === 0 ? { ...keyframe, filmRole: "firstLastFrame" } : keyframe,
+    );
+
+    const [item] = planActVideos(board, ids.chapterFirst, [ids.act]);
+    expect(item.params?.seconds).toBe(15);
+    // A pair cannot be cut anywhere, so it is asked for the longest the model
+    // films: the second picture is no longer at eight hundred seconds, it is
+    // the closing frame of a fifteen-second clip.
+    expect(item.prompt).toContain("about 15 seconds");
+    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(item.prompt).toContain("At 15s: 周转过身来。");
   });
 
   it("closes the act on the pair a settling role makes, with no piece after it", () => {
@@ -1496,7 +1669,7 @@ describe("planning the clips", () => {
     );
     expect(items).toHaveLength(1);
     expect(items[0].params?.mode).toBe("reference");
-    expect(items[0].prompt).toContain("It covers:");
+    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
   });
 
   it("bridges two acts from the ends of their clips", () => {

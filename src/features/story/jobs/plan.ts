@@ -95,6 +95,7 @@ import {
   castFor,
   characterRefs,
   linesFor,
+  shotStarts,
   shotsFor,
   soundFor,
 } from "../../../shared/prompts/story/promptContext";
@@ -237,15 +238,20 @@ export function actVideoModel(act: StoryAct): string | null {
   return own === "" ? storyAskModel("actVideo") : own;
 }
 
-/** How one piece of an act's clip travels with its pictures. */
-export type ActClipKind = "frame" | "pair" | "reference";
+/**
+ * How one piece of an act's clip travels with its pictures.
+ *
+ * `words` is a piece with no pictures at all: pictureless shots that cannot
+ * stand inside a piece pinned to a frame, filmed from their words alone.
+ */
+export type ActClipKind = "frame" | "pair" | "reference" | "words";
 
 /** One piece of an act's clip: the shots it is made of, and its length. */
 export interface ActClipPiece {
   keyframes: StoryKeyframe[];
   /** How long the piece is asked for, in whole seconds. */
   seconds: number;
-  /** Whether it opens on one frame, pairs two, or is drawn from references. */
+  /** Whether it opens on one frame, pairs two, is drawn from references, or is words alone. */
   kind: ActClipKind;
 }
 
@@ -254,6 +260,37 @@ export function drawnFrames(act: StoryAct): StoryKeyframe[] {
   return act.keyframes.filter(
     (keyframe) => currentTake(keyframe.art) !== undefined,
   );
+}
+
+/**
+ * The shots of an act a clip may carry, in board order: every frame that was
+ * drawn, and every shot the reader said needs no picture. A pictureless shot
+ * is still a moment of the act — it has words and a hold — so it travels in
+ * the clip's timeline; only its picture is missing, and the frames around it
+ * are what the model draws it from. A shot still waiting for a drawing is not
+ * filmable yet and is left out.
+ */
+export function clipShots(act: StoryAct): StoryKeyframe[] {
+  return act.keyframes.filter(
+    (keyframe) =>
+      currentTake(keyframe.art) !== undefined || keyframe.artNotNeeded === true,
+  );
+}
+
+/** Whether a shot travels with a picture of its own. */
+function hasPicture(keyframe: StoryKeyframe): boolean {
+  return currentTake(keyframe.art) !== undefined;
+}
+
+/** The first shot from `from` on that travels with a picture. */
+function nextPictured(
+  shots: StoryKeyframe[],
+  from: number,
+): number | undefined {
+  for (let at = from; at < shots.length; at += 1) {
+    if (hasPicture(shots[at])) return at;
+  }
+  return undefined;
 }
 
 /**
@@ -284,12 +321,13 @@ export function settledRoleFrames(act: StoryAct): Set<string> {
   return settled;
 }
 
-/** Whether the frame at `at` opens a piece of its own under its role. */
-function opensItsOwnPiece(drawn: StoryKeyframe[], at: number): boolean {
-  const role = filmRoleOf(drawn[at]);
+/** Whether the shot at `at` opens a piece of its own under its role. */
+function opensItsOwnPiece(shots: StoryKeyframe[], at: number): boolean {
+  if (!hasPicture(shots[at])) return false;
+  const role = filmRoleOf(shots[at]);
   return (
     role === "firstFrame" ||
-    (role === "firstLastFrame" && at + 1 < drawn.length)
+    (role === "firstLastFrame" && nextPictured(shots, at + 1) !== undefined)
   );
 }
 
@@ -304,58 +342,104 @@ function opensItsOwnPiece(drawn: StoryKeyframe[], at: number): boolean {
  * piece of a film has to open and close on frames that exist. A pair longer
  * than the ceiling cannot be cut at all, so it is asked for the longest a clip
  * may be, and what is lost is said out loud beside the act.
+ *
+ * A shot said to need no picture is a moment of the piece around it: its words
+ * and hold travel with the pictures on either side, and the model draws what it
+ * shows from them. Words at the head of a reference run join the run, which is
+ * not pinned to a picture; words before a piece that opens on a picture, or
+ * after a pair that closes the act, are a clip of their own, since the frames
+ * given cannot show anything before their opening picture or after their last.
  */
 export function actClipPieces(act: StoryAct, ceiling: number): ActClipPiece[] {
-  const drawn = drawnFrames(act);
+  const shots = clipShots(act);
   const pieces: ActClipPiece[] = [];
-  let index = 0;
-  while (index < drawn.length) {
-    const frame = drawn[index];
-    const role = filmRoleOf(frame);
-    // Whether this pair's tail is the act's closing frame: then nothing opens
-    // on it, and its length rides with the pair that holds it rather than
-    // being counted twice.
-    const holdsAct = index + 1 === drawn.length - 1;
-    if (index + 1 < drawn.length && role === "firstLastFrame") {
-      const tail = drawn[index + 1];
+  /** The run of pictureless shots at `at`, as a piece of its own. */
+  const wordsPiece = (at: number): number => {
+    let end = at;
+    let ms = 0;
+    while (end < shots.length && !hasPicture(shots[end])) {
+      ms += shots[end].durationMs;
+      end += 1;
+    }
+    pieces.push({
+      keyframes: shots.slice(at, end),
+      seconds: clampSeconds(ms, ceiling),
+      kind: "words",
+    });
+    return end;
+  };
+  let at = 0;
+  while (at < shots.length) {
+    if (!hasPicture(shots[at])) {
+      const next = nextPictured(shots, at);
+      if (next === undefined || opensItsOwnPiece(shots, next)) {
+        at = wordsPiece(at);
+        continue;
+      }
+      // A reference run follows, which is not pinned to a picture: the words
+      // open the run.
+    }
+    const shot = shots[at];
+    const role = filmRoleOf(shot);
+    const tail =
+      role === "firstLastFrame" ? nextPictured(shots, at + 1) : undefined;
+    if (tail !== undefined) {
+      // Whether this pair's tail is the act's closing picture: then nothing
+      // opens on it, and its length rides with the pair rather than being
+      // counted twice. The words between the two pictures are inside the pair.
+      const closing = nextPictured(shots, tail + 1) === undefined;
+      const inner = shots.slice(at, tail + 1);
+      const ms = inner.reduce((sum, held) => sum + held.durationMs, 0);
       pieces.push({
-        keyframes: [frame, tail],
+        keyframes: inner,
         seconds: clampSeconds(
-          frame.durationMs + (holdsAct ? tail.durationMs : 0),
+          ms - (closing ? 0 : shots[tail].durationMs),
           ceiling,
         ),
         kind: "pair",
       });
       // A tail that is not closing the act goes on to open its own piece,
       // under whatever role it was given.
-      index += holdsAct ? 2 : 1;
+      at = closing ? tail + 1 : tail;
       continue;
     }
     if (role === "firstFrame") {
+      let end = at + 1;
+      while (end < shots.length && !hasPicture(shots[end])) end += 1;
+      const inner = shots.slice(at, end);
       pieces.push({
-        keyframes: [frame],
-        seconds: clampSeconds(frame.durationMs, ceiling),
+        keyframes: inner,
+        seconds: clampSeconds(
+          inner.reduce((sum, held) => sum + held.durationMs, 0),
+          ceiling,
+        ),
         kind: "frame",
       });
-      index += 1;
+      at = end;
       continue;
     }
-    // The run of references this frame belongs to — the last frame of an act
-    // whose pair never came degrades into one — cut where it outruns the
-    // ceiling, at the same shot boundaries an act was always cut at.
+    // The run of references this shot belongs to — the last frame of an act
+    // whose pair never came degrades into one — with the pictureless shots
+    // between them as moments it passes through, every hold counting toward
+    // the ceiling. It is cut at a shot boundary where it outruns the clip.
     const run: StoryKeyframe[] = [];
     let runMs = 0;
-    while (index < drawn.length && !opensItsOwnPiece(drawn, index)) {
-      const held = drawn[index];
+    while (at < shots.length) {
+      const held = shots[at];
+      if (run.length > 0 && hasPicture(held) && opensItsOwnPiece(shots, at)) {
+        break;
+      }
       if (runMs > 0 && runMs + held.durationMs > ceiling * 1000) break;
       run.push(held);
       runMs += held.durationMs;
-      index += 1;
+      at += 1;
     }
     pieces.push({
       keyframes: run,
       seconds: clampSeconds(runMs, ceiling),
-      kind: "reference",
+      // Words that filled the clip before a picture could join it are a piece
+      // of words, not a run of references with nothing to refer to.
+      kind: run.some(hasPicture) ? "reference" : "words",
     });
   }
   return pieces;
@@ -1488,21 +1572,25 @@ export function planActVideos(
       });
       const first = held[0];
       const last = held[held.length - 1];
-      const between = held.slice(1, -1);
       const references = piece.kind === "reference";
+      const words = piece.kind === "words";
       const inputs: StoryJobInput[] = references
         ? held.map((frame) => ({
             role: "reference" as const,
             assetId: frame.assetId,
           }))
-        : [
-            { role: "firstFrame", assetId: first.assetId },
-            ...(piece.kind === "pair"
-              ? [{ role: "lastFrame" as const, assetId: last.assetId }]
-              : []),
-          ];
+        : first === undefined
+          ? []
+          : [
+              { role: "firstFrame", assetId: first.assetId },
+              ...(piece.kind === "pair" && last !== undefined
+                ? [{ role: "lastFrame" as const, assetId: last.assetId }]
+                : []),
+            ];
       const id = several ? `${base}:${at + 1}` : base;
+      const starts = shotStarts(piece.keyframes, piece.seconds);
       const lines = piece.keyframes.flatMap((keyframe) => keyframe.dialogue);
+      const refs = characterRefs(story);
       const sound = soundFor(act.sound);
       return {
         id,
@@ -1514,14 +1602,13 @@ export function planActVideos(
             ...look,
             title: act.title,
             summary: act.summary,
-            first: first.content,
-            last: last.content,
-            middle: (references ? held : between)
-              .map((frame) => frame.content)
-              .join("; "),
-            mode: references ? "references" : "frames",
+            shots: piece.keyframes.map((keyframe, shot) => ({
+              at: starts[shot],
+              content: stripStoryMentions(keyframe.content),
+              dialogue: keyframe.dialogue,
+            })),
+            mode: references ? "references" : words ? "words" : "frames",
             seconds: piece.seconds,
-            dialogue: lines,
             ...(several ? { part: at + 1, total: pieces.length } : {}),
           }),
         inputs,
@@ -1530,14 +1617,19 @@ export function planActVideos(
           ...look,
           seconds: piece.seconds,
           ends: {
-            first: !references,
+            first: !references && first !== undefined,
             last: piece.kind === "pair",
             references,
             ...(references ? { referenceCount: held.length } : {}),
           },
-          shots: shotsFor(piece.keyframes),
+          shots: shotsFor(piece.keyframes, piece.seconds),
           cast: castFor(story, act.characterIds, lines),
-          dialogue: linesFor(story, characterRefs(story), lines),
+          dialogue: piece.keyframes.flatMap((keyframe, shot) =>
+            linesFor(story, refs, keyframe.dialogue).map((line) => ({
+              ...line,
+              shot: shot + 1,
+            })),
+          ),
           ...(sound === undefined ? {} : { sound }),
           ...(several ? { part: at + 1, total: pieces.length } : {}),
         },

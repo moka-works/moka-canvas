@@ -33,10 +33,14 @@ export interface PromptContextLine {
   ref?: string;
   text: string;
   tone?: string;
+  /** Which shot of the clip says it, counting from one. */
+  shot?: number;
 }
 
 /** One picture the clip is made of, as the board shows it. */
 export interface PromptContextShot {
+  /** The second of the clip at which the shot opens. */
+  start: number;
   text: string;
   /** Shot size, camera move and angle, as the board names them. */
   framing?: string;
@@ -162,9 +166,35 @@ export function linesFor(
     });
 }
 
+/**
+ * When each shot of a clip opens, in seconds from the clip's start: the hold
+ * of the shots before it, said by the board's own lengths. Rounded to a tenth
+ * of a second, which is as finely as the board writes a shot's hold.
+ *
+ * A piece that outran its model and was asked for a shorter clip than the
+ * board planned holds its late shots at the clip's own length: a moment cannot
+ * open after the clip has ended, and the last one becomes its closing frame.
+ */
+export function shotStarts(
+  keyframes: readonly StoryKeyframe[],
+  limit?: number,
+): number[] {
+  let held = 0;
+  return keyframes.map((keyframe) => {
+    const start = Math.round(held / 100) / 10;
+    held += keyframe.durationMs;
+    return limit === undefined ? start : Math.min(start, limit);
+  });
+}
+
 /** The shots a clip covers, as the board describes them. */
-export function shotsFor(keyframes: StoryKeyframe[]): PromptContextShot[] {
-  return keyframes.map((keyframe) => ({
+export function shotsFor(
+  keyframes: StoryKeyframe[],
+  limit?: number,
+): PromptContextShot[] {
+  const starts = shotStarts(keyframes, limit);
+  return keyframes.map((keyframe, at) => ({
+    start: starts[at]!,
     text: stripStoryMentions(keyframe.content),
     framing: [keyframe.shotSize, keyframe.cameraMove, keyframe.angle].join(
       ", ",

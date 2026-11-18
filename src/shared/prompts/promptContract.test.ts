@@ -13,7 +13,7 @@ const CONTEXT: StoryPromptContext = {
   style: "live action",
   seconds: 5,
   ends: { first: true, last: false, references: false },
-  shots: [{ text: "A rainy bus stop.", seconds: 5 }],
+  shots: [{ start: 0, text: "A rainy bus stop.", seconds: 5 }],
   cast: [{ name: "林", ref: "S1", kind: "character", description: "A woman." }],
   dialogue: [{ speaker: "林", ref: "S1", text: "车已经停运了。" }],
 };

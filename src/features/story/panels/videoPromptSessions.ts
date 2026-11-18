@@ -10,7 +10,10 @@
  *
  * A session is dropped when its words are saved — the telling holds them then
  * — and when the board has moved so far that the asks it was written for are
- * not the place's asks any more.
+ * not the place's asks any more. A board that moved under the same asks keeps
+ * the session: the words the reader wrote or a model rewrote stay, and the
+ * fields nobody touched take the board's new words. Only a rewrite still on
+ * its way is left whole, since its answer belongs to the words already shown.
  */
 
 import { create } from "zustand";
@@ -77,7 +80,8 @@ interface VideoPromptSessionsState {
    * Opens the words of a place: the session already held, or a fresh one
    * planned from the telling as it stands. A session whose asks the board has
    * moved on from is let go rather than shown against a place it no longer
-   * describes.
+   * describes; one the board moved under keeps what the reader has in hand
+   * and refreshes everything else.
    */
   open: (story: StoryDocument, place: VideoPromptPlace) => string;
   patch: (
@@ -117,15 +121,53 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
       const key = keyOf(story.id, place);
       const live = liveStory(story.id) ?? story;
       const shown = planFor(live, place);
+      const auto = Object.fromEntries(
+        planFor(withoutVideoPromptOverrides(live), place).map((ask) => [
+          ask.id,
+          ask.prompt,
+        ]),
+      );
       const held = get().sessions[key];
       if (held !== undefined) {
         const same =
           held.shown.length === shown.length &&
           held.shown.every((ask, at) => ask.id === shown[at]?.id);
-        if (same) return key;
-        get().drop(key);
+        if (!same) {
+          get().drop(key);
+        } else if (held.rewriting) {
+          // A rewrite is on its way over the words the reader saw; the board
+          // moving under it is not a reason to pull them out of their hands.
+          return key;
+        } else if (shown.every((ask) => auto[ask.id] === held.auto[ask.id])) {
+          return key;
+        } else {
+          // The board moved under the words: the fields nobody has touched
+          // take the new ones, so a shot added or retimed by hand is what the
+          // reader opens the dialog on. Words the reader wrote or a model
+          // rewrote stay, and `auto` moves with the board so resetting and the
+          // drift mark read against what stands now.
+          const values = shown.map((ask, at) => {
+            const was = held.values[at] ?? "";
+            return was === (held.auto[ask.id] ?? "")
+              ? (auto[ask.id] ?? "")
+              : was;
+          });
+          set((state) => ({
+            sessions: {
+              ...state.sessions,
+              [key]: {
+                ...held,
+                live,
+                shown,
+                auto,
+                values,
+                error: null,
+              },
+            },
+          }));
+          return key;
+        }
       }
-      const auto = planFor(withoutVideoPromptOverrides(live), place);
       set((state) => ({
         sessions: {
           ...state.sessions,
@@ -134,7 +176,7 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
             place,
             live,
             shown,
-            auto: Object.fromEntries(auto.map((ask) => [ask.id, ask.prompt])),
+            auto,
             values: shown.map((ask) => ask.prompt),
             error: null,
             rewriting: false,

@@ -314,9 +314,10 @@ export function ActCard({
   const drawn = act.keyframes.filter(
     (keyframe) => keyframe.art.takes.length > 0,
   ).length;
-  // A clip is made from the pictures of the act: every shot of it is drawn
-  // first, since what a clip of half-drawn shots would be made from is the
-  // words alone. Whether those pictures are liked is not for the room to ask.
+  // A clip is made of what the act holds: every shot is either drawn or said
+  // to need no picture, and a pictureless shot travels as a moment of the clip
+  // for the frames around it to fill. Nothing is left waiting when it is
+  // filmed, and whether the pictures are liked is not for the room to ask.
   const everyFrameDrawn = act.keyframes.length > 0 && missing.length === 0;
   const filmed = act.keyframes.filter(
     (keyframe) => keyframe.video.takes.length > 0,

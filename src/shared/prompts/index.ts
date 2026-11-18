@@ -499,37 +499,51 @@ export function storyKeyframePrompt(input: StoryKeyframePromptInput): string {
   return parts.before + stripStoryMentions(parts.content) + parts.after;
 }
 
+/** One shot of an act's clip, named by when it opens and what it says there. */
+export interface StoryActVideoShot {
+  /** The second of the clip at which this shot opens. */
+  at: number;
+  content: string;
+  /** The lines this shot mouths, in the order they are said. */
+  dialogue?: StoryDialogueLine[];
+}
+
 /**
  * One act filmed whole, moving between the frames that were drawn for it —
  * or, when the act outruns what one clip may be, one of the pieces it is
  * filmed in, told apart by its place and asked to end where the next begins.
  *
- * A piece whose pictures are references rather than frames says so in `mode`:
- * then `middle` carries the words of every shot the piece covers, and the
- * prompt asks for a shot drawn from those pictures instead of one moving
- * between them. Left off, the words describe frames as they always have.
+ * The piece's shots travel in the order they are cut, each with the second it
+ * opens and its own lines, so the model is told when every moment happens and
+ * who speaks inside it rather than handed one undated list of words. A piece
+ * whose pictures are references rather than frames says so in `mode`; a piece
+ * with no pictures at all asks for a clip made from its words alone. Left off,
+ * the words describe frames that are moved between.
  */
 export function storyActVideoPrompt(
   input: StoryLook & {
     title: string;
     summary: string;
-    first: string;
-    last: string;
-    middle: string;
+    shots: readonly StoryActVideoShot[];
     seconds: number;
-    /** The lines the piece mouths, in the order they are said. */
-    dialogue?: StoryDialogueLine[];
-    /** How the pictures travel: frames to move between, or references. */
-    mode?: "frames" | "references";
+    /** How the piece travels: frames to move between, references, or words. */
+    mode?: "frames" | "references" | "words";
     /** Its place among the pieces, when the act is filmed in several. */
     part?: number;
     total?: number;
   },
 ): string {
+  const shots = input.shots.map((shot) => ({
+    at: shot.at,
+    content: shot.content,
+    dialogue: storySpokenLines(shot.dialogue ?? []),
+  }));
   return render(storyActVideo, {
     ...input,
-    dialogue: storySpokenLines(input.dialogue ?? []),
+    shots,
+    hasDialogue: shots.some((shot) => shot.dialogue !== ""),
     references: input.mode === "references",
+    words: input.mode === "words",
   });
 }
 
