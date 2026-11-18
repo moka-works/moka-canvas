@@ -97,6 +97,7 @@
     "storyChapterDurationOutOfRange": "每章时长超出允许范围",
     "storyAspectUnknown": "画幅不在可选范围内",
     "storyGranularityUnknown": "视频粒度不是两种之一",
+    "storyGranularityPinned": "「不需要画面」的格只能随幕出片：先给它补一张图，或把这一幕改成按幕出片",
     "storyStepUnknown": "确认的不是故事里的步骤",
     "storyReferenceLimitInvalid": "参考图数量上限超出允许范围",
     "storyElementKindUnknown": "元素种类不是三种之一",

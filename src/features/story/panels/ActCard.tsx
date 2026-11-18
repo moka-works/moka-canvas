@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   actCast,
   actGranularity,
+  actHasPicturelessShot,
   actPlannedMs,
   currentTake,
   frameSettled,
@@ -198,9 +199,7 @@ export function ActCard({
   const perShot = granularity === "keyframe";
   // A shot said to need no picture has no frame for a shot-at-a-time clip to
   // open on, so such an act is filmed whole and cannot be switched to shots.
-  const pictureless = act.keyframes.some(
-    (keyframe) => keyframe.artNotNeeded === true,
-  );
+  const pictureless = actHasPicturelessShot(act);
   const clip = currentTake(act.video);
   const clipPlace: TakePlace = {
     kind: "actVideo",

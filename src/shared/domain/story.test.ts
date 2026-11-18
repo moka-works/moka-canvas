@@ -116,6 +116,13 @@ function storyOfFile(moka: MokaFile): StoryDocument {
   return moka.stories![0];
 }
 
+/** The fixture with one shot of its first act closed without a picture. */
+function withAPicturelessShot(): MokaFile {
+  const moka = buildStoryMokaFile();
+  moka.stories![0].chapters[0]!.acts[0]!.keyframes[0]!.artNotNeeded = true;
+  return moka;
+}
+
 function take(assetId: string): StorySlot["takes"][number] {
   return { assetIds: [assetId], createdAt: NOW };
 }
@@ -1395,6 +1402,137 @@ describe("story lifecycle commands", () => {
           chapterId: ids.chapterFirst,
           actId: ids.act,
           shotGranularity: "scene" as never,
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
+  it("refuses to close a shot without a picture in an act filmed by shot", () => {
+    const ids = storyIds();
+    const perShot = apply(buildStoryMokaFile(), {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "keyframe",
+    }).next;
+    const close = (moka: MokaFile) =>
+      apply(moka, {
+        type: "updateStoryKeyframe",
+        storyId: ids.story,
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameSecond,
+        patch: { artNotNeeded: true },
+      });
+    expect(codeOf(() => close(perShot))).toBe("VALIDATION_FAILED");
+
+    // The telling's own habit is the same rule, read before the telling is
+    // switched so the switch itself is not what refuses it.
+    const whole = apply(buildStoryMokaFile(), {
+      type: "updateStoryGranularity",
+      storyId: ids.story,
+      shotGranularity: "keyframe",
+    }).next;
+    expect(codeOf(() => close(whole))).toBe("VALIDATION_FAILED");
+  });
+
+  it("refuses to film an act with a pictureless shot one shot at a time", () => {
+    const ids = storyIds();
+    const waived = withAPicturelessShot();
+    const perShot = {
+      type: "updateActGranularity" as const,
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "keyframe" as const,
+    };
+    expect(codeOf(() => apply(waived, perShot))).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(() =>
+        apply(waived, {
+          type: "updateStoryGranularity",
+          storyId: ids.story,
+          shotGranularity: "keyframe",
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+
+    // Handing the act back to a shot-at-a-time telling is the same switch.
+    const explicit = apply(waived, {
+      ...perShot,
+      shotGranularity: "act",
+    }).next;
+    const whole = apply(explicit, {
+      type: "updateStoryGranularity",
+      storyId: ids.story,
+      shotGranularity: "keyframe",
+    }).next;
+    expect(
+      codeOf(() =>
+        apply(whole, {
+          type: "updateActGranularity",
+          storyId: ids.story,
+          chapterId: ids.chapterFirst,
+          actId: ids.act,
+          shotGranularity: null,
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
+  it("keeps a board already holding a pictureless shot editable", () => {
+    const ids = storyIds();
+    const legacy = withAPicturelessShot();
+    legacy.stories![0].chapters[0]!.acts[0]!.shotGranularity = "keyframe";
+    const chapter = legacy.stories![0].chapters[0]!;
+
+    // The act may still be rearranged, repaired, and handed back to the act.
+    apply(legacy, {
+      type: "setStoryActs",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      acts: chapter.acts.map((act) => ({ ...act, title: "renamed" })),
+    });
+    apply(legacy, {
+      type: "updateStoryKeyframe",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      keyframeId: ids.frameFirst,
+      patch: { artNotNeeded: false },
+    });
+    apply(legacy, {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "act",
+    });
+  });
+
+  it("refuses a board write that would put a pictureless shot into a shot act", () => {
+    const ids = storyIds();
+    const perShot = apply(buildStoryMokaFile(), {
+      type: "updateActGranularity",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      shotGranularity: "keyframe",
+    }).next;
+    const chapter = perShot.stories![0].chapters[0]!;
+    expect(
+      codeOf(() =>
+        apply(perShot, {
+          type: "setStoryActs",
+          storyId: ids.story,
+          chapterId: ids.chapterFirst,
+          acts: chapter.acts.map((act) => ({
+            ...act,
+            keyframes: act.keyframes.map((keyframe, at) =>
+              at === 0 ? { ...keyframe, artNotNeeded: true } : keyframe,
+            ),
+          })),
         }),
       ),
     ).toBe("VALIDATION_FAILED");

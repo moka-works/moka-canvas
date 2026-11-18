@@ -626,6 +626,206 @@ fn hands_an_act_back_to_the_tellings_own_granularity() {
 }
 
 #[test]
+fn refuses_to_close_a_shot_without_a_picture_in_a_shot_at_a_time_act() {
+    let moka = story_document();
+    let per_shot = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Keyframe),
+        }],
+    );
+    let close = |moka: &MokaFile| {
+        code_of(
+            moka,
+            DocumentCommand::UpdateStoryKeyframe {
+                story_id: STORY.into(),
+                chapter_id: CHAPTER_FIRST.into(),
+                act_id: ACT.into(),
+                keyframe_id: FRAME_SECOND.into(),
+                patch: StoryKeyframePatch {
+                    art_not_needed: Some(true),
+                    ..Default::default()
+                },
+            },
+        )
+    };
+    assert_eq!(close(&per_shot), "VALIDATION_FAILED");
+
+    // The telling's own habit is the same rule, switched before the shot is
+    // closed so the switch itself is not what refuses it.
+    let whole = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryGranularity {
+            story_id: STORY.into(),
+            shot_granularity: StoryShotGranularity::Keyframe,
+        }],
+    );
+    assert_eq!(close(&whole), "VALIDATION_FAILED");
+}
+
+#[test]
+fn refuses_to_film_an_act_with_a_pictureless_shot_shot_by_shot() {
+    let waived = round_trip(
+        &story_document(),
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                art_not_needed: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    let keyframe = DocumentCommand::UpdateActGranularity {
+        story_id: STORY.into(),
+        chapter_id: CHAPTER_FIRST.into(),
+        act_id: ACT.into(),
+        shot_granularity: Some(StoryShotGranularity::Keyframe),
+    };
+    assert_eq!(code_of(&waived, keyframe), "VALIDATION_FAILED");
+    let default = code_of(
+        &waived,
+        DocumentCommand::UpdateStoryGranularity {
+            story_id: STORY.into(),
+            shot_granularity: StoryShotGranularity::Keyframe,
+        },
+    );
+    assert_eq!(default, "VALIDATION_FAILED");
+
+    // Handing the act back to a shot-at-a-time telling is the same switch.
+    let explicit = round_trip(
+        &waived,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Act),
+        }],
+    );
+    let (whole, _) = apply(
+        &explicit,
+        vec![DocumentCommand::UpdateStoryGranularity {
+            story_id: STORY.into(),
+            shot_granularity: StoryShotGranularity::Keyframe,
+        }],
+    );
+    assert_eq!(
+        code_of(
+            &whole,
+            DocumentCommand::UpdateActGranularity {
+                story_id: STORY.into(),
+                chapter_id: CHAPTER_FIRST.into(),
+                act_id: ACT.into(),
+                shot_granularity: None,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
+fn keeps_a_board_holding_a_pictureless_shot_editable() {
+    let moka = story_document();
+    let (mut legacy, _) = apply(
+        &moka,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Keyframe),
+        }],
+    );
+    // A board written before the rule: the act is shot-at-a-time and a shot
+    // is closed without a picture.
+    if let Some(stories) = legacy.stories.as_mut() {
+        stories[0].chapters[0].acts[0].keyframes[1].art_not_needed = true;
+    }
+
+    let renamed: Vec<StoryAct> = story_of(&legacy).chapters[0]
+        .acts
+        .iter()
+        .map(|act| StoryAct {
+            title: "renamed".into(),
+            ..act.clone()
+        })
+        .collect();
+    let (edited, _) = apply(
+        &legacy,
+        vec![DocumentCommand::SetStoryActs {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            acts: renamed,
+        }],
+    );
+    let (repaired, _) = apply(
+        &edited,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                art_not_needed: Some(false),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(!story_of(&repaired).chapters[0].acts[0].keyframes[1].art_not_needed);
+    let (whole, _) = apply(
+        &edited,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Act),
+        }],
+    );
+    assert_eq!(
+        story_of(&whole).chapters[0].acts[0].shot_granularity,
+        Some(StoryShotGranularity::Act)
+    );
+}
+
+#[test]
+fn refuses_a_board_write_that_puts_a_pictureless_shot_into_a_shot_act() {
+    let moka = story_document();
+    let per_shot = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateActGranularity {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            shot_granularity: Some(StoryShotGranularity::Keyframe),
+        }],
+    );
+    let acts: Vec<StoryAct> = story_of(&per_shot).chapters[0]
+        .acts
+        .iter()
+        .map(|act| {
+            let mut act = act.clone();
+            act.keyframes[0].art_not_needed = true;
+            act
+        })
+        .collect();
+    assert_eq!(
+        code_of(
+            &per_shot,
+            DocumentCommand::SetStoryActs {
+                story_id: STORY.into(),
+                chapter_id: CHAPTER_FIRST.into(),
+                acts,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
 fn moves_the_reference_limit_and_keeps_the_frames_already_drawn() {
     let moka = story_document();
     let next = round_trip(

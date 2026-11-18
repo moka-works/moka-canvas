@@ -1352,6 +1352,24 @@ fn story_target_invalid() -> CommandError {
     CommandError::new("STORY_TARGET_INVALID", "The story does not hold that")
 }
 
+/// The refusal a pictureless shot and shot-at-a-time filming make together.
+///
+/// A shot said to need no picture has no frame for a clip of its own to open
+/// on, so an act holding one is filmed whole. The command layer keeps that
+/// true whatever wrote the command, while an act already in that state stays
+/// editable so a board written before the rule can still be repaired.
+fn story_granularity_pinned() -> CommandError {
+    CommandError::new(
+        "VALIDATION_FAILED",
+        "A shot that needs no picture can only be filmed with its act: give it a picture first or film the act by act",
+    )
+}
+
+/// Whether a shot of this act was said to need no picture at all.
+fn act_has_pictureless_shot(act: &StoryAct) -> bool {
+    act.keyframes.iter().any(|keyframe| keyframe.art_not_needed)
+}
+
 /// One of an act's two sound slots as the document keeps it.
 ///
 /// An empty slot is kept as no slot at all: the two would say different things
@@ -2072,6 +2090,20 @@ pub fn apply_story_command(
             shot_granularity,
         } => {
             let story = story_of(moka, story_id)?;
+            if *shot_granularity == StoryShotGranularity::Keyframe
+                && story.shot_granularity != StoryShotGranularity::Keyframe
+                && story
+                    .chapters
+                    .iter()
+                    .flat_map(|chapter| &chapter.acts)
+                    .any(|act| {
+                        act.transition.is_none()
+                            && act.shot_granularity.is_none()
+                            && act_has_pictureless_shot(act)
+                    })
+            {
+                return Err(story_granularity_pinned());
+            }
             let previous = story.shot_granularity;
             let mut next = story.clone();
             next.shot_granularity = *shot_granularity;
@@ -2093,6 +2125,14 @@ pub fn apply_story_command(
             let act = story
                 .act(chapter_id, act_id)
                 .ok_or_else(story_target_invalid)?;
+            let filming_now = act.shot_granularity.unwrap_or(story.shot_granularity);
+            let filming_next = shot_granularity.unwrap_or(story.shot_granularity);
+            if filming_next == StoryShotGranularity::Keyframe
+                && filming_now != StoryShotGranularity::Keyframe
+                && act_has_pictureless_shot(act)
+            {
+                return Err(story_granularity_pinned());
+            }
             let previous = act.shot_granularity;
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2447,6 +2487,28 @@ pub fn apply_story_command(
                 .iter()
                 .map(|act| (act.id.as_str(), act))
                 .collect();
+            // A board written whole can carry a shot's picture waiver with it,
+            // and a merge can join one act's shots to another's habit. A write
+            // that would put a pictureless shot into a shot-at-a-time act is
+            // refused; an act already in that state keeps it, so an older board
+            // stays editable.
+            for act in acts {
+                if act.transition.is_some() {
+                    continue;
+                }
+                let filming = act.shot_granularity.unwrap_or(story.shot_granularity);
+                if filming != StoryShotGranularity::Keyframe || !act_has_pictureless_shot(act) {
+                    continue;
+                }
+                let was = held_acts.get(act.id.as_str()).is_some_and(|before| {
+                    before.shot_granularity.unwrap_or(story.shot_granularity)
+                        == StoryShotGranularity::Keyframe
+                        && act_has_pictureless_shot(before)
+                });
+                if !was {
+                    return Err(story_granularity_pinned());
+                }
+            }
             let merged: Vec<StoryAct> = acts
                 .iter()
                 .map(|act| {
@@ -2588,6 +2650,12 @@ pub fn apply_story_command(
                 .iter()
                 .find(|held| &held.id == keyframe_id)
                 .ok_or_else(story_target_invalid)?;
+            if patch.art_not_needed == Some(true)
+                && act.shot_granularity.unwrap_or(story.shot_granularity)
+                    == StoryShotGranularity::Keyframe
+            {
+                return Err(story_granularity_pinned());
+            }
             if let Some(duration) = patch.duration_ms {
                 if !(MIN_KEYFRAME_MS..=MAX_KEYFRAME_MS).contains(&duration) {
                     return Err(CommandError::new(

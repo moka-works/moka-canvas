@@ -114,7 +114,13 @@ import {
   transitionsOfSeams,
 } from "./timeline";
 import { emptyStorySlot } from "./factories";
-import { STORY_STEPS, storyVoiceTake, voiceTakeOf } from "./story";
+import {
+  STORY_STEPS,
+  actGranularity,
+  actHasPicturelessShot,
+  storyVoiceTake,
+  voiceTakeOf,
+} from "./story";
 import { findNode, validateBounds, validateEdgeCandidate } from "./validate";
 import {
   DIRECTOR_LIMITS,
@@ -2168,6 +2174,24 @@ function applyOne(
           "VALIDATION_FAILED",
           i18n.t("errors:command.storyGranularityUnknown"),
         );
+      // A shot said to need no picture has no frame to film alone, so a
+      // default that would reach one cannot be made shot-at-a-time.
+      if (
+        command.shotGranularity === "keyframe" &&
+        story.shotGranularity !== "keyframe" &&
+        story.chapters.some((chapter) =>
+          chapter.acts.some(
+            (act) =>
+              act.transition === undefined &&
+              act.shotGranularity === undefined &&
+              actHasPicturelessShot(act),
+          ),
+        )
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyGranularityPinned"),
+        );
       const previous = story.shotGranularity;
       return {
         next: replaceStory(moka, {
@@ -2197,6 +2221,22 @@ function applyOne(
           i18n.t("errors:command.storyGranularityUnknown"),
         );
       const previous = act.shotGranularity ?? null;
+      // Clearing an act's choice hands it to the telling's own, which may be
+      // shot-at-a-time: that is a switch like any other.
+      const filmingNow = actGranularity(act, story.shotGranularity);
+      const filmingNext =
+        command.shotGranularity === null
+          ? story.shotGranularity
+          : command.shotGranularity;
+      if (
+        filmingNext === "keyframe" &&
+        filmingNow !== "keyframe" &&
+        actHasPicturelessShot(act)
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyGranularityPinned"),
+        );
       const chapters = story.chapters.map((held) =>
         held.id === command.chapterId
           ? {
@@ -2566,6 +2606,26 @@ function applyOne(
           i18n.t("errors:command.storyActLimit"),
         );
       const heldActs = new Map(chapter.acts.map((act) => [act.id, act]));
+      // A board written whole can carry a shot's picture waiver with it, and a
+      // merge can join one act's shots to another's habit. A write that would
+      // put a pictureless shot into a shot-at-a-time act is refused; an act
+      // already in that state keeps it, so an older board stays editable.
+      for (const act of command.acts) {
+        if (act.transition !== undefined) continue;
+        const filming = act.shotGranularity ?? story.shotGranularity;
+        if (filming !== "keyframe" || !actHasPicturelessShot(act)) continue;
+        const before = heldActs.get(act.id);
+        if (
+          before !== undefined &&
+          (before.shotGranularity ?? story.shotGranularity) === "keyframe" &&
+          actHasPicturelessShot(before)
+        )
+          continue;
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyGranularityPinned"),
+        );
+      }
       // A reference to an element that is no longer in the story is kept as
       // it was written: the room draws it greyed out and says so, which is
       // more use than a board that quietly lost the character it names.
@@ -2731,6 +2791,16 @@ function applyOne(
       const chapter = chapterOf(story, command.chapterId);
       const act = actOf(chapter, command.actId);
       const keyframe = keyframeOf(act, command.keyframeId);
+      // A pictureless shot has no frame for a shot-at-a-time clip to open on,
+      // so it is only closed that way where the act is filmed whole.
+      if (
+        command.patch.artNotNeeded === true &&
+        actGranularity(act, story.shotGranularity) === "keyframe"
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyGranularityPinned"),
+        );
       if (command.patch.durationMs !== undefined) {
         if (!isKeyframeMs(command.patch.durationMs))
           throw new CommandError(

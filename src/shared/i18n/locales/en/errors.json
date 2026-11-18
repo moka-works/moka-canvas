@@ -97,6 +97,7 @@
     "storyChapterDurationOutOfRange": "Episode length is out of range",
     "storyAspectUnknown": "Frame is not one of the offered shapes",
     "storyGranularityUnknown": "Shot granularity is not one of the two",
+    "storyGranularityPinned": "A shot that needs no picture can only be filmed with its act: give it a picture first or film the act by act",
     "storyStepUnknown": "The step confirmed is not one of the telling's steps",
     "storyReferenceLimitInvalid": "The reference picture limit is out of range",
     "storyElementKindUnknown": "Element kind is not one of the three",

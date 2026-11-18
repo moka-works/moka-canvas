@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   actComplete,
   actGranularity,
+  actHasPicturelessShot,
   actsRegenerationCost,
   chapterBoardRevision,
   chapterOutlineAhead,
@@ -211,7 +212,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
       (act) =>
         act.transition === undefined &&
         act.shotGranularity === undefined &&
-        act.keyframes.some((keyframe) => keyframe.artNotNeeded === true),
+        actHasPicturelessShot(act),
     ),
   );
 

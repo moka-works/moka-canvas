@@ -121,6 +121,17 @@ export function actHasAllArt(act: StoryAct): boolean {
   );
 }
 
+/**
+ * Whether a shot of this act was said to need no picture at all.
+ *
+ * Such a shot has no frame to open a clip of its own on, so an act holding one
+ * is filmed whole: the room and the command layer both refuse to put it in a
+ * shot-at-a-time act.
+ */
+export function actHasPicturelessShot(act: StoryAct): boolean {
+  return act.keyframes.some((keyframe) => keyframe.artNotNeeded === true);
+}
+
 /** Whether an act has a board at all: shots for a clip to be made of. */
 export function actHasShots(act: StoryAct): boolean {
   if (act.transition !== undefined) return true;
