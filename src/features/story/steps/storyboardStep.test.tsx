@@ -227,6 +227,27 @@ describe("writing an episode's board", () => {
     expect(screen.getByTestId("story-table")).toBeDefined();
   });
 
+  it("keeps an undrawn frame to its drawing button and More", () => {
+    openAtBoard(withUndrawnFrames());
+    const slot = screen.getByTestId("story-kf-slot-0");
+
+    // The empty place holds the one button that draws it and the row's menu:
+    // the sources, the choice to need no picture, and the words' own dialog
+    // all wait behind More rather than standing on the picture.
+    expect(within(slot).getByTestId("story-kf-slot-0-generate")).toBeDefined();
+    const more = within(slot).getByTestId("story-kf-more-0");
+    expect(more).toBeDefined();
+    expect(within(slot).queryByTestId("story-kf-slot-0-library")).toBeNull();
+    expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
+
+    fireEvent.click(within(more).getByText("More"));
+    expect(screen.getByTestId("story-kf-slot-0-library")).toBeDefined();
+    expect(screen.getByTestId("story-kf-slot-0-upload")).toBeDefined();
+    expect(screen.getByTestId("story-kf-slot-0-not-needed")).toBeDefined();
+    fireEvent.click(screen.getByTestId("story-kf-image-prompt-0"));
+    expect(screen.getByTestId("story-image-prompt-dialog")).toBeDefined();
+  });
+
   it("keeps a drawn frame short: the shoot role among the tools, the rest behind More", () => {
     openAtBoard(boarded());
     const row = screen.getByTestId("story-kf-0");
@@ -241,8 +262,12 @@ describe("writing an episode's board", () => {
     const cells = row.querySelectorAll("td");
     expect(cells[cells.length - 1]?.contains(role)).toBe(true);
 
-    // Replacing, keeping from this computer, and editing stand behind More.
-    expect(screen.getByTestId("story-kf-more-0")).toBeDefined();
+    // Replacing, keeping from this computer, editing the picture's words, and
+    // editing the shot stand behind More.
+    const more = screen.getByTestId("story-kf-more-0");
+    expect(more).toBeDefined();
+    expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
+    fireEvent.click(within(more).getByText("More"));
     fireEvent.click(screen.getByTestId("story-kf-slot-0-library"));
     expect(screen.getByTestId("story-library")).toBeDefined();
     fireEvent.click(
@@ -250,6 +275,7 @@ describe("writing an episode's board", () => {
         name: "Close",
       }),
     );
+    fireEvent.click(within(more).getByText("More"));
     fireEvent.click(screen.getByTestId("story-kf-edit-0"));
     expect(screen.getByTestId("story-edit-dialog")).toBeDefined();
   });

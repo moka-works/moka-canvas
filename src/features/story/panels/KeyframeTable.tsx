@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -83,6 +83,7 @@ import { useField } from "./useField";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { ImagePromptDialog } from "./ImagePromptDialog";
 import { VideoPromptDialog } from "./VideoPromptDialog";
+import { MoreMenu } from "../components/MoreMenu";
 import { ModelPicker } from "../../settings/ModelPicker";
 
 /** How wide the little references beside a frame's ask are asked for: they are
@@ -316,36 +317,8 @@ function KeyframeRow({
   );
   const [editingImagePrompt, setEditingImagePrompt] = useState(false);
   const [playing, setPlaying] = useState(false);
-  // The row's own short menu, and the file it files from this computer.
-  const moreMenu = useRef<HTMLDetailsElement>(null);
+  // The file this row files from this computer, named by the menu.
   const uploadFile = useRef<HTMLInputElement>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const closeMore = () => {
-    if (moreMenu.current !== null) moreMenu.current.open = false;
-    setMoreOpen(false);
-  };
-  // A menu is left by clicking anywhere else on the page, or by stepping back
-  // with Escape, as any other menu is.
-  useEffect(() => {
-    if (!moreOpen) return;
-    const away = (event: PointerEvent) => {
-      const menu = moreMenu.current;
-      if (menu === null) return;
-      if (event.target instanceof Node && menu.contains(event.target)) return;
-      closeMore();
-    };
-    const back = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      closeMore();
-      moreMenu.current?.querySelector("summary")?.focus();
-    };
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", back);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", back);
-    };
-  }, [moreOpen]);
   // A preview the server could not draw steps back to the shot's drawn frame,
   // rather than leaving a broken picture. The address is held rather than a
   // flag, so a new take is tried even after an older one failed.
@@ -471,6 +444,14 @@ function KeyframeRow({
   // drawn would be made from is the words alone, which is not what the board
   // says the shot looks like.
   const filmed = keyframe.art.takes.length > 0;
+  // A shot filmed on its own needs its own frame to start from, so a
+  // pictureless shot has nothing to film in that mode: the choice is offered
+  // only where the act is filmed whole. A shot already marked so keeps the way
+  // back, so a board written before this rule can still be repaired.
+  const notNeededChange =
+    !perShot || keyframe.artNotNeeded === true
+      ? (notNeeded: boolean) => write({ artNotNeeded: notNeeded })
+      : undefined;
   // The references this frame was drawn with that have been redrawn since.
   const stale = staleReferences(story, act, keyframe);
 
@@ -656,63 +637,92 @@ function KeyframeRow({
         <td className="story-col-frame">
           <StorySlotView
             actions={
-              <details
-                className="story-kf-more"
-                data-testid={`story-kf-more-${index}`}
-                onToggle={(event) => setMoreOpen(event.currentTarget.open)}
-                ref={moreMenu}
-              >
-                <summary className="story-kf-more-toggle">
-                  {t("story:panels.more")}
-                </summary>
-                <span className="story-kf-more-menu">
-                  <button
-                    className="link"
-                    data-testid={`story-kf-slot-${index}-library`}
-                    onClick={() => {
-                      closeMore();
-                      setPicking(true);
-                    }}
-                    type="button"
-                  >
-                    {t("story:panels.fromLibrary")}
-                  </button>
-                  <button
-                    className="link"
-                    data-testid={`story-kf-slot-${index}-upload`}
-                    onClick={() => {
-                      closeMore();
-                      uploadFile.current?.click();
-                    }}
-                    type="button"
-                  >
-                    {t("story:panels.fromFile")}
-                  </button>
-                  <input
-                    accept="image/*"
-                    data-testid={`story-kf-slot-${index}-upload-input`}
-                    hidden
-                    onChange={(event) => {
-                      const chosen = event.target.files?.[0];
-                      event.target.value = "";
-                      if (chosen !== undefined) void upload(chosen);
-                    }}
-                    ref={uploadFile}
-                    type="file"
-                  />
-                  <button
-                    className="link"
-                    data-testid={`story-kf-edit-${index}`}
-                    onClick={() => {
-                      closeMore();
-                      setEditing(true);
-                    }}
-                    type="button"
-                  >
-                    {t("story:panels.edit")}
-                  </button>
-                </span>
-              </details>
+              <>
+                <MoreMenu testId={`story-kf-more-${index}`}>
+                  {(close) => (
+                    <>
+                      <button
+                        className="link"
+                        data-testid={`story-kf-slot-${index}-library`}
+                        onClick={() => {
+                          close();
+                          setPicking(true);
+                        }}
+                        type="button"
+                      >
+                        {t("story:panels.fromLibrary")}
+                      </button>
+                      <button
+                        className="link"
+                        data-testid={`story-kf-slot-${index}-upload`}
+                        onClick={() => {
+                          uploadFile.current?.click();
+                          close();
+                        }}
+                        type="button"
+                      >
+                        {t("story:panels.fromFile")}
+                      </button>
+                      <button
+                        className="link"
+                        data-testid={`story-kf-image-prompt-${index}`}
+                        onClick={() => {
+                          close();
+                          setEditingImagePrompt(true);
+                        }}
+                        type="button"
+                      >
+                        {t("story:storyboard.imagePromptEdit")}
+                        {imagePromptEdited
+                          ? ` · ${t("story:storyboard.imagePromptEdited")}`
+                          : ""}
+                      </button>
+                      {notNeededChange !== undefined && (
+                        <button
+                          className="link"
+                          data-testid={
+                            keyframe.artNotNeeded === true
+                              ? `story-kf-slot-${index}-need`
+                              : `story-kf-slot-${index}-not-needed`
+                          }
+                          onClick={() => {
+                            close();
+                            notNeededChange(keyframe.artNotNeeded !== true);
+                          }}
+                          type="button"
+                        >
+                          {keyframe.artNotNeeded === true
+                            ? t("story:panels.needPicture")
+                            : t("story:panels.notNeeded")}
+                        </button>
+                      )}
+                      <button
+                        className="link"
+                        data-testid={`story-kf-edit-${index}`}
+                        onClick={() => {
+                          close();
+                          setEditing(true);
+                        }}
+                        type="button"
+                      >
+                        {t("story:panels.edit")}
+                      </button>
+                    </>
+                  )}
+                </MoreMenu>
+                <input
+                  accept="image/*"
+                  data-testid={`story-kf-slot-${index}-upload-input`}
+                  hidden
+                  onChange={(event) => {
+                    const chosen = event.target.files?.[0];
+                    event.target.value = "";
+                    if (chosen !== undefined) void upload(chosen);
+                  }}
+                  ref={uploadFile}
+                  type="file"
+                />
+              </>
             }
             busy={busy}
             canGenerate
@@ -721,25 +731,14 @@ function KeyframeRow({
               keepFrame(story, chapterId, act, keyframe, assetId)
             }
             onGenerate={draw}
-            // A shot filmed on its own needs its own frame to start from, so
-            // a pictureless shot has nothing to film in that mode: the choice
-            // is offered only where the act is filmed whole. A shot already
-            // marked so keeps the way back, so a board written before this
-            // rule can still be repaired.
-            onNotNeededChange={
-              !perShot || keyframe.artNotNeeded === true
-                ? (notNeeded) => write({ artNotNeeded: notNeeded })
-                : undefined
-            }
+            onNotNeededChange={notNeededChange}
             notNeeded={keyframe.artNotNeeded === true}
-            onPickFromLibrary={() => setPicking(true)}
             sourcesInMenu
             onRemove={(assetId) =>
               removeOldTake(assetId, () =>
                 dropFrame(story, chapterId, act, keyframe, assetId),
               )
             }
-            onUpload={(file) => void upload(file)}
             ratio={frameRatio(story)}
             slot={keyframe.art}
             testId={`story-kf-slot-${index}`}
@@ -755,17 +754,6 @@ function KeyframeRow({
               {t("story:storyboard.staleRef")}
             </span>
           )}
-          <button
-            className="link"
-            data-testid={`story-kf-image-prompt-${index}`}
-            onClick={() => setEditingImagePrompt(true)}
-            type="button"
-          >
-            {t("story:storyboard.imagePromptEdit")}
-            {imagePromptEdited
-              ? ` · ${t("story:storyboard.imagePromptEdited")}`
-              : ""}
-          </button>
         </td>
         {perShot && (
           <td>

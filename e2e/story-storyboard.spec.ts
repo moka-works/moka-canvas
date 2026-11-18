@@ -529,10 +529,12 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     ).toBeVisible({ timeout: 60_000 });
 
     // A drawn picture keeps its cell short: replacing it from the shelf or
-    // this computer and editing it stand behind one More.
+    // this computer, rewriting its words, and editing the shot all stand
+    // behind one More.
     await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
     await expect(firstAct.getByTestId("story-kf-slot-0-library")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-slot-0-upload")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-image-prompt-0")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-edit-0")).toBeVisible();
     await firstAct.getByTestId("story-kf-slot-0-library").click();
     await expect(page.getByTestId("story-library")).toBeVisible();
@@ -930,7 +932,9 @@ test("a shot that needs no picture is still a moment of the clip", async ({
 
     // The reader closes the first shot without a picture: its words and its
     // three seconds stay on the board, and the act waits only on the frames
-    // that are meant to be drawn.
+    // that are meant to be drawn. The choice stands behind the row's More,
+    // beside the picture's own words.
+    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
     await firstAct.getByTestId("story-kf-slot-0-not-needed").click();
     await expect(
       firstAct.getByTestId("story-kf-slot-0-not-needed-state"),
@@ -1273,6 +1277,7 @@ test("a picture's words are rewritten for the model's contract before it is draw
       timeout: 30_000,
     });
 
+    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
     await firstAct.getByTestId("story-kf-image-prompt-0").click();
     const dialog = page.getByTestId("story-image-prompt-dialog");
     await expect(dialog).toBeVisible();

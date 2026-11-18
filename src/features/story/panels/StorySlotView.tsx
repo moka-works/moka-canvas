@@ -125,9 +125,10 @@ export function StorySlotView({
   /** Files a picture from this computer on the shelf and keeps it here. */
   onUpload?: (file: File) => void;
   /**
-   * Whether the two sources stand behind the card's own controls rather than
-   * beside them: a place whose row is kept short offers them in a menu the
-   * card draws, and the empty place still offers them where they are needed.
+   * Whether the two sources, and the choice to need no picture, stand behind
+   * the card's own menu rather than beside the place: a place whose row is
+   * kept short offers them where the card draws them — the empty place too,
+   * which then holds only its drawing button and the menu.
    */
   sourcesInMenu?: boolean;
   /** Whether the place has been said to need no picture at all. */
@@ -173,16 +174,20 @@ export function StorySlotView({
               >
                 {t("story:panels.notNeededHint")}
               </span>
-              <button
-                className="link"
-                data-testid={
-                  testId === undefined ? undefined : `${testId}-need`
-                }
-                onClick={() => onNotNeededChange(false)}
-                type="button"
-              >
-                {t("story:panels.needPicture")}
-              </button>
+              {sourcesInMenu ? (
+                actions
+              ) : (
+                <button
+                  className="link"
+                  data-testid={
+                    testId === undefined ? undefined : `${testId}-need`
+                  }
+                  onClick={() => onNotNeededChange(false)}
+                  type="button"
+                >
+                  {t("story:panels.needPicture")}
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -199,22 +204,30 @@ export function StorySlotView({
               >
                 {t("story:panels.generate", { label })}
               </button>
-              <SlotSources
-                onPickFromLibrary={onPickFromLibrary}
-                onUpload={onUpload}
-                testId={testId}
-              />
-              {onNotNeededChange !== undefined && (
-                <button
-                  className="link"
-                  data-testid={
-                    testId === undefined ? undefined : `${testId}-not-needed`
-                  }
-                  onClick={() => onNotNeededChange(true)}
-                  type="button"
-                >
-                  {t("story:panels.notNeeded")}
-                </button>
+              {sourcesInMenu ? (
+                actions
+              ) : (
+                <>
+                  <SlotSources
+                    onPickFromLibrary={onPickFromLibrary}
+                    onUpload={onUpload}
+                    testId={testId}
+                  />
+                  {onNotNeededChange !== undefined && (
+                    <button
+                      className="link"
+                      data-testid={
+                        testId === undefined
+                          ? undefined
+                          : `${testId}-not-needed`
+                      }
+                      onClick={() => onNotNeededChange(true)}
+                      type="button"
+                    >
+                      {t("story:panels.notNeeded")}
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}

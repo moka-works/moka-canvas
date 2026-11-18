@@ -501,6 +501,10 @@ describe("editing an episode's board", () => {
       (screen.getByTestId("story-act-granularity-act-0") as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+    // A shot's picture is replaced or closed from the row's menu.
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-1")).getByText("More"),
+    );
     expect(screen.getByTestId("story-kf-slot-1-not-needed")).toBeTruthy();
   });
 
@@ -509,6 +513,12 @@ describe("editing an episode's board", () => {
     moka.stories![0]!.chapters[0]!.acts[0]!.shotGranularity = "keyframe";
     openAtBoard(moka);
 
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-0")).getByText("More"),
+    );
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-1")).getByText("More"),
+    );
     expect(screen.queryByTestId("story-kf-slot-0-not-needed")).toBeNull();
     expect(screen.queryByTestId("story-kf-slot-1-not-needed")).toBeNull();
   });
@@ -521,6 +531,9 @@ describe("editing an episode's board", () => {
     // A board written before the rule still reads as it stands, and its shot
     // can take a picture again — the only way out of that corner.
     expect(screen.getByTestId("story-kf-slot-0-not-needed-state")).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-0")).getByText("More"),
+    );
     fireEvent.click(screen.getByTestId("story-kf-slot-0-need"));
     expect(acts()[0]?.keyframes[0]?.artNotNeeded).toBe(false);
   });
