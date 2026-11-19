@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b tsconfig.build.json && vite build",
+    "build:web": "vite build && node scripts/stamp-web.mjs",
     "postbuild": "node scripts/stamp-web.mjs",
     "favicon": "node scripts/build-favicon.mjs",
     "preview": "vite preview",
