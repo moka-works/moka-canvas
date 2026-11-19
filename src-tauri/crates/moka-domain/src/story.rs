@@ -615,7 +615,7 @@ pub struct StoryChapter {
 /// The same rule the client keeps: only new words make a revision, a chapter
 /// with no board keeps its two revisions together, and a boarded chapter keeps
 /// the outline its board was written from as the second version.
-pub(crate) fn revise_chapter(held: &StoryChapter, incoming: &StoryChapter) -> StoryChapter {
+pub fn revise_chapter(held: &StoryChapter, incoming: &StoryChapter) -> StoryChapter {
     let mut chapter = StoryChapter {
         acts: held.acts.clone(),
         ..incoming.clone()
@@ -1492,7 +1492,7 @@ fn validate_prompt_overrides(
             ));
         }
         if wrote.prompt.trim().is_empty()
-            || wrote.prompt.chars().count() > crate::domain::validate::MAX_PROMPT_LENGTH
+            || wrote.prompt.chars().count() > crate::validate::MAX_PROMPT_LENGTH
         {
             issues.push(issue(
                 "VALIDATION_FAILED",
@@ -1638,7 +1638,7 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
 /// One prompt a reader wrote by hand, as a command may write it.
 fn check_prompt_override(wrote: &StoryPromptOverride, medium: &str) -> Result<(), CommandError> {
     if wrote.prompt.trim().is_empty()
-        || wrote.prompt.chars().count() > crate::domain::validate::MAX_PROMPT_LENGTH
+        || wrote.prompt.chars().count() > crate::validate::MAX_PROMPT_LENGTH
     {
         return Err(CommandError::new(
             "VALIDATION_FAILED",

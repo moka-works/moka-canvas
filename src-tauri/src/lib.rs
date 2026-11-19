@@ -4,7 +4,7 @@ pub mod assets;
 pub mod clip;
 pub mod config;
 pub mod converter;
-pub mod domain;
+pub use moka_domain as domain;
 pub mod extension;
 pub mod generate;
 pub mod imaging;

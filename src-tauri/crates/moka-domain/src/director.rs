@@ -1139,7 +1139,7 @@ pub fn scene_issues(scene: &DirectorScene) -> Vec<DirectorIssue> {
                 "a shot runs at 24, 25, or 30 frames a second",
             ));
         }
-        if shot.prompt.chars().count() > crate::domain::validate::MAX_PROMPT_LENGTH {
+        if shot.prompt.chars().count() > crate::validate::MAX_PROMPT_LENGTH {
             issues.push(issue(
                 "VALIDATION_FAILED",
                 format!("{path}.prompt"),
