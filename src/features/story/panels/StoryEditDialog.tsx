@@ -79,6 +79,11 @@ function defaultEditModel(
  * Only models that say they take a picture as input are offered. A model that
  * quietly ignores the picture would answer with a redraw, which is a different
  * thing from an edit and must not be passed off as one.
+ *
+ * Closing the dialog does not take the ask back: a hand-over still on its way
+ * goes on, and the batch it becomes is the room's. Taking it back is the cancel
+ * button's own work — offered while the hand-over is on its way, or while the
+ * batch this dialog asked for is making the place; the corner's ✕ only closes.
  */
 export function StoryEditDialog({
   story,
@@ -133,6 +138,17 @@ export function StoryEditDialog({
   // the dialog may have been closed and opened while it was on its way.
   const making = targetRunning(jobs, story.id, placeKey);
   const busy = starting || making;
+  // The edit this dialog asked for, once the batch exists: a batch of this one
+  // place and no other. A batch making the place among others is the room's,
+  // and taking it back lives with the room's own records rather than here.
+  const ownJob = jobs.find(
+    (job) =>
+      job.storyId === story.id &&
+      (job.status === "queued" || job.status === "running") &&
+      job.items.length === 1 &&
+      jobKey(job.items[0]!.target) === placeKey &&
+      (job.items[0]!.status === "queued" || job.items[0]!.status === "running"),
+  );
 
   useEffect(() => {
     void loadProtocols();
@@ -274,7 +290,7 @@ export function StoryEditDialog({
     if (busy || refusal !== null || source === undefined) return;
     setFailed(null);
     clearRefusal(startKey);
-    beginStart(startKey);
+    const handover = beginStart(startKey);
     try {
       let maskAssetId: string | undefined;
       if (painting) {
@@ -297,6 +313,7 @@ export function StoryEditDialog({
         const blob = await new Promise<Blob | null>((resolve) =>
           sheet.toBlob(resolve, "image/png"),
         );
+        if (handover.signal.aborted) return;
         if (!blob) {
           setFailed(t("editor:repaint.maskNotWritten"));
           return;
@@ -305,6 +322,7 @@ export function StoryEditDialog({
         maskAssetId = await filePictureFromComputer(
           new File([blob], maskName("reference.png"), { type: "image/png" }),
         );
+        if (handover.signal.aborted) return;
         if (maskAssetId === undefined) return;
       }
       const item = planPictureEdit(story, place, {
@@ -315,6 +333,7 @@ export function StoryEditDialog({
         setFailed(t("story:pictureEdit.noSource"));
         return;
       }
+      if (handover.signal.aborted) return;
       const record = await useStoryJobStore
         .getState()
         .start(
@@ -323,6 +342,14 @@ export function StoryEditDialog({
           [item],
           model,
         );
+      if (handover.signal.aborted) {
+        // The cancel came while the batch was being handed over: one that made
+        // it to the server all the same is taken back there.
+        if (record !== null) {
+          void useStoryJobStore.getState().cancel(record.id);
+        }
+        return;
+      }
       if (record === null) {
         // Kept beside the dialog rather than in it: the reason a place's edit
         // did not go out outlives the dialog being closed on it.
@@ -334,7 +361,19 @@ export function StoryEditDialog({
       }
       onClose();
     } finally {
-      settleStart(startKey);
+      settleStart(startKey, handover);
+    }
+  };
+
+  /** Taking the ask back: the hand-over before the batch exists, the batch
+      this dialog asked for once it does. Closing is not this. */
+  const cancel = () => {
+    if (starting) {
+      useEditStarts.getState().cancel(startKey);
+      return;
+    }
+    if (ownJob !== undefined) {
+      void useStoryJobStore.getState().cancel(ownJob.id);
     }
   };
 
@@ -342,7 +381,17 @@ export function StoryEditDialog({
     return createPortal(
       <div className="dialog-backdrop" role="presentation">
         <div className="dialog" role="dialog">
-          <h2>{t("story:pictureEdit.title", { name: label })}</h2>
+          <header className="dialog-head">
+            <h2>{t("story:pictureEdit.title", { name: label })}</h2>
+            <button
+              aria-label={t("editor:action.close")}
+              className="dialog-close"
+              onClick={onClose}
+              type="button"
+            >
+              ✕
+            </button>
+          </header>
           <p className="dialog-error">{t("story:pictureEdit.noSource")}</p>
           <div className="dialog-actions">
             <button onClick={onClose} type="button">
@@ -375,9 +424,20 @@ export function StoryEditDialog({
         }}
         role="dialog"
       >
-        <h2 id="story-edit-title">
-          {t("story:pictureEdit.title", { name: label })}
-        </h2>
+        <header className="dialog-head">
+          <h2 id="story-edit-title">
+            {t("story:pictureEdit.title", { name: label })}
+          </h2>
+          <button
+            aria-label={t("editor:action.close")}
+            className="dialog-close"
+            data-testid="story-edit-close"
+            onClick={onClose}
+            type="button"
+          >
+            ✕
+          </button>
+        </header>
         <p className="dialog-note">{t("story:pictureEdit.note")}</p>
 
         <div className="story-edit-models">
@@ -569,9 +629,18 @@ export function StoryEditDialog({
         {refusal !== null && <p className="dialog-error">{refusal}</p>}
 
         <div className="dialog-actions">
-          <button onClick={onClose} type="button">
-            {t("editor:action.cancel")}
-          </button>
+          {/* Taking the ask back, not closing over it: offered while the
+              hand-over is on its way, or while the batch this dialog asked
+              for is making the place. */}
+          {(starting || ownJob !== undefined) && (
+            <button
+              data-testid="story-edit-cancel"
+              onClick={cancel}
+              type="button"
+            >
+              {t("editor:action.cancel")}
+            </button>
+          )}
           <button
             className="primary"
             disabled={busy || refusal !== null}

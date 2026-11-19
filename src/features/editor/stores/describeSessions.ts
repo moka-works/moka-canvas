@@ -6,8 +6,8 @@
  * than to the dialog: a reader who closes the dialog has stopped reading, not
  * stopped the answer they paid for, so the stream goes on writing here and the
  * dialog opened again on the same picture shows it — still arriving, or whole
- * and already filed. Letting go is a thing of its own, said with Escape or by
- * asking again.
+ * and already filed. Letting go is a thing of its own, said with the cancel
+ * button the dialog offers while the answer is on its way.
  */
 
 import { create } from "zustand";

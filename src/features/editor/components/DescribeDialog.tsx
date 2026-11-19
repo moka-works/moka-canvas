@@ -34,7 +34,10 @@ import { TOOL_LABELS } from "../stores/toolPrefs";
  *
  * The answer belongs to the picture rather than to this dialog: closing the
  * dialog puts it aside, and opening the dialog again on the same picture shows
- * the same answer — still arriving, or whole and already filed.
+ * the same answer — still arriving, or whole and already filed. Taking an
+ * answer still arriving back is the cancel button's own work, offered only
+ * while it is on its way; the corner's ✕ only closes, as clicking outside and
+ * Escape do.
  */
 export function DescribeDialog() {
   const { t } = useTranslation();
@@ -67,19 +70,14 @@ export function DescribeDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // Escape lets go of an answer still arriving and closes the dialog otherwise:
-  // one key, and the nearer thing first. Letting go is not closing, because the
-  // words that got that far are worth reading.
+  // Escape closes as the ✕ does: an answer still arriving belongs to the
+  // picture, not to the dialog, and closing does not take it back. Taking it
+  // back is the cancel button's own work.
   useEffect(() => {
     if (key === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      const sessions = useDescribeSessions.getState();
-      if (sessions.sessions[key]?.busy === true) {
-        sessions.abort(key);
-        return;
-      }
       useEditorStore.getState().closePictureTool();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -136,9 +134,20 @@ export function DescribeDialog() {
         }}
         role="dialog"
       >
-        <h2 id="describe-title">
-          {t(TOOL_LABELS.describe)} — {entry.name}
-        </h2>
+        <header className="dialog-head">
+          <h2 id="describe-title">
+            {t(TOOL_LABELS.describe)} — {entry.name}
+          </h2>
+          <button
+            aria-label={t("editor:action.close")}
+            className="dialog-close"
+            data-testid="describe-close"
+            onClick={close}
+            type="button"
+          >
+            ✕
+          </button>
+        </header>
         <p className="dialog-note">{t("editor:describe.note")}</p>
 
         <div className="tool-stage">
@@ -198,9 +207,18 @@ export function DescribeDialog() {
         {refusal !== null && <p className="dialog-error">{refusal}</p>}
 
         <div className="dialog-actions">
-          <button onClick={close} type="button">
-            {t("editor:action.cancel")}
-          </button>
+          {/* Taking the answer back, not closing over it: the words that got
+              that far stay to be read, and the picture is open to asking
+              again. */}
+          {busy && (
+            <button
+              data-testid="describe-cancel"
+              onClick={() => useDescribeSessions.getState().abort(key)}
+              type="button"
+            >
+              {t("editor:action.cancel")}
+            </button>
+          )}
           <button
             autoFocus
             className="primary"

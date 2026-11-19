@@ -535,10 +535,11 @@ describe("reading a picture back as words", () => {
     expect(askButton(dialog)).toHaveProperty("disabled", false);
   });
 
-  it("shows an answer while it arrives, and lets go of it on Escape", async () => {
+  it("shows an answer while it arrives, and lets go of it on cancel", async () => {
     hangs = true;
     answer = { pieces: ["A stone jetty"], closing: {} };
     const dialog = await openDescribe();
+    expect(within(dialog).queryByTestId("describe-cancel")).toBeNull();
 
     await act(async () => {
       fireEvent.submit(dialog);
@@ -548,9 +549,9 @@ describe("reading a picture back as words", () => {
       "A stone jetty",
     );
 
-    // Still arriving, so Escape lets go of the answer and keeps the words that
+    // Still arriving, so cancel lets go of the answer and keeps the words that
     // got that far on screen rather than closing over them.
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(within(dialog).getByTestId("describe-cancel"));
     await settle();
     expect(screen.getByTestId("describe-dialog")).toBeTruthy();
     expect(screen.getByTestId("describe-answer").textContent).toBe(
@@ -558,6 +559,8 @@ describe("reading a picture back as words", () => {
     );
     expect(askButton(dialog)).toHaveProperty("disabled", false);
     expect(filedWords()).toEqual([]);
+    expect(streamSignal?.aborted).toBe(true);
+    expect(within(dialog).queryByTestId("describe-cancel")).toBeNull();
 
     fireEvent.keyDown(window, { key: "Escape" });
     await act(async () => {});
@@ -617,11 +620,12 @@ describe("reading a picture back as words", () => {
     expect(askButton(again)).toHaveProperty("disabled", true);
     expect(streamSignal?.aborted).toBe(false);
 
-    // Escape still lets go of the answer rather than closing over it.
+    // Escape closes over the answer without taking it back: the ask belongs
+    // to the picture, and goes on arriving with the dialog gone.
     fireEvent.keyDown(window, { key: "Escape" });
     await settle();
-    expect(screen.getByTestId("describe-dialog")).toBeTruthy();
-    expect(askButton(again)).toHaveProperty("disabled", false);
+    expect(screen.queryByTestId("describe-dialog")).toBeNull();
+    expect(streamSignal?.aborted).toBe(false);
   });
 
   it("refuses an empty question rather than asking one", async () => {
