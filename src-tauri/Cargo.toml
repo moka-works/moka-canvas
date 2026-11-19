@@ -78,7 +78,6 @@ serde_json = "1"
 tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
-aes-gcm = "0.10"
 anyhow = "1"
 moka-config = { path = "crates/moka-config" }
 moka-domain = { path = "crates/moka-domain" }
@@ -90,18 +89,13 @@ base64 = "0.22"
 bson = { version = "3", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 directories = "6"
-fs2 = "0.4"
 hex = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff", "bmp"] }
 infer = "0.19"
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
-minijinja = "2.24.0"
 mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
-rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_yaml = "0.9"
 sha2 = "0.10"
 tauri = { version = "2", features = [], optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
