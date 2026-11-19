@@ -113,6 +113,7 @@ const child = spawn(
   "cargo",
   [
     "run",
+    "--no-default-features",
     "--manifest-path",
     join(repoRoot, "src-tauri", "Cargo.toml"),
     "--bin",

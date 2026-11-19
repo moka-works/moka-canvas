@@ -19,6 +19,7 @@ fn main() {
     emit_build_commit();
     emit_builtin_scripts();
     emit_builtin_nodes();
+    #[cfg(feature = "desktop")]
     tauri_build::build();
 }
 

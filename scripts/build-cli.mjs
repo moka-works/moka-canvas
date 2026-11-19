@@ -47,6 +47,7 @@ execFileSync(
   [
     "build",
     "--release",
+    "--no-default-features",
     "--manifest-path",
     join(root, "src-tauri", "Cargo.toml"),
     "--bin",

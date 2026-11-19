@@ -109,6 +109,25 @@ fn navigable(address: SocketAddr) -> String {
     }
 }
 
+/// Spawns the accept loop on whichever runtime owns the process. The desktop
+/// shell starts the server from Tauri's setup callback, which has no tokio
+/// context of its own; the standalone server runs under `#[tokio::main]`.
+#[cfg(feature = "desktop")]
+fn spawn_server<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tauri::async_runtime::spawn(future);
+}
+
+#[cfg(not(feature = "desktop"))]
+fn spawn_server<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(future);
+}
+
 impl LocalServer {
     pub async fn start(config: AppConfig, mode: RuntimeMode, metadata_root: &Path) -> Result<Self> {
         // The prompts are embedded in this binary, so one that does not compile
@@ -178,7 +197,7 @@ impl LocalServer {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let app = router(state);
 
-        tauri::async_runtime::spawn(async move {
+        spawn_server(async move {
             if let Err(error) = axum::serve(listener, app)
                 .with_graceful_shutdown(async move {
                     let _ = shutdown_receiver.await;

@@ -16,13 +16,19 @@ pub mod story;
 pub mod telemetry;
 pub mod workflow;
 
+#[cfg(feature = "desktop")]
 use std::{error::Error, sync::Arc};
 
+#[cfg(feature = "desktop")]
 use config::RuntimeMode;
+#[cfg(feature = "desktop")]
 use server::LocalServer;
+#[cfg(feature = "desktop")]
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+#[cfg(feature = "desktop")]
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
+#[cfg(feature = "desktop")]
 pub fn run() {
     telemetry::init_app();
     let builder = tauri::Builder::default()
@@ -81,6 +87,7 @@ pub fn run() {
 ///
 /// The default menu is kept as it is and only its About item is replaced, so
 /// the rest of the platform's own menu still answers for itself.
+#[cfg(feature = "desktop")]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn menu_with_build<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
@@ -112,6 +119,7 @@ fn menu_with_build<R: tauri::Runtime>(
 
 /// Everything the window needs, from the metadata directory down to the
 /// embedded server, ending in the window itself.
+#[cfg(feature = "desktop")]
 fn start(app: &mut tauri::App) -> anyhow::Result<()> {
     // The metadata directory is keyed to the product name, not to
     // the bundle identifier Tauri's `app_data_dir()` is derived from:
@@ -151,6 +159,7 @@ fn start(app: &mut tauri::App) -> anyhow::Result<()> {
 /// A development build is not an installed package, so its updater would only
 /// report a bundle that does not exist. Linux replaces an AppImage in place;
 /// deb and rpm installations belong to their package manager and are left out.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn updater_supported() -> bool {
     updater_supported_in(
@@ -160,6 +169,7 @@ fn updater_supported() -> bool {
     )
 }
 
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 fn updater_supported_in(debug: bool, os: &str, appimage: bool) -> bool {
     if debug {
         return false;
@@ -177,6 +187,7 @@ fn updater_supported_in(debug: bool, os: &str, appimage: bool) -> bool {
 ///
 /// The dialog is app-modal and drawn by the event loop, so this only asks for
 /// it; it appears once setup returns and the loop runs.
+#[cfg(feature = "desktop")]
 fn report_startup_failure(app: &tauri::App, error: &anyhow::Error) {
     let reason = format!("{error:#}");
     tracing::error!("Moka Canvas could not start: {reason}");

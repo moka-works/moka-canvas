@@ -70,8 +70,8 @@ check: web-build check-boundaries fonts ## Run the full pre-commit gate
 	npm run lint
 	npm test
 	cargo fmt --manifest-path $(CARGO_MANIFEST) -- --check
-	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
-	cargo test --manifest-path $(CARGO_MANIFEST)
+	cargo clippy --manifest-path $(CARGO_MANIFEST) --no-default-features --all-targets -- -D warnings
+	cargo test --manifest-path $(CARGO_MANIFEST) --no-default-features
 
 # Boundaries that are cheaper to state as a grep than as a test. Each one
 # fails the build with the reason, not with a bare non-zero exit.
@@ -94,7 +94,7 @@ release-check: check-version check ## Verify the version, then run the full chec
 
 test: fonts ## Run the frontend and Rust test suites
 	npm test
-	cargo test --manifest-path $(CARGO_MANIFEST)
+	cargo test --manifest-path $(CARGO_MANIFEST) --no-default-features
 
 e2e-parallel: web-build fonts ## Run the browser suite in isolated shards (MOKA_E2E_SHARDS, default 2)
 	npm run test:e2e:parallel
@@ -115,7 +115,7 @@ web-build: check-deps ## Build the frontend into dist/
 	npm run build
 
 web-serve: web-build fonts ## Build and serve the web app (HOST and PORT override the address)
-	cargo run --manifest-path $(CARGO_MANIFEST) --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT) $(WORKTREE_METADATA_FLAG)
+	cargo run --manifest-path $(CARGO_MANIFEST) --no-default-features --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT) $(WORKTREE_METADATA_FLAG)
 
 tauri-dev: web-build fonts ## Run the desktop shell
 	npm run tauri dev
@@ -126,7 +126,7 @@ cli: fonts ## Build the moka CLI sidecar
 	node scripts/build-cli.mjs
 
 package-web: web-build fonts ## Package the web server build for deployment
-	cargo build --release --manifest-path $(CARGO_MANIFEST) --bin moka-server --bin moka
+	cargo build --release --manifest-path $(CARGO_MANIFEST) --no-default-features --bin moka-server --bin moka
 	node scripts/package-web.mjs
 
 package-macos: web-build cli ## Package the macOS DMG and CLI

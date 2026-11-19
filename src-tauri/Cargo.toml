@@ -12,9 +12,27 @@ rust-version = "1.90"
 name = "moka_canvas"
 crate-type = ["rlib"]
 
+# Only the desktop shell needs Tauri. The web server, the CLI and the test
+# targets are built with --no-default-features, which keeps the whole WebView
+# stack out of their dependency graph and out of every test binary.
+[features]
+default = ["desktop"]
+desktop = [
+    "dep:tauri",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-process",
+    "dep:tauri-plugin-single-instance",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-build",
+]
+
+[[bin]]
+name = "moka-canvas"
+required-features = ["desktop"]
+
 [build-dependencies]
 serde_json = "1"
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
 aes-gcm = "0.10"
@@ -38,11 +56,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 sha2 = "0.10"
-tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-process = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-single-instance = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
