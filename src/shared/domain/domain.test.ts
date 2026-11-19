@@ -41,6 +41,7 @@ import type {
   AssistantSession,
   CanvasDocument,
   DocumentCommand,
+  ExtensionNodeData,
   GenerationSpec,
   MediaNodeData,
   MokaFile,
@@ -48,6 +49,7 @@ import type {
   ResultSlot,
   WorkflowNode,
 } from "./types";
+import type { DirectorNodeData } from "./director";
 import {
   assetHolders,
   mentionNodeIds,
@@ -1148,6 +1150,32 @@ describe("the assets a package would leave behind", () => {
     const second = createCanvas("Canvas 2");
     second.nodes = [pointingAt("assetId", "left-image")];
     moka.canvas.push(second);
+    expect(unreferencedAssets(moka).map((entry) => entry.id)).toEqual([
+      "left-video",
+    ]);
+  });
+
+  it("counts an extension's last outputs and a director card's files", () => {
+    const moka = createProject("Other pointers");
+    const extension = createNode("extension", { x: 0, y: 0 });
+    (extension.data as ExtensionNodeData).extension.outputs = {
+      frame: [{ type: "image", assetId: "extension-out" }],
+    };
+    const director = createNode("director", { x: 320, y: 0 });
+    (director.data as DirectorNodeData).director = {
+      sceneId: "scene-1",
+      frameAssetId: "director-frame",
+      blockingAssetId: "director-blocking",
+    };
+    moka.canvas[0].nodes = [extension, director];
+    moka.resources.images = [
+      shelf("extension-out", "assets/images/extension-out.png", 1),
+      shelf("director-frame", "assets/images/director-frame.png", 2),
+    ];
+    moka.resources.videos = [
+      shelf("director-blocking", "assets/videos/director-blocking.webm", 3),
+      shelf("left-video", "assets/videos/left-video.webm", 4),
+    ];
     expect(unreferencedAssets(moka).map((entry) => entry.id)).toEqual([
       "left-video",
     ]);

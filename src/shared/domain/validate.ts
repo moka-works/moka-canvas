@@ -50,6 +50,7 @@ import type {
   ResourceEntry,
   ResultSlot,
   StoryDocument,
+  StoryPictureReference,
   StorySlot,
   StorySlotTarget,
   StoryTake,
@@ -66,6 +67,7 @@ import {
   directorSceneAssetIds,
   directorSceneIssues,
   type DirectorScene,
+  type DirectorState,
 } from "./director";
 import { i18n } from "../i18n";
 
@@ -368,9 +370,30 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
   const files = (take: StoryTake, holderId: string) => {
     for (const assetId of take.assetIds) add(assetId, holderId);
   };
+  /** A picture an element names as what a drawing is made from. */
+  const picture = (
+    reference: StoryPictureReference | undefined,
+    holderId: string,
+  ) => {
+    if (reference?.kind === "asset") add(reference.assetId, holderId);
+  };
   for (const canvas of moka.canvas) {
     for (const node of canvas.nodes) {
       for (const assetId of nodeAssetIds(node)) add(assetId, node.id);
+      // An extension's output snapshot is read by its panel and by whatever
+      // reads it downstream; a port the reader removed from the definition
+      // can outlive its slot, so the snapshot is gathered too.
+      const data = node.data as {
+        extension?: ExtensionState;
+        director?: DirectorState;
+      };
+      for (const value of Object.values(data.extension?.outputs ?? {}).flat()) {
+        add(value.assetId, node.id);
+      }
+      // A director card holds the frame it delivered and the blocking it
+      // staged, as well as whatever its scene reads.
+      add(data.director?.frameAssetId, node.id);
+      add(data.director?.blockingAssetId, node.id);
       const scene = directorSceneOf(moka, node);
       if (scene) {
         for (const assetId of directorSceneAssetIds(scene)) {
@@ -392,9 +415,17 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
     add(story.narrator?.referenceAssetId, story.id);
     for (const element of story.elements) {
       add(element.voice?.referenceAssetId, element.id);
+      picture(element.reference, element.id);
       for (const take of element.main.takes) files(take, element.id);
       for (const take of element.turnaround?.takes ?? [])
         files(take, element.id);
+      for (const variant of element.variants ?? []) {
+        picture(variant.reference, element.id);
+        for (const take of variant.main.takes) files(take, element.id);
+        for (const take of variant.turnaround?.takes ?? []) {
+          files(take, element.id);
+        }
+      }
     }
     for (const chapter of story.chapters) {
       for (const act of chapter.acts) {
@@ -406,6 +437,10 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
         for (const keyframe of act.keyframes) {
           for (const take of keyframe.art.takes) files(take, keyframe.id);
           for (const take of keyframe.video.takes) files(take, keyframe.id);
+          // The lines a shot read aloud keep their takes in use.
+          for (const voice of keyframe.voices ?? []) {
+            for (const take of voice.slot.takes) files(take, keyframe.id);
+          }
           for (const reference of keyframe.references ?? []) {
             add(reference.assetId, keyframe.id);
           }

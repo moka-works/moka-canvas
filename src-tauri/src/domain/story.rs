@@ -1052,6 +1052,11 @@ impl StoryDocument {
                     for take in keyframe.voices.iter().flatten() {
                         slot(&take.slot);
                     }
+                    // A shot's reference pictures are kept alive by the list
+                    // that names them, whether or not the words name them yet.
+                    for reference in keyframe.references.iter().flatten() {
+                        add(&reference.asset_id);
+                    }
                 }
             }
         }
