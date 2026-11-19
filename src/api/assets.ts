@@ -23,6 +23,14 @@ export interface FiledAsset extends AssetChange {
   created: boolean;
 }
 
+/** What a sweep of unused files took, and what it left because in use. */
+export interface ClearedAssets {
+  removed: AssetId[];
+  kept: AssetId[];
+  revision: number;
+  updatedAt: string;
+}
+
 /**
  * What a reader says about an asset, offered on its own.
  *
@@ -115,6 +123,20 @@ export const assetsApi = {
     return http.request<SaveResult>(`/api/v1/projects/current/assets/${id}`, {
       method: "DELETE",
     });
+  },
+
+  /**
+   * Sweeps the files a reader confirmed as unused, in one write.
+   *
+   * The ids are what the view showed, so the answer says what actually left:
+   * the document still has the last word, and a file anything holds comes back
+   * in `kept` rather than disappearing under a reference.
+   */
+  clearUnused(ids: AssetId[]): Promise<ClearedAssets> {
+    return http.request<ClearedAssets>(
+      "/api/v1/projects/current/assets/clear-unused",
+      { method: "POST", body: { ids } },
+    );
   },
 
   /** Opens the asset file in the OS file manager. */

@@ -569,6 +569,73 @@ async fn removing_a_referenced_asset_is_rejected() {
 }
 
 #[tokio::test]
+async fn clearing_unused_assets_takes_only_what_nothing_holds() {
+    let tmp = TempDir::new().unwrap();
+    let (_registry, store, root) = create_store(&tmp).await;
+    let png = make_test_png();
+    let mut filed = Vec::new();
+    for name in ["used.png", "gone.png", "stays.png"] {
+        let staging = root.join("tmp").join(format!("upload-{name}"));
+        std::fs::write(&staging, &png).unwrap();
+        filed.push(
+            store
+                .add_asset(StagedAsset {
+                    name: name.into(),
+                    tmp_path: staging,
+                    declared_mime: None,
+                    category_hint: None,
+                    provenance: None,
+                })
+                .await
+                .unwrap()
+                .entry,
+        );
+    }
+    let [used, gone, stays] = &filed[..] else {
+        panic!("three files were filed");
+    };
+
+    // One of the files is placed on a card after the view that called it
+    // unused was drawn, which is exactly the race the document decides.
+    let current = store.current().await.unwrap().unwrap();
+    let canvas_id = current.moka.canvas[0].id.clone();
+    let mut node = make_node(NodeKind::Image, "Uses asset".into(), 0.0, 0.0);
+    node.data.asset_id = Some(used.id.clone());
+    store
+        .apply_commands(
+            current.moka.metadata.revision,
+            vec![DocumentCommand::AddNode { canvas_id, node }],
+        )
+        .await
+        .unwrap();
+
+    let cleared = store
+        .remove_unused_assets(vec![gone.id.clone(), used.id.clone(), "not-filed".into()])
+        .await
+        .unwrap();
+    assert_eq!(cleared.removed, vec![gone.id.clone()]);
+    assert_eq!(cleared.kept, vec![used.id.clone()]);
+    assert!(
+        !root.join(&gone.path).exists(),
+        "the unused file left the project"
+    );
+    assert!(
+        root.join(&used.path).exists(),
+        "the held file stayed where it was"
+    );
+    assert!(
+        root.join(&stays.path).exists(),
+        "a file nobody asked about stayed"
+    );
+
+    let after = store.current().await.unwrap().unwrap();
+    assert_eq!(after.moka.metadata.revision, cleared.revision);
+    assert!(after.moka.resources.find(&gone.id).is_none());
+    assert!(after.moka.resources.find(&used.id).is_some());
+    assert!(after.moka.resources.find(&stays.id).is_some());
+}
+
+#[tokio::test]
 async fn self_check_reports_missing_and_changed_files() {
     let tmp = TempDir::new().unwrap();
     let (registry, store, root) = create_store(&tmp).await;

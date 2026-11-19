@@ -1100,6 +1100,59 @@ async fn an_asset_takes_what_a_reader_says_about_it() {
 }
 
 #[tokio::test]
+async fn clearing_unused_assets_removes_them_in_one_answer() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = test_app(temp.path());
+    let _created = create_project(&app, &temp.path().join("projects"), "Swept").await;
+
+    let mut ids = Vec::new();
+    for name in ["one.png", "two.png"] {
+        let response = app
+            .clone()
+            .oneshot(multipart_request(
+                "/api/v1/projects/current/assets",
+                (name, &make_test_png()),
+                &[],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        ids.push(
+            body_json(response).await["entry"]["id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+
+    let response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/v1/projects/current/assets/clear-unused",
+            json!({ "ids": ids }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["removed"], json!(ids));
+    assert_eq!(body["kept"], json!([]));
+
+    // The files are gone from the project, not only from the registry.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/current/assets/{}", ids[0]))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn a_text_node_is_filed_once_and_its_words_come_back() {
     let temp = tempfile::tempdir().unwrap();
     let app = test_app(temp.path());

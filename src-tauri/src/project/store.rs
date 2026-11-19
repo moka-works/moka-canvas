@@ -12,8 +12,8 @@ use crate::domain::{
 };
 use crate::project::codec::{decode_moka_file, encode_moka_file};
 use crate::project::{
-    AssetChange, AssetFile, AssetShelfEdit, ByteRange, CreateProject, FiledAsset, OpenProject,
-    PackageReport, PackageScope, ProjectError, ProjectStore, SaveResult, StagedAsset,
+    AssetChange, AssetFile, AssetShelfEdit, ByteRange, ClearedAssets, CreateProject, FiledAsset,
+    OpenProject, PackageReport, PackageScope, ProjectError, ProjectStore, SaveResult, StagedAsset,
 };
 use crate::story::{StoryJobRecord, StoryJobStatus};
 use std::path::{Component, Path, PathBuf};
@@ -1339,6 +1339,65 @@ impl ProjectStore for FsProjectStore {
         // it, rather than waiting for the next open to collect them.
         crate::assets::frames::forget(&state.root, id);
         self.commit(state, next)
+    }
+
+    async fn remove_unused_assets(&self, ids: Vec<String>) -> Result<ClearedAssets, ProjectError> {
+        let mut guard = self.state.lock().expect("store poisoned");
+        let state = guard
+            .as_mut()
+            .ok_or_else(|| ProjectError::domain("PROJECT_NOT_OPEN", "No project is open"))?;
+        let references = state.moka.asset_references();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut kept = Vec::new();
+        let mut going: Vec<(String, PathBuf)> = Vec::new();
+        for id in ids {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            // The document is the authority on what is held: a file it still
+            // points at stays, whatever the view that asked was showing.
+            if references.contains_key(&id) {
+                kept.push(id);
+                continue;
+            }
+            let Some(entry) = state.moka.resources.find(&id) else {
+                continue;
+            };
+            // Every path is resolved before a byte is touched, so a path the
+            // project may not reach leaves the whole sweep unstarted.
+            let path = Self::resolve_in_root(&state.root, &entry.path)?;
+            going.push((id, path));
+        }
+        if going.is_empty() {
+            return Ok(ClearedAssets {
+                removed: Vec::new(),
+                kept,
+                revision: state.moka.metadata.revision,
+                updated_at: state.moka.metadata.updated_at.clone(),
+            });
+        }
+        let mut next = state.moka.clone();
+        for (id, _) in &going {
+            next.resources.remove(id);
+        }
+        // The document lands first: a write that cannot go through leaves
+        // every file where an entry still points at it, and the reader can
+        // ask again rather than find the shelf holding entries with no file.
+        let saved = self.commit(state, next)?;
+        let mut removed = Vec::with_capacity(going.len());
+        for (id, path) in going {
+            let _ = std::fs::remove_file(path);
+            // The pictures taken out of a film leave with it, as one delete's
+            // do, rather than waiting for the next open to collect them.
+            crate::assets::frames::forget(&state.root, &id);
+            removed.push(id);
+        }
+        Ok(ClearedAssets {
+            removed,
+            kept,
+            revision: saved.revision,
+            updated_at: saved.updated_at,
+        })
     }
 
     async fn replace_asset_bytes(

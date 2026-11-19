@@ -293,6 +293,27 @@ pub struct FileNodeRequest {
     pub node_id: String,
 }
 
+/// The files a reader confirmed as unused.
+///
+/// The ids are what the view was showing, so the sweep is exactly the set the
+/// reader agreed to; the document still decides whether any of them may go.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearUnusedRequest {
+    #[serde(default)]
+    pub ids: Vec<String>,
+}
+
+/// What a sweep took, and what stayed because the document still holds it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearUnusedResponse {
+    pub removed: Vec<String>,
+    pub kept: Vec<String>,
+    pub revision: i32,
+    pub updated_at: String,
+}
+
 /// The entry a node's work landed on. `created` says whether this call is what
 /// wrote it, which is how filing the same text node twice is told apart from
 /// filing two different ones.

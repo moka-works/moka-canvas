@@ -103,6 +103,14 @@ export interface AssetShelfProps {
   rowExtras?: (entry: ResourceEntry) => ReactNode;
   /** Whether the canvas-only offer (Focus) appears. */
   canvasActions?: boolean;
+  /**
+   * A page's own action in the head, in place of the import button.
+   *
+   * The files room turns the same corner over when the reader asks to see what
+   * nothing holds: the shelf has nothing to bring in for that question, and
+   * the button there is the sweep the answer makes possible.
+   */
+  headAction?: ReactNode;
   /** What a face says when its shelf holds nothing; the editor has its own. */
   emptyText?: string;
   /** Told when an import has settled, so a face can turn where the files are. */
@@ -578,6 +586,7 @@ export function AssetShelf({
   onFocusClear,
   rowExtras,
   canvasActions = true,
+  headAction,
   emptyText,
   onImported,
   dropScope,
@@ -792,13 +801,15 @@ export function AssetShelf({
             {t("editor:shelf.addToCanvas")}
           </label>
         )}
-        <button
-          disabled={busy}
-          onClick={() => fileInput.current?.click()}
-          type="button"
-        >
-          {t("editor:shelf.import")}
-        </button>
+        {headAction ?? (
+          <button
+            disabled={busy}
+            onClick={() => fileInput.current?.click()}
+            type="button"
+          >
+            {t("editor:shelf.import")}
+          </button>
+        )}
       </div>
       <div
         aria-label={t("editor:shelf.assetKind")}

@@ -88,6 +88,8 @@ interface ProjectState {
   integrateAssetEntry: (entry: ResourceEntry, result: SaveResult) => void;
   /** Folds a server-side asset removal into the local registry. */
   removeAssetEntry: (assetId: AssetId, result: SaveResult) => void;
+  /** Folds a server-side sweep of unused files into the local registry. */
+  removeAssetEntries: (assetIds: AssetId[], result: SaveResult) => void;
   /**
    * Adopts commands a server tool already committed.
    *
@@ -553,12 +555,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     removeAssetEntry(assetId, result) {
+      get().removeAssetEntries([assetId], result);
+    },
+
+    removeAssetEntries(assetIds, result) {
+      const going = new Set(assetIds);
       set((state) => {
         if (!state.moka) return state;
         const resources = { ...state.moka.resources };
         for (const category of Object.keys(resources) as AssetCategory[]) {
           resources[category] = resources[category].filter(
-            (entry) => entry.id !== assetId,
+            (entry) => !going.has(entry.id),
           );
         }
         return {

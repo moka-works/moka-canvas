@@ -11,6 +11,22 @@
     "all": "全部",
     "unused": "未使用"
   },
+  "clear": {
+    "button": "一键清理",
+    "nothing": "没有未使用的文件",
+    "title": "删除所有未使用文件？",
+    "bodyOne": "这个文件没有被任何画布、剪辑或故事使用（{{bytes}}）。删除后，它的文件会从项目文件夹中移除。",
+    "bodyMany": "这 {{count}} 个文件（共 {{bytes}}）没有被任何画布、剪辑或故事使用。删除后，它们的文件会从项目文件夹中移除。",
+    "note": "此操作无法撤销。",
+    "confirmOne": "删除 1 个文件",
+    "confirmMany": "删除 {{count}} 个文件",
+    "working": "清理中…",
+    "doneOne": "已清理 1 个未使用文件",
+    "doneMany": "已清理 {{count}} 个未使用文件",
+    "keptOne": "1 个文件仍在使用，已保留",
+    "keptMany": "{{count}} 个文件仍在使用，已保留",
+    "failed": "清理失败"
+  },
   "shelf": {
     "empty": "项目里还没有{{kind}}文件",
     "emptyBoard": "本画布还没有用到{{kind}}文件。可以从项目添加，或直接导入。",

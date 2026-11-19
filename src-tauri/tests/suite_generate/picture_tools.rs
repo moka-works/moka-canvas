@@ -12,8 +12,8 @@ use moka_canvas::domain::{DocumentCommand, ResourceEntry, RunRecord};
 use moka_canvas::imaging::{operate, Operator, OperatorRequest};
 use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{
-    AssetChange, AssetFile, AssetShelfEdit, ByteRange, CreateProject, FiledAsset, OpenProject,
-    PackageReport, PackageScope, ProjectError, ProjectStore, SaveResult, StagedAsset,
+    AssetChange, AssetFile, AssetShelfEdit, ByteRange, ClearedAssets, CreateProject, FiledAsset,
+    OpenProject, PackageReport, PackageScope, ProjectError, ProjectStore, SaveResult, StagedAsset,
 };
 use moka_canvas::story::StoryJobRecord;
 use serde_json::json;
@@ -365,6 +365,9 @@ impl ProjectStore for RefusesAfter {
     }
     async fn remove_asset(&self, id: &str) -> Result<SaveResult, ProjectError> {
         self.inner.remove_asset(id).await
+    }
+    async fn remove_unused_assets(&self, ids: Vec<String>) -> Result<ClearedAssets, ProjectError> {
+        self.inner.remove_unused_assets(ids).await
     }
     async fn replace_asset_bytes(
         &self,
