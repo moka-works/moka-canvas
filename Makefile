@@ -72,8 +72,8 @@ check: check-deps check-boundaries fonts ## Run the full pre-commit gate
 	npm test
 	npm run build:web
 	cargo fmt --manifest-path $(CARGO_MANIFEST) -- --check
-	cargo clippy --manifest-path $(CARGO_MANIFEST) --no-default-features --all-targets -- -D warnings
-	cargo test --manifest-path $(CARGO_MANIFEST) --no-default-features
+	cargo clippy --manifest-path $(CARGO_MANIFEST) --workspace --no-default-features --all-targets -- -D warnings
+	cargo test --manifest-path $(CARGO_MANIFEST) --workspace --no-default-features
 
 # Boundaries that are cheaper to state as a grep than as a test. Each one
 # fails the build with the reason, not with a bare non-zero exit.
@@ -96,7 +96,7 @@ release-check: check-version check ## Verify the version, then run the full chec
 
 test: fonts ## Run the frontend and Rust test suites
 	npm test
-	cargo test --manifest-path $(CARGO_MANIFEST) --no-default-features
+	cargo test --manifest-path $(CARGO_MANIFEST) --workspace --no-default-features
 
 e2e-parallel: web-build fonts ## Run the browser suite in isolated shards (MOKA_E2E_SHARDS, default 2)
 	npm run test:e2e:parallel
