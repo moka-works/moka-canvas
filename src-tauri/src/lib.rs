@@ -10,7 +10,7 @@ pub mod generate;
 pub mod imaging;
 pub use moka_metadata as metadata;
 pub mod project;
-pub mod prompts;
+pub use moka_prompts as prompts;
 pub mod server;
 pub mod story;
 pub mod telemetry;

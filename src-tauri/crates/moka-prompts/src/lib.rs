@@ -59,9 +59,9 @@ impl Prompt {
     /// at the end of a prompt is neither.
     fn source(self) -> &'static str {
         let text = match self {
-            Self::Tilt => include_str!("../prompts/imaging/tilt.tmpl"),
-            Self::TiltTurn => include_str!("../prompts/imaging/tilt-turn.tmpl"),
-            Self::TiltTip => include_str!("../prompts/imaging/tilt-tip.tmpl"),
+            Self::Tilt => include_str!("../../../prompts/imaging/tilt.tmpl"),
+            Self::TiltTurn => include_str!("../../../prompts/imaging/tilt-turn.tmpl"),
+            Self::TiltTip => include_str!("../../../prompts/imaging/tilt-tip.tmpl"),
         };
         text.strip_suffix('\n').unwrap_or(text)
     }
