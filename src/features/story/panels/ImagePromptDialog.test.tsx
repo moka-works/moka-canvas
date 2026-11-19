@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -19,6 +20,7 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import { useStoryModels } from "../stores/storyModels";
 import { ImagePromptDialog } from "./ImagePromptDialog";
+import { useImagePromptSessions } from "./imagePromptSessions";
 
 const ids = storyIds();
 const ASK = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`;
@@ -95,6 +97,7 @@ beforeEach(() => {
   useModelStore.setState({ view: null, protocols: null });
   useStoryModels.setState({ choices: {} });
   useHistoryStore.getState().clear();
+  useImagePromptSessions.getState().reset();
 });
 
 afterEach(() => {
@@ -250,6 +253,108 @@ describe("a picture's prompt before it is drawn", () => {
         screen.getByTestId("story-image-prompt-rewrite-error").textContent,
       ).toContain("the text model is not configured"),
     );
+    text.mockRestore();
+  });
+
+  it("keeps a rewrite going after the dialog is closed, and reads it again on return", async () => {
+    imageWithContract();
+    let answer: (value: GenerateResponse) => void = () => {};
+    const pending = new Promise<GenerateResponse>((resolve) => {
+      answer = resolve;
+    });
+    const text = vi.spyOn(generateApi, "text").mockReturnValue(pending);
+
+    const { onClose } = open();
+    fireEvent.click(screen.getByTestId("story-image-prompt-rewrite"));
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    const signal = text.mock.calls[0]![1] as AbortSignal;
+
+    // The reader clicks outside the dialog: the dialog goes, the ask does not.
+    fireEvent.click(document.querySelector(".dialog-backdrop")!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+    expect(signal.aborted).toBe(false);
+
+    // Opened again on the same shot with the ask still out, the dialog says so
+    // rather than offering to ask a second time.
+    open();
+    const again = screen.getByTestId("story-image-prompt-rewrite");
+    expect(again.textContent).toBe("Rewriting…");
+    expect(again).toHaveProperty("disabled", true);
+
+    // The answer lands with nothing on screen, and the dialog opened after it
+    // reads the words the ask wrote.
+    await act(async () => {
+      answer({
+        status: "succeeded",
+        outputs: [],
+        text: "A still frame of the lantern. No subtitles.",
+      } as GenerateResponse);
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("story-image-prompt-text") as HTMLTextAreaElement)
+          .value,
+      ).toContain("A still frame of the lantern."),
+    );
+    expect(screen.getByTestId("story-image-prompt-rewrite").textContent).toBe(
+      "Rewrite prompt",
+    );
+    text.mockRestore();
+  });
+
+  it("offers no cancel while nothing is on its way, and closes from the corner", () => {
+    imageWithContract();
+    const { onClose } = open();
+    expect(screen.queryByTestId("story-image-prompt-cancel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-image-prompt-close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a rewrite back on cancel, keeping the words and the session", async () => {
+    imageWithContract();
+    let answer: (value: GenerateResponse) => void = () => {};
+    const pending = new Promise<GenerateResponse>((resolve) => {
+      answer = resolve;
+    });
+    const text = vi.spyOn(generateApi, "text").mockReturnValue(pending);
+
+    const { onClose } = open();
+    const before = (
+      screen.getByTestId("story-image-prompt-text") as HTMLTextAreaElement
+    ).value;
+    fireEvent.click(screen.getByTestId("story-image-prompt-rewrite"));
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    const signal = text.mock.calls[0]![1] as AbortSignal;
+
+    // Cancel is offered only while the rewrite is on its way, and it is the
+    // ask it takes back — not the dialog it closes over.
+    fireEvent.click(screen.getByTestId("story-image-prompt-cancel"));
+    expect(signal.aborted).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("story-image-prompt-cancel")).toBeNull();
+    expect(
+      (screen.getByTestId("story-image-prompt-text") as HTMLTextAreaElement)
+        .value,
+    ).toBe(before);
+    const again = screen.getByTestId("story-image-prompt-rewrite");
+    expect(again.textContent).toBe("Rewrite prompt");
+    expect(again).toHaveProperty("disabled", false);
+
+    // The answer the cancelled ask would have written belongs to nobody: the
+    // field keeps the words the reader had.
+    await act(async () => {
+      answer({
+        status: "succeeded",
+        outputs: [],
+        text: "A still frame of the lantern. No subtitles.",
+      } as GenerateResponse);
+    });
+    expect(
+      (screen.getByTestId("story-image-prompt-text") as HTMLTextAreaElement)
+        .value,
+    ).toBe(before);
     text.mockRestore();
   });
 });

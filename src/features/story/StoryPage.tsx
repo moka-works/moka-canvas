@@ -16,6 +16,7 @@ import { StoryTopBar } from "./components/StoryTopBar";
 import { StorySide } from "./panels/StorySide";
 import { forgetTextAssets } from "./readText";
 import { useEditStarts } from "./panels/editStarts";
+import { useImagePromptSessions } from "./panels/imagePromptSessions";
 import { useVideoPromptSessions } from "./panels/videoPromptSessions";
 import { useStoryJobStore } from "./stores/storyJobStore";
 import { useActiveStory, useStoryStore } from "./stores/storyStore";
@@ -144,6 +145,7 @@ export function StoryPage() {
       // not yet saved, a refusal nobody is looking at any more.
       useEditStarts.getState().reset();
       useVideoPromptSessions.getState().reset();
+      useImagePromptSessions.getState().reset();
       forgetTextAssets();
     }
     useAppStore.getState().setPhase("launcher");

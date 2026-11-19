@@ -1,77 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import { errorText } from "../../../api/client";
 import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
-import {
-  imagePromptOverride,
-  withoutImagePromptOverrides,
-} from "../../../shared/domain/story";
+import { imagePromptOverride } from "../../../shared/domain/story";
 import type {
   StoryDocument,
   StoryPromptOverride,
 } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
-import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { execute } from "../../editor/commands/execute";
 import { ModelPicker } from "../../settings/ModelPicker";
-import {
-  elementArtPromptContext,
-  keyframeArtPromptContext,
-} from "../jobs/imagePromptContext";
-import {
-  elementArtModel,
-  keyframeArtModel,
-  planElementArt,
-  planElementArtWaves,
-  planKeyframeArt,
-  planKeyframeArtWaves,
-} from "../jobs/plan";
-import { imagePromptRewrite, rewriteImagePrompt } from "../jobs/promptRewrite";
+import { planElementArtWaves, planKeyframeArtWaves } from "../jobs/plan";
 import { useStoryWavesAsk } from "../stores/storyJobStore";
 import { PromptIssues } from "../../../shared/prompts/PromptIssues";
+import {
+  imagePromptGuideFor,
+  useImagePromptSessions,
+  type ImagePromptPlace,
+} from "./imagePromptSessions";
 import { liveStory } from "./removeOldTake";
 
-/** The picture whose prompt is being read and changed. */
-export type ImagePromptPlace =
-  | {
-      kind: "keyframe";
-      chapterId: string;
-      actId: string;
-      keyframeId: string;
-      /** What the row calls this shot, for the dialog's title. */
-      name: string;
-    }
-  | {
-      kind: "element";
-      elementId: string;
-      view: "main" | "turnaround";
-      variantId?: string;
-      /** What the card calls this picture, for the dialog's title. */
-      name: string;
-    };
-
-function planned(story: StoryDocument, place: ImagePromptPlace) {
-  return place.kind === "keyframe"
-    ? planKeyframeArt(story, [
-        {
-          chapterId: place.chapterId,
-          actId: place.actId,
-          keyframeId: place.keyframeId,
-        },
-      ])
-    : planElementArt(story, [
-        {
-          elementId: place.elementId,
-          view: place.view,
-          ...(place.variantId === undefined
-            ? {}
-            : { variantId: place.variantId }),
-        },
-      ]);
-}
+export type { ImagePromptPlace };
 
 function wavesFor(story: StoryDocument, place: ImagePromptPlace) {
   return place.kind === "keyframe"
@@ -103,9 +54,16 @@ function wavesFor(story: StoryDocument, place: ImagePromptPlace) {
  * every ask that follows, until the reader hands the piece back to the board.
  *
  * When the model declares a prompt contract, the words can be rewritten for it
- * by the room's text model first; whatever comes back is put back into the
- * field, and nothing is drawn until the reader presses a button over words
- * they have seen.
+ * by a text model first; whatever comes back is put back into the field, and
+ * nothing is drawn until the reader presses a button over words they have
+ * seen.
+ *
+ * What the dialog holds lives beside it rather than inside it, by the place it
+ * was opened on: closing the dialog puts the words aside without taking back a
+ * rewrite they were sent on, and opening it again reads the same session —
+ * including a rewrite still on its way. Taking that rewrite back is the cancel
+ * button's own work, offered only while it is on its way; the corner's ✕ only
+ * closes, as clicking outside does.
  */
 export function ImagePromptDialog({
   story,
@@ -118,138 +76,56 @@ export function ImagePromptDialog({
 }) {
   const { t } = useTranslation();
   const runArt = useStoryWavesAsk();
-  const live = liveStory(story.id) ?? story;
-  const shown = planned(live, place)[0];
-  const auto =
-    planned(withoutImagePromptOverrides(live), place)[0]?.prompt ?? "";
-  const held =
-    shown === undefined ? undefined : imagePromptOverride(live, shown.id);
-  const [value, setValue] = useState(() => shown?.prompt ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [rewriting, setRewriting] = useState(false);
-  const [rewriteModel, setRewriteModel] = useState<string | null>(null);
-  const [issues, setIssues] = useState<PromptContractIssue[]>([]);
-  const [rewriteError, setRewriteError] = useState<{
-    message: string;
-    detail?: string;
-  } | null>(null);
-  const rewriteController = useRef<AbortController | null>(null);
-
-  const kind = place.kind === "keyframe" ? "keyframeArt" : "elementArt";
-  const element =
-    place.kind === "element"
-      ? live.elements.find((heldElement) => heldElement.id === place.elementId)
-      : undefined;
-  const model =
-    place.kind === "keyframe"
-      ? keyframeArtModel(live, {
-          chapterId: place.chapterId,
-          actId: place.actId,
-          keyframeId: place.keyframeId,
-        })
-      : element === undefined
-        ? null
-        : elementArtModel(element, place.variantId);
-  const guide = imagePromptRewrite(kind, model);
-  const context =
-    place.kind === "keyframe"
-      ? keyframeArtPromptContext(
-          live,
-          place.chapterId,
-          place.actId,
-          place.keyframeId,
-        )
-      : elementArtPromptContext(
-          live,
-          place.elementId,
-          place.view,
-          place.variantId,
-        );
+  const [key] = useState(() =>
+    useImagePromptSessions.getState().open(story, place),
+  );
+  const session = useImagePromptSessions((state) => state.sessions[key]);
+  const patch = useImagePromptSessions((state) => state.patch);
+  const drop = useImagePromptSessions((state) => state.drop);
+  const rewrite = useImagePromptSessions((state) => state.rewrite);
+  const cancelRewrite = useImagePromptSessions((state) => state.cancelRewrite);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      rewriteController.current?.abort();
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  if (shown === undefined) {
-    return createPortal(
-      <div
-        className="dialog-backdrop"
-        onClick={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-        role="presentation"
-      >
-        <div
-          aria-labelledby="story-image-prompt-title"
-          aria-modal="true"
-          className="dialog story-image-prompt"
-          data-testid="story-image-prompt-dialog"
-          role="dialog"
-        >
-          <h2 id="story-image-prompt-title">
-            {t("story:storyboard.imagePromptTitle")} · {place.name}
-          </h2>
-          <p className="story-hint">
-            {t("story:storyboard.imagePromptNothing")}
-          </p>
-          <div className="dialog-actions">
-            <button
-              data-testid="story-image-prompt-cancel"
-              onClick={onClose}
-              type="button"
-            >
-              {t("story:panels.cancel")}
-            </button>
-          </div>
-        </div>
-      </div>,
-      document.body,
-    );
-  }
+  // Only while the save that drops the session is closing the dialog.
+  if (session === undefined) return null;
+  const {
+    live,
+    shown,
+    auto,
+    value,
+    error,
+    rewriting,
+    rewriteModel,
+    issues,
+    rewriteError,
+  } = session;
+  const kind = place.kind === "keyframe" ? "keyframeArt" : "elementArt";
+  const guide = imagePromptGuideFor(live, place);
+  const held =
+    shown === undefined ? undefined : imagePromptOverride(live, shown.id);
 
-  const moved = held !== undefined && held.auto !== fnv1a(auto);
-
-  const rewrite = () => {
-    if (guide === null || rewriting) return;
-    const controller = new AbortController();
-    rewriteController.current = controller;
-    setRewriting(true);
-    setRewriteError(null);
-    setIssues([]);
-    void (async () => {
-      try {
-        const rewritten = await rewriteImagePrompt({
-          prompt: value,
-          ...(context === null ? {} : { context }),
-          guide,
-          model: rewriteModel,
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted) {
-          setValue(rewritten.prompt);
-          setIssues(rewritten.issues);
-        }
-      } catch (problem) {
-        if (!controller.signal.aborted) setRewriteError(errorText(problem));
-      } finally {
-        if (!controller.signal.aborted) {
-          rewriteController.current = null;
-          setRewriting(false);
-        }
-      }
-    })();
+  const setValue = (next: string) => {
+    patch(key, {
+      value: next,
+      error: null,
+      // The checks belong to the words the model wrote; once the reader
+      // changes them they are no longer about these.
+      issues: [],
+      rewriteError: null,
+    });
   };
 
   const save = (draw: boolean) => {
+    if (shown === undefined) return;
     if (value.trim() === "") {
-      setError(t("story:storyboard.imagePromptEmpty"));
+      patch(key, { error: t("story:storyboard.imagePromptEmpty") });
       return;
     }
     const prompts: Record<string, StoryPromptOverride | null> = {};
@@ -279,8 +155,58 @@ export function ImagePromptDialog({
       const fresh = liveStory(story.id) ?? story;
       void runArt(story.id, kind, wavesFor(fresh, place));
     }
+    // The telling holds the words now, so the session has nothing left to
+    // keep — and a rewrite still on its way is let go rather than written
+    // over words that were just saved.
+    drop(key);
     onClose();
   };
+
+  if (shown === undefined) {
+    return createPortal(
+      <div
+        className="dialog-backdrop"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+        role="presentation"
+      >
+        <div
+          aria-labelledby="story-image-prompt-title"
+          aria-modal="true"
+          className="dialog story-image-prompt"
+          data-testid="story-image-prompt-dialog"
+          role="dialog"
+        >
+          <header className="dialog-head">
+            <h2 id="story-image-prompt-title">
+              {t("story:storyboard.imagePromptTitle")} · {place.name}
+            </h2>
+            <button
+              aria-label={t("story:panels.close")}
+              className="dialog-close"
+              data-testid="story-image-prompt-close"
+              onClick={onClose}
+              type="button"
+            >
+              ✕
+            </button>
+          </header>
+          <p className="story-hint">
+            {t("story:storyboard.imagePromptNothing")}
+          </p>
+          <div className="dialog-actions">
+            <button onClick={onClose} type="button">
+              {t("story:panels.close")}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  const moved = held !== undefined && held.auto !== fnv1a(auto);
 
   return createPortal(
     <div
@@ -297,9 +223,20 @@ export function ImagePromptDialog({
         data-testid="story-image-prompt-dialog"
         role="dialog"
       >
-        <h2 id="story-image-prompt-title">
-          {t("story:storyboard.imagePromptTitle")} · {place.name}
-        </h2>
+        <header className="dialog-head">
+          <h2 id="story-image-prompt-title">
+            {t("story:storyboard.imagePromptTitle")} · {place.name}
+          </h2>
+          <button
+            aria-label={t("story:panels.close")}
+            className="dialog-close"
+            data-testid="story-image-prompt-close"
+            onClick={onClose}
+            type="button"
+          >
+            ✕
+          </button>
+        </header>
         <p className="dialog-note">{t("story:storyboard.imagePromptHint")}</p>
 
         <textarea
@@ -308,12 +245,7 @@ export function ImagePromptDialog({
           className="story-video-prompt-text"
           data-testid="story-image-prompt-text"
           maxLength={MAX_PROMPT_LENGTH}
-          onChange={(event) => {
-            setValue(event.target.value);
-            setIssues([]);
-            setError(null);
-            setRewriteError(null);
-          }}
+          onChange={(event) => setValue(event.target.value)}
           rows={10}
           value={value}
         />
@@ -323,11 +255,7 @@ export function ImagePromptDialog({
             <button
               className="link"
               data-testid="story-image-prompt-reset"
-              onClick={() => {
-                setValue(auto);
-                setIssues([]);
-                setError(null);
-              }}
+              onClick={() => setValue(auto)}
               type="button"
             >
               {t("story:storyboard.imagePromptReset")}
@@ -378,7 +306,7 @@ export function ImagePromptDialog({
               disabled={rewriting}
               label={t("story:storyboard.imagePromptRewriteModel")}
               noneLabel={t("story:storyboard.modelGlobal")}
-              onChange={setRewriteModel}
+              onChange={(reference) => patch(key, { rewriteModel: reference })}
               testId="story-image-prompt-model"
               value={rewriteModel}
             />
@@ -386,18 +314,22 @@ export function ImagePromptDialog({
         )}
 
         <div className="dialog-actions">
-          <button
-            data-testid="story-image-prompt-cancel"
-            onClick={onClose}
-            type="button"
-          >
-            {t("story:panels.cancel")}
-          </button>
+          {/* Taking the rewrite back, not closing over it: the words the
+              field holds stay, and the dialog is open to asking again. */}
+          {rewriting && (
+            <button
+              data-testid="story-image-prompt-cancel"
+              onClick={() => cancelRewrite(key)}
+              type="button"
+            >
+              {t("story:panels.cancel")}
+            </button>
+          )}
           {guide !== null ? (
             <button
               data-testid="story-image-prompt-rewrite"
               disabled={rewriting}
-              onClick={rewrite}
+              onClick={() => rewrite(key)}
               type="button"
             >
               {rewriting
