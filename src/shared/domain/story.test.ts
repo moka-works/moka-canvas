@@ -2682,6 +2682,46 @@ describe("the assets a story holds", () => {
     const unused = unreferencedAssets(moka).map((entry) => entry.id);
     for (const assetId of refs.keys()) expect(unused).not.toContain(assetId);
   });
+
+  it("counts a form's drawings, a shot's reference picture and its read lines", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const story = storyOfFile(moka);
+    const hero = story.elements.find((element) => element.id === ids.hero)!;
+    hero.variants = [
+      {
+        id: "hero-young",
+        name: "少年",
+        description: "",
+        main: { takes: [take("asset-young-main")] },
+        turnaround: { takes: [take("asset-young-sheet")] },
+        reference: { kind: "asset", assetId: "asset-young-reference" },
+      },
+    ];
+    const shot = story.chapters[0]!.acts[0]!.keyframes[0]!;
+    shot.references = [{ assetId: "asset-shot-reference", name: "霓虹" }];
+    shot.voices = [
+      {
+        lineId: ids.lineFirst,
+        text: "台词",
+        voice: "",
+        slot: { takes: [take("asset-shot-voice")] },
+      },
+    ];
+
+    const refs = collectAssetReferences(moka);
+    for (const assetId of [
+      "asset-young-main",
+      "asset-young-sheet",
+      "asset-young-reference",
+      "asset-shot-reference",
+      "asset-shot-voice",
+    ]) {
+      expect(refs.has(assetId)).toBe(true);
+    }
+    const unused = unreferencedAssets(moka).map((entry) => entry.id);
+    for (const assetId of refs.keys()) expect(unused).not.toContain(assetId);
+  });
 });
 
 // -----------------------------------------------------------------------------

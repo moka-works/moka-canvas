@@ -1014,43 +1014,45 @@ impl StoryDocument {
             )
             .filter_map(|voice| voice.reference_asset_id.clone())
             .collect();
-        let mut add = |asset_id: &Option<AssetId>| {
-            if let Some(asset_id) = asset_id {
-                found.push(asset_id.clone());
-            }
-        };
-        add(&self.brief.source_asset_id);
-        let mut slot = |held: &StorySlot| {
+        if let Some(source) = &self.brief.source_asset_id {
+            found.push(source.clone());
+        }
+        fn slot(found: &mut Vec<AssetId>, held: &StorySlot) {
             for take in &held.takes {
                 found.extend(take.asset_ids.iter().cloned());
             }
-        };
+        }
         for element in &self.elements {
-            slot(&element.main);
+            slot(&mut found, &element.main);
             if let Some(turnaround) = &element.turnaround {
-                slot(turnaround);
+                slot(&mut found, turnaround);
             }
             for form in element.variants.iter().flatten() {
-                slot(&form.main);
+                slot(&mut found, &form.main);
                 if let Some(turnaround) = &form.turnaround {
-                    slot(turnaround);
+                    slot(&mut found, turnaround);
                 }
             }
         }
         for chapter in &self.chapters {
             for act in &chapter.acts {
-                slot(&act.video);
+                slot(&mut found, &act.video);
                 if let Some(voice) = &act.voice {
-                    slot(voice);
+                    slot(&mut found, voice);
                 }
                 if let Some(music) = &act.music {
-                    slot(music);
+                    slot(&mut found, music);
                 }
                 for keyframe in &act.keyframes {
-                    slot(&keyframe.art);
-                    slot(&keyframe.video);
+                    slot(&mut found, &keyframe.art);
+                    slot(&mut found, &keyframe.video);
                     for take in keyframe.voices.iter().flatten() {
-                        slot(&take.slot);
+                        slot(&mut found, &take.slot);
+                    }
+                    // A shot's reference pictures are kept alive by the list
+                    // that names them, whether or not the words name them yet.
+                    for reference in keyframe.references.iter().flatten() {
+                        found.extend(reference.asset_id.iter().cloned());
                     }
                 }
             }

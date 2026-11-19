@@ -1,13 +1,13 @@
 use super::dto::{
     ApplyCommandsRequest, AssetChangeResponse, AssetShelfRequest, CapabilitiesResponse,
-    ClipExportRequest, CreateProjectRequest, DefaultsPatch, ExportRequest, FileNodeRequest,
-    FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
-    FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
-    ImportProjectRequest, ModelKeyRequest, OpenProjectRequest, OpenProjectResponse,
-    PackageResponse, PreferencesPatch, PreviewInput, PublicConfigResponse, ReorderModelsRequest,
-    RevealRequest, RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest,
-    SelfCheckResponse, StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery,
-    UpsertModelRequest,
+    ClearUnusedRequest, ClearUnusedResponse, ClipExportRequest, CreateProjectRequest,
+    DefaultsPatch, ExportRequest, FileNodeRequest, FileNodeResponse, FilesystemListing,
+    FilesystemQuery, FilesystemWriteQuery, FilesystemWriteResponse, GenerateResponse,
+    GenerationPreviewRequest, GenerationPreviewResponse, ImportProjectRequest, ModelKeyRequest,
+    OpenProjectRequest, OpenProjectResponse, PackageResponse, PreferencesPatch, PreviewInput,
+    PublicConfigResponse, ReorderModelsRequest, RevealRequest, RevisionQuery, RunStreamQuery,
+    SaveResponse, SecretStorageRequest, SelfCheckResponse, StartRunRequest, StartStoryJobRequest,
+    StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState, ProjectSession};
@@ -842,6 +842,25 @@ pub async fn delete_asset(
     Ok(Json(SaveResponse {
         revision: saved.revision,
         updated_at: saved.updated_at,
+    }))
+}
+
+/// Clears the files a reader saw unused, in one write.
+///
+/// The ids are the reader's own answer to "which files are these", so the
+/// sweep does what the confirmation said; the document still has the last
+/// word, and a file anything holds is reported back as kept.
+pub async fn clear_unused_assets(
+    session: ProjectSession,
+    json: Result<Json<ClearUnusedRequest>, JsonRejection>,
+) -> Result<Json<ClearUnusedResponse>, Problem> {
+    let Json(request) = json_or_problem(json)?;
+    let cleared = session.0.remove_unused_assets(request.ids).await?;
+    Ok(Json(ClearUnusedResponse {
+        removed: cleared.removed,
+        kept: cleared.kept,
+        revision: cleared.revision,
+        updated_at: cleared.updated_at,
     }))
 }
 

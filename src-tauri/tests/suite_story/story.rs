@@ -2314,6 +2314,23 @@ fn counts_a_recording_a_voice_names_as_in_use() {
     );
 }
 
+#[test]
+fn counts_a_shots_reference_picture_as_in_use() {
+    let mut moka = story_document();
+    let keyframe = &mut moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].keyframes[0];
+    keyframe.references = Some(vec![story::StoryKeyframeReference {
+        asset_id: Some("asset-neon".into()),
+        element_id: None,
+        variant_id: None,
+        name: "霓虹".into(),
+    }]);
+    let refs = moka.asset_references();
+    assert!(
+        refs.contains_key("asset-neon"),
+        "the picture a shot names is pointed at by the story"
+    );
+}
+
 // -----------------------------------------------------------------------------
 // What a document carries
 // -----------------------------------------------------------------------------

@@ -1,14 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ASSET_KIND_LABELS,
   allResources,
   collectAssetReferences,
+  unreferencedAssets,
 } from "../../../shared/domain";
 import { PanelFold } from "../../editor/components/PanelFold";
 import { AssetShelf } from "../../editor/panels/AssetShelf";
 import { unheldLens } from "../../editor/panels/shelfFilter";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { ClearUnusedDialog } from "../components/ClearUnusedDialog";
 import { useAssetsStore, type AssetsView } from "../stores/assetsStore";
 
 /** The two questions the column can be asked: everything, or what is unused. */
@@ -34,22 +36,25 @@ export function AssetsColumn() {
   const view = useAssetsStore((state) => state.view);
   const kind = useAssetsStore((state) => state.kind);
   const inspectedAssetId = useAssetsStore((state) => state.inspectedAssetId);
+  const [clearing, setClearing] = useState(false);
 
   // What the unused view answers: the same pointing-at the delete guard reads,
-  // gathered once per document rather than once per row.
+  // gathered once per document rather than once per row. The same list is
+  // what the sweep offers to take, so the confirmation and the button agree.
+  const unused = useMemo(() => (moka ? unreferencedAssets(moka) : []), [moka]);
   const placed = useMemo(
     () => new Set(moka ? collectAssetReferences(moka).keys() : []),
     [moka],
   );
 
   // What each view of the column holds, for the two buttons that ask for it.
-  const counts = useMemo(() => {
-    const entries = moka ? allResources(moka) : [];
-    return {
-      all: entries.length,
-      unused: entries.filter((entry) => !placed.has(entry.id)).length,
-    };
-  }, [moka, placed]);
+  const counts = useMemo(
+    () => ({
+      all: moka ? allResources(moka).length : 0,
+      unused: unused.length,
+    }),
+    [moka, unused],
+  );
 
   return (
     <aside
@@ -93,6 +98,21 @@ export function AssetsColumn() {
                   kind: t(ASSET_KIND_LABELS[kind]).toLowerCase(),
                 })
           }
+          headAction={
+            view === "unused" ? (
+              <button
+                data-testid="assets-clear-unused"
+                disabled={unused.length === 0}
+                onClick={() => setClearing(true)}
+                title={
+                  unused.length === 0 ? t("assets:clear.nothing") : undefined
+                }
+                type="button"
+              >
+                {t("assets:clear.button")}
+              </button>
+            ) : undefined
+          }
           kind={kind}
           lens={view === "unused" ? unheldLens(placed) : undefined}
           onKindChange={(next) => useAssetsStore.getState().setKind(next)}
@@ -101,6 +121,12 @@ export function AssetsColumn() {
           showAddNodes={false}
         />
       </div>
+      {clearing && (
+        <ClearUnusedDialog
+          entries={unused}
+          onClose={() => setClearing(false)}
+        />
+      )}
     </aside>
   );
 }

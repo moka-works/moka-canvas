@@ -11,6 +11,22 @@
     "all": "All files",
     "unused": "Unused"
   },
+  "clear": {
+    "button": "Clean up",
+    "nothing": "Nothing is unused",
+    "title": "Delete all unused files?",
+    "bodyOne": "Nothing in this project uses this file ({{bytes}}). Deleting it removes the file from the project folder.",
+    "bodyMany": "Nothing in this project uses these {{count}} files ({{bytes}} in all). Deleting them removes their files from the project folder.",
+    "note": "This cannot be undone.",
+    "confirmOne": "Delete 1 file",
+    "confirmMany": "Delete {{count}} files",
+    "working": "Cleaning up…",
+    "doneOne": "Removed 1 unused file",
+    "doneMany": "Removed {{count}} unused files",
+    "keptOne": "1 file is still in use and was kept",
+    "keptMany": "{{count}} files are still in use and were kept",
+    "failed": "Cleanup failed"
+  },
   "shelf": {
     "empty": "The project holds no {{kind}} files yet",
     "emptyBoard": "This board uses no {{kind}} files yet. Add from the project, or import one.",

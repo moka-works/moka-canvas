@@ -80,6 +80,18 @@ pub struct FiledAsset {
     pub created: bool,
 }
 
+/// Result of sweeping the files a reader saw unused.
+///
+/// The sweep is one write, and it answers with both halves: what left the
+/// project and what stayed because the document still points at it.
+#[derive(Debug)]
+pub struct ClearedAssets {
+    pub removed: Vec<String>,
+    pub kept: Vec<String>,
+    pub revision: i32,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ByteRange {
     pub start: u64,
@@ -172,6 +184,12 @@ pub trait ProjectStore: Send + Sync {
     ) -> Result<SaveResult, ProjectError>;
     async fn add_asset(&self, staged: StagedAsset) -> Result<AssetChange, ProjectError>;
     async fn remove_asset(&self, id: &str) -> Result<SaveResult, ProjectError>;
+    /// Removes the files a reader saw unused, in one write.
+    ///
+    /// The ids are the caller's, so the sweep is exactly what was confirmed;
+    /// the document is the authority on what is still held, and a file it
+    /// points at is kept and reported rather than cut away from a reference.
+    async fn remove_unused_assets(&self, ids: Vec<String>) -> Result<ClearedAssets, ProjectError>;
     async fn replace_asset_bytes(
         &self,
         id: &str,

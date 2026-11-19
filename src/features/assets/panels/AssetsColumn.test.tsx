@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import type { MokaFile, ResourceEntry } from "../../../shared/domain";
 import { buildShelfMokaFile } from "../../../shared/domain/fixtures";
+import { i18n } from "../../../shared/i18n";
 import { assetsApi, type AssetChange } from "../../../api";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useHistoryStore } from "../../editor/stores/historyStore";
@@ -75,6 +76,46 @@ describe("the library column", () => {
     showKind("image");
     expect(rowsShown()).toEqual([]);
     expect(screen.getByText(/Nothing is unused/)).toBeTruthy();
+  });
+
+  it("turns the import button into the sweep on the unused view", async () => {
+    const moka = openColumn(buildShelfMokaFile());
+    const unusedId = moka.resources.texts[0].id;
+    const clear = vi.spyOn(assetsApi, "clearUnused").mockResolvedValue({
+      removed: [unusedId],
+      kept: [],
+      revision: moka.metadata.revision + 1,
+      updatedAt: "2026-01-02T00:00:01.000Z",
+    });
+
+    // The whole shelf brings files in; nothing is swept from it.
+    expect(screen.queryByTestId("assets-clear-unused")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: i18n.t("editor:shelf.import") }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("assets-view-unused"));
+    expect(
+      screen.queryByRole("button", { name: i18n.t("editor:shelf.import") }),
+    ).toBeNull();
+    const button = screen.getByTestId("assets-clear-unused");
+    expect(button.textContent).toBe(i18n.t("assets:clear.button"));
+
+    // A press asks first, and stepping back changes nothing.
+    fireEvent.click(button);
+    expect(screen.getByTestId("clear-unused-dialog")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("clear-unused-cancel"));
+    expect(screen.queryByTestId("clear-unused-dialog")).toBeNull();
+    expect(clear).not.toHaveBeenCalled();
+
+    // Confirming sends what the dialog described and folds the answer in.
+    fireEvent.click(button);
+    fireEvent.click(screen.getByTestId("clear-unused-confirm"));
+    await waitFor(() => expect(clear).toHaveBeenCalledWith([unusedId]));
+    expect(useProjectStore.getState().moka?.resources.texts).toEqual([]);
+    await waitFor(() =>
+      expect(screen.queryByTestId("clear-unused-dialog")).toBeNull(),
+    );
   });
 
   it("hands the row a reader chooses to the stage", () => {

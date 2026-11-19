@@ -297,6 +297,87 @@ test("a project's files are read whole in one room and placed from the rooms tha
 });
 
 /**
+ * The unused view offers the sweep in the corner the import button keeps.
+ *
+ * What leaves is what the view showed, and only after the reader confirms it;
+ * a file the project holds stays, so the sweep can be used without first
+ * working out which of the files the room is showing are in use.
+ */
+test("the unused view sweeps what nothing holds after a confirmation", async ({
+  page,
+}) => {
+  const home = projectHome("asset-cleanup");
+  await forgetProjects();
+  await page.goto("/");
+  await createProject(page, join(home, "project"), "Asset Cleanup");
+  await openAssetsRoom(page);
+
+  await importFile(page, "image", "kept.png", "image/png", TINY_PNG);
+  await importFile(page, "image", "gone.png", "image/png", TINY_PNG);
+  await importFile(page, "image", "also-gone.png", "image/png", TINY_PNG);
+
+  // One of them is placed on the board, so the sweep has something to leave.
+  await page.getByRole("button", { name: "Projects menu" }).click();
+  await page.getByRole("menuitem", { name: "Canvas" }).click();
+  await expect(page.getByTestId("canvas-host")).toBeVisible({
+    timeout: 10_000,
+  });
+  await showAssets(page);
+  await page
+    .getByTestId("shelf-tray")
+    .getByRole("button", { name: "Add kept.png to the canvas" })
+    .click();
+  await openAssetsRoom(page);
+
+  // The corner turns over with the view: the import button is not offered
+  // where the question is what nothing holds.
+  await expect(
+    page.getByRole("button", { name: "Import…", exact: true }),
+  ).toBeVisible();
+  await page.getByTestId("assets-view-unused").click();
+  await expect(
+    page.getByRole("button", { name: "Import…", exact: true }),
+  ).toHaveCount(0);
+  const clean = page.getByTestId("assets-clear-unused");
+  await expect(clean).toHaveText("Clean up");
+  await expect(
+    page.getByTestId("assets-view-unused").locator(".assets-view-count"),
+  ).toHaveText("2");
+
+  // A press asks before anything leaves, and stepping back changes nothing.
+  await clean.click();
+  const dialog = page.getByTestId("clear-unused-dialog");
+  await expect(dialog).toContainText("2 files");
+  await page.getByTestId("clear-unused-cancel").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByTestId("assets-view-unused").locator(".assets-view-count"),
+  ).toHaveText("2");
+
+  // Confirming takes the two and leaves the placed file where it is.
+  await clean.click();
+  await page.getByTestId("clear-unused-confirm").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".toast-success")).toContainText(
+    "Removed 2 unused files",
+  );
+  await expect(
+    page.getByTestId("assets-view-unused").locator(".assets-view-count"),
+  ).toHaveText("0");
+  await expect(page.getByTestId("assets-clear-unused")).toBeDisabled();
+  await expect(
+    page.getByText("Nothing is unused — every file is placed somewhere"),
+  ).toBeVisible();
+
+  await page.getByTestId("assets-view-all").click();
+  await expect(rowFor(page, "kept.png")).toBeVisible();
+  await expect(rowFor(page, "gone.png")).toHaveCount(0);
+  await expect(rowFor(page, "also-gone.png")).toHaveCount(0);
+
+  forgetHome(home);
+});
+
+/**
  * A file's name is the reader's to say, and it is what a search finds.
  *
  * The bytes keep the path they were filed under — everything that points at

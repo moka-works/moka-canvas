@@ -304,6 +304,12 @@ pub fn router() -> axum::Router<ApiState> {
             "/api/v1/projects/current/assets/from-node",
             post(routes::file_node_asset),
         )
+        // The sweep a reader asks for in the files room: one write for every
+        // file the confirmed view showed as unused.
+        .route(
+            "/api/v1/projects/current/assets/clear-unused",
+            post(routes::clear_unused_assets),
+        )
         // What a reader says about an asset is written onto the entry itself, so
         // it is the entry's own address that takes the patch; the bytes have a
         // separate one.
