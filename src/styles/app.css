@@ -342,6 +342,34 @@ h2 {
   margin-bottom: 0;
 }
 
+/* The title and the ✕ that closes over it: closing is not cancelling, so the
+   two stand apart — the ✕ here, and cancel among the actions only while there
+   is something to take back. */
+.dialog-head {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+  flex: none;
+  font-size: 16px;
+  height: 28px;
+  line-height: 1;
+  padding: 0;
+  width: 28px;
+}
+
+.dialog-close:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--ink);
+}
+
 .dialog-field {
   display: grid;
   gap: 6px;

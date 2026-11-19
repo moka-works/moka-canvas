@@ -14,6 +14,10 @@
  * the session: the words the reader wrote or a model rewrote stay, and the
  * fields nobody touched take the board's new words. Only a rewrite still on
  * its way is left whole, since its answer belongs to the words already shown.
+ *
+ * Taking a rewrite back is its own act, said with the cancel button rather
+ * than by closing the dialog: the pieces already rewritten stay in the fields,
+ * and the place is open to being asked again.
  */
 
 import { create } from "zustand";
@@ -102,6 +106,11 @@ interface VideoPromptSessionsState {
   drop: (key: string) => void;
   /** Rewrites every ask of the place for its model, one after another. */
   rewrite: (key: string) => void;
+  /**
+   * Takes back a rewrite still on its way, keeping the session and the pieces
+   * already rewritten. A rewrite that has landed is not one to take back.
+   */
+  cancelRewrite: (key: string) => void;
   /** Lets go of everything, as a project or a telling does. */
   reset: () => void;
 }
@@ -266,6 +275,16 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
           }
         }
       })();
+    },
+
+    cancelRewrite(key) {
+      const controller = rewrites.get(key);
+      if (controller === undefined) return;
+      // The ask's own ending no longer belongs to this session, so the
+      // rewriting is said to be over here rather than by the loop let go of.
+      rewrites.delete(key);
+      controller.abort();
+      get().patch(key, { rewriting: false });
     },
 
     reset() {

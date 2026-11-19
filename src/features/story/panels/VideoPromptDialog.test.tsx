@@ -340,4 +340,59 @@ describe("a clip's prompt before it is filmed", () => {
     );
     text.mockRestore();
   });
+
+  it("offers no cancel while nothing is on its way, and closes from the corner", () => {
+    filmWithContract();
+    const { onClose } = open(undefined, "film");
+    expect(screen.queryByTestId("story-video-prompt-cancel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-video-prompt-close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a rewrite back on cancel, keeping the words and the session", async () => {
+    filmWithContract();
+    let answer: (value: GenerateResponse) => void = () => {};
+    const pending = new Promise<GenerateResponse>((resolve) => {
+      answer = resolve;
+    });
+    const text = vi.spyOn(generateApi, "text").mockReturnValue(pending);
+
+    const { onClose } = open(undefined, "film");
+    const before = (
+      screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement
+    ).value;
+    fireEvent.click(screen.getByTestId("story-video-prompt-rewrite"));
+    await waitFor(() => expect(text).toHaveBeenCalledTimes(1));
+    const signal = text.mock.calls[0]![1] as AbortSignal;
+
+    // Cancel is offered only while the rewrite is on its way, and it is the
+    // ask it takes back — not the dialog it closes over.
+    fireEvent.click(screen.getByTestId("story-video-prompt-cancel"));
+    expect(signal.aborted).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("story-video-prompt-cancel")).toBeNull();
+    expect(
+      (screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement)
+        .value,
+    ).toBe(before);
+    const again = screen.getByTestId("story-video-prompt-rewrite");
+    expect(again.textContent).toBe("Rewrite prompt");
+    expect(again).toHaveProperty("disabled", false);
+
+    // The answer the cancelled ask would have written belongs to nobody: the
+    // field keeps the words the reader had.
+    await act(async () => {
+      answer({
+        status: "succeeded",
+        outputs: [],
+        text: "integrated_multimodal_description: [Shot 1] She waits.",
+      } as GenerateResponse);
+    });
+    expect(
+      (screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement)
+        .value,
+    ).toBe(before);
+    text.mockRestore();
+  });
 });

@@ -53,7 +53,9 @@ function secondsOf(params: Record<string, unknown> | undefined): number {
  * What the dialog holds lives beside it rather than inside it, by the place it
  * was opened on: closing the dialog puts the words aside without taking back a
  * rewrite they were sent on, and opening it again reads the same session —
- * including a rewrite still on its way.
+ * including a rewrite still on its way. Taking that rewrite back is the cancel
+ * button's own work, offered only while it is on its way; the corner's ✕ only
+ * closes, as clicking outside does.
  */
 export function VideoPromptDialog({
   story,
@@ -76,6 +78,7 @@ export function VideoPromptDialog({
   const patch = useVideoPromptSessions((state) => state.patch);
   const drop = useVideoPromptSessions((state) => state.drop);
   const rewrite = useVideoPromptSessions((state) => state.rewrite);
+  const cancelRewrite = useVideoPromptSessions((state) => state.cancelRewrite);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -210,9 +213,20 @@ export function VideoPromptDialog({
         data-testid="story-video-prompt-dialog"
         role="dialog"
       >
-        <h2 id="story-video-prompt-title">
-          {t("story:storyboard.videoPromptTitle")} · {place.name}
-        </h2>
+        <header className="dialog-head">
+          <h2 id="story-video-prompt-title">
+            {t("story:storyboard.videoPromptTitle")} · {place.name}
+          </h2>
+          <button
+            aria-label={t("story:panels.close")}
+            className="dialog-close"
+            data-testid="story-video-prompt-close"
+            onClick={onClose}
+            type="button"
+          >
+            ✕
+          </button>
+        </header>
         <p className="dialog-note">
           {mode === "film"
             ? t("story:storyboard.videoPromptFilmHint")
@@ -328,13 +342,17 @@ export function VideoPromptDialog({
         )}
 
         <div className="dialog-actions">
-          <button
-            data-testid="story-video-prompt-cancel"
-            onClick={onClose}
-            type="button"
-          >
-            {t("story:panels.cancel")}
-          </button>
+          {/* Taking the rewrite back, not closing over it: the words already
+              rewritten stay, and the dialog is open to asking again. */}
+          {rewriting && (
+            <button
+              data-testid="story-video-prompt-cancel"
+              onClick={() => cancelRewrite(key)}
+              type="button"
+            >
+              {t("story:panels.cancel")}
+            </button>
+          )}
           {mode === "film" ? (
             <>
               {guide !== null && (
