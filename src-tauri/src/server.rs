@@ -545,6 +545,7 @@ mod tests {
 
         for (path, expected) in [
             ("/", "no-store"),
+            ("/?moka-build=abc123", "no-store"),
             ("/story/anything", "no-store"),
             (
                 "/assets/chunk-abc.js",

@@ -135,7 +135,11 @@ fn start(app: &mut tauri::App) -> anyhow::Result<()> {
         RuntimeMode::Native,
         &metadata_root,
     ))?);
-    let url = WebviewUrl::External(server.url().parse()?);
+    // A previously cached response cannot see the new server's no-store header.
+    // Keying the entry page by build leaves that old response unused without
+    // changing the origin or deleting the user's website data.
+    let url = format!("{}/?moka-build={}", server.url(), env!("MOKA_COMMIT"));
+    let url = WebviewUrl::External(url.parse()?);
 
     WebviewWindowBuilder::new(app, "main", url)
         .title("Moka Canvas")
