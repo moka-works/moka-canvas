@@ -383,10 +383,9 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     const editDialog = page.getByTestId("story-edit-dialog");
     await expect(editDialog.getByRole("heading")).toHaveText("Edit Keeper");
     await expect(editDialog.getByText("What to change")).toBeVisible();
-    await page
-      .getByTestId("story-edit-dialog")
-      .getByRole("button", { name: "Cancel" })
-      .click();
+    // Nothing is on its way, so the dialog is closed from its corner rather
+    // than by a cancel that has nothing to take back.
+    await page.getByTestId("story-edit-close").click();
     await page.getByTestId("story-inspector-close").click();
 
     // A shot's reference can be switched to another form of the element; the
@@ -1482,6 +1481,163 @@ test("a picture's words are rewritten for the model's contract before it is draw
         { timeout: 60_000 },
       )
       .toBe(SENTENCE);
+  } finally {
+    forgetHome(home);
+  }
+});
+
+/**
+ * A rewrite on its way belongs to the place, not to the dialog: the corner's
+ * ✕ closes over it without taking it back, and cancel — offered only while it
+ * is on its way — is what takes it back.
+ */
+test("a clip's rewrite is taken back on cancel, not on closing the dialog", async ({
+  page,
+}) => {
+  const home = projectHome("story-prompt-rewrite-cancel");
+  await forgetProjects();
+  await configureModels([
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+    {
+      id: VIDEOGRAPHER,
+      capability: "video",
+      alias: "Videographer",
+      converter: "openaiH3",
+    },
+  ]);
+  try {
+    await openSeededStory(page, home);
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+    await firstAct.getByTestId("story-act-video-go-0").click();
+    const dialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(dialog).toBeVisible();
+
+    // Nothing is on its way, so there is nothing to take back.
+    await expect(dialog.getByTestId("story-video-prompt-cancel")).toHaveCount(
+      0,
+    );
+
+    // Words the stand-in holds on their way, so the rewrite is still out
+    // while the dialog is closed and opened again.
+    await dialog
+      .getByTestId("story-video-prompt-text-0")
+      .fill("Hold the lantern. [hold]");
+    await dialog.getByTestId("story-video-prompt-rewrite").click();
+    await expect(dialog.getByTestId("story-video-prompt-cancel")).toBeVisible();
+    await expect(
+      dialog.getByTestId("story-video-prompt-rewrite"),
+    ).toBeDisabled();
+
+    // The corner closes over the ask without taking it back.
+    await dialog.getByTestId("story-video-prompt-close").click();
+    await expect(dialog).toHaveCount(0);
+    await firstAct.getByTestId("story-act-video-go-0").click();
+    await expect(dialog.getByTestId("story-video-prompt-rewrite")).toHaveText(
+      "Rewriting…",
+    );
+    await expect(dialog.getByTestId("story-video-prompt-cancel")).toBeVisible();
+
+    // Cancel takes the ask back: the words the reader had stay, and the
+    // place is open to being asked again.
+    await dialog.getByTestId("story-video-prompt-cancel").click();
+    await expect(dialog.getByTestId("story-video-prompt-cancel")).toHaveCount(
+      0,
+    );
+    await expect(
+      dialog.getByTestId("story-video-prompt-rewrite"),
+    ).toBeEnabled();
+    await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
+      "Hold the lantern. [hold]",
+    );
+
+    // The answer the cancelled ask would have written lands for nobody.
+    await page.waitForTimeout(3_000);
+    await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
+      "Hold the lantern. [hold]",
+    );
+  } finally {
+    forgetHome(home);
+  }
+});
+
+/**
+ * A picture's rewrite, gone on after the dialog is closed: clicking outside
+ * puts the words aside without taking the ask back, the answer lands with the
+ * dialog closed or open, and cancel is what takes a second ask back.
+ */
+test("a picture's rewrite goes on after the dialog is closed, and is taken back on cancel", async ({
+  page,
+}) => {
+  const home = projectHome("story-image-prompt-rewrite-cancel");
+  await forgetProjects();
+  await configureModels([
+    { id: PAINTER, capability: "image", alias: "Painter" },
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+  ]);
+  try {
+    await openSeededStory(page, home);
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const openDialog = async () => {
+      await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
+      await firstAct.getByTestId("story-kf-image-prompt-0").click();
+      const dialog = page.getByTestId("story-image-prompt-dialog");
+      await expect(dialog).toBeVisible();
+      return dialog;
+    };
+
+    let dialog = await openDialog();
+    await expect(dialog.getByTestId("story-image-prompt-cancel")).toHaveCount(
+      0,
+    );
+    await dialog
+      .getByTestId("story-image-prompt-text")
+      .fill("A still frame of the lantern. [hold]");
+    await dialog.getByTestId("story-image-prompt-rewrite").click();
+    await expect(dialog.getByTestId("story-image-prompt-cancel")).toBeVisible();
+
+    // Clicking outside closes the dialog without taking the ask back.
+    await page.mouse.click(10, 10);
+    await expect(dialog).toHaveCount(0);
+
+    // Opened again, the rewrite is still on its way — and lands without
+    // another press, the words the ask wrote read straight from the session.
+    dialog = await openDialog();
+    await expect(dialog.getByTestId("story-image-prompt-rewrite")).toHaveText(
+      "Rewriting…",
+    );
+    await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
+      SENTENCE,
+      { timeout: 30_000 },
+    );
+    await expect(dialog.getByTestId("story-image-prompt-cancel")).toHaveCount(
+      0,
+    );
+
+    // A second ask, taken back on cancel: the words stay as they stand, and
+    // the answer the cancelled ask would have written lands for nobody.
+    await dialog
+      .getByTestId("story-image-prompt-text")
+      .fill("A still frame of the lantern. [hold]");
+    await dialog.getByTestId("story-image-prompt-rewrite").click();
+    await expect(dialog.getByTestId("story-image-prompt-cancel")).toBeVisible();
+    await dialog.getByTestId("story-image-prompt-cancel").click();
+    await expect(dialog.getByTestId("story-image-prompt-cancel")).toHaveCount(
+      0,
+    );
+    await expect(
+      dialog.getByTestId("story-image-prompt-rewrite"),
+    ).toBeEnabled();
+    await page.waitForTimeout(3_000);
+    await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
+      "A still frame of the lantern. [hold]",
+    );
   } finally {
     forgetHome(home);
   }

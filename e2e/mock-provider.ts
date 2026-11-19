@@ -609,6 +609,14 @@ export async function startMockProvider(): Promise<MockProvider> {
       });
     }
 
+    // A text ask held on its way: the answer takes long enough that a test
+    // can close the dialog over it, open it again, and take it back — the
+    // way a slow model does. The marker is read off the whole body, since a
+    // question that travels with a picture carries its words in a part.
+    if (path === "/v1/chat/completions" && raw.includes("[hold]")) {
+      await sleep(2500);
+    }
+
     if (path === "/v1/images/generations" || path === "/v1/images/edits") {
       const count = multipart ? 1 : Math.max(1, Number(body.n ?? 1));
       return send(200, {

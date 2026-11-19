@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "./fixtures";
 import {
   APP,
+  configureModels,
   createProject,
   persistedNodeCount,
   projectHome,
   showAssets,
 } from "./helpers";
+import { READER } from "./mock-provider";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -264,5 +266,55 @@ test("a region outside the picture is refused before anything is asked", async (
 
   // Nothing was filed for an ask that was never sent.
   expect((await served()).moka.resources.images).toHaveLength(1);
+  expect(await persistedNodeCount(page)).toBe(1);
+});
+
+/**
+ * The answer a picture is read back as belongs to the picture, not to the
+ * dialog: the corner's ✕ closes over it without taking it back, and cancel —
+ * offered only while it is on its way — is what takes it back.
+ */
+test("a picture's description is taken back on cancel, not on closing the dialog", async ({
+  page,
+}) => {
+  await configureModels([{ id: READER, capability: "text", alias: "Reader" }]);
+  await openWithAPicture(page, "Describe Cancel");
+
+  const openDescribe = async () => {
+    await toolBar(page)
+      .getByRole("button", { name: "Describe", exact: true })
+      .click();
+    const dialog = page.getByTestId("describe-dialog");
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    return dialog;
+  };
+
+  let dialog = await openDescribe();
+  await expect(dialog.getByTestId("describe-cancel")).toHaveCount(0);
+  // Words the stand-in holds on their way, so the answer is still arriving
+  // while the dialog is closed and opened again.
+  await dialog
+    .getByLabel("What to ask about the picture")
+    .fill("Read the lantern. [hold]");
+  await dialog.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(dialog.getByTestId("describe-cancel")).toBeVisible();
+
+  // The corner closes over the answer without taking it back.
+  await dialog.getByTestId("describe-close").click();
+  await expect(dialog).toHaveCount(0);
+
+  // Opened again on the same picture, the answer is still on its way.
+  dialog = await openDescribe();
+  await expect(dialog.getByRole("button", { name: "Reading…" })).toBeDisabled();
+  await expect(dialog.getByTestId("describe-cancel")).toBeVisible();
+
+  // Cancel takes it back, and the words the cancelled ask would have written
+  // are filed for nobody.
+  await dialog.getByTestId("describe-cancel").click();
+  await expect(dialog.getByTestId("describe-cancel")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Ask", exact: true }),
+  ).toBeEnabled();
+  await page.waitForTimeout(3_000);
   expect(await persistedNodeCount(page)).toBe(1);
 });
