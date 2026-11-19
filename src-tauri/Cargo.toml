@@ -2,15 +2,21 @@
 members = [".", "crates/*"]
 resolver = "2"
 
-[package]
-name = "moka-canvas"
+[workspace.package]
 version = "0.4.0"
-default-run = "moka-canvas"
-description = "Local-first visual video workflow editor"
-authors = ["Moka Canvas"]
 license = "Apache-2.0"
 edition = "2021"
 rust-version = "1.90"
+
+[package]
+name = "moka-canvas"
+version.workspace = true
+default-run = "moka-canvas"
+description = "Local-first visual video workflow editor"
+authors = ["Moka Canvas"]
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 name = "moka_canvas"
