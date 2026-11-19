@@ -14,16 +14,20 @@ pub mod contract;
 pub mod crypto;
 pub mod docs;
 pub mod fs;
-pub mod paths;
 pub mod redact;
 pub mod store;
 pub mod types;
+
+pub use moka_config::{paths, FILE_STORE};
 
 use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use thiserror::Error;
+
+pub(crate) use moka_config as config;
+pub(crate) use moka_domain as domain;
 
 pub use types::{
     Defaults, DocumentInfo, ImagePreferences, MetadataInfo, MetadataStoreKind, ModelConfig,
@@ -36,9 +40,6 @@ pub use types::{
 
 use crate::config::{MetadataConfig, RuntimeMode};
 use crate::domain::Capability;
-
-/// The only implemented backend.
-pub const FILE_STORE: &str = "file";
 
 /// The one document format version this build reads, recorded in `meta.json`.
 ///

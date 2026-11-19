@@ -24,12 +24,9 @@ use std::sync::Arc;
 /// The executor every generated answer is handed to. A generation node does not
 /// name its own the way an operation node does: which model answers is the
 /// spec's business, not the node's.
-pub const PROVIDER_EXECUTOR_KEY: &str = "provider";
-
-/// The executor an extension node is handed to. Every extension, whatever its
-/// definition, runs through the same machinery: which script is loaded and
-/// which models it may call comes from the node's own data.
-pub const EXTENSION_EXECUTOR_KEY: &str = "extension";
+///
+/// The keys live beside the configuration that validates them.
+pub use moka_config::{EXTENSION_EXECUTOR_KEY, PROVIDER_EXECUTOR_KEY};
 
 /// Which node/port produced a value, recorded for audit.
 #[derive(Debug, Clone, PartialEq, Serialize)]

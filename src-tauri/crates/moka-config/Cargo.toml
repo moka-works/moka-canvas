@@ -1,0 +1,17 @@
+[package]
+name = "moka-config"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[dependencies]
+directories = "6"
+moka-domain = { path = "../moka-domain" }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

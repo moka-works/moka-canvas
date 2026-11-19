@@ -7,7 +7,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::config::{ConfigError, MetadataConfig, RuntimeMode};
+use crate::{ConfigError, MetadataConfig, RuntimeMode};
 
 /// Bundle identifier shared by the desktop app and the standalone server.
 ///

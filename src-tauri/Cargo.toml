@@ -80,7 +80,9 @@ tauri-build = { version = "2", features = [], optional = true }
 [dependencies]
 aes-gcm = "0.10"
 anyhow = "1"
+moka-config = { path = "crates/moka-config" }
 moka-domain = { path = "crates/moka-domain" }
+moka-metadata = { path = "crates/moka-metadata" }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart"] }
 base64 = "0.22"

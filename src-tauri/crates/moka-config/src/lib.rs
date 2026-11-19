@@ -1,6 +1,19 @@
+pub mod paths;
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+pub(crate) use moka_domain as domain;
+
+/// The executor every generated answer is handed to.
+pub const PROVIDER_EXECUTOR_KEY: &str = "provider";
+
+/// The executor an extension node is handed to.
+pub const EXTENSION_EXECUTOR_KEY: &str = "extension";
+
+/// The only metadata backend this build implements.
+pub const FILE_STORE: &str = "file";
 
 /// Where a web deployment is looked for when nothing was typed for it: a file
 /// beside the project, never inside the program tree, and never tracked — the
@@ -557,8 +570,8 @@ impl AppConfig {
             .enabled_executors
             .iter()
             .filter(|key| {
-                key.as_str() != crate::workflow::PROVIDER_EXECUTOR_KEY
-                    && key.as_str() != crate::workflow::EXTENSION_EXECUTOR_KEY
+                key.as_str() != PROVIDER_EXECUTOR_KEY
+                    && key.as_str() != EXTENSION_EXECUTOR_KEY
             })
             .cloned()
             .collect()
@@ -605,7 +618,7 @@ impl ConfigError {
     }
 }
 
-pub const NATIVE_CONFIG_YAML: &str = include_str!("../resources/native-config.yaml");
+pub const NATIVE_CONFIG_YAML: &str = include_str!("../../../resources/native-config.yaml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeMode {
@@ -820,15 +833,15 @@ pub fn validate_startup(
             config.server.static_dir.display().to_string(),
         ));
     }
-    let store = crate::metadata::paths::resolve_store(&config.metadata);
-    if store != crate::metadata::FILE_STORE {
+    let store = paths::resolve_store(&config.metadata);
+    if store != FILE_STORE {
         return Err(ConfigError::MetadataStoreUnsupported(format!(
             "{store:?} is not implemented; set metadata.store to {:?}",
-            crate::metadata::FILE_STORE
+            FILE_STORE
         )));
     }
-    let dir = crate::metadata::paths::resolve_dir(&config.metadata, mode, app_data)?;
-    crate::metadata::paths::ensure_isolated(&dir, &config.server.static_dir)
+    let dir = paths::resolve_dir(&config.metadata, mode, app_data)?;
+    paths::ensure_isolated(&dir, &config.server.static_dir)
 }
 
 /// Builds a configuration rooted inside the given directory, for tests.
@@ -869,7 +882,7 @@ mod tests {
 
     #[test]
     fn parses_the_example_config() {
-        let raw = include_str!("../../config/moka.example.yaml");
+        let raw = include_str!("../../../../config/moka.example.yaml");
         let config = parse_config(raw).expect("example config must parse");
         assert_eq!(config.server.bind, "127.0.0.1:3000");
         assert_eq!(config.public.product_name, "Moka Canvas");
@@ -911,7 +924,7 @@ mod tests {
 
     #[test]
     fn the_example_file_says_exactly_what_the_defaults_do() {
-        let config = parse_config(include_str!("../../config/moka.example.yaml"))
+        let config = parse_config(include_str!("../../../../config/moka.example.yaml"))
             .expect("example config must parse");
         assert_eq!(
             config,
@@ -1362,7 +1375,7 @@ clip:
     #[test]
     fn rejects_an_unsupported_version() {
         let raw =
-            include_str!("../../config/moka.example.yaml").replace("version: 1", "version: 9");
+            include_str!("../../../../config/moka.example.yaml").replace("version: 1", "version: 9");
         let error = parse_config(&raw).unwrap_err();
         assert!(matches!(error, ConfigError::UnsupportedVersion(9)));
     }

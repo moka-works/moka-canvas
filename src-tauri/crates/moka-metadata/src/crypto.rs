@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{MetadataError, SecretStorage};
 use crate::config::RuntimeMode;
-use crate::metadata::fs;
-use crate::metadata::paths::APP_ID;
+use crate::fs;
+use crate::paths::APP_ID;
 
 /// Base64-encoded 32-byte master key. The server-mode source of truth, because
 /// a server has no desktop session and therefore no keychain to ask. Optional:
