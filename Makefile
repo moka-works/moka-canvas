@@ -119,7 +119,7 @@ web-build: check-deps ## Build the frontend into dist/
 web-serve: web-build fonts ## Build and serve the web app (HOST and PORT override the address)
 	cargo run --manifest-path $(CARGO_MANIFEST) --no-default-features --bin moka-server -- --static-dir dist --host $(HOST) --port $(PORT) $(WORKTREE_METADATA_FLAG)
 
-tauri-dev: web-build fonts ## Run the desktop shell
+tauri-dev: fonts ## Run the desktop shell
 	npm run tauri dev
 
 # The CLI is built ahead of every installer: the bundle asks for a sidecar and
@@ -131,7 +131,7 @@ package-web: web-build fonts ## Package the web server build for deployment
 	cargo build --release --manifest-path $(CARGO_MANIFEST) --no-default-features --bin moka-server --bin moka
 	node scripts/package-web.mjs
 
-package-macos: web-build cli ## Package the macOS DMG and CLI
+package-macos: cli ## Package the macOS DMG and CLI
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos must run on macOS.' >&2; exit 1)
 	# Start from no bundle: the collector copies by name, and yesterday's DMG
 	# carries the same one. The collector also mounts the image it is about to
@@ -143,7 +143,7 @@ package-macos: web-build cli ## Package the macOS DMG and CLI
 
 # The target is named explicitly so one command covers both hosts: Apple
 # Silicon cross-compiles the Intel bundle, Intel builds it natively.
-package-macos-x86: web-build fonts ## Package the Intel macOS DMG and CLI
+package-macos-x86: fonts ## Package the Intel macOS DMG and CLI
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'package-macos-x86 must run on macOS.' >&2; exit 1)
 	@rustup target list --installed | grep -q "$(MACOS_X86_TARGET)" || rustup target add $(MACOS_X86_TARGET)
 	node scripts/build-cli.mjs --target $(MACOS_X86_TARGET)
@@ -160,7 +160,7 @@ package-macos-pkg: package-macos ## Package the macOS PKG that also links the CL
 	node scripts/verify-bundle.mjs
 	sh scripts/package-macos-pkg.sh
 
-package-windows: web-build cli ## Package the Windows MSI and NSIS installers
+package-windows: cli ## Package the Windows MSI and NSIS installers
 	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) printf '%s\n' 'package-windows must run on Windows.' >&2; exit 1;; esac
 	node scripts/clean-bundles.mjs
 	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles msi,nsis
@@ -171,7 +171,7 @@ package-windows: web-build cli ## Package the Windows MSI and NSIS installers
 # or more kinds stalls after its last bundle — CPU pegged, nothing written, no
 # child running — while a process asked for exactly one always finishes. Same
 # binary and flags either way; only the grouping differs.
-package-linux: web-build cli ## Package the Linux deb, rpm and AppImage bundles
+package-linux: cli ## Package the Linux deb, rpm and AppImage bundles
 	@test "$$(uname -s)" = "Linux" || (printf '%s\n' 'package-linux must run on Linux.' >&2; exit 1)
 	node scripts/clean-bundles.mjs
 	npm run tauri build -- --config $(TAURI_RELEASE_CONFIG) --bundles deb
@@ -180,7 +180,7 @@ package-linux: web-build cli ## Package the Linux deb, rpm and AppImage bundles
 	node scripts/collect-release.mjs
 	node scripts/package-cli.mjs
 
-cross-package-windows: web-build fonts ## Cross-package the Windows NSIS installer from macOS
+cross-package-windows: fonts ## Cross-package the Windows NSIS installer from macOS
 	@test "$$(uname -s)" = "Darwin" || (printf '%s\n' 'cross-package-windows must run on macOS.' >&2; exit 1)
 	@command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || (printf '%s\n' 'mingw-w64 is required: brew install mingw-w64' >&2; exit 1)
 	@command -v makensis >/dev/null 2>&1 || (printf '%s\n' 'makensis is required: brew install makensis' >&2; exit 1)
