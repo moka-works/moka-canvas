@@ -1054,6 +1054,113 @@ test("a shot that needs no picture is still a moment of the clip", async ({
   }
 });
 
+/**
+ * The first shot's first frame, as the server holds the pictures it has held.
+ *
+ * A frame may carry several takes, oldest first, and the newest is the one the
+ * board shows.
+ */
+async function frameArtTakes(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/v1/projects/current");
+    const body = (await response.json()) as {
+      moka?: {
+        stories?: {
+          chapters?: {
+            acts?: {
+              keyframes?: { art?: { takes?: { assetIds?: string[] }[] } }[];
+            }[];
+          }[];
+        }[];
+      };
+    };
+    return (
+      body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.keyframes?.[0]?.art
+        ?.takes ?? []
+    ).map((take) => take.assetIds?.[0] ?? "");
+  });
+}
+
+test("a frame takes a picture from the shelf or this computer", async ({
+  page,
+}) => {
+  const home = projectHome("story-frame-picture");
+  await forgetProjects();
+  try {
+    await openSeededStory(page, home, false);
+    await page.getByTestId("story-step-storyboard").click();
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+    const before = await frameArtTakes(page);
+
+    // A picture the shelf already holds is bound to the frame rather than only
+    // being known to exist: the frame keeps it as its newest take.
+    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
+    await firstAct.getByTestId("story-kf-slot-0-library").click();
+    const library = page.getByTestId("story-library");
+    await expect(library).toBeVisible();
+    // Anything but a picture the frame already carries proves the binding: a
+    // file it never held is the one that has to be kept afresh.
+    const tiles = library.locator(".story-pick");
+    const shelves = await tiles.count();
+    let tile = tiles.first();
+    let picked = "";
+    for (let at = 0; at < shelves; at += 1) {
+      const candidate = tiles.nth(at);
+      const id =
+        (await candidate.getAttribute("data-testid"))?.replace(
+          "story-library-",
+          "",
+        ) ?? "";
+      if (id !== "" && !before.includes(id)) {
+        tile = candidate;
+        picked = id;
+        break;
+      }
+    }
+    expect(picked).not.toBe("");
+    await tile.click();
+    await expect(
+      firstAct.getByTestId("story-kf-slot-0").locator("img"),
+    ).toHaveAttribute("src", new RegExp(picked));
+    await expect.poll(() => frameArtTakes(page)).toEqual([...before, picked]);
+
+    // A file on this computer is filed on the shelf first and then kept here,
+    // so the frame shows it and the shelf holds it under its own name.
+    await firstAct.getByTestId("story-kf-slot-0-upload-input").setInputFiles({
+      name: "frame.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+    await expect
+      .poll(async () => (await frameArtTakes(page)).length)
+      .toBe(before.length + 2);
+    const taken = await frameArtTakes(page);
+    const uploaded = taken.at(-1) ?? "";
+    expect(uploaded).not.toBe(picked);
+    await expect(
+      firstAct.getByTestId("story-kf-slot-0").locator("img"),
+    ).toHaveAttribute("src", new RegExp(uploaded));
+    const shelved = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/projects/current");
+      const body = (await response.json()) as {
+        moka?: { resources?: { images?: { name?: string }[] } };
+      };
+      return (body.moka?.resources?.images ?? []).some(
+        (entry) => entry.name === "frame.png",
+      );
+    });
+    expect(shelved).toBe(true);
+  } finally {
+    forgetHome(home);
+  }
+});
+
 test("an episode's board is rearranged by hand", async ({ page }) => {
   const home = projectHome("story-board-edit");
   await forgetProjects();
