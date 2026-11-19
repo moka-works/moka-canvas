@@ -26,6 +26,7 @@ import {
   storyMentions,
   takeFile,
   voiceTakeOf,
+  withTake,
   type StoryGuess,
 } from "../../../shared/domain";
 import type {
@@ -1856,7 +1857,13 @@ function dropFrame(
     : "dropped";
 }
 
-/** Keeps the frame a reader picked, letting the older ones go on being there. */
+/**
+ * Keeps the frame a reader picked, letting the older ones go on being there.
+ *
+ * A picture from the shelf or this computer may be one the place has never
+ * held, so it is first kept as the newest take — `slotWithCurrent` alone only
+ * walks takes already kept, and would leave a new file unbound.
+ */
 function keepFrame(
   story: StoryDocument,
   chapterId: string,
@@ -1864,11 +1871,19 @@ function keepFrame(
   keyframe: StoryKeyframe,
   assetId: string,
 ): void {
-  writeFrame(
-    story,
-    chapterId,
-    act,
-    keyframe,
-    slotWithCurrent(keyframe.art, assetId),
-  );
+  const live = liveStory(story.id);
+  const frame =
+    live === undefined
+      ? undefined
+      : keyframeAt(live, {
+          chapterId,
+          actId: act.id,
+          keyframeId: keyframe.id,
+        });
+  if (live === undefined || frame === undefined) return;
+  const kept = withTake(frame.art, {
+    assetIds: [assetId],
+    createdAt: new Date().toISOString(),
+  });
+  writeFrame(live, chapterId, act, frame, slotWithCurrent(kept, assetId));
 }

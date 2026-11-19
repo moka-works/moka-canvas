@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -12,6 +12,7 @@ import {
   buildStoryMokaFile,
   goldenNodeIds,
 } from "../../../shared/domain/fixtures";
+import { assetsApi } from "../../../api/assets";
 import { clampSeconds } from "../jobs/plan";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -291,6 +292,61 @@ describe("writing an episode's board", () => {
     fireEvent.click(within(more).getByText("More"));
     fireEvent.click(screen.getByTestId("story-kf-edit-0"));
     expect(screen.getByTestId("story-edit-dialog")).toBeDefined();
+  });
+
+  it("keeps a picture from the shelf that the frame has never held", () => {
+    openAtBoard(withUndrawnFrames());
+
+    // The shelf holds a picture this shot has never carried, and choosing it
+    // binds the file to the frame rather than only knowing the file exists.
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-0")).getByText("More"),
+    );
+    fireEvent.click(screen.getByTestId("story-kf-slot-0-library"));
+    fireEvent.click(screen.getByTestId(`story-library-${ids.heroMain}`));
+
+    expect(acts()[0]?.keyframes[0]?.art.takes.at(-1)?.assetIds).toEqual([
+      ids.heroMain,
+    ]);
+    expect(
+      screen.getByTestId("story-kf-slot-0").querySelector("img"),
+    ).not.toBeNull();
+  });
+
+  it("keeps a picture filed from this computer on the frame that asked for it", async () => {
+    vi.spyOn(assetsApi, "upload").mockResolvedValue({
+      entry: {
+        id: "asset-frame-picture",
+        name: "frame.png",
+        path: "assets/images/frame-00000000.png",
+        mime: "image/png",
+        bytes: 68,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+      revision: 2,
+      updatedAt: T0,
+    });
+    openAtBoard(withUndrawnFrames());
+
+    fireEvent.click(
+      within(screen.getByTestId("story-kf-more-0")).getByText("More"),
+    );
+    fireEvent.change(screen.getByTestId("story-kf-slot-0-upload-input"), {
+      target: {
+        files: [new File(["x"], "frame.png", { type: "image/png" })],
+      },
+    });
+
+    // The file is on the shelf first, and only then is it the frame's own.
+    await waitFor(() =>
+      expect(acts()[0]?.keyframes[0]?.art.takes.at(-1)?.assetIds).toEqual([
+        "asset-frame-picture",
+      ]),
+    );
+    expect(
+      screen.getByTestId("story-kf-slot-0").querySelector("img"),
+    ).not.toBeNull();
   });
 
   it("leaves the frame's More menu by clicking elsewhere or stepping back", async () => {
