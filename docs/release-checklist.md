@@ -33,7 +33,7 @@ npm run test:e2e  # Playwright: critical path, provider settings, a
      question says how many boards move up, and that they do — nothing on a
      board is lost by tidying the tree. The automated equivalents are
      `npm test` (`ProjectTree`, `folders`, `canvasTree`) and
-     `cargo test --test tree`.
+     `cargo test --test suite_core tree`.
    - Open a board from the tree and confirm a tab appears for it on the
      strip across the top; open a second, close one, and confirm the board
      beside it is looked at rather than nothing. Close the project and
@@ -78,8 +78,7 @@ npm run test:e2e  # Playwright: critical path, provider settings, a
      image node the same way and confirm the entry it already had is
      marked as one to hand, with the node's ask as its summary where it
      had none, rather than a second copy appearing. The automated
-     equivalents are `cargo test --test api
-a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
+     equivalents are `cargo test --test suite_core api::a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
      (`media`).
    - Take the shelf the other way with **From assets…** — from the
      quick-add menu, from a node's reference bar, and through the
@@ -110,7 +109,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
      open did **not** travel, and that the imported project opens onto its
      first board — that is this machine's business, like the theme, and a
      package carries none of it. The automated equivalents are
-     `cargo test --test contract` (`tree_binary_decodes_to_tree_json_model`,
+     `cargo test --test suite_core contract` (`tree_binary_decodes_to_tree_json_model`,
      `tree_re_encode_is_byte_canonical`) and `npm test` (`codec`).
    - Tick the run-history choice and confirm `history/runs/**` arrives
      and the manifest says `personalHistory: true`. Unticked, the
@@ -131,7 +130,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
    - Search the unpacked bytes of both kinds for `sk-`, `apiKey`,
      `cipher`, `secrets.json`, `master.key`, and the metadata directory
      path: none appear in either. The automated equivalent is
-     `cargo test --test package export_never_contains_personal_or_secret_data`.
+     `cargo test --test suite_core package::export_never_contains_personal_or_secret_data`.
    - Import a package written by the previous build (manifest
      `formatVersion: 1`) and confirm it is accepted and cleaned to what
      this build keeps, and that a manifest naming a later version is
@@ -168,7 +167,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
    the answer is one problem document — code in the body and in
    `x-error-code`, the provider's message rather than its raw body, and
    no credential anywhere in it. The automated equivalent is
-   `cargo test --test generate_api`.
+   `cargo test --test suite_generate generate_api`.
 10. Generate from a node rather than from the API, which is the path a
     canvas takes. Write a spec on an image node in the panel under it
     (item 11) and run it: the answer appears on the node, in the
@@ -189,7 +188,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
     did not travel with it and click **Run again** on one of its assets —
     a new run starts under the snapshot's parameters rather than a retry
     of a run this project has never heard of. The automated equivalents
-    are `cargo test --test provider_runs` and `npm run test:e2e`.
+    are `cargo test --test suite_providers provider_runs` and `npm run test:e2e`.
 11. Ask a node from the editor's own interface, which is how a canvas is
     driven. Select an empty image node and confirm a panel comes up
     under it; reach the same panel through **Generate…** on the node's
@@ -226,7 +225,7 @@ a_text_node_is_filed_once_and_its_words_come_back` and `npm test`
     own, and each reference is listed with its mime type, dimensions,
     size and the card it came from. Run it and confirm that is what the
     provider was handed — the automated equivalent is
-    `cargo test --test provider_runs what_the_panel_shows`, with the
+    `cargo test --test suite_providers provider_runs::what_the_panel_shows`, with the
     panel, the bar and the mention field covered by `npm test`. Point at
     two nodes by hand and drag one above the other, and confirm the
     preview lists them in the new order rather than in the order the
@@ -410,7 +409,7 @@ live in the platform application-data directory, never in the program tree. See
    The dialog must not echo it either: reopen the model and
    confirm the key field is empty with the masked form as its
    placeholder. The automated equivalent is
-   `cargo test --test metadata_file`.
+   `cargo test --test suite_core metadata_file`.
 4. Confirm `secrets.json` is mode `0600` and the metadata directory
    `0700` (macOS and Linux).
 5. Confirm `/api/health` reports `secretStorage` and that the value

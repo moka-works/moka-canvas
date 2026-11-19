@@ -30,6 +30,45 @@ desktop = [
 name = "moka-canvas"
 required-features = ["desktop"]
 
+# Each suite is one linked binary. Keeping the files in a directory of their
+# own and naming the root here keeps Cargo from treating every file as a
+# separate test target.
+[[test]]
+name = "suite_core"
+path = "tests/suite_core/main.rs"
+
+[[test]]
+name = "suite_generate"
+path = "tests/suite_generate/main.rs"
+
+[[test]]
+name = "suite_providers"
+path = "tests/suite_providers/main.rs"
+
+# The recorder is process-wide and starts once, so each test that opens one of
+# its own has to be the only test in its binary.
+[[test]]
+name = "suite_debug_failures"
+path = "tests/suite_debug_failures/main.rs"
+
+[[test]]
+name = "suite_debug_recording"
+path = "tests/suite_debug_recording/main.rs"
+
+# These two place converters of their own in the process-wide models root, so
+# each has to win that root alone.
+[[test]]
+name = "suite_lua_host"
+path = "tests/suite_lua_host/main.rs"
+
+[[test]]
+name = "suite_converter"
+path = "tests/suite_converter/main.rs"
+
+[[test]]
+name = "suite_story"
+path = "tests/suite_story/main.rs"
+
 [build-dependencies]
 serde_json = "1"
 tauri-build = { version = "2", features = [], optional = true }

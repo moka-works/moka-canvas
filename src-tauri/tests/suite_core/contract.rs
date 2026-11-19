@@ -633,7 +633,7 @@ fn web_param_keys(source: &str, capability: &str) -> Vec<String> {
 /// held together here rather than by whoever edits them next.
 #[test]
 fn the_parameter_vocabulary_is_one_list_in_both_halves() {
-    let source = include_str!("../../src/shared/domain/constants.ts");
+    let source = include_str!("../../../src/shared/domain/constants.ts");
     for capability in [
         Capability::Text,
         Capability::Image,
