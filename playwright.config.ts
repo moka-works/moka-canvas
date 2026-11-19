@@ -3,9 +3,10 @@ import { defineConfig } from "@playwright/test";
 const port = Number(process.env.MOKA_E2E_PORT ?? 8971);
 const baseURL = `http://127.0.0.1:${port}`;
 // Playwright wipes its output directory as a run starts, so two runs sharing
-// one directory wipe the artifacts out from under each other. The directory
-// follows the port a run listens on; the default run keeps the familiar name.
-const outputDir = port === 8971 ? "test-results" : `test-results-${port}`;
+// one directory wipe the artifacts out from under each other. Each port gets
+// its own subdirectory under one root, so the checkout keeps a single entry
+// that `make clean` removes wholesale.
+const outputDir = `test-results/${port}`;
 
 export default defineConfig({
   testDir: "./e2e",

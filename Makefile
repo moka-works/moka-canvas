@@ -207,7 +207,7 @@ prepare-release: ## Collect release artifacts (SOURCE -> DEST)
 		$(if $(REQUIRE_ALL),--require-all,)
 
 clean: ## Remove build outputs
-	rm -rf dist release src-tauri/target node_modules/.tmp
+	rm -rf dist release test-results* playwright-report src-tauri/target node_modules/.tmp
 
 # Reinstalling does not clear the webview's on-disk cache: it belongs to the
 # bundle identifier under the user's cache directory. Quit the app first.
