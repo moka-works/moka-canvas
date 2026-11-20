@@ -1018,6 +1018,7 @@ fn provenance(tool: Operator, subject: &AssetId, params: &serde_json::Value) -> 
         story_id: None,
         input_asset_ids: Some(vec![subject.clone()]),
         parameter_snapshot: Some(serde_json::Value::Object(snapshot)),
+        generation: None,
         created_at: now_iso(),
     }
 }

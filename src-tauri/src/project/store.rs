@@ -1618,6 +1618,7 @@ impl ProjectStore for FsProjectStore {
                 story_id: None,
                 input_asset_ids: None,
                 parameter_snapshot: None,
+                generation: None,
                 created_at: now,
             }),
             tags: None,

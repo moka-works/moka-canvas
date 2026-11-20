@@ -4,8 +4,9 @@ use base64::Engine;
 use moka_canvas::api::ApiState;
 use moka_canvas::config::{parse_test_config, AppConfig, RuntimeMode};
 use moka_canvas::domain::{
-    derive_ports, AssetProvenance, AssistantMessage, AssistantRole, AssistantSession,
-    DocumentCommand, MokaFile, NodeData, NodeKind, Rect, WorkflowNode, PACKAGE_MANIFEST_VERSION,
+    derive_ports, AssetGeneration, AssetProvenance, AssistantMessage, AssistantRole,
+    AssistantSession, DocumentCommand, MokaFile, NodeData, NodeKind, Rect, WorkflowNode,
+    PACKAGE_MANIFEST_VERSION,
 };
 use moka_canvas::metadata::{crypto, docs};
 use moka_canvas::project::codec::decode_moka_file;
@@ -654,6 +655,12 @@ async fn stage_generated_project(root: &Path) -> StagedProject {
                     "model": "a-model",
                     "prompt": "a lake at dusk",
                 })),
+                generation: Some(AssetGeneration {
+                    prompt: "a lake at dusk".to_string(),
+                    system: None,
+                    inputs: Vec::new(),
+                    params: Some(json!({ "seconds": 4 })),
+                }),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
             }),
         })
@@ -800,6 +807,14 @@ async fn a_package_of_the_work_forgets_the_run_but_keeps_the_asking() {
         provenance.parameter_snapshot.as_ref().unwrap()["prompt"],
         "a lake at dusk",
         "how it was asked for is the reusable part and is kept"
+    );
+    assert_eq!(
+        provenance
+            .generation
+            .as_ref()
+            .map(|generation| generation.prompt.as_str()),
+        Some("a lake at dusk"),
+        "a film's ask travels with the film, not only with this machine"
     );
 
     // The manifest describes the bytes actually written, not the file on disk.

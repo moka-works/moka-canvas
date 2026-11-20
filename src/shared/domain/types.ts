@@ -114,7 +114,38 @@ export interface AssetProvenance {
   storyId?: string;
   inputAssetIds?: AssetId[];
   parameterSnapshot?: Record<string, unknown>;
+  /**
+   * What a film was asked for, kept with the film itself.
+   *
+   * A run record and a story batch are the machine's own and are pruned; a
+   * cutting room that asks for a piece of a clip again needs the words and
+   * the pictures wherever the project travels. Absent for anything a model
+   * did not film.
+   */
+  generation?: AssetGeneration;
   createdAt: IsoTimestamp;
+}
+
+/** The ask a film answered, as it stood when it was sent. */
+export interface AssetGeneration {
+  /** The prompt the provider was asked with, references already resolved. */
+  prompt: string;
+  system?: string;
+  /** The files that travelled with the ask, in the order they did. */
+  inputs: AssetGenerationInput[];
+  /** The parameters the ask carried: length, shape, sound, and the like. */
+  params?: Record<string, unknown>;
+}
+
+/** One file that travelled with the ask that made a film. */
+export interface AssetGenerationInput {
+  /** The role it travelled under: `reference`, `firstFrame`, `lastFrame`… */
+  role: string;
+  assetId: AssetId;
+  /** One end of a film, when the file means a picture taken out of one. */
+  frame?: "first" | "last";
+  /** The stretch of the file the ask meant, when it meant a stretch. */
+  window?: { startMs: number; durationMs: number };
 }
 
 export type ResourceRegistry = Record<AssetCategory, ResourceEntry[]>;

@@ -16,6 +16,7 @@ import {
   buildGoldenMokaFile,
   buildShelfMokaFile,
   buildStoryMokaFile,
+  buildTimelineMokaFile,
   buildTreeMokaFile,
   storyIds,
 } from "./fixtures";
@@ -96,6 +97,40 @@ describe("moka codec", () => {
       synopsis: "The old words",
     });
     expect(back.outlineLocked).toBe(true);
+  });
+
+  it("carries how a film was asked for, and reads one written before it did", () => {
+    const moka = buildTimelineMokaFile();
+    const video = moka.resources.videos[0]!;
+    video.provenance = {
+      createdAt: "2026-01-01T00:00:00Z",
+      generation: {
+        prompt: "A station at night, its lights coming on.",
+        system: "Describe only what the camera sees.",
+        inputs: [
+          { role: "firstFrame", assetId: "asset-frame-a" },
+          { role: "lastFrame", assetId: "asset-clip-b", frame: "last" },
+          {
+            role: "reference",
+            assetId: "asset-sketch",
+            window: { startMs: 500, durationMs: 1_500 },
+          },
+        ],
+        params: { seconds: 4, ratio: "16:9" },
+      },
+    };
+
+    const back = decodeMokaFile(encodeMokaFile(moka));
+    const provenance = back.resources.videos.find(
+      (entry) => entry.id === video.id,
+    )?.provenance;
+    expect(provenance?.generation).toEqual(video.provenance.generation);
+
+    // A film written before its ask was kept reads without one.
+    const older = buildTimelineMokaFile();
+    expect(
+      decodeMokaFile(encodeMokaFile(older)).resources.videos[0]!.provenance,
+    ).toBeUndefined();
   });
 
   it("carries a bridge between two acts, and reads one written before bridges", () => {

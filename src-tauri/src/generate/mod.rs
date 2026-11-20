@@ -44,7 +44,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{AssetId, Capability, IsoTimestamp};
+use crate::domain::{
+    AssetGeneration, AssetGenerationInput, AssetGenerationWindow, AssetId, Capability, IsoTimestamp,
+};
 use crate::metadata::{Protocol, Scene};
 
 pub use context::{collect_generation_inputs, context_node_ids, ResolvedInputs};
@@ -281,6 +283,43 @@ pub struct GenerateInput {
     /// the frame is taken when the request is sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<crate::assets::frames::FrameEdge>,
+}
+
+impl GenerateInput {
+    /// This input as it is written down beside the film it travelled with.
+    pub fn recorded(&self) -> AssetGenerationInput {
+        AssetGenerationInput {
+            role: self.role.as_str().to_string(),
+            asset_id: self.asset_id.clone(),
+            frame: self.frame.map(|edge| edge.as_str().to_string()),
+            window: self.window.map(|window| AssetGenerationWindow {
+                start_ms: window.start_ms,
+                duration_ms: window.duration_ms,
+            }),
+        }
+    }
+}
+
+/// The ask a film answered, as a project keeps it beside the film.
+///
+/// The prompt is the resolved one that was sent rather than a node's own
+/// field, which may have been edited since the answer came back.
+pub fn recorded_generation(
+    prompt: impl Into<String>,
+    system: Option<String>,
+    params: Option<serde_json::Value>,
+    inputs: &[GenerateInput],
+) -> AssetGeneration {
+    AssetGeneration {
+        prompt: prompt.into(),
+        system,
+        inputs: inputs.iter().map(GenerateInput::recorded).collect(),
+        params: params.filter(|value| match value {
+            serde_json::Value::Null => false,
+            serde_json::Value::Object(map) => !map.is_empty(),
+            _ => true,
+        }),
+    }
 }
 
 /// A stretch of an asset, measured from its own beginning.

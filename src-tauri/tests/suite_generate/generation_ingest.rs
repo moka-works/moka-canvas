@@ -5,7 +5,8 @@ use moka_canvas::domain::{
     GenerationMode, GenerationSpec, NodeKind, ResourceEntry, RunRecord, RunStatus, WorkflowNode,
 };
 use moka_canvas::generate::{
-    ingest_generated, GenerateInput, GenerateResult, GeneratedItem, InputRole, ResolvedInputs,
+    ingest_generated, GenerateInput, GenerateResult, GeneratedItem, InputRole, InputWindow,
+    ResolvedInputs,
 };
 use moka_canvas::project::store::{FsProjectStore, ProjectRegistry};
 use moka_canvas::project::{CreateProject, ProjectStore};
@@ -94,6 +95,19 @@ fn image(bytes: Vec<u8>) -> GeneratedItem {
         width: Some(64),
         height: Some(64),
         duration_ms: None,
+    }
+}
+
+/// A finished shot: the header of an MP4 and nothing else, because the shelf
+/// reads a file's kind off its bytes rather than trusting a name.
+fn film() -> GeneratedItem {
+    GeneratedItem {
+        bytes: b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".to_vec(),
+        mime: "video/mp4".into(),
+        kind: Capability::Video,
+        width: None,
+        height: None,
+        duration_ms: Some(4_000),
     }
 }
 
@@ -239,6 +253,10 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
     let snapshot = provenance.parameter_snapshot.as_ref().expect("a snapshot");
     assert_eq!(snapshot["model"], json!("acme::paint-1"));
     assert_eq!(snapshot["params"]["size"], json!("1024x1024"));
+    assert!(
+        provenance.generation.is_none(),
+        "a still is asked for again from the card that holds it, not from its file"
+    );
 
     // The document was persisted, and the provenance survives the round trip
     // through it rather than living only in memory.
@@ -254,6 +272,94 @@ async fn an_image_answer_lands_in_the_project_bearing_its_provenance() {
     // A card that asked for itself is traced to the card and the run, and to
     // no conversation.
     assert_eq!(stored.assistant_session_id, None);
+}
+
+#[tokio::test]
+async fn a_filmed_answer_carries_the_words_and_pictures_it_was_asked_with() {
+    let tmp = TempDir::new().unwrap();
+    let (registry, store, root, canvas_id) = create_store(&tmp).await;
+    let run = run(&canvas_id);
+    let node = asking(
+        NodeKind::Video,
+        "Opening",
+        Some(json!({ "seconds": 4, "ratio": "16:9" })),
+    );
+    let inputs = ResolvedInputs {
+        prompt: "A station at night, its lights coming on one by one.".into(),
+        inputs: vec![
+            GenerateInput {
+                role: InputRole::FirstFrame,
+                asset_id: "asset-frame-a".into(),
+                window: None,
+                frame: None,
+            },
+            GenerateInput {
+                role: InputRole::LastFrame,
+                asset_id: "asset-clip-b".into(),
+                window: None,
+                frame: Some(moka_canvas::assets::frames::FrameEdge::Last),
+            },
+            GenerateInput {
+                role: InputRole::Reference,
+                asset_id: "asset-sketch".into(),
+                window: Some(InputWindow {
+                    start_ms: 500,
+                    duration_ms: 1_500,
+                }),
+                frame: None,
+            },
+        ],
+        ..ResolvedInputs::default()
+    };
+    let asked = inputs.prompt.clone();
+
+    let entries = ingest_generated(store.as_ref(), &run, &node, &inputs, &answer(vec![film()]))
+        .await
+        .unwrap();
+    let provenance = entries[0].provenance.as_ref().expect("provenance recorded");
+    let generation = provenance
+        .generation
+        .as_ref()
+        .expect("a film keeps the ask that made it");
+    assert_eq!(generation.prompt, asked);
+    assert_eq!(
+        generation
+            .inputs
+            .iter()
+            .map(|input| (input.role.as_str(), input.asset_id.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("firstFrame", "asset-frame-a"),
+            ("lastFrame", "asset-clip-b"),
+            ("reference", "asset-sketch"),
+        ]
+    );
+    assert_eq!(
+        generation.inputs[1].frame.as_deref(),
+        Some("last"),
+        "which end of the clip it means travels with it"
+    );
+    let window = generation.inputs[2].window.expect("the window travelled");
+    assert_eq!((window.start_ms, window.duration_ms), (500, 1_500));
+    assert_eq!(
+        generation.params.as_ref().unwrap()["seconds"],
+        json!(4),
+        "how long the ask was for travels too"
+    );
+
+    // The document keeps it, not just the answer this process holds.
+    registry.open_project(&root).await.unwrap();
+    let stored = registered(store.as_ref()).await;
+    assert_eq!(
+        stored[0]
+            .provenance
+            .as_ref()
+            .unwrap()
+            .generation
+            .as_ref()
+            .unwrap(),
+        generation
+    );
 }
 
 #[tokio::test]

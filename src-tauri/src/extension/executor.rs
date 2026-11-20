@@ -19,13 +19,14 @@ use async_trait::async_trait;
 use crate::domain::validate::generation_param_keys;
 use crate::domain::validate::MAX_RESULT_SLOTS;
 use crate::domain::{
-    now_iso, AssetId, AssetProvenance, CanvasId, Capability, DataType, ExtensionCallRecord,
-    ExtensionOutputValue, NodeId, PortDefinition, ResultSlot, ResultSlotStatus, RunId,
-    ValidationIssue,
+    now_iso, AssetGeneration, AssetId, AssetProvenance, CanvasId, Capability, DataType,
+    ExtensionCallRecord, ExtensionOutputValue, NodeId, PortDefinition, ResultSlot,
+    ResultSlotStatus, RunId, ValidationIssue,
 };
 use crate::generate::{
-    file_incoming, Cancel, DeltaSink, Gateway, GenerateInput, GenerateRequest, GenerateResult,
-    Incoming, InputRole, InputWindow as GenerateWindow, ModelRepo, ProviderError, TaskState,
+    file_incoming, recorded_generation, Cancel, DeltaSink, Gateway, GenerateInput, GenerateRequest,
+    GenerateResult, Incoming, InputRole, InputWindow as GenerateWindow, ModelRepo, ProviderError,
+    TaskState,
 };
 use crate::project::store::FsProjectStore;
 use crate::project::ProjectStore;
@@ -1071,6 +1072,12 @@ impl ExtensionExecutor {
                 },
                 ..GenerateRequest::default()
             };
+            let film = recorded_generation(
+                request.prompt.clone(),
+                request.system.clone(),
+                Some(serde_json::Value::Object(request.params.clone())),
+                &request.inputs,
+            );
             let started = Instant::now();
             let remaining = control.remaining();
             if remaining.is_zero() {
@@ -1118,6 +1125,7 @@ impl ExtensionExecutor {
                             &slot_for_call,
                             &binding,
                             &inputs,
+                            &film,
                             &result,
                             frames,
                         )
@@ -1355,6 +1363,7 @@ async fn file_answers(
     slot: &str,
     model: &str,
     input_ids: &[AssetId],
+    generation: &AssetGeneration,
     result: &GenerateResult,
     frames: Option<Arc<crate::assets::frames::Frames>>,
 ) -> Result<Vec<ModelItem>, ProviderError> {
@@ -1389,6 +1398,7 @@ async fn file_answers(
                     "call": index + 1,
                     "model": model,
                 })),
+                generation: (item.kind == Capability::Video).then(|| generation.clone()),
                 created_at: now_iso(),
             },
         });

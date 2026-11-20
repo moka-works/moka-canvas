@@ -106,7 +106,60 @@ pub struct AssetProvenance {
     pub input_asset_ids: Option<Vec<AssetId>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_snapshot: Option<serde_json::Value>,
+    /// What a film was asked for, kept with the film itself.
+    ///
+    /// A run record and a story batch are this machine's own and are pruned;
+    /// a cutting room that asks for a piece of a clip again needs the words
+    /// and the pictures wherever the project travels. Absent for anything a
+    /// model did not film. An act filmed in pieces files each piece with the
+    /// ask of the piece it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<AssetGeneration>,
     pub created_at: IsoTimestamp,
+}
+
+/// The ask a film answered, as it stood when it was sent.
+///
+/// The prompt is the one the provider was asked with, references resolved,
+/// rather than a node's field that may have been edited since: asking again
+/// means asking the same thing. The inputs keep their roles and the part of
+/// a file they mean, so a first frame is not mistaken for a reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetGeneration {
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    /// The files that travelled with the ask, in the order they did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<AssetGenerationInput>,
+    /// The parameters the ask carried: length, shape, sound, and the like.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// One file that travelled with the ask that made a film.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetGenerationInput {
+    /// What the file was to the ask: `reference`, `firstFrame`, `lastFrame`,
+    /// `mask`, a control picture or a control track.
+    pub role: String,
+    pub asset_id: AssetId,
+    /// Which end of a film the file means, when it means one end of one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+    /// The stretch of the file the ask meant, when it meant a stretch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<AssetGenerationWindow>,
+}
+
+/// A stretch of a file, in milliseconds from its own beginning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetGenerationWindow {
+    pub start_ms: u64,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

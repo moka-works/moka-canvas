@@ -35,6 +35,8 @@ import {
   type StoryStep,
 } from "./story";
 import type {
+  AssetGeneration,
+  AssetGenerationInput,
   AssistantFailure,
   AssistantMessage,
   AssistantReference,
@@ -704,6 +706,32 @@ function encodeProbe(
   return doc;
 }
 
+function encodeGeneration(
+  generation: AssetGeneration | undefined,
+): Record<string, unknown> | undefined {
+  if (generation === undefined) return undefined;
+  const doc: Record<string, unknown> = { prompt: generation.prompt };
+  if (generation.system !== undefined) doc.system = generation.system;
+  if (generation.inputs.length > 0) {
+    doc.inputs = generation.inputs.map((input) => {
+      const held: Record<string, unknown> = {
+        role: input.role,
+        assetId: input.assetId,
+      };
+      if (input.frame !== undefined) held.frame = input.frame;
+      if (input.window !== undefined) {
+        held.window = {
+          startMs: asLong(input.window.startMs),
+          durationMs: asLong(input.window.durationMs),
+        };
+      }
+      return held;
+    });
+  }
+  if (generation.params !== undefined) doc.params = generation.params;
+  return doc;
+}
+
 function encodeProvenance(
   provenance: ResourceEntry["provenance"],
 ): Record<string, unknown> | undefined {
@@ -722,6 +750,8 @@ function encodeProvenance(
     doc.inputAssetIds = [...provenance.inputAssetIds];
   if (provenance.parameterSnapshot !== undefined)
     doc.parameterSnapshot = provenance.parameterSnapshot;
+  const generation = encodeGeneration(provenance.generation);
+  if (generation) doc.generation = generation;
   doc.createdAt = provenance.createdAt;
   return doc;
 }
@@ -893,6 +923,51 @@ function decodeProbe(value: unknown): ResourceEntry["probe"] {
   };
 }
 
+function decodeGenerationInput(
+  value: unknown,
+  name: string,
+): AssetGenerationInput {
+  const doc = asRecord(value, name);
+  const input: AssetGenerationInput = {
+    role: asString(doc.role, `${name}.role`),
+    assetId: asString(doc.assetId, `${name}.assetId`),
+  };
+  if (doc.frame === "first" || doc.frame === "last") input.frame = doc.frame;
+  if (doc.window !== undefined && doc.window !== null) {
+    const window = asRecord(doc.window, `${name}.window`);
+    const startMs = decodeLongField(window.startMs);
+    const durationMs = decodeLongField(window.durationMs);
+    if (startMs !== undefined && durationMs !== undefined) {
+      input.window = { startMs, durationMs };
+    }
+  }
+  return input;
+}
+
+function decodeGeneration(value: unknown): AssetGeneration | undefined {
+  if (value === undefined || value === null) return undefined;
+  const doc = asRecord(value, "provenance.generation");
+  const generation: AssetGeneration = {
+    prompt: asString(doc.prompt, "provenance.generation.prompt"),
+    inputs:
+      doc.inputs === undefined
+        ? []
+        : asArray(doc.inputs, "provenance.generation.inputs").map((input, at) =>
+            decodeGenerationInput(input, `provenance.generation.inputs[${at}]`),
+          ),
+  };
+  if (doc.system !== undefined)
+    generation.system = asString(doc.system, "provenance.generation.system");
+  if (
+    typeof doc.params === "object" &&
+    doc.params !== null &&
+    !Array.isArray(doc.params)
+  ) {
+    generation.params = doc.params as Record<string, unknown>;
+  }
+  return generation;
+}
+
 function decodeProvenance(value: unknown): ResourceEntry["provenance"] {
   if (value === undefined || value === null) return undefined;
   const doc = asRecord(value, "provenance");
@@ -911,6 +986,7 @@ function decodeProvenance(value: unknown): ResourceEntry["provenance"] {
       doc.parameterSnapshot !== null
         ? (doc.parameterSnapshot as Record<string, unknown>)
         : undefined,
+    generation: decodeGeneration(doc.generation),
     createdAt: asString(doc.createdAt, "provenance.createdAt"),
   };
 }

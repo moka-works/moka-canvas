@@ -11,7 +11,7 @@
 //! editor offer to ask for it again, so it is assembled here rather than left
 //! for whoever writes the node back.
 
-use super::{GenerateResult, ResolvedInputs};
+use super::{recorded_generation, GenerateResult, ResolvedInputs};
 use crate::assets::new_tmp_path;
 use crate::domain::{
     id_tag, now_iso, AssetId, AssetProvenance, Capability, GenerationSpec, ResourceEntry,
@@ -51,6 +51,15 @@ pub async fn ingest_generated(
     }
     let spec = node.data.generation.as_ref();
     let provenance = provenance(run, node, spec, inputs);
+    // A film is the one thing whose ask a cutting room needs later: it has
+    // the file and nothing of the card that asked. Pictures, lines and scores
+    // are asked for again from the node that holds them.
+    let film = recorded_generation(
+        inputs.prompt.clone(),
+        None,
+        spec.and_then(|spec| spec.params.clone()),
+        &inputs.inputs,
+    );
     let incoming = pieces
         .iter()
         .enumerate()
@@ -59,7 +68,14 @@ pub async fn ingest_generated(
             bytes: piece.bytes.to_vec(),
             mime: piece.mime.to_string(),
             category_hint: category_hint(piece.kind),
-            provenance: provenance.clone(),
+            provenance: if piece.kind == Capability::Video {
+                AssetProvenance {
+                    generation: Some(film.clone()),
+                    ..provenance.clone()
+                }
+            } else {
+                provenance.clone()
+            },
         })
         .collect();
     file_incoming(store, incoming).await
@@ -216,6 +232,7 @@ fn provenance(
             Some(consumed)
         },
         parameter_snapshot: spec.map(parameter_snapshot),
+        generation: None,
         created_at: now_iso(),
     }
 }

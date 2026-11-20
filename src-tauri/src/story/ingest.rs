@@ -13,8 +13,10 @@
 //! characters are filed as "element art" rather than by name.
 
 use super::jobs::{StoryArtView, StoryJobItem, StoryJobKind, StoryTarget};
-use crate::domain::{id_tag, now_iso, AssetId, AssetProvenance, ResourceEntry};
-use crate::generate::{file_incoming, GenerateResult, Incoming};
+use crate::domain::{
+    id_tag, now_iso, AssetGeneration, AssetId, AssetProvenance, Capability, ResourceEntry,
+};
+use crate::generate::{file_incoming, recorded_generation, GenerateResult, Incoming};
 use crate::project::{ProjectError, ProjectStore};
 
 /// How much of a job id an asset's name carries: enough to tell two batches of
@@ -30,32 +32,7 @@ pub async fn ingest_story_result(
     result: &GenerateResult,
 ) -> Result<Vec<ResourceEntry>, ProjectError> {
     let label = target_label(&item.target);
-    let consumed: Vec<AssetId> = {
-        let mut seen = Vec::new();
-        for input in &item.inputs {
-            if !seen.contains(&input.asset_id) {
-                seen.push(input.asset_id.clone());
-            }
-        }
-        seen
-    };
-    let provenance = AssetProvenance {
-        run_id: None,
-        canvas_id: None,
-        operation_node_id: None,
-        assistant_session_id: None,
-        story_job_id: Some(job_id.to_string()),
-        story_id: Some(story_id.to_string()),
-        input_asset_ids: (!consumed.is_empty()).then_some(consumed),
-        parameter_snapshot: Some(serde_json::json!({
-            "storyJobId": job_id,
-            "kind": kind_word(item.target.kind()),
-            "target": item.target,
-            "prompt": item.prompt,
-            "params": item.params,
-        })),
-        created_at: now_iso(),
-    };
+    let provenance = story_provenance(job_id, story_id, item);
 
     let pieces = pieces(result);
     let count = pieces.len();
@@ -71,6 +48,55 @@ pub async fn ingest_story_result(
         })
         .collect();
     file_incoming(store, incoming).await
+}
+
+/// Where an answer came from, as the files it became carry it.
+fn story_provenance(job_id: &str, story_id: &str, item: &StoryJobItem) -> AssetProvenance {
+    let consumed: Vec<AssetId> = {
+        let mut seen = Vec::new();
+        for input in &item.inputs {
+            if !seen.contains(&input.asset_id) {
+                seen.push(input.asset_id.clone());
+            }
+        }
+        seen
+    };
+    AssetProvenance {
+        run_id: None,
+        canvas_id: None,
+        operation_node_id: None,
+        assistant_session_id: None,
+        story_job_id: Some(job_id.to_string()),
+        story_id: Some(story_id.to_string()),
+        input_asset_ids: (!consumed.is_empty()).then_some(consumed),
+        parameter_snapshot: Some(serde_json::json!({
+            "storyJobId": job_id,
+            "kind": kind_word(item.target.kind()),
+            "target": item.target,
+            "prompt": item.prompt,
+            "params": item.params,
+        })),
+        generation: film_generation(item),
+        created_at: now_iso(),
+    }
+}
+
+/// The ask a filmed piece answered, kept with the files it became.
+///
+/// Pictures, lines and scores are asked for again from the card that holds
+/// them, so only a film carries its ask: a cutting room has the file alone
+/// and needs the words and the pictures that made it. An act filmed in pieces
+/// files each piece under the ask that piece was.
+fn film_generation(item: &StoryJobItem) -> Option<AssetGeneration> {
+    (item.capability == Capability::Video).then(|| {
+        let params = (!item.params.is_null()).then(|| item.params.clone());
+        recorded_generation(
+            item.prompt.clone(),
+            item.system.clone(),
+            params,
+            &item.inputs,
+        )
+    })
 }
 
 /// The parts of an answer worth keeping, with the mime each is declared as.
@@ -155,5 +181,85 @@ fn category_hint(item: &StoryJobItem) -> Option<String> {
         crate::domain::Capability::Speech => Some("voice".to_string()),
         crate::domain::Capability::Music => Some("music".to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn piece(capability: &str) -> StoryJobItem {
+        serde_json::from_value(serde_json::json!({
+            "id": "act",
+            "target": { "kind": "actVideo", "chapterId": "chapter-1", "actId": "act-1" },
+            "capability": capability,
+            "prompt": "站台上的灯一盏一盏亮起来",
+            "system": "Describe only what the camera sees.",
+            "inputs": [
+                { "role": "firstFrame", "assetId": "asset-frame-a" },
+                { "role": "lastFrame", "assetId": "asset-clip-b", "frame": "last" },
+                { "role": "reference", "assetId": "asset-sketch" },
+            ],
+            "params": { "seconds": 5, "ratio": "16:9" },
+            "status": "queued"
+        }))
+        .expect("a story piece")
+    }
+
+    #[test]
+    fn a_filed_film_keeps_the_words_and_pictures_it_was_asked_with() {
+        let provenance = story_provenance("job-1", "story-1", &piece("video"));
+        let generation = provenance
+            .generation
+            .as_ref()
+            .expect("a film keeps the ask that made it");
+
+        assert_eq!(generation.prompt, "站台上的灯一盏一盏亮起来");
+        assert_eq!(
+            generation.system.as_deref(),
+            Some("Describe only what the camera sees.")
+        );
+        assert_eq!(
+            generation
+                .inputs
+                .iter()
+                .map(|input| (input.role.as_str(), input.asset_id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("firstFrame", "asset-frame-a"),
+                ("lastFrame", "asset-clip-b"),
+                ("reference", "asset-sketch"),
+            ]
+        );
+        assert_eq!(
+            generation.inputs[1].frame.as_deref(),
+            Some("last"),
+            "which end of the clip it means travels with it"
+        );
+        assert_eq!(
+            generation.params.as_ref().unwrap()["seconds"],
+            serde_json::json!(5)
+        );
+        assert_eq!(
+            provenance.input_asset_ids.as_deref(),
+            Some(
+                [
+                    "asset-frame-a".to_string(),
+                    "asset-clip-b".to_string(),
+                    "asset-sketch".to_string()
+                ]
+                .as_slice()
+            ),
+            "the plain list stays for a reader that does not know the roles"
+        );
+    }
+
+    #[test]
+    fn a_filed_picture_keeps_no_ask_beyond_its_batch() {
+        let provenance = story_provenance("job-1", "story-1", &piece("image"));
+        assert!(
+            provenance.generation.is_none(),
+            "a still is asked for again from the shot that holds it"
+        );
     }
 }

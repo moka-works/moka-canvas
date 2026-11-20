@@ -355,6 +355,11 @@ fn carried_document(moka: &MokaFile, scope: &PackageScope) -> MokaFile {
             let Some(provenance) = entry.provenance.as_mut() else {
                 continue;
             };
+            if let Some(generation) = provenance.generation.as_mut() {
+                generation
+                    .inputs
+                    .retain(|input| placed.contains_key(&input.asset_id));
+            }
             let Some(inputs) = provenance.input_asset_ids.as_ref() else {
                 continue;
             };
@@ -690,9 +695,10 @@ pub fn asset_categories() -> &'static [&'static str] {
 mod tests {
     use super::*;
     use crate::domain::{
-        derive_ports, AssetProvenance, AssistantMessage, AssistantReference, AssistantRole,
-        AssistantSession, AssistantToolCall, CanvasDocument, NodeData, NodeKind, ProjectMetadata,
-        Rect, ResourceEntry, ResourceRegistry, WorkflowNode, MOKA_FILE_VERSION,
+        derive_ports, AssetGeneration, AssetGenerationInput, AssetProvenance, AssistantMessage,
+        AssistantReference, AssistantRole, AssistantSession, AssistantToolCall, CanvasDocument,
+        NodeData, NodeKind, ProjectMetadata, Rect, ResourceEntry, ResourceRegistry, WorkflowNode,
+        MOKA_FILE_VERSION,
     };
 
     /// The package an export makes unless it is asked for more.
@@ -891,6 +897,17 @@ mod tests {
                     "model": "a-model",
                     "prompt": "a lake at dusk, exactly as it was typed",
                 })),
+                generation: Some(AssetGeneration {
+                    prompt: "a lake at dusk, exactly as it was typed".to_string(),
+                    system: None,
+                    inputs: vec![AssetGenerationInput {
+                        role: "firstFrame".to_string(),
+                        asset_id: "asset-brought".to_string(),
+                        frame: Some("first".to_string()),
+                        window: None,
+                    }],
+                    params: Some(serde_json::json!({ "seconds": 4 })),
+                }),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
             }),
         );
@@ -998,10 +1015,15 @@ mod tests {
             ("assistantSessionId", false, true),
             ("Paint the lake at dusk", false, true),
             // How it was asked for is the reusable part, which is the reason a
-            // package of the work is worth handing over at all.
+            // package of the work is worth handing over at all. A film keeps
+            // the ask with its own file, so a cutting room can shoot a piece
+            // of it again from the package alone.
             ("parameterSnapshot", true, true),
             ("a lake at dusk, exactly as it was typed", true, true),
             ("a-model", true, true),
+            ("generation", true, true),
+            ("firstFrame", true, true),
+            ("seconds", true, true),
             // Which canvas and which node asked both still resolve inside the
             // package, so asking the same way again survives the move.
             ("canvasId", true, true),
@@ -1130,6 +1152,18 @@ mod tests {
         assert_eq!(
             provenance.input_asset_ids, None,
             "what stays stops naming what went"
+        );
+        let generation = provenance
+            .generation
+            .as_ref()
+            .expect("the ask travels with the film");
+        assert!(
+            generation.inputs.is_empty(),
+            "an input left on the shelf goes out of the ask with it"
+        );
+        assert_eq!(
+            generation.prompt, "a lake at dusk, exactly as it was typed",
+            "the words are still worth keeping without their pictures"
         );
         assert_eq!(
             provenance.run_id, None,
