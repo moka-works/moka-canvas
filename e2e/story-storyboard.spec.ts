@@ -199,6 +199,22 @@ async function toTheBoard(
         .getByTestId("story-slot-turnaround")
         .locator("img"),
     ).toBeVisible({ timeout: 60_000 });
+    // The four views are filed under the character's own name and a fixed
+    // suffix in the interface's language, not a generic label carrying the
+    // batch's random tag.
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: { resources?: { images?: { name?: string }[] } };
+          };
+          return (body.moka?.resources?.images ?? []).some(
+            (entry) => entry.name === "Keeper turn-around",
+          );
+        }),
+      )
+      .toBe(true);
 
     // A form's main drawing may be made from another element's picture, or
     // from a file on the shelf; the one named is what the row says.
@@ -387,6 +403,37 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // reference opens over the board, and the kept picture can be changed
     // rather than only drawn again.
     await expect(firstAct.getByTestId("story-kf-refs-0")).toBeVisible();
+    // A character stands in a shot as its four views once they exist, not the
+    // single portrait: the reference row shows the picture the ask travels
+    // with.
+    const drawings = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/projects/current");
+      const body = (await response.json()) as {
+        moka?: {
+          stories?: {
+            elements?: {
+              name?: string;
+              main?: { takes?: { assetIds?: string[] }[] };
+              turnaround?: { takes?: { assetIds?: string[] }[] };
+            }[];
+          }[];
+        };
+      };
+      const last = (slot?: { takes?: { assetIds?: string[] }[] }) =>
+        slot?.takes?.at(-1)?.assetIds?.[0] ?? "";
+      const keeper = (body.moka?.stories?.[0]?.elements ?? []).find(
+        (element) => element.name === "Keeper",
+      );
+      return { main: last(keeper?.main), views: last(keeper?.turnaround) };
+    });
+    expect(drawings.main).not.toBe("");
+    expect(drawings.views).not.toBe("");
+    const castPicture = await firstAct
+      .getByTestId("story-ref-view-Keeper")
+      .locator("img")
+      .getAttribute("src");
+    expect(castPicture ?? "").toContain(drawings.views);
+    expect(castPicture ?? "").not.toContain(drawings.main);
     await firstAct.getByTestId("story-ref-view-Keeper").click();
     await expect(page.getByTestId("story-picture-inspector")).toBeVisible();
     await page.getByTestId("story-inspector-edit").click();

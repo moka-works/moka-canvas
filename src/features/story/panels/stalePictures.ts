@@ -9,7 +9,7 @@
  * they are, and one changed by mistake is worth seeing before a clip is made.
  */
 
-import { currentTake } from "../../../shared/domain";
+import { currentTake, referenceTake } from "../../../shared/domain";
 import type {
   StoryAct,
   StoryDocument,
@@ -36,11 +36,7 @@ export function staleReferences(
   return keyframeCastFor(story, act, keyframe).carried.flatMap((reference) => {
     // A file reference has no newer version to be stale against.
     if (reference.element === undefined) return [];
-    const held = currentTake(
-      reference.variant === undefined
-        ? reference.element.main
-        : reference.variant.main,
-    );
+    const held = referenceTake(reference.element, reference.variant);
     if (held === undefined) return [];
     return held.createdAt > frame.createdAt ? [reference.element] : [];
   });

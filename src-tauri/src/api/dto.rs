@@ -94,6 +94,10 @@ pub struct StoryJobItemDraft {
     /// The standing instruction a written answer is asked under.
     #[serde(default)]
     pub system: Option<String>,
+    /// What the shelf should call the answer, where the client has a name of
+    /// its own for it rather than the generic label of its target.
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub inputs: Vec<StoryJobInput>,
     #[serde(default)]
@@ -126,7 +130,8 @@ impl StoryJobInput {
 impl StoryJobItemDraft {
     /// The piece the job manager works with.
     pub fn into_item(self) -> StoryJobItem {
-        StoryJobItem::queued(
+        let name = self.name;
+        let mut item = StoryJobItem::queued(
             self.id,
             self.target,
             self.capability,
@@ -137,7 +142,9 @@ impl StoryJobItemDraft {
                 .map(StoryJobInput::into_generate_input)
                 .collect(),
             self.params.unwrap_or(serde_json::Value::Null),
-        )
+        );
+        item.name = name;
+        item
     }
 }
 

@@ -4,9 +4,9 @@ import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
 import {
-  currentTake,
   elementForms,
   formName,
+  referenceTake,
   type StoryDocument,
 } from "../../../shared/domain";
 
@@ -103,9 +103,7 @@ export function StoryElementPicker({
                 onChoose={() =>
                   onChoose(element.id, variant?.id, formName(element, variant))
                 }
-                picture={
-                  currentTake(variant?.main ?? element.main)?.assetIds[0]
-                }
+                picture={referenceTake(element, variant)?.assetIds[0]}
               />
             ))}
           </div>

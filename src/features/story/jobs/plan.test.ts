@@ -676,6 +676,9 @@ describe("planning the drawings", () => {
       { elementId: ids.hero, view: "turnaround" },
     ]);
     expect(items[0].params).toEqual({ size: "1024x1024" });
+    // The sheet is filed under the character's own name and a fixed suffix,
+    // not a generic label carrying a batch's random tag.
+    expect(items[0].name).toBe("林 turn-around");
   });
 
   it("draws a turn-around from the picture the character already has", () => {
@@ -716,7 +719,7 @@ describe("planning the drawings", () => {
     expect(items[0].capability).toBe("image");
     expect(items[0].inputs).toEqual([
       { role: "reference", assetId: ids.sceneMain },
-      { role: "reference", assetId: ids.heroMain },
+      { role: "reference", assetId: ids.heroSheet },
     ]);
     expect(items[0].prompt).toContain("1. 末班车车厢 —");
     expect(items[0].prompt).toContain("2. 林 —");
@@ -738,7 +741,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(items[0].inputs).toEqual([
-      { role: "reference", assetId: ids.heroMain },
+      { role: "reference", assetId: ids.heroSheet },
     ]);
     expect(items[0].prompt).not.toContain("旧车票 —");
     expect(items[0].prompt).toContain("旧车票攥在手里。");
@@ -755,7 +758,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(items[0].inputs).toEqual([
-      { role: "reference", assetId: ids.heroMain },
+      { role: "reference", assetId: ids.heroSheet },
       { role: "reference", assetId: ids.partnerMain },
       { role: "reference", assetId: ids.sceneMain },
     ]);
@@ -777,7 +780,7 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
   });
 
   it("draws a shot that names nothing from the list it still keeps", () => {
@@ -822,7 +825,7 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
   });
 
   it("numbers exactly the pictures that travel", () => {
@@ -851,7 +854,7 @@ describe("planning the drawings", () => {
     const limited: StoryDocument = { ...held, maxReferenceImages: 2 };
     const cast = keyframeCast(limited, words);
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
-      ids.heroMain,
+      ids.heroSheet,
       ids.partnerMain,
     ]);
     expect(cast.beyond.map(({ name }) => name)).toEqual(["末班车车厢"]);
@@ -865,7 +868,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
-      ids.heroMain,
+      ids.heroSheet,
       ids.partnerMain,
     ]);
     expect(item.prompt).not.toContain("末班车车厢 —");
@@ -915,7 +918,7 @@ describe("planning the drawings", () => {
       references,
     );
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
-      ids.heroMain,
+      ids.heroSheet,
       "asset-extra",
     ]);
     expect(cast.carried[1]?.description).toBe(
@@ -930,7 +933,7 @@ describe("planning the drawings", () => {
       "`林`看着站台，`霓虹`在雨里亮着。",
       references,
     );
-    expect(held.carried.map(({ assetId }) => assetId)).toEqual([ids.heroMain]);
+    expect(held.carried.map(({ assetId }) => assetId)).toEqual([ids.heroSheet]);
     expect(held.beyond.map(({ assetId }) => assetId)).toEqual(["asset-extra"]);
 
     const withReferences = withContent("`林`看着站台，`霓虹`在雨里亮着。");
@@ -943,7 +946,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
-      ids.heroMain,
+      ids.heroSheet,
       "asset-extra",
     ]);
     expect(item.prompt).toContain("霓虹 —");
@@ -955,7 +958,7 @@ describe("planning the drawings", () => {
       { assetId: "asset-extra", name: "霓虹" },
     ];
     const cast = keyframeCast(story(), "`林`看着站台。", references);
-    expect(cast.carried.map(({ assetId }) => assetId)).toEqual([ids.heroMain]);
+    expect(cast.carried.map(({ assetId }) => assetId)).toEqual([ids.heroSheet]);
     expect(cast.beyond).toEqual([]);
 
     const withReferences = withContent("`林`看着站台。");
@@ -967,7 +970,7 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroMain]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
     expect(item.prompt).not.toContain("霓虹");
   });
 
@@ -991,7 +994,7 @@ describe("planning the drawings", () => {
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
       ids.partnerMain,
       ids.sceneMain,
-      ids.heroMain,
+      ids.heroSheet,
     ]);
   });
 
@@ -1013,7 +1016,7 @@ describe("planning the drawings", () => {
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
       ids.partnerMain,
-      ids.heroMain,
+      ids.heroSheet,
     ]);
   });
 

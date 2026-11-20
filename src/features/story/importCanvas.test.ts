@@ -134,12 +134,13 @@ describe("the board a telling makes", () => {
     expect(joined(canvas, act, shot, "prompt")).toBe(true);
     expect(joined(canvas, shot, frame, "prompt")).toBe(true);
     expect(joined(canvas, act, clip, "prompt")).toBe(true);
-    // The frame was drawn from the picture its own words named, and the clip
-    // starts from the frame — the wires an ask's own references make. A name
-    // the words do not mention is not wired, however drawn it is.
-    expect(joined(canvas, card(canvas, "林 · main"), frame, "images")).toBe(
-      true,
-    );
+    // The frame was drawn from the character's four views, the picture its own
+    // words named, and the clip starts from the frame — the wires an ask's own
+    // references make. A name the words do not mention is not wired, however
+    // drawn it is.
+    expect(
+      joined(canvas, card(canvas, "林 · turn-around"), frame, "images"),
+    ).toBe(true);
     expect(joined(canvas, card(canvas, "周 · main"), frame, "images")).toBe(
       false,
     );
@@ -211,7 +212,7 @@ describe("the board a telling makes", () => {
     // the way it is written — the pictures it names are the ones it sends.
     expect(asked(frame)?.inputMode).toBe("mentions");
     expect(asked(frame)?.prompt).toContain(
-      `@[node:${card(canvas, "林 · main").id}]`,
+      `@[node:${card(canvas, "林 · turn-around").id}]`,
     );
     expect(asked(frame)?.prompt).not.toContain("林 —");
     // The words the ask was written with are otherwise kept.

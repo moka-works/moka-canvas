@@ -399,10 +399,10 @@ describe("writing an episode's board", () => {
   it("marks a frame whose reference was redrawn, and draws it again from it", async () => {
     const moka = boarded();
     settle(moka.stories![0], "林", (element) => {
-      element.main = {
+      element.turnaround = {
         takes: [
           {
-            assetIds: ["asset-hero-new"],
+            assetIds: ["asset-hero-sheet-new"],
             createdAt: "2027-01-01T00:00:00.000Z",
           },
         ],
@@ -416,7 +416,7 @@ describe("writing an episode's board", () => {
     expect(starts[0]!.kind).toBe("keyframeArt");
     expect(starts[0]!.items).toHaveLength(1);
     expect(starts[0]!.items[0]?.inputs?.map((input) => input.assetId)).toEqual([
-      "asset-hero-new",
+      "asset-hero-sheet-new",
     ]);
   });
 
@@ -546,7 +546,7 @@ describe("writing an episode's board", () => {
     // The shot's words name the picture that travels with it, in the order the
     // names first appear; a name left as plain words carries nothing.
     expect(item?.inputs?.map((input) => input.assetId)).toEqual([
-      ids.partnerMain,
+      "asset-partner-sheet",
     ]);
     expect(item?.prompt).toContain("1. 周");
     expect(item?.prompt).not.toContain("旧车票");
@@ -572,8 +572,8 @@ describe("writing an episode's board", () => {
     );
     // The first pictures the story's limit allows, in the act's own order.
     expect(item?.inputs?.map((input) => input.assetId)).toEqual([
-      ids.heroMain,
-      ids.partnerMain,
+      ids.heroSheet,
+      "asset-partner-sheet",
       ids.sceneMain,
     ]);
     expect(item?.prompt).toContain("1. 林 —");
@@ -636,7 +636,7 @@ describe("writing an episode's board", () => {
     const thumbs = screen.getByTestId("story-kf-refs-0");
     expect(thumbs.querySelectorAll(".story-ref-thumb")).toHaveLength(1);
     expect(thumbs.querySelector("img")?.getAttribute("src")).toContain(
-      ids.heroMain,
+      ids.heroSheet,
     );
   });
 

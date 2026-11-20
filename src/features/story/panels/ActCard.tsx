@@ -8,6 +8,7 @@ import {
   actPlannedMs,
   currentTake,
   frameSettled,
+  referenceTake,
   takeFile,
   type StoryGuess,
   voiceHoldsLine,
@@ -650,7 +651,9 @@ export function ActCard({
               many
               onInspect={(element) => setInspectingId(element.id)}
               onPick={(characterIds) => write({ characterIds })}
-              pictureOf={(element) => takeFile(currentTake(element.main))}
+              pictureOf={(element) =>
+                takeFile(referenceTake(element, undefined))
+              }
             />
             <RefPicker
               chosen={act.sceneId === undefined ? [] : [act.sceneId]}
@@ -660,7 +663,9 @@ export function ActCard({
               many={false}
               onInspect={(element) => setInspectingId(element.id)}
               onPick={(ids) => write({ sceneId: ids[0] ?? null })}
-              pictureOf={(element) => takeFile(currentTake(element.main))}
+              pictureOf={(element) =>
+                takeFile(referenceTake(element, undefined))
+              }
             />
             <RefPicker
               chosen={act.propIds}
@@ -670,7 +675,9 @@ export function ActCard({
               many
               onInspect={(element) => setInspectingId(element.id)}
               onPick={(propIds) => write({ propIds })}
-              pictureOf={(element) => takeFile(currentTake(element.main))}
+              pictureOf={(element) =>
+                takeFile(referenceTake(element, undefined))
+              }
             />
             <button
               className="link"

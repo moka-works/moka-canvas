@@ -19,6 +19,7 @@ import {
   elementOf,
   recognizeReferences,
   referenceName,
+  referenceTake,
   stripMentionNamed,
   keyframeAt,
   newId,
@@ -1133,7 +1134,7 @@ function KeyframePromptCell({
       element,
       reference.variantId ?? variantChoices[element.id],
     );
-    return currentTake(form?.main ?? element.main)?.assetIds[0];
+    return referenceTake(element, form)?.assetIds[0];
   };
 
   /** What the list calls one reference: its name, or the file's own. */

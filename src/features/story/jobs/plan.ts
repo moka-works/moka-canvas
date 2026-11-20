@@ -46,6 +46,7 @@ import {
   keyframeAt,
   neighbourVideos,
   pictureReferenceAsset,
+  referenceTake,
   storyMentions,
   stripStoryMentions,
   takeFile,
@@ -1036,6 +1037,14 @@ export function planElementArt(
             : reference === undefined
               ? []
               : [{ role: "reference", assetId: reference }],
+        // The four views are filed under the character's own name and a fixed
+        // suffix in the reader's language, not a generic label with a batch's
+        // random tag.
+        ...(view === "turnaround"
+          ? {
+              name: `${formName(element, form)} ${i18n.t("story:import.turnaround")}`,
+            }
+          : {}),
         params: { size },
       },
     ];
@@ -1358,7 +1367,7 @@ function carriedElement(
   const element = story.elements.find((held) => held.name === name);
   if (element === undefined) return undefined;
   const variant = elementForm(element, variantChoices[element.id]);
-  const take = currentTake(variant === undefined ? element.main : variant.main);
+  const take = referenceTake(element, variant);
   if (take === undefined) return undefined;
   return {
     element,
@@ -1386,9 +1395,7 @@ function carriedReference(
     const variant = elementForm(element, chosen);
     if (reference.variantId !== undefined && variant === undefined)
       return undefined;
-    const take = currentTake(
-      variant === undefined ? element.main : variant.main,
-    );
+    const take = referenceTake(element, variant);
     if (take === undefined) return undefined;
     return {
       element,

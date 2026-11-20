@@ -430,6 +430,28 @@ export function pictureReferenceAsset(
     ?.assetIds[0];
 }
 
+/**
+ * The drawing an element stands in a shot with, which is its four-view
+ * turn-around wherever one was drawn.
+ *
+ * A sheet of views pins a face and a costume from more angles than a single
+ * pose does, so that is what a character is referenced by once it exists; a
+ * character nobody has turned around yet, and every place and thing, stand on
+ * their main drawing. A form is its own drawing, so the same rule reads through
+ * it.
+ */
+export function referenceTake(
+  element: StoryElement,
+  form: StoryElementVariant | undefined,
+): StoryTake | undefined {
+  const main = currentTake(form === undefined ? element.main : form.main);
+  if (element.kind !== "character") return main;
+  const turnaround = form === undefined ? element.turnaround : form.turnaround;
+  return (
+    (turnaround === undefined ? undefined : currentTake(turnaround)) ?? main
+  );
+}
+
 /** Whether an element is finished: described, and every form of it drawn. */
 export function elementComplete(element: StoryElement): boolean {
   return elementDescribed(element) && elementDrawn(element);

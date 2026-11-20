@@ -9,8 +9,9 @@
 //!
 //! Nothing here reads the document. A job's target names a slot in a story, and
 //! the story is the client's: the label is made of the kind of thing that was
-//! asked for and not of what the story calls it, which is why a book's
-//! characters are filed as "element art" rather than by name.
+//! asked for, or of the name the client sends beside it where it has one — a
+//! character's four views are filed under the character's own name rather than
+//! a generic label.
 
 use super::jobs::{StoryArtView, StoryJobItem, StoryJobKind, StoryTarget};
 use crate::domain::{
@@ -32,6 +33,11 @@ pub async fn ingest_story_result(
     result: &GenerateResult,
 ) -> Result<Vec<ResourceEntry>, ProjectError> {
     let label = target_label(&item.target);
+    let chosen = item
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
     let provenance = story_provenance(job_id, story_id, item);
 
     let pieces = pieces(result);
@@ -40,7 +46,10 @@ pub async fn ingest_story_result(
         .into_iter()
         .enumerate()
         .map(|(index, (bytes, mime))| Incoming {
-            name: asset_name(&label, job_id, index, count),
+            name: match chosen {
+                Some(name) => named_asset_name(name, index, count),
+                None => asset_name(&label, job_id, index, count),
+            },
             bytes,
             mime,
             category_hint: category_hint(item),
@@ -130,6 +139,18 @@ fn asset_name(label: &str, job_id: &str, index: usize, count: usize) -> String {
         format!("{label}-{short}-{}", index + 1)
     } else {
         format!("{label}-{short}")
+    }
+}
+
+/// The name the client chose, kept as it stands: a character's four views are
+/// filed under the character's name and a fixed suffix, not a generic label
+/// carrying a batch's random tag. The index appears only when the answer is
+/// several files, as it does for a label.
+fn named_asset_name(name: &str, index: usize, count: usize) -> String {
+    if count > 1 {
+        format!("{name} {}", index + 1)
+    } else {
+        name.to_string()
     }
 }
 
@@ -261,5 +282,18 @@ mod tests {
             provenance.generation.is_none(),
             "a still is asked for again from the shot that holds it"
         );
+    }
+
+    #[test]
+    fn a_chosen_name_is_kept_as_it_stands() {
+        // A character's four views are filed under the character's name and a
+        // fixed suffix, with no random batch tag.
+        assert_eq!(named_asset_name("林 四视图", 0, 1), "林 四视图");
+        assert_eq!(named_asset_name("林 四视图", 1, 2), "林 四视图 2");
+    }
+
+    #[test]
+    fn a_label_is_tagged_by_its_batch() {
+        assert!(asset_name("element sheet", "job-1", 0, 1).starts_with("element sheet-"));
     }
 }

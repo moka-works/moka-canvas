@@ -224,13 +224,21 @@ function sit(
 
 /**
  * What the telling calls the material in each picture, where it has a name for
- * one: an element's drawing is the element, and its ask says so by name.
+ * one: every drawing of an element — its portrait and its four views — is the
+ * element, and its ask says so by name.
  */
 function namedPictures(story: StoryDocument): Map<AssetId, string> {
   const named = new Map<AssetId, string>();
+  const remember = (assetId: AssetId | undefined, name: string) => {
+    if (assetId !== undefined && !named.has(assetId)) named.set(assetId, name);
+  };
   for (const element of story.elements) {
-    const main = takeFile(currentTake(element.main));
-    if (main !== undefined && !named.has(main)) named.set(main, element.name);
+    remember(takeFile(currentTake(element.main)), element.name);
+    const turnaround = element.turnaround;
+    remember(
+      turnaround === undefined ? undefined : takeFile(currentTake(turnaround)),
+      element.name,
+    );
   }
   return named;
 }

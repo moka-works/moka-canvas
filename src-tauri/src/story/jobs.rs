@@ -251,6 +251,12 @@ pub struct StoryJobItem {
     /// into the prompt, which is where a provider expects to find it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
+    /// What the shelf calls the answer, where the client has a name of its own
+    /// for it — a character's four views are filed under the character's name
+    /// and a fixed suffix rather than a generic label. Absent falls back to the
+    /// label of the target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inputs: Vec<GenerateInput>,
     #[serde(default)]
@@ -312,6 +318,7 @@ impl StoryJobItem {
             capability,
             prompt,
             system,
+            name: None,
             inputs,
             params,
             status: StoryJobStatus::Queued,

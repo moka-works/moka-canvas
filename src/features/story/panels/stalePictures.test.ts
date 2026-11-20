@@ -24,7 +24,9 @@ describe("a frame drawn before its references changed", () => {
 
   it("names the references redrawn after the frame was", () => {
     const { story, act, frame, hero } = scene();
-    hero.main = { takes: [{ assetIds: ["asset-hero-new"], createdAt: LATER }] };
+    hero.turnaround = {
+      takes: [{ assetIds: ["asset-hero-sheet-new"], createdAt: LATER }],
+    };
     expect(
       staleReferences(story, act, frame).map((element) => element.id),
     ).toEqual([ids.hero]);
@@ -32,9 +34,17 @@ describe("a frame drawn before its references changed", () => {
 
   it("is not stale when the picture changed before the frame was drawn", () => {
     const { story, act, frame, hero } = scene();
-    hero.main = {
-      takes: [{ assetIds: ["asset-hero-old"], createdAt: EARLIER }],
+    hero.turnaround = {
+      takes: [{ assetIds: ["asset-hero-sheet-old"], createdAt: EARLIER }],
     };
+    expect(staleReferences(story, act, frame)).toEqual([]);
+  });
+
+  it("says nothing when only the main portrait was redrawn", () => {
+    // The frame stands on the character's four views, not on the portrait the
+    // views were drawn from, so a new portrait leaves the frame as it was.
+    const { story, act, frame, hero } = scene();
+    hero.main = { takes: [{ assetIds: ["asset-hero-new"], createdAt: LATER }] };
     expect(staleReferences(story, act, frame)).toEqual([]);
   });
 
@@ -42,7 +52,9 @@ describe("a frame drawn before its references changed", () => {
     const { story, act, frame } = scene();
     frame.art = { takes: [] };
     const hero = story.elements.find((element) => element.id === ids.hero)!;
-    hero.main = { takes: [{ assetIds: ["asset-hero-new"], createdAt: LATER }] };
+    hero.turnaround = {
+      takes: [{ assetIds: ["asset-hero-sheet-new"], createdAt: LATER }],
+    };
     expect(staleReferences(story, act, frame)).toEqual([]);
   });
 
@@ -64,7 +76,9 @@ describe("a frame drawn before its references changed", () => {
   it("leaves a frame already being drawn out of the batch", () => {
     const { story, act, frame } = scene();
     const hero = story.elements.find((element) => element.id === ids.hero)!;
-    hero.main = { takes: [{ assetIds: ["asset-hero-new"], createdAt: LATER }] };
+    hero.turnaround = {
+      takes: [{ assetIds: ["asset-hero-sheet-new"], createdAt: LATER }],
+    };
     expect(
       staleFrames(story, act, (keyframeId) => keyframeId === frame.id),
     ).toEqual([]);

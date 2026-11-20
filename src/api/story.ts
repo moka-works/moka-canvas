@@ -94,6 +94,12 @@ export interface StoryJobItem {
   promptContext?: StoryPromptContext;
   /** The standing instruction a written answer is asked under. */
   system?: string;
+  /**
+   * What the shelf should call the answer, where the client has a name of its
+   * own for it — a character's four views are filed under the character's name
+   * and a fixed suffix rather than a generic label.
+   */
+  name?: string;
   inputs: StoryJobInput[];
   params: Record<string, unknown>;
   status: StoryJobStatus;
@@ -155,7 +161,12 @@ export type StoryJobItemDraft = Pick<
   StoryJobItem,
   "id" | "target" | "capability" | "prompt"
 > &
-  Partial<Pick<StoryJobItem, "inputs" | "params" | "system" | "promptContext">>;
+  Partial<
+    Pick<
+      StoryJobItem,
+      "inputs" | "params" | "system" | "promptContext" | "name"
+    >
+  >;
 
 const jobsPath = "/api/v1/projects/current/story/jobs";
 
