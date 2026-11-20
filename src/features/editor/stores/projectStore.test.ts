@@ -355,6 +355,41 @@ describe("reading the stored document back in", () => {
     expect(state.moka?.canvas[0].name).toBe("Later");
   });
 
+  it("does not let an older concurrent read replace a newer one", async () => {
+    hydrate();
+    const older = buildGoldenMokaFile();
+    older.metadata.revision = 7;
+    older.canvas[0].name = "Older response";
+    const newer = buildGoldenMokaFile();
+    newer.metadata.revision = 8;
+    newer.canvas[0].name = "Newer response";
+    let reads = 0;
+    let releaseOlder: () => void = () => {};
+    fetchMock.mockImplementation((input) => {
+      expect(String(input).endsWith("/current")).toBe(true);
+      reads += 1;
+      if (reads === 1) {
+        return new Promise<Response>((resolve) => {
+          releaseOlder = () => resolve(jsonResponse(200, opened(older)));
+        });
+      }
+      return Promise.resolve(jsonResponse(200, opened(newer)));
+    });
+
+    const first = useProjectStore.getState().reload();
+    const second = useProjectStore.getState().reload();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads).toBeGreaterThan(0);
+    releaseOlder();
+    await Promise.all([first, second]);
+
+    expect(reads).toBe(2);
+    expect(useProjectStore.getState().moka?.metadata.revision).toBe(8);
+    expect(useProjectStore.getState().moka?.canvas[0].name).toBe(
+      "Newer response",
+    );
+  });
+
   it("takes the stored document when the reader gives their changes up", async () => {
     hydrate();
     const canvasId = goldenNodeIds().canvasMain;

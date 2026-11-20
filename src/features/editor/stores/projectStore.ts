@@ -473,19 +473,22 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     async reload(options) {
-      const mayAdopt = () =>
-        options?.discardPending === true || get().pending.length === 0;
-      const reading = (async () => {
-        await get().flush();
-        if (!mayAdopt()) return false;
-        const opened = await projectsApi.current();
-        // A change made while the document was being read is waiting too, and
-        // is newer than what came back: read in over it, it would be lost the
-        // same way as one that never went out.
-        if (!mayAdopt()) return false;
-        get().hydrate(opened);
-        return true;
-      })();
+      const begin = () =>
+        (async () => {
+          const mayAdopt = () =>
+            options?.discardPending === true || get().pending.length === 0;
+          await get().flush();
+          if (!mayAdopt()) return false;
+          const opened = await projectsApi.current();
+          // A change made while the document was being read is waiting too, and
+          // is newer than what came back: read in over it, it would be lost the
+          // same way as one that never went out.
+          if (!mayAdopt()) return false;
+          get().hydrate(opened);
+          return true;
+        })();
+      const previous = readInFlight;
+      const reading = previous === null ? begin() : previous.then(begin, begin);
       readInFlight = reading;
       try {
         return await reading;
