@@ -6848,17 +6848,25 @@ body.is-dragging-split {
   width: 208px;
 }
 
+.story-step-row {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
 .story-step {
   align-items: center;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   display: grid;
+  flex: 1;
   gap: 8px;
   grid-template-columns: 22px 1fr auto;
+  min-width: 0;
   padding: 8px 10px;
   text-align: left;
-  width: 100%;
+  width: auto;
 }
 
 .story-step.is-active {
@@ -6895,15 +6903,151 @@ body.is-dragging-split {
 }
 
 /* The count of pieces a step asked for and did not get back: a mark beside the
-   step's own count rather than instead of it, since a step can have both. */
+   step's own count rather than instead of it, since a step can have both. It is
+   its own button because the step's tab may be disabled while the batch still
+   has something to say. */
 .story-step-failed {
   background: var(--danger);
+  border: 0;
   border-radius: 999px;
   color: var(--canvas);
+  cursor: pointer;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 3px 6px;
+}
+
+.story-step-failed:hover {
+  filter: brightness(1.15);
+}
+
+.story-step-failed:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.story-step-failures {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  z-index: 25;
+}
+
+.story-step-failures-head {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--stroke);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.story-step-failures-head h2 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.story-step-failures-count {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.story-step-failures-close {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px;
+}
+
+.story-step-failures-close:hover {
+  color: var(--ink);
+}
+
+.story-step-failures-list {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.story-step-failures-row {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--stroke);
+  display: flex;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.story-step-failures-row.is-ignored {
+  opacity: 0.55;
+}
+
+.story-step-failures-row > button {
+  flex: none;
+  font-size: 12px;
+}
+
+.story-step-failures-said {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.story-step-failures-place {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.story-step-failures-reason {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.story-step-failures-raw {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.story-step-failures-aside {
+  border-bottom: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.story-step-failures-aside-head {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  padding: 8px 16px 0;
+}
+
+.story-step-failures-aside-head button {
+  font-size: 12px;
+}
+
+.story-step-failures-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 16px;
 }
 
 .story-step-body {

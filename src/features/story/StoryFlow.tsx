@@ -19,6 +19,10 @@ import {
 } from "../../shared/domain";
 import { execute } from "../editor/commands/execute";
 import { AgentDock } from "../assistant/agent/AgentDock";
+import {
+  StepFailurePanel,
+  type FailureAnchor,
+} from "./components/StepFailurePanel";
 import { StoryStepBody } from "./steps/StoryStepBody";
 import { useStoryStepFailure } from "./stores/storyJobStore";
 import {
@@ -41,6 +45,10 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
   const step = useStoryStore((state) => state.step);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [failures, setFailures] = useState<{
+    step: StoryStep;
+    anchor: FailureAnchor;
+  } | null>(null);
   const progress = storyProgress(story);
 
   // The scroller is one element shared by every step, so a step is put back
@@ -110,6 +118,26 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
       const last = movable[movable.length - 1];
       if (last) go(last);
     }
+  };
+
+  /**
+   * The panel a badge opens, and the badge it belongs to.
+   *
+   * A badge is the panel's own door: pressing the one already open puts the
+   * panel away rather than opening the same reading again.
+   */
+  const showFailures = (at: StoryStep, anchor: FailureAnchor) => {
+    setFailures((held) => (held?.step === at ? null : { step: at, anchor }));
+  };
+  const closeFailures = () => {
+    const at = failures?.step;
+    setFailures(null);
+    if (at === undefined) return;
+    document
+      .querySelector<HTMLButtonElement>(
+        `[data-testid="story-step-failed-${at}"]`,
+      )
+      ?.focus();
   };
 
   return (
@@ -191,8 +219,10 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           {STORY_STEPS.map((each, index) => (
             <StepButton
               current={each === step}
+              failuresOpen={failures?.step === each}
               index={index}
               key={each}
+              onShowFailures={(anchor) => showFailures(each, anchor)}
               progress={progress}
               step={each}
               storyId={story.id}
@@ -216,6 +246,14 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           <AgentDock compact room="story" />
         </main>
       </div>
+      {failures !== null && (
+        <StepFailurePanel
+          anchor={failures.anchor}
+          onClose={closeFailures}
+          step={failures.step}
+          story={story}
+        />
+      )}
     </div>
   );
 }
@@ -224,12 +262,16 @@ function StepButton({
   step,
   index,
   current,
+  failuresOpen,
+  onShowFailures,
   progress,
   storyId,
 }: {
   step: StoryStep;
   index: number;
   current: boolean;
+  failuresOpen: boolean;
+  onShowFailures: (anchor: FailureAnchor) => void;
   progress: Record<StoryStep, StoryStepProgress>;
   storyId: string;
 }) {
@@ -241,44 +283,63 @@ function StepButton({
   // that did not come back is laid over the step rather than read off it.
   const failure = useStoryStepFailure(storyId, step);
   return (
-    <button
-      aria-controls={`story-step-panel-${step}`}
-      aria-selected={current}
-      className={`story-step is-${held.state}${current ? " is-active" : ""}${
-        failure === null ? "" : " is-failed"
-      }`}
-      data-testid={`story-step-${step}`}
-      disabled={!reachable}
-      id={`story-step-tab-${step}`}
-      onClick={() => useStoryStore.getState().goStep(step)}
-      role="tab"
-      title={
-        !reachable
-          ? t("story:steps.locked", { step: t(`story:step.${previous}`) })
-          : failure === null
-            ? t(`story:stepHint.${step}`)
-            : failure.reasons.length === 0
-              ? t("story:jobs.stepFailed", { failed: failure.failed })
-              : t("story:jobs.stepFailedWith", {
-                  failed: failure.failed,
-                  reason: failure.reasons[0],
-                })
-      }
-      type="button"
-    >
-      <span className="story-step-index">{index + 1}</span>
-      <span className="story-step-name">{t(`story:step.${step}`)}</span>
-      <span className="story-step-count">
-        {held.total > 0 ? `${held.done}/${held.total}` : ""}
-      </span>
+    <div className="story-step-row" role="presentation">
+      <button
+        aria-controls={`story-step-panel-${step}`}
+        aria-selected={current}
+        className={`story-step is-${held.state}${current ? " is-active" : ""}${
+          failure === null ? "" : " is-failed"
+        }`}
+        data-testid={`story-step-${step}`}
+        disabled={!reachable}
+        id={`story-step-tab-${step}`}
+        onClick={() => useStoryStore.getState().goStep(step)}
+        role="tab"
+        title={
+          !reachable
+            ? t("story:steps.locked", { step: t(`story:step.${previous}`) })
+            : failure === null
+              ? t(`story:stepHint.${step}`)
+              : failure.reasons.length === 0
+                ? t("story:jobs.stepFailed", { failed: failure.failed })
+                : t("story:jobs.stepFailedWith", {
+                    failed: failure.failed,
+                    reason: failure.reasons[0],
+                  })
+        }
+        type="button"
+      >
+        <span className="story-step-index">{index + 1}</span>
+        <span className="story-step-name">{t(`story:step.${step}`)}</span>
+        <span className="story-step-count">
+          {held.total > 0 ? `${held.done}/${held.total}` : ""}
+        </span>
+      </button>
       {failure !== null && (
-        <span
+        // The badge is its own control rather than part of the step's tab: a
+        // step that cannot be walked to still has a batch that came home short,
+        // and what that batch says is not reached by pressing a disabled tab.
+        <button
+          aria-expanded={failuresOpen}
+          aria-haspopup="dialog"
+          aria-label={t("story:jobs.viewFailures", {
+            step: t(`story:step.${step}`),
+            count: failure.failed,
+          })}
           className="story-step-failed"
           data-testid={`story-step-failed-${step}`}
+          onClick={(event) =>
+            onShowFailures(event.currentTarget.getBoundingClientRect())
+          }
+          title={t("story:jobs.viewFailures", {
+            step: t(`story:step.${step}`),
+            count: failure.failed,
+          })}
+          type="button"
         >
           {failure.failed}
-        </span>
+        </button>
       )}
-    </button>
+    </div>
   );
 }

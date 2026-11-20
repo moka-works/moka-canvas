@@ -267,6 +267,111 @@ describe("the five steps", () => {
     }
   });
 
+  it("opens the failures behind a step's count and counts down what is put aside", async () => {
+    // The number over the step says something did not come back; the panel it
+    // opens says which pieces, why, and lets a reader stop counting one
+    // without asking for it again — and take that back.
+    const out = {
+      id: "job-1",
+      projectId: "project-1",
+      storyId: storyIds().story,
+      kind: "storyboard",
+      status: "running",
+      model: "a-writer",
+      items: [
+        {
+          id: `storyboard:${storyIds().chapterFirst}`,
+          target: {
+            kind: "storyboard",
+            chapterId: storyIds().chapterFirst,
+          },
+          capability: "text",
+          prompt: "board this",
+          inputs: [],
+          params: {},
+          status: "running",
+        },
+      ],
+      cancelRequested: false,
+      createdAt: "2026-01-02T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    };
+    const short = {
+      ...out,
+      status: "failed",
+      items: [
+        { ...out.items[0], status: "failed", error: "the provider refused" },
+      ],
+    };
+    let looks = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      let payload: unknown = {
+        root: "/tmp/moka-story-test",
+        moka: useProjectStore.getState().moka,
+        selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
+      };
+      if (url.endsWith("/read")) {
+        payload = { ...short, readAt: "2026-01-02T00:00:00Z" };
+      } else if (url.includes("/story/jobs")) {
+        payload = looks++ === 0 ? [out] : [short];
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const moka = buildStoryMokaFile();
+    moka.stories![0].confirmedSteps = ["idea", "outline"];
+    vi.useFakeTimers();
+    try {
+      openRoom(moka);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+
+      fireEvent.click(screen.getByTestId("story-step-failed-storyboard"));
+      const panel = screen.getByTestId("story-step-failures-storyboard");
+      expect(panel.textContent).toContain("Chapter 1 · Board");
+      expect(panel.textContent).toContain("the provider refused");
+      // The badge is its own control: pressing it says what went wrong rather
+      // than walking to the step it belongs to.
+      expect(
+        screen
+          .getByTestId("story-step-storyboard")
+          .getAttribute("aria-selected"),
+      ).toBe("false");
+
+      fireEvent.click(screen.getByTestId("story-step-ignore-all-storyboard"));
+      expect(screen.queryByTestId("story-step-failed-storyboard")).toBeNull();
+      expect(
+        screen.getByTestId("story-step-failures-storyboard").textContent,
+      ).toContain("Every error in this batch has been put aside");
+      expect(
+        screen.getByTestId("story-step-aside-storyboard-0").textContent,
+      ).toContain("the provider refused");
+
+      fireEvent.click(screen.getByTestId("story-step-restore-all-storyboard"));
+      expect(
+        screen.getByTestId("story-step-failed-storyboard").textContent,
+      ).toBe("1");
+
+      fireEvent.click(
+        screen.getByTestId("story-step-failures-done-storyboard"),
+      );
+      expect(screen.queryByTestId("story-step-failures-storyboard")).toBeNull();
+    } finally {
+      act(() => {
+        useStoryJobStore.getState().reset();
+      });
+      vi.useRealTimers();
+    }
+  });
+
   it("says on the step's bubble why its pieces did not come back", async () => {
     // The bubble over the badge is the only place a step says why it is red,
     // and a reader who has to open the batch to find out will not.

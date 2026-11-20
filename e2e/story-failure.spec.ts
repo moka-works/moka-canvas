@@ -64,3 +64,54 @@ test("the failure count starts over when the project is opened again", async ({
     await forgetHome(home);
   }
 });
+
+test("a failure can be read, put aside and put back from its count", async ({
+  page,
+}) => {
+  const home = projectHome("story-failure-panel");
+  await forgetProjects();
+  await configureModels([
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+  ]);
+  try {
+    await page.goto("/");
+    await createProject(page, join(home, "project"), "Story Failure Panel");
+    await openStoryRoom(page);
+    await newStory(page, "Refused in the Open");
+
+    await page
+      .getByTestId("story-idea-input")
+      .fill("The last train [refuse] stops at a platform that is not there.");
+    await page.getByTestId("story-idea-duration-3").click();
+    await page.getByTestId("story-confirm-idea").click();
+    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
+    await page.getByTestId("story-outline-start").click();
+
+    const badge = page.getByTestId("story-step-failed-outline");
+    await expect(badge).toHaveText("1", { timeout: 30_000 });
+
+    // The count is a door: what did not come back, and why, is behind it.
+    await badge.click();
+    const panel = page.getByTestId("story-step-failures-outline");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("The whole outline");
+    await expect(
+      page.getByTestId("story-step-failure-outline-0"),
+    ).toBeVisible();
+
+    // Putting it aside takes it off the count without touching the record;
+    // the panel still says what it was, and can give it back.
+    await page.getByTestId("story-step-ignore-all-outline").click();
+    await expect(badge).toHaveCount(0);
+    await expect(panel).toContainText("put aside");
+    await expect(page.getByTestId("story-step-aside-outline-0")).toBeVisible();
+
+    await page.getByTestId("story-step-restore-all-outline").click();
+    await expect(badge).toHaveText("1");
+
+    await page.getByTestId("story-step-failures-done-outline").click();
+    await expect(panel).toHaveCount(0);
+  } finally {
+    await forgetHome(home);
+  }
+});

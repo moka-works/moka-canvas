@@ -11,11 +11,13 @@ import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import {
+  failureKey,
   jobProgress,
   redoGeneratedChapter,
   retryFailed,
   spreadWaves,
   stepFailure,
+  stepFailureDetail,
   targetRunning,
   useStoryJobStore,
   watchedStepFailure,
@@ -1537,6 +1539,45 @@ describe("what the room reads off a list of batches", () => {
     });
     // An element's drawing is the element step's work, not the board's.
     expect(stepFailure([withFailure], ids.story, "elements")).toBeNull();
+  });
+
+  it("takes a failure put aside off the count without reaching further back", () => {
+    const held = answered();
+    const older: StoryJobRecord = {
+      ...held,
+      id: "job-older",
+      createdAt: "2026-01-01T00:00:00Z",
+      items: [
+        {
+          ...held.items[0]!,
+          id: "older-piece",
+          status: "failed",
+          error: "older",
+        },
+      ],
+    };
+    const newer: StoryJobRecord = {
+      ...held,
+      id: "job-newer",
+      createdAt: "2026-01-03T00:00:00Z",
+      items: [
+        {
+          ...held.items[0]!,
+          id: "newer-piece",
+          status: "failed",
+          error: "newer",
+        },
+      ],
+    };
+    const key = failureKey("job-newer", "newer-piece");
+    const detail = stepFailureDetail([newer, older], ids.story, "storyboard", [
+      key,
+    ]);
+    // The batch the badge stands on is chosen before anything is put aside:
+    // putting its only failure away does not make the older batch the news.
+    expect(detail?.job.id).toBe("job-newer");
+    expect(detail?.failed).toEqual([]);
+    expect(detail?.putAside.map((item) => item.id)).toEqual(["newer-piece"]);
   });
 
   it("stops counting a failure a later batch answered for", () => {

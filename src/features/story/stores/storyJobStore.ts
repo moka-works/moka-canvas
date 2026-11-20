@@ -278,6 +278,15 @@ interface StoryJobState {
    * has to be kept here rather than read off the record between looks.
    */
   cancelling: string[];
+  /**
+   * Failures the reader has put aside, by batch and piece.
+   *
+   * The badge over a step counts what the room has seen come home and not been
+   * told to forget. A failure put aside here is still on its record and still
+   * says what went wrong — it simply stops being counted until the same place
+   * is asked for again and fails afresh.
+   */
+  ignored: string[];
   /** Lists the story's batches and reads in whatever has come back. */
   load: (storyId: string | null) => Promise<void>;
   start: (
@@ -302,6 +311,10 @@ interface StoryJobState {
   cancel: (id: string) => Promise<void>;
   /** Fetches one batch and reads it in, which is what a poll does. */
   adopt: (id: string) => Promise<void>;
+  /** Stops counting one failed piece, without touching its record. */
+  ignoreFailure: (jobId: string, itemId: string) => void;
+  /** Counts a failure that was put aside again. */
+  restoreFailure: (jobId: string, itemId: string) => void;
   /**
    * Says a revision's proposal has been read — applied or left — so the room
    * stops offering it as something waiting to be looked at.
@@ -771,6 +784,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     error: null,
     applying: [],
     cancelling: [],
+    ignored: [],
 
     async load(storyId) {
       if (storyId === null) {
@@ -785,7 +799,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         readIn = new Map<string, BatchRead>();
         watched = new Set<string>();
         jobRun = new Map<string, string>();
-        set({ cancelling: [] });
+        set({ cancelling: [], ignored: [] });
       }
       set({ storyId });
       try {
@@ -904,6 +918,19 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       await readAnswers([record]);
     },
 
+    ignoreFailure(jobId, itemId) {
+      const key = failureKey(jobId, itemId);
+      if (get().ignored.includes(key)) return;
+      set({ ignored: [...get().ignored, key] });
+    },
+
+    restoreFailure(jobId, itemId) {
+      const key = failureKey(jobId, itemId);
+      const held = get().ignored;
+      if (!held.includes(key)) return;
+      set({ ignored: held.filter((each) => each !== key) });
+    },
+
     async markRevisionRead(id) {
       try {
         integrate(await storyApi.readIn(id));
@@ -929,6 +956,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         error: null,
         applying: [],
         cancelling: [],
+        ignored: [],
       });
     },
   };
@@ -1336,6 +1364,20 @@ export interface StepFailure {
   reasons: string[];
 }
 
+/** The batch a step's badge stands on, with the pieces still counted and put aside. */
+export interface StepFailureDetail {
+  job: StoryJobRecord;
+  /** Failed pieces that are still counted. */
+  failed: StoryJobItem[];
+  /** Failed pieces the reader has put aside this session, in the order they failed. */
+  putAside: StoryJobItem[];
+}
+
+/** The name a failure is put aside by: one piece of one batch. */
+export function failureKey(jobId: string, itemId: string): string {
+  return `${jobId}:${itemId}`;
+}
+
 /**
  * The pieces of a step that failed among the batches it is handed, and what
  * each of them said.
@@ -1359,6 +1401,31 @@ export function stepFailure(
   storyId: string | null,
   step: StoryStep,
 ): StepFailure | null {
+  const detail = stepFailureDetail(jobs, storyId, step);
+  if (detail === null) return null;
+  return {
+    failed: detail.failed.length,
+    jobId: detail.job.id,
+    reasons: failureReasons(detail.failed),
+  };
+}
+
+/**
+ * The same reading, with the batch and pieces kept whole for the panel the
+ * badge opens.
+ *
+ * The batch is chosen exactly as the count chooses it — the newest one with a
+ * piece still short — before anything is put aside. A failure put aside is not
+ * a reason to reach further back and count a batch the badge was not standing
+ * on; the panel shows that batch's pieces under two headings instead.
+ */
+export function stepFailureDetail(
+  jobs: StoryJobRecord[],
+  storyId: string | null,
+  step: StoryStep,
+  putAside: Iterable<string> = [],
+): StepFailureDetail | null {
+  const aside = new Set(putAside);
   const answered = new Set<string>();
   for (const job of forStep(jobs, storyId, step)) {
     const failed = job.items.filter(
@@ -1367,21 +1434,25 @@ export function stepFailure(
     for (const item of job.items) {
       if (item.status === "succeeded") answered.add(item.id);
     }
-    if (failed.length > 0) {
-      return {
-        failed: failed.length,
-        jobId: job.id,
-        reasons: [
-          ...new Set(
-            failed
-              .map((item) => failureText(item))
-              .filter((said): said is string => said !== null),
-          ),
-        ],
-      };
-    }
+    if (failed.length === 0) continue;
+    return {
+      job,
+      failed: failed.filter((item) => !aside.has(failureKey(job.id, item.id))),
+      putAside: failed.filter((item) => aside.has(failureKey(job.id, item.id))),
+    };
   }
   return null;
+}
+
+/** The distinct things these failed pieces said, in the order they failed. */
+function failureReasons(failed: StoryJobItem[]): string[] {
+  return [
+    ...new Set(
+      failed
+        .map((item) => failureText(item))
+        .filter((said): said is string => said !== null),
+    ),
+  ];
 }
 
 /** Whether a place is being made just now, by whichever batch is making it. */
@@ -1506,18 +1577,28 @@ export function useStoryJobs(storyId: string | null): StoryJobRecord[] {
  *
  * Counted over the batches the room has watched and not over everything the
  * server holds: a step stays marked for a failure the room saw come home, and
- * a project opened again starts the count over.
+ * a project opened again starts the count over. Failures the reader has put
+ * aside are taken off the count, but the batch they belong to is still the one
+ * the badge stands on.
  */
 export function watchedStepFailure(
   jobs: StoryJobRecord[],
   storyId: string | null,
   step: StoryStep,
+  putAside: Iterable<string> = [],
 ): StepFailure | null {
-  return stepFailure(
+  const detail = stepFailureDetail(
     jobs.filter((job) => watched.has(job.id)),
     storyId,
     step,
+    putAside,
   );
+  if (detail === null || detail.failed.length === 0) return null;
+  return {
+    failed: detail.failed.length,
+    jobId: detail.job.id,
+    reasons: failureReasons(detail.failed),
+  };
 }
 
 /** The same, for the step the room is showing: the badge's own reading. */
@@ -1526,7 +1607,23 @@ export function useStoryStepFailure(
   step: StoryStep,
 ): StepFailure | null {
   const jobs = useStoryJobs(storyId);
-  return watchedStepFailure(jobs, storyId, step);
+  const putAside = useStoryJobStore((state) => state.ignored);
+  return watchedStepFailure(jobs, storyId, step, putAside);
+}
+
+/** The batch behind a step's badge, whole, for the panel it opens. */
+export function useStoryStepFailureDetail(
+  storyId: string | null,
+  step: StoryStep,
+): StepFailureDetail | null {
+  const jobs = useStoryJobs(storyId);
+  const putAside = useStoryJobStore((state) => state.ignored);
+  return stepFailureDetail(
+    jobs.filter((job) => watched.has(job.id)),
+    storyId,
+    step,
+    putAside,
+  );
 }
 
 /** Whether the place this key names is being made just now. */
