@@ -1536,9 +1536,9 @@ export function useStoryWavesRun(): (
  *
  * A telling's whole cast or board can be asked for at once, and the server
  * refuses such a batch whole rather than half-running it. The list is cut at
- * the bound it refuses past and asked in waves of the model the room is set to
- * — the model read where the ask is made, so a picker changed a moment ago is
- * the one the first wave is asked of.
+ * the bound it refuses past and asked in waves, each taking the next model of
+ * the place's list in its turn — the list read where each ask is made, so a
+ * picker changed a moment ago is the one the first wave is asked of.
  *
  * A list that fits in one wave is one ask, placed as any other: nothing needs
  * sequencing until there is a second wave to wait for the first.
@@ -1555,16 +1555,15 @@ export function useStoryBulkRun(): (
       toast("info", i18n.t("story:jobs.nothingToAsk"));
       return;
     }
-    const model = storyAskModel(kind);
     const waves = chunkWaves(items, MAX_ITEMS_PER_STORY_JOB);
     if (waves.length === 1) {
-      await start(storyId, kind, waves[0]!, model);
+      await start(storyId, kind, waves[0]!);
       return;
     }
     await startWaves(
       storyId,
       kind,
-      waves.map((part) => ({ model, items: part })),
+      waves.map((part) => ({ items: part })),
     );
   };
 }

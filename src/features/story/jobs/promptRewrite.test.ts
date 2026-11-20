@@ -57,7 +57,7 @@ beforeEach(() => {
 
 describe("the contract a clip's words are written for", () => {
   it("reads the model that will film the act, not only the step's", () => {
-    useStoryModels.setState({ choices: { video: "step-model" } });
+    useStoryModels.setState({ choices: { video: ["step-model"] } });
     expect(videoPromptRewrite("actVideo")).toBeNull();
     expect(videoPromptRewrite("actVideo", "act-model")?.guide).toBe(
       "CONTRACT GUIDE",
@@ -65,7 +65,7 @@ describe("the contract a clip's words are written for", () => {
   });
 
   it("falls back to the step's model when the act names none", () => {
-    useStoryModels.setState({ choices: { video: "act-model" } });
+    useStoryModels.setState({ choices: { video: ["act-model"] } });
     expect(videoPromptRewrite("actVideo", null)?.guide).toBe("CONTRACT GUIDE");
   });
 

@@ -64,7 +64,8 @@ export interface UiPreferences {
   clipVolume: number;
   clipSnap: boolean;
   stageSplit: number;
-  storyModels: Record<string, string>;
+  /** The models each place asks, in rotation order; empty is the default. */
+  storyModels: Record<string, string[]>;
   storyPlaces: Record<string, StoryPlace>;
   /** Which acts of a board are folded, by story, chapter and act. */
   storyActFolds: Record<string, boolean>;
@@ -96,7 +97,7 @@ export interface UiPrefsPatch {
   openCanvases?: Record<string, string[] | null>;
   clipTimelines?: Record<string, string | null>;
   clipViews?: Record<string, TimelineViewPrefs | null>;
-  storyModels?: Record<string, string | null>;
+  storyModels?: Record<string, string[] | null>;
   storyPlaces?: Record<string, StoryPlace | null>;
   storyActFolds?: Record<string, boolean | null>;
   storyStripFolds?: Record<string, boolean | null>;

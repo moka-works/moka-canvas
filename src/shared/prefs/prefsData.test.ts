@@ -42,7 +42,7 @@ describe("the interface snapshot", () => {
   it("writes map rows and removes the ones sent as null", () => {
     rememberUiPrefs({
       openCanvases: { p1: ["c1"], p2: ["c2"] },
-      storyModels: { text: "scribe" },
+      storyModels: { text: ["scribe"] },
     });
     expect(currentUiPrefs().openCanvases).toEqual({
       p1: ["c1"],
@@ -51,7 +51,7 @@ describe("the interface snapshot", () => {
 
     rememberUiPrefs({ openCanvases: { p1: null } });
     expect(currentUiPrefs().openCanvases).toEqual({ p2: ["c2"] });
-    expect(currentUiPrefs().storyModels).toEqual({ text: "scribe" });
+    expect(currentUiPrefs().storyModels).toEqual({ text: ["scribe"] });
   });
 
   it("hands every change to the installed writer", () => {

@@ -468,6 +468,42 @@ pub struct StoryPlace {
     pub step: Option<String>,
 }
 
+/// The models one place of the story room asks, in the order their turns take.
+///
+/// A place keeps a list; one model is the one-element list. An interface file
+/// written before the room offered several stored one reference per place as a
+/// string, and that is read as the one-element list rather than dropped.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct StoryModelPool(pub Vec<String>);
+
+impl<'de> Deserialize<'de> for StoryModelPool {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum OneOrMany {
+            One(String),
+            Many(Vec<String>),
+        }
+        Ok(match OneOrMany::deserialize(deserializer)? {
+            OneOrMany::One(reference) => Self(if reference.is_empty() {
+                Vec::new()
+            } else {
+                vec![reference]
+            }),
+            OneOrMany::Many(references) => Self(
+                references
+                    .into_iter()
+                    .filter(|reference| !reference.is_empty())
+                    .collect(),
+            ),
+        })
+    }
+}
+
 /// The widest the interface lets the story room ask one model to serve at
 /// once. The deployment's own ceiling is read separately; this only bounds
 /// what the interface file accepts.
@@ -497,7 +533,7 @@ pub struct UiPreferences {
     pub clip_volume: f64,
     pub clip_snap: bool,
     pub stage_split: f64,
-    pub story_models: BTreeMap<String, String>,
+    pub story_models: BTreeMap<String, StoryModelPool>,
     pub story_places: BTreeMap<String, StoryPlace>,
     /// Which acts of a board are folded, by story, chapter and act.
     pub story_act_folds: BTreeMap<String, bool>,
@@ -669,7 +705,7 @@ pub struct UiPrefsPatch {
     pub open_canvases: BTreeMap<String, Option<Vec<String>>>,
     pub clip_timelines: BTreeMap<String, Option<String>>,
     pub clip_views: BTreeMap<String, Option<TimelineView>>,
-    pub story_models: BTreeMap<String, Option<String>>,
+    pub story_models: BTreeMap<String, Option<StoryModelPool>>,
     pub story_places: BTreeMap<String, Option<StoryPlace>>,
     pub story_act_folds: BTreeMap<String, Option<bool>>,
     pub story_strip_folds: BTreeMap<String, Option<bool>>,
@@ -999,6 +1035,25 @@ mod tests {
         assert_eq!(stored.speech.voice, "alloy");
         assert_eq!(stored.music, MusicPreferences::default());
         assert_eq!(stored.story, StoryPreferences::default());
+    }
+
+    #[test]
+    fn a_story_models_place_keeps_a_list_and_reads_the_old_single_reference() {
+        let mut prefs = UiPreferences::default();
+        prefs.apply(
+            serde_json::from_str(
+                r#"{"storyModels":{"text":"old-one","image":["first","second"]}}"#,
+            )
+            .expect("a place may keep one reference or several"),
+        );
+        assert_eq!(prefs.story_models["text"].0, vec!["old-one"]);
+        assert_eq!(prefs.story_models["image"].0, vec!["first", "second"]);
+        // The file is written in the list's own shape whoever wrote it.
+        let written = serde_json::to_value(&prefs).expect("preferences serialize");
+        assert_eq!(
+            written["storyModels"]["text"],
+            serde_json::json!(["old-one"])
+        );
     }
 
     #[test]

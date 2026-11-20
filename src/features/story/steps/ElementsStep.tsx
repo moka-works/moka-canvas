@@ -28,7 +28,11 @@ import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
-import { modelOptionsFor, useModelStore } from "../../settings/modelStore";
+import {
+  modelNameOf,
+  modelOptionsFor,
+  useModelStore,
+} from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
@@ -191,10 +195,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   // fact the room must be able to show before a reader walks away from it.
   const [mergePending, setMergePending] = useState(false);
   const setElementsBusy = useStoryStore((state) => state.setElementsBusy);
-  const imageOptions = modelOptionsFor(
-    useModelStore((state) => state.view),
-    "image",
-  );
+  const models = useModelStore((state) => state.view);
+  const imageOptions = modelOptionsFor(models, "image");
 
   const groups = KINDS.map((each) => ({
     kind: each,
@@ -822,6 +824,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
           {running !== null && (
             <span className="story-hint" data-testid="story-elements-running">
               {t("story:jobs.busy", jobProgress(running))}
+              {" · "}
+              {modelNameOf(models, running.model)}
             </span>
           )}
         </div>

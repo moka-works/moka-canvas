@@ -26,7 +26,7 @@ import {
 } from "../../../shared/prompts/rewrite";
 import type { StoryPromptContext } from "../../../shared/prompts/story/promptContext";
 import { effectiveDefaultId, useModelStore } from "../../settings/modelStore";
-import { storyAskModel, storyTextModel } from "../stores/storyModels";
+import { storyAskModelHead, storyTextModel } from "../stores/storyModels";
 
 export type { PromptRewriteGuide };
 
@@ -56,7 +56,7 @@ export function videoPromptRewrite(
   kind: "actVideo" | "keyframeVideo",
   model?: string | null,
 ): PromptRewriteGuide | null {
-  return guideFor("video", model ?? storyAskModel(kind));
+  return guideFor("video", model ?? storyAskModelHead(kind));
 }
 
 /** The contract the model this kind of picture is drawn by declares, or none. */
@@ -64,7 +64,7 @@ export function imagePromptRewrite(
   kind: "keyframeArt" | "elementArt",
   model?: string | null,
 ): PromptRewriteGuide | null {
-  return guideFor("image", model ?? storyAskModel(kind));
+  return guideFor("image", model ?? storyAskModelHead(kind));
 }
 
 /** A rewritten prompt and what is wrong with it, once the model answered. */

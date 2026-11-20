@@ -41,7 +41,7 @@ import {
   useStoryJobStore,
   useStoryJobs,
 } from "../stores/storyJobStore";
-import { storyAskModel } from "../stores/storyModels";
+import { elementArtModel, keyframeArtModel } from "../jobs/plan";
 import { useEditStarts } from "./editStarts";
 
 const START_RADIUS = 24;
@@ -49,20 +49,18 @@ const START_SOFTNESS = 40;
 
 /** The model a place is edited with, before the reader says otherwise. */
 function defaultEditModel(
+  story: StoryDocument,
   place: EditPlace,
   view: ReturnType<typeof useModelStore.getState>["view"],
 ): string | null {
-  if (place.kind === "element") {
-    const own = (
-      place.variant?.imageModel ??
-      place.element.imageModel ??
-      ""
-    ).trim();
-    if (own !== "") return own;
-  }
-  const asked = storyAskModel(
-    place.kind === "element" ? "elementArt" : "keyframeArt",
-  );
+  const asked =
+    place.kind === "element"
+      ? elementArtModel(place.element, place.variant?.id)
+      : keyframeArtModel(story, {
+          chapterId: place.chapterId,
+          actId: place.act.id,
+          keyframeId: place.keyframe.id,
+        });
   if (asked !== null) return asked;
   return view === null ? null : (effectiveDefaultId(view, "image") ?? null);
 }
@@ -106,7 +104,7 @@ export function StoryEditDialog({
         : `${place.element.name} · ${place.variant.name}`
       : t("story:storyboard.frame");
   const [model, setModel] = useState<string | null>(() =>
-    defaultEditModel(place, view),
+    defaultEditModel(story, place, view),
   );
   const [mode, setMode] = useState<"whole" | "mask">("whole");
   const [words, setWords] = useState("");

@@ -23,6 +23,7 @@ import type { DocumentCommand } from "../../../shared/domain/types";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
+import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
@@ -82,6 +83,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
   const sourceId = brief.sourceAssetId;
   const jobs = useStoryJobs(story.id);
   const running = useRunningJob(story.id);
+  const models = useModelStore((state) => state.view);
   // The step's own ask, which is what its buttons wait on: a batch drawing
   // pictures for the boards is not a chapter being written, and it does not
   // hold the table back.
@@ -492,6 +494,9 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
                     : "story:outline.writing",
               )}{" "}
               · {formatDuration(elapsed)}
+              {running.model === ""
+                ? ""
+                : ` · ${modelNameOf(models, running.model)}`}
             </span>
             {elapsed >= STORY_SLOW_MS && (
               <span className="story-hint">{t("story:outline.slow")}</span>

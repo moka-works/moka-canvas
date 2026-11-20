@@ -26,7 +26,7 @@ import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MoreMenu } from "../components/MoreMenu";
-import { RunningBar } from "../components/RunningBar";
+import { RunningBar, RunningModels } from "../components/RunningBar";
 import { FoldChevron } from "../components/StoryIcons";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
@@ -245,7 +245,7 @@ export function ActCard({
   // What the ask comes to is worth saying out loud when it is not the length
   // the board planned: a shot that outran one clip is made as long as it can
   // be, and an act filmed in pieces is made in pieces.
-  const ceiling = videoCeiling(act.videoModel);
+  const ceiling = videoCeiling(actVideoModel(act));
   const pieces = actClipPieces(act, ceiling);
   const askedSeconds = pieces.reduce((sum, piece) => sum + piece.seconds, 0);
   const split = pieces.length > 1;
@@ -544,6 +544,10 @@ export function ActCard({
             {t("story:storyboard.clamped", { seconds: askedSeconds })}
           </span>
         )}
+        {/* What the act is waiting on, named by the models its batches were
+            actually handed: several models may be on offer, and the head says
+            which one this work really went to. */}
+        <RunningModels runs={runs} testId={`story-act-asking-${index}`} />
         {/* How this act is filmed, where it parts from the telling's default:
             one act's card is where one act's way of filming belongs. */}
         <span

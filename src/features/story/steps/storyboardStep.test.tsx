@@ -101,6 +101,36 @@ describe("writing an episode's board", () => {
     );
   });
 
+  it("spreads a place's asks over the models picked for it, in order", async () => {
+    paintingWithTwoModels();
+    openAtBoard(withUndrawnFrames());
+
+    // Two picture models are ticked into the place's list, so the two frames
+    // missing a picture are not piled onto one model.
+    fireEvent.click(screen.getByTestId("story-model-image-toggle"));
+    fireEvent.click(screen.getByTestId("story-model-image-option-paint-1"));
+    fireEvent.click(screen.getByTestId("story-model-image-option-paint-2"));
+    expect(screen.getByTestId("story-model-image-count").textContent).toBe(
+      "2 in rotation",
+    );
+
+    fireEvent.click(screen.getByTestId("story-act-draw-0"));
+    await waitFor(() => expect(starts).toHaveLength(2));
+    expect(starts.map((batch) => batch.model)).toEqual(["paint-1", "paint-2"]);
+
+    // The act's head names the models the work really went to, rather than
+    // the list it was drawn from.
+    const asking = await screen.findByTestId("story-act-asking-0");
+    expect(asking.textContent).toContain("Paint One");
+    expect(asking.textContent).toContain("Paint Two");
+
+    await comesBack(1);
+    await comesBack(2);
+    await waitFor(() =>
+      expect(screen.queryByTestId("story-act-asking-0")).toBeNull(),
+    );
+  });
+
   it("folds the episode strip down to the episodes around the one open", () => {
     const moka = boarded();
     openAtBoard(moka);

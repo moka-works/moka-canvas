@@ -105,7 +105,7 @@ import {
   modelOptionsFor,
   useModelStore,
 } from "../../settings/modelStore";
-import { storyAskModel } from "../stores/storyModels";
+import { storyAskModelHead, storyTargetModel } from "../stores/storyModels";
 
 /**
  * The name a piece is known by, which is also how its answer is recognised
@@ -217,7 +217,7 @@ export function clampSeconds(
  * An act that names its own model is planned against that model's window.
  */
 export function videoCeiling(model?: string | null): number {
-  const chosen = model === undefined ? storyAskModel("actVideo") : model;
+  const chosen = model === undefined ? storyAskModelHead("actVideo") : model;
   const view = useModelStore.getState().view;
   const id =
     chosen ??
@@ -235,7 +235,7 @@ export function videoCeiling(model?: string | null): number {
  */
 export function actVideoModel(act: StoryAct): string | null {
   const own = (act.videoModel ?? "").trim();
-  return own === "" ? storyAskModel("actVideo") : own;
+  return own === "" ? storyTargetModel("actVideo", act.id) : own;
 }
 
 /**
@@ -1032,7 +1032,9 @@ export function elementArtModel(
 ): string | null {
   const form = elementForm(element, variantId);
   const own = (form?.imageModel ?? element.imageModel ?? "").trim();
-  return own === "" ? storyAskModel("elementArt") : own;
+  return own === ""
+    ? storyTargetModel("elementArt", `${element.id}:${variantId ?? ""}`)
+    : own;
 }
 
 /**
@@ -1433,7 +1435,12 @@ export function keyframeArtModel(
 ): string | null {
   const keyframe = keyframeAt(story, target);
   const own = (keyframe?.imageModel ?? "").trim();
-  return own === "" ? storyAskModel("keyframeArt") : own;
+  return own === ""
+    ? storyTargetModel(
+        "keyframeArt",
+        `${target.chapterId}:${target.actId}:${target.keyframeId}`,
+      )
+    : own;
 }
 
 /**
@@ -2024,7 +2031,9 @@ export function resolveVoice(
   story: StoryDocument,
   characterId: string | undefined,
 ): StoryVoiceProfile {
-  const asked = speechModelOnMachine(storyAskModel("voice"));
+  const asked = speechModelOnMachine(
+    storyTargetModel("voice", characterId ?? "narrator"),
+  );
   const voice = voiceFor(story, characterId, { model: asked ?? "" });
   if (voice.model !== "" && speechModelOnMachine(voice.model) === null) {
     return { ...voice, model: asked ?? "" };

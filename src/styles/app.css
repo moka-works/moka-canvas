@@ -6984,6 +6984,122 @@ body.is-dragging-split {
   max-width: 100%;
 }
 
+/* A place keeps a list of models rather than one: the button stands as wide as
+   the names it holds, and the menu is a set of ticks in the order the asks
+   will take turns. */
+.story-model-pool {
+  position: relative;
+}
+
+.story-model-pool-toggle {
+  align-items: baseline;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  max-width: 100%;
+  padding: 5px 9px;
+  transition: 120ms ease;
+}
+
+.story-model-pool-toggle:hover,
+.story-model-pool[open] > .story-model-pool-toggle {
+  border-color: var(--primary);
+}
+
+.story-model-pool-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.story-model-pool-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.story-model-pool-value {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-model-pool-count {
+  color: var(--primary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.story-model-pool-menu {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 2px;
+  left: 0;
+  min-width: 200px;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 6;
+}
+
+.story-model-pool-row {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  padding: 4px 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.story-model-pool-row:hover {
+  background: var(--surface-raised);
+}
+
+.story-model-pool-row.is-on {
+  color: var(--primary);
+}
+
+.story-model-pool-row input[type="checkbox"] {
+  accent-color: var(--primary);
+  height: 13px;
+  width: 13px;
+}
+
+.story-model-pool-turn {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.story-model-pool-menu .story-hint {
+  max-width: 220px;
+  padding: 4px 6px 0;
+  white-space: normal;
+}
+
+/* What an act's batches are really asking, at the act's head: a list of
+   models may be on offer, and this names the ones the work went to. */
+.story-act-asking {
+  background: var(--surface-raised);
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 11px;
+  padding: 1px 9px;
+  white-space: nowrap;
+}
+
 .story-tabs {
   border-bottom: 1px solid var(--stroke);
   display: flex;

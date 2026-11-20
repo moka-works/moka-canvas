@@ -22,6 +22,7 @@ import { useModelStore } from "../../settings/modelStore";
 import { StoryPage } from "../StoryPage";
 import { STORY_PARALLEL_DEFAULT, useStoryBatch } from "../stores/storyBatch";
 import { useStoryJobStore } from "../stores/storyJobStore";
+import { useStoryModels } from "../stores/storyModels";
 import { useStoryStore } from "../stores/storyStore";
 
 export const ids = storyIds();
@@ -98,7 +99,12 @@ export function serving(): void {
             model: body.model ?? null,
             parallel: body.parallel,
           });
-          const record = batchOf(starts.length, body.kind, body.items);
+          const record = batchOf(
+            starts.length,
+            body.kind,
+            body.items,
+            body.model,
+          );
           held = [record, ...held];
           return json(record);
         }
@@ -134,6 +140,7 @@ export function batchOf(
   number: number,
   kind: StoryJobKind,
   items: StoryJobItemDraft[],
+  model?: string | null,
 ): StoryJobRecord {
   return {
     id: `job-${number}`,
@@ -141,7 +148,9 @@ export function batchOf(
     storyId: useProjectStore.getState().moka?.stories?.[0]?.id ?? ids.story,
     kind,
     status: "running",
-    model: "a-storyteller",
+    // The deployment's default is a model the test machine names by its own
+    // stand-in; one the room asked of is the ask's own.
+    model: model ?? "a-storyteller",
     items: items.map((item) => ({
       ...item,
       inputs: item.inputs ?? [],
@@ -588,6 +597,7 @@ export function resetStoryboard(): void {
   landed = {};
   serving();
   resetUiPrefs();
+  useStoryModels.setState({ choices: {} });
   // Every test starts on a machine whose settings say nothing, which is the
   // state a room is read in unless a test sets a deployment of its own. The
   // protocols a dialog reads go with them: half a registry left by one test

@@ -193,6 +193,50 @@ async fn a_board_fold_is_kept_and_an_unfold_takes_its_row_away() {
 }
 
 #[tokio::test]
+async fn a_places_models_are_kept_as_an_ordered_list() {
+    let root = tempfile::tempdir().unwrap();
+    let app = harness(root.path());
+
+    // A place may keep several models in the order their turns take; an
+    // interface file from before that shape named one model as a string, and
+    // it is read as the one-model list rather than dropped.
+    let (status, body) = send(
+        &app,
+        json_request(
+            "PATCH",
+            "/api/v1/ui-prefs",
+            json!({
+                "storyModels": {
+                    "text": ["scribe-2", "scribe-3"],
+                    "image": "painter-1"
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["storyModels"]["text"], json!(["scribe-2", "scribe-3"]));
+    assert_eq!(body["storyModels"]["image"], json!(["painter-1"]));
+
+    // Clearing one place takes its row away and leaves the others standing.
+    let (status, cleared) = send(
+        &app,
+        json_request(
+            "PATCH",
+            "/api/v1/ui-prefs",
+            json!({ "storyModels": { "image": null } }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(cleared["storyModels"].get("image").is_none(), "{cleared}");
+    assert_eq!(
+        cleared["storyModels"]["text"],
+        json!(["scribe-2", "scribe-3"])
+    );
+}
+
+#[tokio::test]
 async fn a_reset_returns_the_defaults() {
     let root = tempfile::tempdir().unwrap();
     let app = harness(root.path());

@@ -26,6 +26,7 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OutlineRevisionDialog } from "../components/OutlineRevisionDialog";
 import { OutlineSyncDialog } from "../components/OutlineSyncDialog";
@@ -109,6 +110,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const runArt = useStoryWavesAsk();
   const openChapterId = useStoryStore((state) => state.openChapterId);
   const resources = useProjectStore((state) => state.moka?.resources);
+  const models = useModelStore((state) => state.view);
   const [asking, setAsking] = useState(false);
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
@@ -687,6 +689,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                 job={job}
                 key={job.id}
                 label={t("story:storyboard.writing")}
+                model={modelNameOf(models, job.model)}
                 pieces={job.items}
                 testId="story-board-running"
               />
@@ -701,6 +704,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                 job={job}
                 key={job.id}
                 label={t("story:storyboard.revisionRunning")}
+                model={modelNameOf(models, job.model)}
                 pieces={job.items}
                 testId="story-board-revision-running"
               />

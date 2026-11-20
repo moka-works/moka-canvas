@@ -56,7 +56,7 @@ function withOverride(prompt: string, auto: string): MokaFile {
 }
 
 function imageWithContract() {
-  useStoryModels.setState({ choices: { image: "image-1" } });
+  useStoryModels.setState({ choices: { image: ["image-1"] } });
   useModelStore.setState({
     view: {
       version: 1,

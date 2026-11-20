@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "./fixtures";
 import {
   backToLauncher,
+  configureModels,
   configureWordsAndPictures,
   createProject,
   forgetHome,
@@ -11,7 +12,7 @@ import {
   openStoryRoom,
   projectHome,
 } from "./helpers";
-import { SENTENCE, providerCalls } from "./mock-provider";
+import { SENTENCE, STORYTELLER, providerCalls } from "./mock-provider";
 
 /**
  * The third step: who and what the telling is made of.
@@ -116,9 +117,9 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
     await expect(page.getByTestId("story-step-body-elements")).toBeVisible();
     await expect(page.getByTestId("story-elements-empty")).toBeVisible();
     await expect(page.getByTestId("story-model-text")).toBeVisible();
-    await expect(
-      page.getByTestId("story-model-text").getByRole("combobox"),
-    ).toHaveValue("");
+    await expect(page.getByTestId("story-model-text-toggle")).toContainText(
+      "Settings default",
+    );
     // The pictures this step draws are asked of a model of their own, and the
     // batch they are asked in runs at a count the reader sets here.
     await expect(page.getByTestId("story-model-image")).toBeVisible();
@@ -454,6 +455,56 @@ test("an element's picture prompt is rewritten before it is drawn", async ({
         { timeout: 60_000 },
       )
       .toBe(SENTENCE);
+  } finally {
+    forgetHome(home);
+  }
+});
+
+/**
+ * A place that is asked of several models.
+ *
+ * A step's picker keeps a list rather than one value, in the order the asks
+ * take turns; the machine keeps that list so the next window opens with the
+ * same rotation.
+ */
+test("a step's models are ticked into a rotation", async ({ page }) => {
+  const home = projectHome("story-model-rotation");
+  await forgetProjects();
+  await configureModels([
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+    { id: "storyteller-two", capability: "text", alias: "Storyteller Two" },
+  ]);
+  try {
+    await page.goto("/");
+    await createProject(page, join(home, "project"), "Story Model Turns");
+    await openStoryRoom(page);
+    await newStory(page, "Turns");
+    await page
+      .getByTestId("story-idea-input")
+      .fill("Eleven at night, and the last train stops where it should not.");
+    await page.getByTestId("story-confirm-idea").click();
+    await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
+
+    await page.getByTestId("story-model-text-toggle").click();
+    await page.getByTestId("story-model-text-option-storyteller").check();
+    await page.getByTestId("story-model-text-option-storyteller-two").check();
+    await expect(page.getByTestId("story-model-text-toggle")).toContainText(
+      "Storyteller / Storyteller Two",
+    );
+    await expect(page.getByTestId("story-model-text-count")).toHaveText(
+      "2 in rotation",
+    );
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/ui-prefs");
+          const body = (await response.json()) as {
+            storyModels?: Record<string, string[]>;
+          };
+          return body.storyModels?.text;
+        }),
+      )
+      .toEqual(["storyteller", "storyteller-two"]);
   } finally {
     forgetHome(home);
   }

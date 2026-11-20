@@ -832,15 +832,17 @@ describe("the model a reading is asked of", () => {
   it("asks the model the room is set to rather than the deployment's default", async () => {
     openAtElements(buildStoryMokaFile());
 
-    const picker = within(screen.getByTestId("story-model-text")).getByRole(
-      "combobox",
+    // The place keeps a list of models; ticking one asks every batch of words
+    // of it, and the room offers the default as the empty list.
+    fireEvent.click(screen.getByTestId("story-model-text-toggle"));
+    expect(screen.getByTestId("story-model-text-default").textContent).toBe(
+      "Settings default",
     );
     expect(
-      within(picker)
-        .getAllByRole("option")
-        .map((option) => option.textContent),
-    ).toEqual(["Settings default", "Scribe One", "Scribe Two"]);
-    fireEvent.change(picker, { target: { value: "scribe-2" } });
+      screen.getByTestId("story-model-text-option-scribe-1").parentElement
+        ?.textContent,
+    ).toContain("Scribe One");
+    fireEvent.click(screen.getByTestId("story-model-text-option-scribe-2"));
 
     fireEvent.click(screen.getByTestId("story-elements-recognise"));
     fireEvent.click(screen.getByTestId("recognise-elements-confirm"));
@@ -849,7 +851,7 @@ describe("the model a reading is asked of", () => {
     });
     expect(starts[0]?.model).toBe("scribe-2");
     // The choice is the machine's, so the next reading is asked of it too.
-    expect(currentUiPrefs().storyModels).toEqual({ text: "scribe-2" });
+    expect(currentUiPrefs().storyModels).toEqual({ text: ["scribe-2"] });
   });
 
   it("starts its batches at the count the room is set to run at once", async () => {

@@ -69,7 +69,11 @@
     "audio": "Voices",
     "music": "Score",
     "parallel": "Parallel",
-    "parallelTip": "Up to {{max}} generations against one model at once; each model has its own queue"
+    "parallelTip": "Up to {{max}} generations against one model at once; each model has its own queue",
+    "choose": "Choose {{label}} models",
+    "poolCount": "{{count}} in rotation",
+    "turn": "turn {{at}}",
+    "poolHint": "Pick several; models take turns in the order ticked"
   },
   "steps": {
     "label": "The five steps",
@@ -568,6 +572,7 @@
     "chapterAt": "Episode {{number}} · {{title}}",
     "target": "Target {{duration}}",
     "settled": "{{done}}/{{total}} acts finished",
+    "asking": "Generating · {{models}}",
     "generate": "Write the board",
     "generateAll": "Write the boards of every episode ({{count}})",
     "regenerate": "Write the board again",

@@ -14,8 +14,9 @@ import type {
   StoryChapter,
   StoryDocument,
 } from "../../../shared/domain/types";
-import { RunningBar } from "../components/RunningBar";
+import { RunningBar, RunningModels } from "../components/RunningBar";
 import { ModelPicker } from "../../settings/ModelPicker";
+import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import {
   actVideoModel,
   planActVideoWaves,
@@ -71,6 +72,7 @@ export function TransitionCard({
 }) {
   const { t } = useTranslation();
   const run = useStoryWavesAsk();
+  const models = useModelStore((state) => state.view);
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<"edit" | "film" | null>(
@@ -154,7 +156,7 @@ export function TransitionCard({
       : videos.from === undefined
         ? undefined
         : assetFrameUrl(videos.from.assetId, "last", TRANSITION_POSTER_WIDTH);
-  const ceiling = videoCeiling(act.videoModel);
+  const ceiling = videoCeiling(actVideoModel(act));
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
     ceiling,
@@ -216,6 +218,10 @@ export function TransitionCard({
         >
           {t("story:storyboard.plan", { seconds: plannedSeconds })}
         </span>
+        <RunningModels
+          runs={runs}
+          testId={`story-transition-asking-${index}`}
+        />
         {adjusted && (
           <span
             className="story-clamp"
@@ -245,7 +251,10 @@ export function TransitionCard({
             <RunningBar
               job={job}
               key={job.id}
-              label={t("story:jobs.generating")}
+              label={t("story:jobs.generatingKind", {
+                kind: t("story:jobs.kindVideo"),
+                model: modelNameOf(models, job.model),
+              })}
               pieces={items}
               testId="story-transition-running"
             />

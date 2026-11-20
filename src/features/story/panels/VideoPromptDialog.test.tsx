@@ -171,7 +171,7 @@ describe("a clip's prompt written by hand", () => {
 
 /** A video model whose protocol declares a prompt contract. */
 function filmWithContract() {
-  useStoryModels.setState({ choices: { video: "video-1" } });
+  useStoryModels.setState({ choices: { video: ["video-1"] } });
   useModelStore.setState({
     view: {
       version: 1,

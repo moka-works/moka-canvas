@@ -69,7 +69,11 @@
     "audio": "配音",
     "music": "配乐",
     "parallel": "并发",
-    "parallelTip": "同一模型最多同时生成 {{max}} 个；不同模型各自计算"
+    "parallelTip": "同一模型最多同时生成 {{max}} 个；不同模型各自计算",
+    "choose": "选{{label}}模型",
+    "poolCount": "{{count}} 个轮询",
+    "turn": "第 {{at}} 位",
+    "poolHint": "可多选；多个模型按勾选顺序轮流调用"
   },
   "steps": {
     "label": "五个步骤",
@@ -568,6 +572,7 @@
     "chapterAt": "第 {{number}} 集 {{title}}",
     "target": "目标时长 {{duration}}",
     "settled": "已完成 {{done}}/{{total}} 幕",
+    "asking": "生成中 · {{models}}",
     "generate": "生成分镜",
     "generateAll": "生成本轮全部集的表（{{count}} 集）",
     "regenerate": "重新生成分镜",
