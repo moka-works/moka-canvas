@@ -20,7 +20,7 @@ import {
 } from "../../../api/projects";
 import { isApiError, nameProject } from "../../../api/client";
 import { i18n } from "../../../shared/i18n";
-import { useHistoryStore } from "./historyStore";
+import { isBoundary, useHistoryStore, type HistoryItem } from "./historyStore";
 import { useAppStore } from "./appStore";
 import { useOpenCanvases } from "./openCanvases";
 
@@ -145,6 +145,8 @@ const appliedChangeSets = new Set<string>();
 // a flag because two windows' loops never share a store, but two overlapping
 // calls in one turn can.
 let writesHeld = 0;
+let holdHistoryCheckpoint: number | null = null;
+let holdAgentEntries = 0;
 // The last server document lets a conflict ignore the reader's optimistic edits.
 let syncedMoka: MokaFile | null = null;
 
@@ -268,6 +270,34 @@ function withoutAssetEntries(
       updatedAt: result.updatedAt,
     },
     resources,
+  };
+}
+
+// The server commits an agent command before pending local edits, so history needs that order too.
+function rebaseHeldCommands(
+  base: MokaFile,
+  agentCommands: DocumentCommand[],
+  pending: DocumentCommand[],
+  localHistory: HistoryItem[],
+): {
+  next: MokaFile;
+  server: MokaFile;
+  inverse: DocumentCommand[];
+  history: HistoryItem[];
+} {
+  const adopted = applyToDocument(base, agentCommands);
+  let historyDocument = adopted.next;
+  const history = localHistory.map((item) => {
+    if (isBoundary(item)) return item;
+    const applied = applyToDocument(historyDocument, item.forwardCommands);
+    historyDocument = applied.next;
+    return { ...item, inverseCommands: applied.inverse };
+  });
+  return {
+    next: applyToDocument(adopted.next, pending).next,
+    server: adopted.next,
+    inverse: adopted.inverse,
+    history,
   };
 }
 
@@ -399,6 +429,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       flushTimer = null;
       appliedChangeSets.clear();
       writesHeld = 0;
+      holdHistoryCheckpoint = null;
+      holdAgentEntries = 0;
       // A flush from the previously open project must not be awaited here.
       flushInFlight = null;
       // Every request from this window is about what the window is looking
@@ -507,6 +539,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     close() {
       syncedMoka = null;
+      holdHistoryCheckpoint = null;
+      holdAgentEntries = 0;
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = null;
       flushInFlight = null;
@@ -677,8 +711,44 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     adoptAgentCommands(commands, revision, updatedAt, changeSetId, label) {
       if (appliedChangeSets.has(changeSetId)) return;
-      const { moka } = get();
+      const { moka, pending } = get();
       if (!moka) return;
+      if (holdHistoryCheckpoint !== null && syncedMoka !== null) {
+        const insertAt = holdHistoryCheckpoint + holdAgentEntries;
+        const history = useHistoryStore.getState();
+        const rebased = rebaseHeldCommands(
+          syncedMoka,
+          commands,
+          pending,
+          history.undoStack.slice(insertAt),
+        );
+        syncedMoka = {
+          ...rebased.server,
+          metadata: { ...rebased.server.metadata, revision, updatedAt },
+        };
+        appliedChangeSets.add(changeSetId);
+        set({
+          moka: {
+            ...rebased.next,
+            metadata: { ...rebased.next.metadata, revision, updatedAt },
+          },
+        });
+        useHistoryStore.setState({
+          undoStack: [
+            ...history.undoStack.slice(0, insertAt),
+            {
+              id: changeSetId,
+              label,
+              forwardCommands: commands,
+              inverseCommands: rebased.inverse,
+            },
+            ...rebased.history,
+          ],
+          redoStack: [],
+        });
+        holdAgentEntries += 1;
+        return;
+      }
       const { next, inverse } = applyToDocument(moka, commands);
       if (syncedMoka !== null) {
         const adopted = applyToDocument(syncedMoka, commands).next;
@@ -708,6 +778,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     async holdWrites() {
       await get().flush();
+      if (writesHeld === 0) {
+        holdHistoryCheckpoint = useHistoryStore.getState().undoStack.length;
+        holdAgentEntries = 0;
+      }
       writesHeld += 1;
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = null;
@@ -716,7 +790,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         if (released) return;
         released = true;
         writesHeld = Math.max(0, writesHeld - 1);
-        if (writesHeld === 0 && get().pending.length > 0) scheduleFlush();
+        if (writesHeld === 0) {
+          holdHistoryCheckpoint = null;
+          holdAgentEntries = 0;
+          if (get().pending.length > 0) scheduleFlush();
+        }
       };
       const expiry = setTimeout(release, 30_000);
       if (typeof expiry === "object" && expiry !== null && "unref" in expiry) {

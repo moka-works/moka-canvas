@@ -659,6 +659,43 @@ describe("agent adoption", () => {
     expect(useProjectStore.getState().pending).toHaveLength(1);
   });
 
+  it("adopts an agent command before edits made while writes were held", async () => {
+    const moka = hydrate();
+    const canvasId = goldenNodeIds().canvasMain;
+    const original = moka.canvas[0].name;
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        revision: 10,
+        updatedAt: "2026-10-21T09:00:01Z",
+      }),
+    );
+    const release = await useProjectStore.getState().holdWrites();
+    execute("Rename locally", [
+      { type: "renameCanvas", canvasId, name: "Local edit" },
+    ]);
+
+    useProjectStore
+      .getState()
+      .adoptAgentCommands(
+        [{ type: "renameCanvas", canvasId, name: "Agent edit" }],
+        9,
+        "2026-10-21T09:00:00Z",
+        "cs_agent_first",
+        "Rename with the agent",
+      );
+
+    expect(useProjectStore.getState().moka?.canvas[0].name).toBe("Local edit");
+    expect(useProjectStore.getState().pending).toEqual([
+      { type: "renameCanvas", canvasId, name: "Local edit" },
+    ]);
+    expect(undo()).toBe(true);
+    expect(useProjectStore.getState().moka?.canvas[0].name).toBe("Agent edit");
+    expect(undo()).toBe(true);
+    expect(useProjectStore.getState().moka?.canvas[0].name).toBe(original);
+    release();
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+
   it("holds automatic saving until the lease is released", async () => {
     hydrate();
     const release = await useProjectStore.getState().holdWrites();
