@@ -3,12 +3,14 @@ import {
   applyCommands as applyToDocument,
   CommandError,
   nextCanvasName,
+  PROJECT_ASSET_CATEGORIES,
   type AssetCategory,
   type AssetId,
   type CanvasId,
   type DocumentCommand,
   type MokaFile,
   type ResourceEntry,
+  type ResourceRegistry,
   type SelfCheckReport,
 } from "../../../shared/domain";
 import {
@@ -143,6 +145,131 @@ const appliedChangeSets = new Set<string>();
 // a flag because two windows' loops never share a store, but two overlapping
 // calls in one turn can.
 let writesHeld = 0;
+// The last server document lets a conflict ignore the reader's optimistic edits.
+let syncedMoka: MokaFile | null = null;
+
+function sameValue(one: unknown, other: unknown): boolean {
+  if (Object.is(one, other)) return true;
+  if (
+    typeof one !== "object" ||
+    one === null ||
+    typeof other !== "object" ||
+    other === null ||
+    Array.isArray(one) !== Array.isArray(other)
+  ) {
+    return false;
+  }
+  if (Array.isArray(one) && Array.isArray(other)) {
+    return (
+      one.length === other.length &&
+      one.every((entry, at) => sameValue(entry, other[at]))
+    );
+  }
+  const left = one as Record<string, unknown>;
+  const right = other as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => sameValue(left[key], right[key]));
+}
+
+// Only asset registrations are safe to merge into optimistic local commands.
+function assetAdditions(
+  before: MokaFile,
+  latest: MokaFile,
+): Partial<ResourceRegistry> | null {
+  if (latest.metadata.revision <= before.metadata.revision) return null;
+  const beforeBody = {
+    ...before,
+    metadata: { ...before.metadata, revision: 0, updatedAt: "" },
+    resources: null,
+  };
+  const latestBody = {
+    ...latest,
+    metadata: { ...latest.metadata, revision: 0, updatedAt: "" },
+    resources: null,
+  };
+  if (!sameValue(beforeBody, latestBody)) return null;
+
+  const additions: Partial<ResourceRegistry> = {};
+  for (const category of PROJECT_ASSET_CATEGORIES) {
+    const oldEntries = before.resources[category] ?? [];
+    const newEntries = latest.resources[category] ?? [];
+    const latestById = new Map(newEntries.map((entry) => [entry.id, entry]));
+    if (
+      oldEntries.some((entry) => !sameValue(entry, latestById.get(entry.id)))
+    ) {
+      return null;
+    }
+    const oldIds = new Set(oldEntries.map((entry) => entry.id));
+    const added = newEntries.filter((entry) => !oldIds.has(entry.id));
+    if (added.length > 0) additions[category] = added;
+  }
+  return additions;
+}
+
+function withAssetAdditions(
+  moka: MokaFile,
+  additions: Partial<ResourceRegistry>,
+): ResourceRegistry {
+  const resources = { ...moka.resources };
+  for (const [category, added] of Object.entries(additions) as [
+    AssetCategory,
+    ResourceEntry[],
+  ][]) {
+    const held = resources[category] ?? [];
+    const known = new Set(held.map((entry) => entry.id));
+    resources[category] = [
+      ...held,
+      ...added.filter((entry) => !known.has(entry.id)),
+    ];
+  }
+  return resources;
+}
+
+function withAssetEntry(
+  moka: MokaFile,
+  entry: ResourceEntry,
+  result: SaveResult,
+): MokaFile {
+  const category = entry.path.split("/")[1] as AssetCategory | undefined;
+  if (category === undefined) return moka;
+  const list = moka.resources[category] ?? [];
+  const index = list.findIndex((item) => item.id === entry.id);
+  const nextList =
+    index === -1
+      ? [...list, entry]
+      : list.map((item) => (item.id === entry.id ? entry : item));
+  return {
+    ...moka,
+    metadata: {
+      ...moka.metadata,
+      revision: result.revision,
+      updatedAt: result.updatedAt,
+    },
+    resources: { ...moka.resources, [category]: nextList },
+  };
+}
+
+function withoutAssetEntries(
+  moka: MokaFile,
+  assetIds: Set<string>,
+  result: SaveResult,
+): MokaFile {
+  const resources = { ...moka.resources };
+  for (const category of PROJECT_ASSET_CATEGORIES) {
+    resources[category] = (resources[category] ?? []).filter(
+      (entry) => !assetIds.has(entry.id),
+    );
+  }
+  return {
+    ...moka,
+    metadata: {
+      ...moka.metadata,
+      revision: result.revision,
+      updatedAt: result.updatedAt,
+    },
+    resources,
+  };
+}
 
 function activeCanvasOf(moka: MokaFile, activeCanvasId: CanvasId | null) {
   return (
@@ -161,6 +288,34 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       if (writesHeld > 0) return;
       void get().flush();
     }, FLUSH_DEBOUNCE_MS);
+  };
+
+  const adoptAssetOnlyConflict = async (): Promise<number | null> => {
+    const before = syncedMoka;
+    if (before === null) return null;
+    try {
+      const opened = await projectsApi.current();
+      if (get().moka?.metadata.id !== before.metadata.id) return null;
+      const additions = assetAdditions(before, opened.moka);
+      if (additions === null) return null;
+      syncedMoka = opened.moka;
+      set((state) => ({
+        moka: state.moka
+          ? {
+              ...state.moka,
+              metadata: {
+                ...state.moka.metadata,
+                revision: opened.moka.metadata.revision,
+                updatedAt: opened.moka.metadata.updatedAt,
+              },
+              resources: withAssetAdditions(state.moka, additions),
+            }
+          : null,
+      }));
+      return opened.moka.metadata.revision;
+    } catch {
+      return null;
+    }
   };
 
   /** Stops watching the file check, if a watch is on. */
@@ -239,6 +394,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     pending: [],
 
     hydrate(opened) {
+      syncedMoka = opened.moka;
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = null;
       appliedChangeSets.clear();
@@ -347,6 +503,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     close() {
+      syncedMoka = null;
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = null;
       flushInFlight = null;
@@ -404,44 +561,69 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       if (!moka || pending.length === 0 || saveStatus === "conflicted") return;
       if (flushInFlight) return flushInFlight;
       const batch = pending;
+      let expectedRevision = moka.metadata.revision;
       set({ saveStatus: "saving", saveError: null });
       const attempt = (async () => {
-        try {
-          const result = await projectsApi.applyCommands(
-            moka.metadata.revision,
-            batch,
-          );
-          set((state) => {
-            const remaining = state.pending.slice(batch.length);
-            return {
-              saveStatus: "saved",
-              pending: remaining,
-              moka: state.moka
-                ? {
-                    ...state.moka,
-                    metadata: {
-                      ...state.moka.metadata,
-                      revision: result.revision,
-                      updatedAt: result.updatedAt,
-                    },
-                  }
-                : null,
-            };
-          });
-          if (get().pending.length > 0) scheduleFlush();
-        } catch (error) {
-          if (isApiError(error, "REVISION_CONFLICT")) {
-            // Stop autosave; the user chooses reload or export-local-copy.
-            set({ saveStatus: "conflicted" });
-          } else {
-            set({
-              saveStatus: "error",
-              saveError:
-                error instanceof Error
-                  ? error.message
-                  : i18n.t("editor:stores.savingFailed"),
+        for (;;) {
+          try {
+            const result = await projectsApi.applyCommands(
+              expectedRevision,
+              batch,
+            );
+            if (syncedMoka !== null) {
+              try {
+                const saved = applyToDocument(syncedMoka, batch).next;
+                syncedMoka = {
+                  ...saved,
+                  metadata: {
+                    ...saved.metadata,
+                    revision: result.revision,
+                    updatedAt: result.updatedAt,
+                  },
+                };
+              } catch {
+                syncedMoka = null;
+              }
+            }
+            set((state) => {
+              const remaining = state.pending.slice(batch.length);
+              return {
+                saveStatus: "saved",
+                pending: remaining,
+                moka: state.moka
+                  ? {
+                      ...state.moka,
+                      metadata: {
+                        ...state.moka.metadata,
+                        revision: result.revision,
+                        updatedAt: result.updatedAt,
+                      },
+                    }
+                  : null,
+              };
             });
-            // Transient failures retry on the next change; keep the batch queued.
+            if (get().pending.length > 0) scheduleFlush();
+            return;
+          } catch (error) {
+            if (isApiError(error, "REVISION_CONFLICT")) {
+              const revision = await adoptAssetOnlyConflict();
+              if (revision !== null) {
+                expectedRevision = revision;
+                continue;
+              }
+              // Content changes are still the reader's to resolve, never to overwrite.
+              set({ saveStatus: "conflicted" });
+            } else {
+              set({
+                saveStatus: "error",
+                saveError:
+                  error instanceof Error
+                    ? error.message
+                    : i18n.t("editor:stores.savingFailed"),
+              });
+              // Transient failures retry on the next change; keep the batch queued.
+            }
+            return;
           }
         }
       })();
@@ -457,6 +639,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     integrateSaveResult(result) {
+      if (syncedMoka !== null) {
+        syncedMoka = {
+          ...syncedMoka,
+          metadata: {
+            ...syncedMoka.metadata,
+            revision: result.revision,
+            updatedAt: result.updatedAt,
+          },
+        };
+      }
       set((state) => ({
         moka: state.moka
           ? {
@@ -472,31 +664,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     integrateAssetEntry(entry, result) {
-      const category = entry.path.split("/")[1] as AssetCategory | undefined;
-      set((state) => {
-        if (!state.moka || !category) {
-          return state;
-        }
-        // A shelf that has never held a file of this kind is absent from the
-        // server's reading of the document; filing the first one creates it.
-        const list = state.moka.resources[category] ?? [];
-        const index = list.findIndex((item) => item.id === entry.id);
-        const nextList =
-          index === -1
-            ? [...list, entry]
-            : list.map((item) => (item.id === entry.id ? entry : item));
-        return {
-          moka: {
-            ...state.moka,
-            metadata: {
-              ...state.moka.metadata,
-              revision: result.revision,
-              updatedAt: result.updatedAt,
-            },
-            resources: { ...state.moka.resources, [category]: nextList },
-          },
-        };
-      });
+      if (syncedMoka !== null) {
+        syncedMoka = withAssetEntry(syncedMoka, entry, result);
+      }
+      set((state) => ({
+        moka: state.moka ? withAssetEntry(state.moka, entry, result) : null,
+      }));
     },
 
     adoptAgentCommands(commands, revision, updatedAt, changeSetId, label) {
@@ -504,6 +677,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       const { moka } = get();
       if (!moka) return;
       const { next, inverse } = applyToDocument(moka, commands);
+      if (syncedMoka !== null) {
+        const adopted = applyToDocument(syncedMoka, commands).next;
+        syncedMoka = {
+          ...adopted,
+          metadata: { ...adopted.metadata, revision, updatedAt },
+        };
+      }
       appliedChangeSets.add(changeSetId);
       set({
         moka: {
@@ -546,6 +726,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       const { moka } = get();
       if (!moka) return;
       if (revision < moka.metadata.revision) return;
+      if (syncedMoka !== null) {
+        syncedMoka = {
+          ...syncedMoka,
+          metadata: { ...syncedMoka.metadata, revision, updatedAt },
+        };
+      }
       set({
         moka: {
           ...moka,
@@ -560,26 +746,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     removeAssetEntries(assetIds, result) {
       const going = new Set(assetIds);
-      set((state) => {
-        if (!state.moka) return state;
-        const resources = { ...state.moka.resources };
-        for (const category of Object.keys(resources) as AssetCategory[]) {
-          resources[category] = resources[category].filter(
-            (entry) => !going.has(entry.id),
-          );
-        }
-        return {
-          moka: {
-            ...state.moka,
-            metadata: {
-              ...state.moka.metadata,
-              revision: result.revision,
-              updatedAt: result.updatedAt,
-            },
-            resources,
-          },
-        };
-      });
+      if (syncedMoka !== null) {
+        syncedMoka = withoutAssetEntries(syncedMoka, going, result);
+      }
+      set((state) => ({
+        moka: state.moka
+          ? withoutAssetEntries(state.moka, going, result)
+          : null,
+      }));
     },
   };
 });

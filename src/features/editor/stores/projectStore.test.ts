@@ -89,6 +89,63 @@ describe("command pipeline", () => {
     expect(state.moka?.metadata.revision).toBe(4);
   });
 
+  it("retries when a parallel generation only registered new assets", async () => {
+    const moka = hydrate();
+    const canvasId = goldenNodeIds().canvasMain;
+    const latest = structuredClone(moka);
+    latest.metadata.revision += 1;
+    latest.metadata.updatedAt = "2026-01-01T00:00:02.000Z";
+    latest.resources.images.push({
+      ...latest.resources.images[0],
+      id: "asset-generated-in-parallel",
+      name: "generated.png",
+    });
+    let saves = 0;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/commands")) {
+        saves += 1;
+        if (saves === 1) {
+          return jsonResponse(409, {
+            code: "REVISION_CONFLICT",
+            message: "Expected the old revision",
+            status: 409,
+          });
+        }
+        expect(JSON.parse(String(init?.body)).expectedRevision).toBe(
+          latest.metadata.revision,
+        );
+        return jsonResponse(200, {
+          revision: latest.metadata.revision + 1,
+          updatedAt: "2026-01-01T00:00:03.000Z",
+        });
+      }
+      return jsonResponse(200, {
+        root: "/tmp/moka-test",
+        moka: latest,
+        selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
+      });
+    });
+
+    execute("Apply generated answer", [
+      { type: "renameCanvas", canvasId, name: "Storyboard" },
+    ]);
+    await useProjectStore.getState().flush();
+
+    const state = useProjectStore.getState();
+    expect(saves).toBe(2);
+    expect(state.saveStatus).toBe("saved");
+    expect(state.pending).toEqual([]);
+    expect(state.moka?.canvas[0].name).toBe("Storyboard");
+    expect(state.moka?.metadata.revision).toBe(latest.metadata.revision + 1);
+    expect(
+      state.moka?.resources.images.some(
+        (entry) => entry.id === "asset-generated-in-parallel",
+      ),
+    ).toBe(true);
+  });
+
   it("shares one in-flight flush so concurrent saves cannot double-send", async () => {
     hydrate();
     const canvasId = goldenNodeIds().canvasMain;
@@ -118,15 +175,26 @@ describe("command pipeline", () => {
   });
 
   it("freezes autosave on a revision conflict and rejects further edits", async () => {
-    hydrate();
+    const moka = hydrate();
     const canvasId = goldenNodeIds().canvasMain;
-    fetchMock.mockResolvedValue(
-      jsonResponse(409, {
-        code: "REVISION_CONFLICT",
-        message: "The project changed on disk",
-        status: 409,
-      }),
-    );
+    const elsewhere = structuredClone(moka);
+    elsewhere.metadata.revision += 1;
+    elsewhere.canvas[0].name = "Changed in another window";
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/commands")) {
+        return jsonResponse(409, {
+          code: "REVISION_CONFLICT",
+          message: "The project changed on disk",
+          status: 409,
+        });
+      }
+      return jsonResponse(200, {
+        root: "/tmp/moka-test",
+        moka: elsewhere,
+        selfCheck: { ok: true, issues: [] },
+        selfCheckVerified: true,
+      });
+    });
 
     execute("Rename canvas", [
       { type: "renameCanvas", canvasId, name: "Storyboard" },

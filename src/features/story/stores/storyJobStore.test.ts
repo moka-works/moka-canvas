@@ -703,6 +703,86 @@ describe("a batch coming back", () => {
     apply.mockRestore();
   });
 
+  it("lands an answer when another parallel answer moves the asset revision", async () => {
+    let stored = buildStoryMokaFile();
+    const record = answered();
+    let saves = 0;
+    const json = (payload: unknown, status = 200) =>
+      Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/projects/current/commands")) {
+          saves += 1;
+          if (saves === 1) {
+            const moved = structuredClone(stored);
+            moved.metadata.revision += 1;
+            moved.resources.images.push({
+              ...moved.resources.images[0],
+              id: "asset-from-the-other-answer",
+              name: "other.png",
+            });
+            stored = moved;
+            return json(
+              {
+                code: "REVISION_CONFLICT",
+                message: "Another answer registered an asset first",
+                status: 409,
+              },
+              409,
+            );
+          }
+          expect(JSON.parse(String(init?.body)).expectedRevision).toBe(
+            stored.metadata.revision,
+          );
+          return json({
+            revision: stored.metadata.revision + 1,
+            updatedAt: "2026-01-02T00:00:02Z",
+          });
+        }
+        if (url.endsWith("/story/jobs/job-1/read")) {
+          return json({ ...record, readAt: "2026-01-02T00:00:03Z" });
+        }
+        if (url.endsWith("/story/jobs/job-1")) return json(record);
+        if (url.endsWith("/projects/current")) {
+          return json({
+            root: "/tmp/moka-story-jobs-test",
+            moka: stored,
+            selfCheck: { ok: true, issues: [] },
+            selfCheckVerified: true,
+          });
+        }
+        return json({ code: "NOT_FOUND", message: url }, 404);
+      }),
+    );
+
+    await useStoryJobStore.getState().adopt("job-1");
+
+    const state = useProjectStore.getState();
+    const story = state.moka?.stories?.find((held) => held.id === ids.story);
+    const frame = story?.chapters
+      .find((held) => held.id === ids.chapterFirst)
+      ?.acts.find((held) => held.id === ids.act)
+      ?.keyframes.find((held) => held.id === ids.frameSecond);
+    expect(saves).toBe(2);
+    expect(state.saveStatus).toBe("saved");
+    expect(state.pending).toEqual([]);
+    expect(
+      frame?.art.takes.some((take) => take.assetIds.includes("asset-answered")),
+    ).toBe(true);
+    expect(
+      state.moka?.resources.images.some(
+        (entry) => entry.id === "asset-from-the-other-answer",
+      ),
+    ).toBe(true);
+  });
+
   it("reads the project again before writing the answers in", async () => {
     const order: string[] = [];
     const project = useProjectStore.getState();
