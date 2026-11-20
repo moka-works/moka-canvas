@@ -1078,7 +1078,12 @@ export async function retryFailed(
   const planned = failed.flatMap((item) => againFor(story, item));
   const items = [...new Map(planned.map((item) => [item.id, item])).values()];
   if (items.length === 0) return;
-  await useStoryJobStore.getState().start(story.id, job.kind, items);
+  for (const wave of spreadWaves(job.kind, items)) {
+    const record = await useStoryJobStore
+      .getState()
+      .start(story.id, job.kind, wave.items, wave.model);
+    if (record === null) return;
+  }
 }
 
 /** One failed piece, as it is asked for the second time. */
@@ -1507,8 +1512,43 @@ export function useStoryRun(): (
       toast("info", i18n.t("story:jobs.nothingToAsk"));
       return;
     }
-    await start(storyId, kind, items);
+    const waves = spreadWaves(kind, items);
+    for (const wave of waves) {
+      const record = await start(storyId, kind, wave.items, wave.model);
+      if (record === null) return;
+    }
   };
+}
+
+/**
+ * One step's requests, gathered by the model each takes its turn with.
+ *
+ * A step's list is walked once per request rather than once per batch, so a
+ * batch of ten chapters takes ten turns; the requests that land on one model
+ * then travel as one batch, because the server's batch carries one model. The
+ * pieces are cut to what a batch may carry.
+ */
+export function spreadWaves(
+  kind: StoryJobKind,
+  items: StoryJobItemDraft[],
+): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
+  const groups = new Map<
+    string,
+    { model: string | null; items: StoryJobItemDraft[] }
+  >();
+  for (const item of items) {
+    const model = storyAskModel(kind);
+    const key = model ?? "";
+    const group = groups.get(key) ?? { model, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap(({ model, items }) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model,
+      items: wave,
+    })),
+  );
 }
 
 /**
@@ -1555,15 +1595,11 @@ export function useStoryBulkRun(): (
       toast("info", i18n.t("story:jobs.nothingToAsk"));
       return;
     }
-    const waves = chunkWaves(items, MAX_ITEMS_PER_STORY_JOB);
+    const waves = spreadWaves(kind, items);
     if (waves.length === 1) {
-      await start(storyId, kind, waves[0]!);
+      await start(storyId, kind, waves[0]!.items, waves[0]!.model);
       return;
     }
-    await startWaves(
-      storyId,
-      kind,
-      waves.map((part) => ({ items: part })),
-    );
+    await startWaves(storyId, kind, waves);
   };
 }

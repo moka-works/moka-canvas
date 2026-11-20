@@ -12,7 +12,6 @@ import {
   storyAskModel,
   storyAskModelHead,
   storyAskModels,
-  storyTargetModel,
   useStoryModels,
 } from "./storyModels";
 
@@ -41,23 +40,27 @@ describe("the models a story room is set to", () => {
     expect(storyAskModel("storyboard")).toBe("scribe-2");
   });
 
-  it("keeps a standing target on one model and spreads the next target", () => {
+  it("takes a turn per request, so one batch of asks is spread over the list", () => {
     useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
 
-    // A frame is planned, re-planned and retried; all of it must read the one
-    // model the frame was handed.
-    expect(storyTargetModel("keyframeArt", "frame-1")).toBe("paint-1");
-    expect(storyTargetModel("keyframeArt", "frame-1")).toBe("paint-1");
-    expect(storyTargetModel("keyframeArt", "frame-2")).toBe("paint-2");
-    expect(storyTargetModel("keyframeArt", "frame-3")).toBe("paint-1");
+    // Ten drawings asked together are ten requests, not one batch's worth:
+    // the list is walked once per request rather than once per batch.
+    const asked = Array.from({ length: 5 }, () => storyAskModel("keyframeArt"));
+    expect(asked).toEqual([
+      "paint-1",
+      "paint-2",
+      "paint-1",
+      "paint-2",
+      "paint-1",
+    ]);
   });
 
   it("starts the turns over when the list changes", () => {
     useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
-    expect(storyTargetModel("keyframeArt", "frame-1")).toBe("paint-1");
+    expect(storyAskModel("keyframeArt")).toBe("paint-1");
 
     useStoryModels.getState().choose("image", ["paint-2", "paint-1"]);
-    expect(storyTargetModel("keyframeArt", "frame-1")).toBe("paint-2");
+    expect(storyAskModel("keyframeArt")).toBe("paint-2");
   });
 
   it("clears a choice back to the deployment's default", () => {
@@ -66,7 +69,6 @@ describe("the models a story room is set to", () => {
 
     useStoryModels.getState().choose("image", []);
     expect(storyAskModel("keyframeArt")).toBeNull();
-    expect(storyTargetModel("keyframeArt", "frame-1")).toBeNull();
     // Nothing left behind for the next reader of this machine.
     expect(currentUiPrefs().storyModels).toEqual({});
   });

@@ -9,6 +9,7 @@ import type {
 } from "../../../shared/domain/types";
 import { storyMergeElementsPrompt } from "../../../shared/prompts";
 import { useModelStore } from "../../settings/modelStore";
+import { useStoryModels } from "../stores/storyModels";
 import {
   chunkElementMerges,
   clampSeconds,
@@ -258,6 +259,7 @@ function withContent(
 
 beforeEach(() => {
   useModelStore.setState({ view: null });
+  useStoryModels.setState({ choices: {} });
 });
 
 describe("the two numbers a plan turns on", () => {
@@ -545,6 +547,31 @@ describe("planning the drawings", () => {
     ]);
     expect(waves[1]?.items.map((item) => item.id)).toEqual([
       `element:main:${ids.prop}`,
+    ]);
+  });
+
+  it("gives each drawing its own turn of the step's list", () => {
+    useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
+
+    const waves = planKeyframeArtWaves(story(), [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+      },
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameSecond,
+      },
+    ]);
+
+    // Each frame takes the next model in turn; the frames that landed on one
+    // model then travel together as one ask.
+    expect(waves.map((wave) => wave.model)).toEqual(["paint-1", "paint-2"]);
+    expect(waves.map((wave) => wave.items.map((item) => item.id))).toEqual([
+      [`keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`],
+      [`keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`],
     ]);
   });
 

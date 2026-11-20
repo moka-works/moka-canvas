@@ -33,6 +33,7 @@ import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { askPlaceOfKind, type StoryAskPlace } from "../stores/storyModels";
 import {
   actClipPieces,
+  actVideoCeiling,
   actVideoModel,
   drawnFrames,
   jobKey,
@@ -41,7 +42,6 @@ import {
   planElementArtWaves,
   planKeyframeArtWaves,
   planLineVoiceAsks,
-  videoCeiling,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { placeText, type PlaceBusy } from "../jobs/places";
@@ -245,7 +245,7 @@ export function ActCard({
   // What the ask comes to is worth saying out loud when it is not the length
   // the board planned: a shot that outran one clip is made as long as it can
   // be, and an act filmed in pieces is made in pieces.
-  const ceiling = videoCeiling(actVideoModel(act));
+  const ceiling = actVideoCeiling(act);
   const pieces = actClipPieces(act, ceiling);
   const askedSeconds = pieces.reduce((sum, piece) => sum + piece.seconds, 0);
   const split = pieces.length > 1;

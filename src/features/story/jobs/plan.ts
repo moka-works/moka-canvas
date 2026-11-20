@@ -105,7 +105,11 @@ import {
   modelOptionsFor,
   useModelStore,
 } from "../../settings/modelStore";
-import { storyAskModelHead, storyTargetModel } from "../stores/storyModels";
+import {
+  storyAskModel,
+  storyAskModelHead,
+  storyAskModels,
+} from "../stores/storyModels";
 
 /**
  * The name a piece is known by, which is also how its answer is recognised
@@ -231,11 +235,32 @@ export function videoCeiling(model?: string | null): number {
 
 /**
  * The video model an act is filmed by: the one the reader named for it, and
- * otherwise the one the step is set to film its clips with.
+ * otherwise the one the step's list leads with.
+ *
+ * This is the model an act's prompt is shaped for, not the only model its
+ * pieces are asked of: every piece takes the next model of the list in its
+ * turn, and the pieces that land on one model travel as one batch.
  */
 export function actVideoModel(act: StoryAct): string | null {
   const own = (act.videoModel ?? "").trim();
-  return own === "" ? storyTargetModel("actVideo", act.id) : own;
+  return own === "" ? storyAskModelHead("actVideo") : own;
+}
+
+/**
+ * The longest a piece of this act's clip may run when it is planned.
+ *
+ * An act with a model of its own is planned to that model's window. One that
+ * takes its models from the step's list is planned to the shortest window in
+ * the list, since every piece may land on whichever model comes next and no
+ * piece may ask for more than the one it lands on will take.
+ */
+export function actVideoCeiling(act: StoryAct): number {
+  if ((act.videoModel ?? "").trim() !== "") {
+    return videoCeiling(act.videoModel);
+  }
+  const pool = storyAskModels("actVideo");
+  if (pool.length === 0) return videoCeiling();
+  return Math.min(...pool.map((model) => videoCeiling(model)));
 }
 
 /**
@@ -1024,28 +1049,36 @@ export interface ElementArtWave {
   items: StoryJobItemDraft[];
 }
 
-/**
- * The picture model an element's form is drawn by: the one the form or the
- * reader named for it, and otherwise the one the room is set to draw its
- * pictures with.
- */
-export function elementArtModel(
+/** The model an element or one of its forms names of its own, if any. */
+function ownElementArtModel(
   element: StoryElement,
   variantId?: string,
 ): string | null {
   const form = elementForm(element, variantId);
   const own = (form?.imageModel ?? element.imageModel ?? "").trim();
-  return own === ""
-    ? storyTargetModel("elementArt", `${element.id}:${variantId ?? ""}`)
-    : own;
+  return own === "" ? null : own;
 }
 
 /**
- * An element's drawings, gathered by the model that will draw them.
+ * The picture model an element's form is drawn by: the one the form or the
+ * reader named for it, and otherwise the one the step's list leads with.
+ */
+export function elementArtModel(
+  element: StoryElement,
+  variantId?: string,
+): string | null {
+  return (
+    ownElementArtModel(element, variantId) ?? storyAskModelHead("elementArt")
+  );
+}
+
+/**
+ * An element's drawings, gathered by the model each takes its turn with.
  *
- * A batch is asked of one model, so a cast whose cards name models of their
- * own is handed over as several asks rather than quietly drawn by one model.
- * Each ask is cut to what a batch may carry, as a whole cast's drawings are.
+ * A card that names a model of its own is drawn by it; every other drawing
+ * takes the next model of the step's list, one turn per drawing, and the
+ * drawings that land on one model travel as one ask. Each ask is cut to what a
+ * batch may carry, as a whole cast's drawings are.
  */
 export function planElementArtWaves(
   story: StoryDocument,
@@ -1065,7 +1098,9 @@ export function planElementArtWaves(
     seen.add(item.id);
     const element = elementOf(story, item.target.elementId);
     if (element === undefined) continue;
-    const model = elementArtModel(element, item.target.variantId);
+    const model =
+      ownElementArtModel(element, item.target.variantId) ??
+      storyAskModel("elementArt");
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
     group.items.push(item);
@@ -1427,30 +1462,33 @@ export function planKeyframeArt(
   });
 }
 
+/** The model a frame names of its own, if any. */
+function ownKeyframeArtModel(
+  story: StoryDocument,
+  target: { chapterId: string; actId: string; keyframeId: string },
+): string | null {
+  const own = (keyframeAt(story, target)?.imageModel ?? "").trim();
+  return own === "" ? null : own;
+}
+
 /**
  * The picture model a frame is drawn by: the one the reader named for it, and
- * otherwise the one the step is set to draw its pictures with.
+ * otherwise the one the step's list leads with.
  */
 export function keyframeArtModel(
   story: StoryDocument,
   target: { chapterId: string; actId: string; keyframeId: string },
 ): string | null {
-  const keyframe = keyframeAt(story, target);
-  const own = (keyframe?.imageModel ?? "").trim();
-  return own === ""
-    ? storyTargetModel(
-        "keyframeArt",
-        `${target.chapterId}:${target.actId}:${target.keyframeId}`,
-      )
-    : own;
+  return ownKeyframeArtModel(story, target) ?? storyAskModelHead("keyframeArt");
 }
 
 /**
- * A board's frames, gathered by the model that will draw them.
+ * A board's frames, gathered by the model each takes its turn with.
  *
- * A batch is asked of one model, so a board whose frames name models of their
- * own is handed over as several asks rather than quietly drawn by one model.
- * Each ask is cut to what a batch may carry, as a whole board is.
+ * A row that names a model of its own is drawn by it; every other frame takes
+ * the next model of the step's list, one turn per frame, and the frames that
+ * land on one model travel as one ask. Each ask is cut to what a batch may
+ * carry, as a whole board is.
  */
 export function planKeyframeArtWaves(
   story: StoryDocument,
@@ -1464,7 +1502,8 @@ export function planKeyframeArtWaves(
   for (const item of planKeyframeArt(story, targets)) {
     if (item.target.kind !== "keyframeArt" || seen.has(item.id)) continue;
     seen.add(item.id);
-    const model = keyframeArtModel(story, item.target);
+    const model =
+      ownKeyframeArtModel(story, item.target) ?? storyAskModel("keyframeArt");
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
     group.items.push(item);
@@ -1502,9 +1541,10 @@ export function planActVideos(
     const chapter = story.chapters.find((held) => held.id === chapterId);
     const act = actAt(story, chapterId, actId);
     if (chapter === undefined || act === undefined) return [];
-    // The model this act is filmed by decides how long one of its pieces may
-    // run, so the ceiling is read for this act rather than for the step.
-    const ceiling = videoCeiling(actVideoModel(act));
+    // The models this act may be filmed by decide how long one of its pieces
+    // may run: a piece may land on any of them, so the shortest window in
+    // force is the ceiling.
+    const ceiling = actVideoCeiling(act);
     const target: StoryTarget = { kind: "actVideo", chapterId, actId };
     const base = jobKey(target);
     // A bridge is filmed between its neighbours' own clips: the last frame of
@@ -1666,7 +1706,7 @@ export function planKeyframeVideos(
   const look = lookOf(story);
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
-  const ceiling = videoCeiling(actVideoModel(act));
+  const ceiling = actVideoCeiling(act);
   return keyframeIds.flatMap((keyframeId) => {
     const keyframe = keyframeAt(story, { chapterId, actId, keyframeId });
     if (keyframe === undefined) return [];
@@ -1733,10 +1773,12 @@ export function planKeyframeVideos(
 }
 
 /**
- * Acts filmed whole, gathered by the model each is filmed by.
+ * Acts filmed whole, gathered by the model each piece takes its turn with.
  *
- * A batch is asked of one model, so acts that name models of their own are
- * handed over as several asks rather than quietly filmed by one model.
+ * An act that names a model of its own is filmed by it; every other piece
+ * takes the next model of the step's list, one turn per piece, so an act cut
+ * into several pieces is spread over the list. The pieces that land on one
+ * model travel as one ask, as a batch carries one model.
  */
 export function planActVideoWaves(
   story: StoryDocument,
@@ -1753,7 +1795,8 @@ export function planActVideoWaves(
     seen.add(item.id);
     const act = actAt(story, item.target.chapterId, item.target.actId);
     if (act === undefined) continue;
-    const model = actVideoModel(act);
+    const own = (act.videoModel ?? "").trim();
+    const model = own === "" ? storyAskModel("actVideo") : own;
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
     group.items.push(item);
@@ -1776,11 +1819,21 @@ export function planKeyframeVideoWaves(
 ): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
-  const model = actVideoModel(act);
-  return chunkWaves(
-    planKeyframeVideos(story, chapterId, actId, keyframeIds),
-    MAX_ITEMS_PER_STORY_JOB,
-  ).map((wave) => ({ model, items: wave }));
+  const own = (act.videoModel ?? "").trim();
+  const groups = new Map<string, StoryJobItemDraft[]>();
+  for (const item of planKeyframeVideos(story, chapterId, actId, keyframeIds)) {
+    const model = own === "" ? storyAskModel("actVideo") : own;
+    const key = model ?? "";
+    const group = groups.get(key) ?? [];
+    group.push(item);
+    groups.set(key, group);
+  }
+  return [...groups].flatMap(([model, items]) =>
+    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+      model: model === "" ? null : model,
+      items: wave,
+    })),
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -1802,13 +1855,14 @@ function referenceInputFor(voice: StoryVoiceProfile): StoryJobInput[] {
 }
 
 /**
- * Every line of an act read aloud, in the voice its speaker is given.
+ * Every line of an act read aloud, gathered by the model each takes its turn
+ * with.
  *
- * One ask a line, because a telling's characters do not share a voice: each
- * line resolves through the voice chain and is asked of the model that came
- * out of it, so a batch carries one model and the lines of different models
- * travel as different waves, one after another. A line with no words in it is
- * not read, and telling the same model twice in a wave is telling it once.
+ * One ask a line, because a telling's characters do not share a voice. A
+ * character whose voice chain names a model is read by that model; every
+ * other line takes the next model of the step's list, one turn per line, and
+ * the lines that land on one model travel as one wave. A line with no words
+ * in it is not read.
  */
 export function planLineVoiceAsks(
   story: StoryDocument,
@@ -1834,8 +1888,11 @@ export function planLineVoiceAsks(
         lineId: line.id,
       };
       const voice = resolveVoice(story, line.characterId);
+      const model =
+        voiceOwnModel(story, line.characterId) ?? storyAskModel("voice");
       const tone = (line.tone ?? "").trim();
-      const held = waves.get(voice.model) ?? [];
+      const key = model ?? "";
+      const held = waves.get(key) ?? [];
       held.push({
         id: jobKey(target),
         target,
@@ -1851,7 +1908,7 @@ export function planLineVoiceAsks(
           ...(tone === "" ? {} : { tone }),
         }),
       });
-      waves.set(voice.model, held);
+      waves.set(key, held);
     }
   }
   // One wave keeps a batch under the pieces a batch may carry: a telling may
@@ -1863,6 +1920,18 @@ export function planLineVoiceAsks(
       items: wave,
     })),
   );
+}
+
+/**
+ * The model a character's voice chain names of its own, if this machine still
+ * has it. A voice with none takes its turn with the step's list per line.
+ */
+function voiceOwnModel(
+  story: StoryDocument,
+  characterId: string | undefined,
+): string | null {
+  const own = voiceFor(story, characterId, { model: "" }).model.trim();
+  return own === "" ? null : speechModelOnMachine(own);
 }
 
 /** The same, flat: every line of the act, whoever it ends up being asked of. */
@@ -2041,9 +2110,7 @@ export function resolveVoice(
   story: StoryDocument,
   characterId: string | undefined,
 ): StoryVoiceProfile {
-  const asked = speechModelOnMachine(
-    storyTargetModel("voice", characterId ?? "narrator"),
-  );
+  const asked = speechModelOnMachine(storyAskModelHead("voice"));
   const voice = voiceFor(story, characterId, { model: asked ?? "" });
   if (voice.model !== "" && speechModelOnMachine(voice.model) === null) {
     return { ...voice, model: asked ?? "" };

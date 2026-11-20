@@ -95,6 +95,24 @@ interface StoryModelsState {
   choose: (place: StoryAskPlace, references: string[]) => void;
 }
 
+/**
+ * How far each place's turn has got.
+ *
+ * Nothing here is remembered between visits: a turn is about where the room is
+ * in its work, and work outlives a window. The turn is taken per request, not
+ * per batch: ten drawings asked together are ten turns, which is what spreads
+ * them over the models a reader named. Changing the list starts the turns over,
+ * because the order that was being followed is no longer the one on screen.
+ */
+interface Turns {
+  /** What the lists were when these turns began. */
+  signature: string;
+  cursors: Record<StoryAskPlace, number>;
+}
+
+/** Held apart from the lists so a change to them can start the turns over. */
+const rotation: { turns: Turns | null } = { turns: null };
+
 export const useStoryModels = create<StoryModelsState>()((set, get) => ({
   choices: read(),
 
@@ -104,6 +122,7 @@ export const useStoryModels = create<StoryModelsState>()((set, get) => ({
     if (kept.length === 0) delete choices[place];
     else choices[place] = kept;
     keep(place, kept.length === 0 ? null : kept);
+    rotation.turns = null;
     set({ choices });
   },
 }));
@@ -111,26 +130,6 @@ export const useStoryModels = create<StoryModelsState>()((set, get) => ({
 // -----------------------------------------------------------------------------
 // Taking turns
 // -----------------------------------------------------------------------------
-
-/**
- * How far each place's turn has got, and the model each standing target was
- * handed.
- *
- * Nothing here is remembered between visits: a turn is about where the room is
- * in its work, and work outlives a window. An assignment is kept for as long
- * as the list it was drawn from: a frame drawn by one model stays that model's
- * while the list stands, so a picture, its retry and its prompt's contract all
- * speak of the same model. Changing the list starts the turns over, because
- * the order that was being followed is no longer the one on screen.
- */
-interface Turns {
-  /** What the lists were when these turns began. */
-  signature: string;
-  cursors: Record<StoryAskPlace, number>;
-  assigned: Map<string, string>;
-}
-
-let turns: Turns | null = null;
 
 function signatureOf(choices: StoryModelChoices): string {
   return JSON.stringify(
@@ -141,14 +140,13 @@ function signatureOf(choices: StoryModelChoices): string {
 function turnsNow(): Turns {
   const { choices } = useStoryModels.getState();
   const signature = signatureOf(choices);
-  if (turns === null || turns.signature !== signature) {
-    turns = {
+  if (rotation.turns === null || rotation.turns.signature !== signature) {
+    rotation.turns = {
       signature,
       cursors: { text: 0, image: 0, video: 0, audio: 0, music: 0 },
-      assigned: new Map(),
     };
   }
-  return turns;
+  return rotation.turns;
 }
 
 /** The next model of one place's list, or none for the deployment's default. */
@@ -159,30 +157,6 @@ function nextModel(place: StoryAskPlace): string | null {
   const at = held.cursors[place] % pool.length;
   held.cursors[place] = at + 1;
   return pool[at] ?? null;
-}
-
-/**
- * The model one standing target is handed, the same one each time it is asked.
- *
- * A batch is one model's work, and the things it makes belong to one place —
- * an act's clip, a frame's drawing, a character's voice. Handing each of them
- * the next model of the list in turn spreads the room's asks without changing
- * the model halfway through what was already planned: the clip's length, the
- * drawing's prompt and its retry all read the model this answers with.
- */
-export function storyTargetModel(
-  kind: StoryJobKind,
-  key: string,
-): string | null {
-  const place = askPlaceOfKind(kind);
-  const pool = useStoryModels.getState().choices[place] ?? [];
-  if (pool.length === 0) return null;
-  const held = turnsNow();
-  const assigned = held.assigned.get(`${place}:${key}`);
-  if (assigned !== undefined && pool.includes(assigned)) return assigned;
-  const model = nextModel(place);
-  if (model !== null) held.assigned.set(`${place}:${key}`, model);
-  return model;
 }
 
 /** The list one place is set to, in rotation order. */
@@ -196,10 +170,11 @@ export function storyAskModelHead(kind: StoryJobKind): string | null {
 }
 
 /**
- * The model one ask of a kind takes its turn with, or none for the default.
+ * The model one request of a kind takes its turn with, or none for the default.
  *
- * Read where an ask is made rather than where it is planned: a batch asked for
- * the moment the list changed is asked of what the list says now.
+ * Read once per piece: a batch of ten drawings takes ten turns, and the pieces
+ * that land on the same model are then asked together in one batch. A piece
+ * whose target names a model of its own does not take a turn.
  */
 export function storyAskModel(kind: StoryJobKind): string | null {
   return nextModel(askPlaceOfKind(kind));

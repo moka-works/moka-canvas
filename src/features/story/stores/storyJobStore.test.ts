@@ -14,12 +14,14 @@ import {
   jobProgress,
   redoGeneratedChapter,
   retryFailed,
+  spreadWaves,
   stepFailure,
   targetRunning,
   useStoryJobStore,
   watchedStepFailure,
 } from "./storyJobStore";
 import { useStoryBatch } from "./storyBatch";
+import { useStoryModels } from "./storyModels";
 import { useStoryStore } from "./storyStore";
 
 const ids = storyIds();
@@ -147,6 +149,7 @@ beforeEach(() => {
   calls = [];
   vi.useFakeTimers();
   resetUiPrefs();
+  useStoryModels.setState({ choices: {} });
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useAppStore.setState({ toasts: [] });
@@ -1715,5 +1718,28 @@ describe("what a step's badge counts", () => {
     await useStoryJobStore.getState().start(ids.story, "keyframeArt", []);
 
     expect(badge()).toBeNull();
+  });
+});
+
+describe("spreading a step's requests over the models it keeps", () => {
+  it("walks the list once per request and gathers each model's requests", () => {
+    useStoryModels.getState().choose("text", ["scribe-1", "scribe-2"]);
+    const items = ["a", "b", "c"].map((chapterId) => ({
+      id: `storyboard:${chapterId}`,
+      target: { kind: "storyboard" as const, chapterId },
+      capability: "text" as const,
+      prompt: chapterId,
+    }));
+
+    const waves = spreadWaves("storyboard", items);
+
+    // Three requests take three turns; the two that landed on one model
+    // travel as one ask, and the batch itself carries that one model.
+    expect(
+      waves.map((wave) => [wave.model, wave.items.map((item) => item.id)]),
+    ).toEqual([
+      ["scribe-1", ["storyboard:a", "storyboard:c"]],
+      ["scribe-2", ["storyboard:b"]],
+    ]);
   });
 });

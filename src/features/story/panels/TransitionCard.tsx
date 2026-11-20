@@ -18,10 +18,10 @@ import { RunningBar, RunningModels } from "../components/RunningBar";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import {
+  actVideoCeiling,
   actVideoModel,
   planActVideoWaves,
   jobKey,
-  videoCeiling,
 } from "../jobs/plan";
 import { useStoryWavesAsk, type ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, trimTake, type TakePlace } from "./takePicks";
@@ -156,7 +156,7 @@ export function TransitionCard({
       : videos.from === undefined
         ? undefined
         : assetFrameUrl(videos.from.assetId, "last", TRANSITION_POSTER_WIDTH);
-  const ceiling = videoCeiling(actVideoModel(act));
+  const ceiling = actVideoCeiling(act);
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
     ceiling,
