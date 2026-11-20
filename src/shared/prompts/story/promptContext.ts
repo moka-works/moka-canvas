@@ -42,6 +42,8 @@ export interface PromptContextShot {
   /** The second of the clip at which the shot opens. */
   start: number;
   text: string;
+  /** What moves during the shot; left off when the frame is held still. */
+  motion?: string;
   /** Shot size, camera move and angle, as the board names them. */
   framing?: string;
   seconds?: number;
@@ -196,6 +198,9 @@ export function shotsFor(
   return keyframes.map((keyframe, at) => ({
     start: starts[at]!,
     text: stripStoryMentions(keyframe.content),
+    ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+      ? {}
+      : { motion: stripStoryMentions(keyframe.motion) }),
     framing: [keyframe.shotSize, keyframe.cameraMove, keyframe.angle].join(
       ", ",
     ),

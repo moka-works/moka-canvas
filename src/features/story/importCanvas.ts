@@ -408,7 +408,7 @@ function wireAsk(
 }
 
 /**
- * The words of a shot: what it shows, and the lines said in it.
+ * The words of a shot: what it shows, what moves in it, and the lines said.
  *
  * The backticks around a mentioned name are the room's own mark, not the
  * telling's words, so the card is written without them.
@@ -417,7 +417,13 @@ function shotWords(keyframe: StoryKeyframe): string {
   const lines = keyframe.dialogue
     .map((line) => spokenLine(line))
     .filter((line) => line !== "");
-  return [stripStoryMentions(keyframe.content).trim(), ...lines]
+  return [
+    stripStoryMentions(keyframe.content).trim(),
+    keyframe.motion === undefined
+      ? ""
+      : stripStoryMentions(keyframe.motion).trim(),
+    ...lines,
+  ]
     .filter((part) => part !== "")
     .join("\n");
 }

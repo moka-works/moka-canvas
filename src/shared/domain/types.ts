@@ -912,8 +912,15 @@ export interface StoryKeyframe {
   angle: StoryCameraAngle;
   /** How the frame is used when the act is shot; absent means `reference`. */
   filmRole?: StoryFilmRole;
-  /** What this shot shows. */
+  /** What this shot shows: one still frame, and nothing moving within it. */
   content: string;
+  /**
+   * What moves during the shot: the action, the change of expression, what
+   * enters or leaves the frame. It is the clip's own material and never
+   * reaches the picture's ask, which is drawn from `content` alone. Absent on
+   * a board written before the two were told apart.
+   */
+  motion?: string;
   dialogue: StoryDialogueLine[];
   durationMs: number;
   /** The frame drawn for this shot. */
@@ -1449,6 +1456,8 @@ export interface StoryKeyframePatch {
   angle?: StoryCameraAngle;
   filmRole?: StoryFilmRole;
   content?: string;
+  /** What moves during the shot; leave empty to film the still frame alone. */
+  motion?: string;
   dialogue?: StoryDialogueLine[];
   durationMs?: number;
   /**

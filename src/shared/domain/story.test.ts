@@ -862,6 +862,7 @@ describe("mergeActs", () => {
           cameraMove: "static",
           angle: "low",
           content: "新画面",
+          motion: "",
           dialogue: [
             { speaker: "林", text: "走吧", characterId: "element-hero" },
           ],
@@ -905,6 +906,7 @@ describe("mergeActs", () => {
               cameraMove: "static",
               angle: "low",
               content: "新画面",
+              motion: "",
               durationMs: 1_500,
               dialogue: [
                 // The same line, rewritten: the name is kept, and the words it

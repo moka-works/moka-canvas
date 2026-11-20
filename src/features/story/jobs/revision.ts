@@ -63,6 +63,8 @@ export interface RevisionKeyframePatch {
   keyframeId: string;
   reason?: string;
   content?: string;
+  /** What moves during the shot; an empty answer leaves the frame still. */
+  motion?: string;
   dialogue?: RevisionDialogueLine[];
   shotSize?: StoryShotSize;
   cameraMove?: StoryCameraMove;
@@ -346,6 +348,7 @@ export function readRevisionAnswer(
       const keyframe = frames.get(keyframeId)!;
 
       const content = words(entry.content);
+      const motion = words(entry.motion);
       const dialogue =
         entry.dialogue === undefined
           ? undefined
@@ -373,6 +376,7 @@ export function readRevisionAnswer(
       );
       if (
         content === undefined &&
+        motion === undefined &&
         dialogue === undefined &&
         shotSize === undefined &&
         cameraMove === undefined &&
@@ -402,6 +406,16 @@ export function readRevisionAnswer(
                 content,
                 CONTENT_MAX,
                 `shot ${keyframeId}'s content`,
+                warnings,
+              ),
+            }),
+        ...(motion === undefined
+          ? {}
+          : {
+              motion: cut(
+                motion,
+                CONTENT_MAX,
+                `shot ${keyframeId}'s motion`,
                 warnings,
               ),
             }),
@@ -560,6 +574,10 @@ export function applyRevision(
             let next: StoryKeyframe = { ...keyframe };
             if (found.patch.content !== undefined) {
               next.content = found.patch.content;
+            }
+            if (found.patch.motion !== undefined) {
+              if (found.patch.motion.trim() === "") delete next.motion;
+              else next.motion = found.patch.motion;
             }
             if (found.patch.dialogue !== undefined) {
               next.dialogue = revisedDialogue(

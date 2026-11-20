@@ -131,6 +131,7 @@ fn frame(index: usize) -> StoryKeyframe {
         angle: story::StoryCameraAngle::EyeLevel,
         film_role: story::StoryFilmRole::Reference,
         content: "画面".into(),
+        motion: None,
         dialogue: Vec::new(),
         duration_ms: 1_000,
         art: empty_slot(),
@@ -241,6 +242,7 @@ fn story_document() -> MokaFile {
         angle: story::StoryCameraAngle::EyeLevel,
         film_role: story::StoryFilmRole::Reference,
         content: "雨中的站台，一个人立在灯下。".into(),
+        motion: Some("灯下的剪影缓缓抬头。".into()),
         dialogue: vec![StoryDialogueLine {
             id: Some(LINE_FIRST.into()),
             character_id: Some(HERO.into()),
@@ -275,6 +277,7 @@ fn story_document() -> MokaFile {
         camera_move: story::StoryCameraMove::Static,
         angle: story::StoryCameraAngle::OverTheShoulder,
         film_role: story::StoryFilmRole::Reference,
+        motion: None,
         dialogue: Vec::new(),
         duration_ms: 3_000,
         art: empty_slot(),
@@ -1567,6 +1570,58 @@ fn keeps_a_shots_references_and_tells_an_emptied_list_from_none() {
         ),
         "VALIDATION_FAILED"
     );
+}
+
+#[test]
+fn writes_what_moves_and_takes_it_away_again() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                motion: Some("灯忽然全灭。".into()),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        story_of(&set).chapters[0].acts[0].keyframes[1]
+            .motion
+            .as_deref(),
+        Some("灯忽然全灭。")
+    );
+    // A reopened board reads the words back where they were written.
+    let written = serde_json::to_value(&set).expect("the document is JSON");
+    assert_eq!(
+        written["stories"][0]["chapters"][0]["acts"][0]["keyframes"][1]["motion"],
+        "灯忽然全灭。"
+    );
+
+    // The empty words are how the reader takes the motion away again: the
+    // field goes rather than standing as an empty string.
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryKeyframe {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            keyframe_id: FRAME_SECOND.into(),
+            patch: StoryKeyframePatch {
+                motion: Some(String::new()),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        story_of(&cleared).chapters[0].acts[0].keyframes[1].motion,
+        None
+    );
+    let written = serde_json::to_value(&cleared).expect("the document is JSON");
+    assert!(written["stories"][0]["chapters"][0]["acts"][0]["keyframes"][1]["motion"].is_null());
 }
 
 #[test]

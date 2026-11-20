@@ -1084,12 +1084,14 @@ describe("planning the clips", () => {
     expect(items[0].prompt).toContain('林 (平静): "车已经停运了。"');
     // Each shot is named by the second it opens, from the holds the board
     // gives it, so a frame added or retimed by hand moves the ones after it.
-    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
-    expect(items[0].prompt).toContain("At 2s: 周转过身来。");
+    expect(items[0].prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
+    expect(items[0].prompt).toContain("At 2s, camera static: 周转过身来。");
     // The line stands with the shot that says it rather than in a paragraph
     // of its own.
-    expect(items[0].prompt).toContain(
-      'At 0s: 雨中的站台，林立在灯下。 林 (平静): "车已经停运了。"',
+    expect(items[0].prompt).toMatch(
+      /At 0s, camera pushIn: 雨中的站台，林立在灯下。[^\n]*林 \(平静\): "车已经停运了。"/,
     );
     // The pictures are references, and the prompt asks for a shot drawn from
     // them rather than one moving between frames.
@@ -1155,10 +1157,14 @@ describe("planning the clips", () => {
     // The added shot's four seconds make the clip nine, and every shot after
     // it opens where its own hold puts it.
     expect(item.params?.seconds).toBe(9);
-    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
-    expect(item.prompt).toContain("At 2s: 周转过身来。");
+    expect(item.prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
+    expect(item.prompt).toContain("At 2s, camera static: 周转过身来。");
     // The line the added shot says stands with that shot, at its own second.
-    expect(item.prompt).toContain('At 5s: 灯灭了。 "远处一声闷响。"');
+    expect(item.prompt).toMatch(
+      /At 5s, camera static: 灯灭了。[^\n]*"远处一声闷响。"/,
+    );
   });
 
   it("carries a shot that needs no picture as a moment of the clip", () => {
@@ -1184,8 +1190,12 @@ describe("planning the clips", () => {
     expect(item.params?.seconds).toBe(5);
     expect(item.params?.mode).toBe("reference");
     expect(item.inputs).toEqual([{ role: "reference", assetId: ids.frameArt }]);
-    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
-    expect(item.prompt).toContain('At 2s: 周转过身来。 "远处一声汽笛。"');
+    expect(item.prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
+    expect(item.prompt).toMatch(
+      /At 2s, camera static: 周转过身来。[^\n]*"远处一声汽笛。"/,
+    );
     // The material a rewrite reads keeps the moment and the line it says.
     expect(item.promptContext?.shots?.map((shot) => shot.text)).toEqual([
       "雨中的站台，林立在灯下。",
@@ -1209,7 +1219,7 @@ describe("planning the clips", () => {
     expect(item.params?.seconds).toBe(5);
     expect(item.inputs).toEqual([]);
     expect(item.prompt).toContain("No pictures are given");
-    expect(item.prompt).toContain("At 2s: 周转过身来。");
+    expect(item.prompt).toContain("At 2s, camera static: 周转过身来。");
   });
 
   it("keeps words that open an act apart from a piece opening on a picture", () => {
@@ -1230,7 +1240,7 @@ describe("planning the clips", () => {
     expect(items[1].inputs).toEqual([
       { role: "firstFrame", assetId: "asset-frame-second" },
     ]);
-    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
+    expect(items[1].prompt).toContain("At 0s, camera static: 周转过身来。");
   });
 
   it("keeps words that filled a clip before a picture made as words alone", () => {
@@ -1254,7 +1264,7 @@ describe("planning the clips", () => {
     expect(items.map((item) => item.params?.seconds)).toEqual([4, 2]);
     expect(items[0].inputs).toEqual([]);
     expect(items[0].prompt).toContain("No pictures are given");
-    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
+    expect(items[1].prompt).toContain("At 0s, camera static: 周转过身来。");
   });
 
   it("asks with the words a reader wrote for the act's clip", () => {
@@ -1550,7 +1560,7 @@ describe("planning the clips", () => {
       { role: "firstFrame", assetId: "asset-frame-second" },
     ]);
     expect(items[1].prompt).toContain("Shoot part 2 of 2 of this act");
-    expect(items[1].prompt).toContain("At 0s: 周转过身来。");
+    expect(items[1].prompt).toContain("At 0s, camera static: 周转过身来。");
     expect(items[1].prompt).not.toContain(
       "references the shots are drawn from",
     );
@@ -1572,8 +1582,10 @@ describe("planning the clips", () => {
       { role: "firstFrame", assetId: ids.frameArt },
       { role: "lastFrame", assetId: "asset-frame-second" },
     ]);
-    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
-    expect(items[0].prompt).toContain("At 2s: 周转过身来。");
+    expect(items[0].prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
+    expect(items[0].prompt).toContain("At 2s, camera static: 周转过身来。");
   });
 
   it("holds a pair's closing moment at the clip's end when the pair outruns the model", () => {
@@ -1590,8 +1602,10 @@ describe("planning the clips", () => {
     // films: the second picture is no longer at eight hundred seconds, it is
     // the closing frame of a fifteen-second clip.
     expect(item.prompt).toContain("about 15 seconds");
-    expect(item.prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
-    expect(item.prompt).toContain("At 15s: 周转过身来。");
+    expect(item.prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
+    expect(item.prompt).toContain("At 15s, camera static: 周转过身来。");
   });
 
   it("closes the act on the pair a settling role makes, with no piece after it", () => {
@@ -1669,7 +1683,9 @@ describe("planning the clips", () => {
     );
     expect(items).toHaveLength(1);
     expect(items[0].params?.mode).toBe("reference");
-    expect(items[0].prompt).toContain("At 0s: 雨中的站台，林立在灯下。");
+    expect(items[0].prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台，林立在灯下。",
+    );
   });
 
   it("bridges two acts from the ends of their clips", () => {

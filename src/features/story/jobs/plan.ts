@@ -920,6 +920,9 @@ function revisionFrame(
     angle: keyframe.angle,
     durationMs: keyframe.durationMs,
     content: keyframe.content,
+    ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+      ? {}
+      : { motion: keyframe.motion }),
     dialogue: keyframe.dialogue.map((line) => ({
       id: line.id,
       speaker: line.speaker,
@@ -1407,7 +1410,6 @@ export function planKeyframeArt(
             keyframe: {
               content: keyframe.content,
               shotSize: keyframe.shotSize,
-              cameraMove: keyframe.cameraMove,
               angle: keyframe.angle,
             },
             cast: cast.map(({ name, description }) => ({
@@ -1612,6 +1614,10 @@ export function planActVideos(
             shots: piece.keyframes.map((keyframe, shot) => ({
               at: starts[shot],
               content: stripStoryMentions(keyframe.content),
+              ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+                ? {}
+                : { motion: stripStoryMentions(keyframe.motion) }),
+              move: keyframe.cameraMove,
               dialogue: keyframe.dialogue,
             })),
             mode: references ? "references" : words ? "words" : "frames",
@@ -1698,6 +1704,10 @@ export function planKeyframeVideos(
             ...look,
             title: keyframe.title,
             content: stripStoryMentions(keyframe.content),
+            ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+              ? {}
+              : { motion: stripStoryMentions(keyframe.motion) }),
+            move: keyframe.cameraMove,
             seconds,
             dialogue: keyframe.dialogue,
           }),

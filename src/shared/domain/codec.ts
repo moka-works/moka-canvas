@@ -463,6 +463,12 @@ function encodeStoryKeyframe(keyframe: StoryKeyframe): Record<string, unknown> {
     art: encodeStorySlot(keyframe.art),
     video: encodeStorySlot(keyframe.video),
   };
+  // A board that never told the still frame from the moving one carries no
+  // motion, and the video prompt films the frame alone; the field is written
+  // only where the board said something.
+  if (keyframe.motion !== undefined && keyframe.motion !== "") {
+    doc.motion = keyframe.motion;
+  }
   // The plain role is written as silence, the way the Rust half reads it: a
   // board whose frames are all references keeps the shape it came in with.
   if (keyframe.filmRole !== undefined && keyframe.filmRole !== "reference") {
@@ -1632,6 +1638,8 @@ function decodeStoryKeyframe(value: unknown): StoryKeyframe {
     art: decodeStorySlot(doc.art),
     video: decodeStorySlot(doc.video),
   };
+  const motion = optionalString(doc.motion);
+  if (motion !== undefined && motion !== "") keyframe.motion = motion;
   // A frame nobody has said anything about stays a frame nobody has said
   // anything about: reference is what the absence means, and the word is
   // written down only when some other one was.

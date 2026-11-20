@@ -109,6 +109,7 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
                                 "angle": keyframe.angle,
                                 "durationMs": keyframe.duration_ms,
                                 "content": shorten(&keyframe.content, 2_000),
+                                "motion": keyframe.motion.as_deref().map(|motion| shorten(motion, 2_000)),
                                 "dialogue": keyframe.dialogue,
                                 "artTakes": keyframe.art.takes.len(),
                                 "videoTakes": keyframe.video.takes.len(),
@@ -599,6 +600,7 @@ fn keyframe_from(
             angle: parse_word("eyeLevel").expect("a known word"),
             film_role: crate::domain::story::StoryFilmRole::Reference,
             content: String::new(),
+            motion: None,
             dialogue: Vec::new(),
             duration_ms: 4_000,
             art: empty_slot(),
@@ -623,6 +625,13 @@ fn keyframe_from(
     }
     if let Some(content) = value.get("content").and_then(Value::as_str) {
         keyframe.content = content.to_string();
+    }
+    if let Some(motion) = value.get("motion").and_then(Value::as_str) {
+        keyframe.motion = if motion.trim().is_empty() {
+            None
+        } else {
+            Some(motion.to_string())
+        };
     }
     if let Some(duration) = value.get("durationMs").and_then(Value::as_i64) {
         keyframe.duration_ms = duration;

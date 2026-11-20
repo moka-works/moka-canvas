@@ -382,6 +382,19 @@ describe("moka codec", () => {
     ).toBe("reference");
   });
 
+  it("keeps what moves apart from the still frame, and writes nothing when still", () => {
+    const story = buildStoryMokaFile();
+    const frames = story.stories![0].chapters[0].acts[0].keyframes;
+    frames[0]!.motion = "灯一盏一盏亮起来。";
+    delete frames[1]!.motion;
+    const read = decodeMokaFile(encodeMokaFile(story));
+    const held = read.stories![0].chapters[0].acts[0].keyframes;
+    expect(held[0]?.motion).toBe("灯一盏一盏亮起来。");
+    // A frame held still carries no motion field at all: the absence is what
+    // the video prompt reads as nothing moving.
+    expect("motion" in held[1]!).toBe(false);
+  });
+
   it("keeps a shot's references, element and file alike", () => {
     const story = buildStoryMokaFile();
     const ids = storyIds();

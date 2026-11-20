@@ -807,13 +807,15 @@ describe("a telling at the stress ceilings", () => {
 
     // A budget per shot rather than one flat number: the board is a row of
     // cells with its slots and its words, and how many rows an episode holds
-    // is the telling's business. Measured at about ninety nodes a shot, the
-    // fold's drawn chevron included.
+    // is the telling's business. Measured at about ninety-five nodes a shot,
+    // the still frame's words and the motion's own field included.
     const shots = standing.acts.reduce(
       (sum, act) => sum + act.keyframes.length,
       0,
     );
-    expect(document.querySelectorAll("body *").length).toBeLessThan(shots * 95);
+    expect(document.querySelectorAll("body *").length).toBeLessThan(
+      shots * 100,
+    );
   });
 });
 

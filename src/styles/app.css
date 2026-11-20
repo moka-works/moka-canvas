@@ -9430,6 +9430,30 @@ button > .story-spin {
   color: var(--muted);
 }
 
+/* What moves during the shot: the clip's material, apart from the picture's. */
+.story-motion {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.story-motion-field {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  color: var(--ink);
+  font: inherit;
+  padding: 4px 6px;
+  resize: vertical;
+  width: 100%;
+}
+
+.story-motion-field:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
 .story-prompt-field {
   background: var(--canvas);
   border: 1px solid var(--stroke);

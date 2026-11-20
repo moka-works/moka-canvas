@@ -365,6 +365,30 @@ describe("the board", () => {
       expect(read.warnings.join()).toContain("nothing to show");
     }
   });
+
+  it("reads what moves apart from the still frame, and lets a still shot say nothing", () => {
+    const read = board({
+      acts: [
+        act({
+          keyframes: [
+            shot({ motion: "灯一盏一盏亮起来。" }),
+            shot({ content: "空站台。" }),
+          ],
+        }),
+      ],
+    });
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value[0].keyframes[0]).toMatchObject({
+        content: "雨中的站台",
+        motion: "灯一盏一盏亮起来。",
+      });
+      // A frame written before motion was asked for is a frame held still, not
+      // a shot missing something the board needs.
+      expect(read.value[0].keyframes[1]?.motion).toBe("");
+      expect(read.warnings).toEqual([]);
+    }
+  });
 });
 
 describe("the words a board is written with", () => {

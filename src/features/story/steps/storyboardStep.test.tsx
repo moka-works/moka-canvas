@@ -623,7 +623,7 @@ describe("writing an episode's board", () => {
     // The scaffolding the template writes — the episode, the framing, the look
     // — stands around the shot's own words as the greyed part of the cell.
     const prompt = screen.getByTestId("story-kf-prompt-0").textContent ?? "";
-    expect(prompt).toContain('One frame of a film, from "第一章 站台"');
+    expect(prompt).toContain('One still frame of a film, from "第一章 站台"');
     expect(prompt).toContain("It is a wide shot");
     expect(prompt).toContain("in the film's own look: 现代都市风");
     expect(prompt).toContain("1. 林 — ");
@@ -637,6 +637,25 @@ describe("writing an episode's board", () => {
     expect(thumbs.querySelectorAll(".story-ref-thumb")).toHaveLength(1);
     expect(thumbs.querySelector("img")?.getAttribute("src")).toContain(
       ids.heroMain,
+    );
+  });
+
+  it("keeps what moves beside the picture's words, out of the picture's ask", async () => {
+    openAtBoard(boarded());
+    const prompt = screen.getByTestId("story-kf-prompt-0").textContent ?? "";
+    // The still frame's ask no longer names the camera's travel; that belongs
+    // to the clip, and the motion is a field of its own.
+    expect(prompt).not.toContain("pushIn");
+    const field = screen.getByTestId(
+      "story-kf-motion-0",
+    ) as HTMLTextAreaElement;
+    expect(field.value).toBe("灯光一盏一盏亮起来，林抬头看向站牌。");
+    fireEvent.change(field, { target: { value: "灯灭了，雨声更响。" } });
+    fireEvent.blur(field);
+    await waitFor(() =>
+      expect(story().chapters[0]!.acts[0]!.keyframes[0]!.motion).toBe(
+        "灯灭了，雨声更响。",
+      ),
     );
   });
 

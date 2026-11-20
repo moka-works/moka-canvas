@@ -714,6 +714,8 @@ export interface KeyframeDraft {
   cameraMove: StoryCameraMove;
   angle: StoryCameraAngle;
   content: string;
+  /** What moves during the shot; empty when the board said nothing moves. */
+  motion: string;
   dialogue: Array<{
     speaker: string;
     text: string;
@@ -1048,14 +1050,16 @@ function mergeKeyframes(
       ...(line.tone !== undefined ? { tone: line.tone } : {}),
     }));
     if (!held) {
-      return {
+      const fresh: StoryKeyframe = {
         ...createKeyframe(index, draft.shotSize, draft.cameraMove, draft.angle),
         content: draft.content,
         dialogue,
         durationMs: draft.durationMs,
       };
+      if (draft.motion.trim() !== "") fresh.motion = draft.motion;
+      return fresh;
     }
-    return {
+    const next: StoryKeyframe = {
       ...held,
       shotSize: draft.shotSize,
       cameraMove: draft.cameraMove,
@@ -1064,6 +1068,9 @@ function mergeKeyframes(
       dialogue,
       durationMs: draft.durationMs,
     };
+    if (draft.motion.trim() === "") delete next.motion;
+    else next.motion = draft.motion;
+    return next;
   });
 }
 

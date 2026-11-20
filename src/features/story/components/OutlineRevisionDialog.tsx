@@ -443,6 +443,30 @@ function RevisionRow({
           </div>
         </div>
       )}
+      {patch.motion !== undefined && (
+        <div className="story-revision-words">
+          <div>
+            <span className="story-hint">
+              {t("story:storyboard.revisionMotionBefore")}
+            </span>
+            <p>
+              {frame.motion === undefined || frame.motion.trim() === ""
+                ? t("story:storyboard.revisionNone")
+                : frame.motion}
+            </p>
+          </div>
+          <div>
+            <span className="story-hint">
+              {t("story:storyboard.revisionMotionAfter")}
+            </span>
+            <p>
+              {patch.motion.trim() === ""
+                ? t("story:storyboard.revisionNone")
+                : patch.motion}
+            </p>
+          </div>
+        </div>
+      )}
       {patch.dialogue !== undefined && (
         <div className="story-revision-words">
           <div>

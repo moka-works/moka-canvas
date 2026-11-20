@@ -104,6 +104,25 @@ describe("reading a board revision", () => {
     ]);
   });
 
+  it("reads what moves as a change of its own", () => {
+    const chapter = ahead(storyOf(file()).chapters[0]!);
+    const answer = read(
+      chapter,
+      answerText({
+        keyframes: [
+          {
+            actId: ids.act,
+            keyframeId: ids.frameFirst,
+            reason: "灯灭了。",
+            motion: "灯全灭了，只剩雨声。",
+          },
+        ],
+      }),
+    );
+    expect(answer.keyframes[0]?.motion).toBe("灯全灭了，只剩雨声。");
+    expect(answer.keyframes[0]?.content).toBeUndefined();
+  });
+
   it("refuses a shot this chapter does not have", () => {
     const chapter = ahead(storyOf(file()).chapters[0]!);
     const reading = readRevisionAnswer(
@@ -167,6 +186,7 @@ describe("writing a board revision", () => {
             shotSize: "close",
             cameraMove: "pushIn",
             angle: "low",
+            motion: "灯全灭了，只剩雨声。",
           }),
         ],
       }),
@@ -199,6 +219,7 @@ describe("writing a board revision", () => {
     expect(frame.shotSize).toBe("close");
     expect(frame.cameraMove).toBe("pushIn");
     expect(frame.angle).toBe("low");
+    expect(frame.motion).toBe("灯全灭了，只剩雨声。");
     // The line keeps its id, and the frame keeps what was made from it.
     expect(frame.dialogue[0]).toMatchObject({
       id: ids.lineFirst,

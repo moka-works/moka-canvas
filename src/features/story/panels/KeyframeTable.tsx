@@ -5,6 +5,7 @@ import {
   CAMERA_ANGLE_LABELS,
   CAMERA_MOVE_LABELS,
   FILM_ROLE_LABELS,
+  MAX_KEYFRAME_MOTION,
   SHOT_SIZE_LABELS,
   STORY_CAMERA_ANGLES,
   STORY_CAMERA_MOVES,
@@ -1101,6 +1102,12 @@ function KeyframePromptCell({
         : { content: value, references: recognized },
     );
   });
+  // What moves belongs to the clip's ask and never to the picture's: the still
+  // frame is drawn from the content alone, and this field is read only where a
+  // clip is planned.
+  const motion = useField(keyframe.motion ?? "", (value) => {
+    if (value !== (keyframe.motion ?? "")) write({ motion: value });
+  });
   const chapterTitle =
     story.chapters.find((held) => held.id === chapterId)?.title ?? "";
   const variantChoices = keyframe.variantChoices ?? {};
@@ -1190,7 +1197,6 @@ function KeyframePromptCell({
     keyframe: {
       content: content.value,
       shotSize: keyframe.shotSize,
-      cameraMove: keyframe.cameraMove,
       angle: keyframe.angle,
     },
     cast: cast.carried.map(({ name, description }) => ({
@@ -1213,6 +1219,35 @@ function KeyframePromptCell({
           value={content.value}
         />
         <span className="story-prompt-scaffold">{parts.after}</span>
+      </div>
+      {/*
+        What moves during the shot: the clip's own material, shown beside the
+        still frame rather than among the picture's words, so the two asks are
+        read as the two things they are.
+      */}
+      <div
+        className="story-motion"
+        data-testid={`story-kf-motion-block-${index}`}
+      >
+        <label
+          className="story-field-label"
+          htmlFor={`story-kf-motion-${index}`}
+        >
+          {t("story:storyboard.motion")}
+        </label>
+        <textarea
+          aria-label={t("story:storyboard.motion")}
+          className="story-motion-field"
+          data-testid={`story-kf-motion-${index}`}
+          id={`story-kf-motion-${index}`}
+          maxLength={MAX_KEYFRAME_MOTION}
+          onBlur={motion.commit}
+          onChange={(event) => motion.set(event.target.value)}
+          placeholder={t("story:storyboard.motionPlaceholder")}
+          rows={2}
+          value={motion.value}
+        />
+        <span className="story-hint">{t("story:storyboard.motionHint")}</span>
       </div>
       {/*
         The shot's reference list: every picture it keeps, in the order it was

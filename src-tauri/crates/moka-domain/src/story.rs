@@ -448,6 +448,12 @@ pub struct StoryKeyframe {
     )]
     pub film_role: StoryFilmRole,
     pub content: String,
+    /// What moves during the shot: the action, the change of expression, what
+    /// enters or leaves the frame. The frame's picture is drawn from `content`
+    /// alone; this is the clip's own material. Absent on a board written before
+    /// the two were told apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<String>,
     pub dialogue: Vec<StoryDialogueLine>,
     pub duration_ms: i64,
     pub art: StorySlot,
@@ -944,6 +950,9 @@ pub struct StoryKeyframePatch {
     pub film_role: Option<StoryFilmRole>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// What moves during the shot; an empty string leaves the frame still.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialogue: Option<Vec<StoryDialogueLine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2720,6 +2729,10 @@ pub fn apply_story_command(
                 angle: patch.angle.map(|_| keyframe.angle),
                 film_role: patch.film_role.map(|_| keyframe.film_role),
                 content: patch.content.as_ref().map(|_| keyframe.content.clone()),
+                motion: patch
+                    .motion
+                    .as_ref()
+                    .map(|_| keyframe.motion.clone().unwrap_or_default()),
                 dialogue: patch.dialogue.as_ref().map(|_| keyframe.dialogue.clone()),
                 duration_ms: patch.duration_ms.map(|_| keyframe.duration_ms),
                 art_not_needed: patch.art_not_needed.map(|_| keyframe.art_not_needed),
@@ -2766,6 +2779,13 @@ pub fn apply_story_command(
                         }
                         if let Some(content) = &patch.content {
                             frame.content = content.clone();
+                        }
+                        if let Some(motion) = &patch.motion {
+                            frame.motion = if motion.trim().is_empty() {
+                                None
+                            } else {
+                                Some(motion.clone())
+                            };
                         }
                         if let Some(dialogue) = &patch.dialogue {
                             frame.dialogue = dialogue.clone();

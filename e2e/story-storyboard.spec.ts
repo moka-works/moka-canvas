@@ -285,6 +285,19 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // Every shot carries what it shows and what moves within it as two
+    // separate things: the motion stands beside the still frame's ask rather
+    // than among its words.
+    await expect(firstAct.getByTestId("story-kf-motion-0")).toHaveValue(
+      "The lamp flickers once, and rain falls through its light.",
+    );
+    await expect(firstAct.getByTestId("story-kf-motion-1")).toHaveValue(
+      "Traveller turns from the dark platform toward the light.",
+    );
+    await expect(firstAct.getByTestId("story-kf-prompt-0")).not.toContainText(
+      "pushIn",
+    );
+
     // The act's cast menu puts itself away when the page around it is pressed
     // — including the blank tail of its own row, beside the names.
     await firstAct.getByTestId("story-ref-add-character").click();
@@ -493,6 +506,32 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       )
       .toContain("`Last carriage`");
 
+    // What moves is the reader's to write too, and it is written on the shot
+    // rather than folded into the picture's words.
+    const motion = firstAct.getByTestId("story-kf-motion-0");
+    await motion.fill("The lamp flickers and goes out.");
+    await motion.blur();
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: {
+                  acts?: { keyframes?: { motion?: string }[] }[];
+                }[];
+              }[];
+            };
+          };
+          return (
+            body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.keyframes?.[0]
+              ?.motion ?? ""
+          );
+        }),
+      )
+      .toBe("The lamp flickers and goes out.");
+
     // The cell shows the ask as it will be sent: the name the words mention
     // stands as a chip, and the picture it calls in stands under them.
     await expect(
@@ -609,11 +648,13 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
     ).toHaveValue(
-      /At 0s: Rain over the platform[^\n]*Keeper: "It stopped running years ago\."/,
+      /At 0s, camera pushIn: Rain over the platform[^\n]*The lamp flickers and goes out\.[^\n]*Keeper: "It stopped running years ago\."/,
     );
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
-    ).toHaveValue(/At 3s: Traveller turns\. Traveller: "Then we walk\."/);
+    ).toHaveValue(
+      /At 3s, camera static: Traveller turns\. Traveller turns from the dark platform[^\n]*Traveller: "Then we walk\."/,
+    );
     await askDialog.getByTestId("story-video-prompt-text-0").fill(written);
     await askDialog.getByTestId("story-video-prompt-film").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
@@ -1030,10 +1071,10 @@ test("a shot that needs no picture is still a moment of the clip", async ({
     const dialog = page.getByTestId("story-video-prompt-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
-      /At 0s: Rain over the platform, Keeper under the lamp\. Keeper: "It stopped running years ago\."/,
+      /At 0s, camera pushIn: Rain over the platform, Keeper under the lamp\.[^\n]*Keeper: "It stopped running years ago\."/,
     );
     await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
-      /At 3s: Traveller turns\. Traveller: "Then we walk\."/,
+      /At 3s, camera static: Traveller turns\.[^\n]*Traveller: "Then we walk\."/,
     );
     await dialog.getByTestId("story-video-prompt-film").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
@@ -1047,7 +1088,7 @@ test("a shot that needs no picture is still a moment of the clip", async ({
             .at(-1)?.prompt,
         { timeout: 30_000 },
       )
-      .toContain("At 0s: Rain over the platform");
+      .toContain("At 0s, camera pushIn: Rain over the platform");
   } finally {
     forgetHome(home);
   }
@@ -1248,21 +1289,28 @@ test("an episode's board is rearranged by hand", async ({ page }) => {
 
     // A long act is cut in two at the seam between two of its shots: the
     // shots keep the acts they were written into, and the second half says
-    // what it is.
+    // what it is. The words that describe the act whole stay with the first
+    // half; the second is a new act with nothing said about it yet.
+    const summary = "She waits under the one lamp still burning.";
+    await expect(page.getByTestId("story-act-summary-0")).toHaveValue(summary);
     await firstAct.getByTestId("story-kf-split-1").click();
     await expect(page.getByTestId("story-act-2")).toBeVisible();
     await expect.poll(async () => (await persistedBoard(page)).acts).toBe(3);
     await expect(
       page.getByTestId("story-act-1").getByTestId("story-act-title-1"),
     ).toHaveValue("The platform (cont.)");
+    await expect(page.getByTestId("story-act-summary-0")).toHaveValue(summary);
+    await expect(page.getByTestId("story-act-summary-1")).toHaveValue("");
 
-    // The two halves are joined back at the same seam, one act again.
+    // The two halves are joined back at the same seam, one act again — and the
+    // description is said once rather than written over itself.
     await page.getByTestId("story-act-merge-1").click();
     await expect(page.getByTestId("story-act-2")).toHaveCount(0);
     await expect.poll(async () => (await persistedBoard(page)).acts).toBe(2);
     await expect(
       page.getByTestId("story-act-0").getByTestId("story-act-title-0"),
     ).toHaveValue("The platform");
+    await expect(page.getByTestId("story-act-summary-0")).toHaveValue(summary);
 
     // A bridge stands between the two acts, waiting for the ends it is filmed
     // between: neither act has been drawn in this telling.

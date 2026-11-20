@@ -363,6 +363,8 @@ export interface StoryRevisionFrame {
   angle: string;
   durationMs: number;
   content: string;
+  /** What moves during the shot, where the board has said. */
+  motion?: string;
   dialogue: Array<{
     id: string;
     speaker: string;
@@ -438,14 +440,14 @@ export function storyElementTurnaroundPrompt(
 }
 
 /** What one frame's ask is written from: the look, the shot, and the pictures
- * that travel with it. */
+ * that travel with it. The picture is drawn from the still frame alone, so the
+ * camera's own movement is not part of it. */
 export interface StoryKeyframePromptInput extends StoryLook {
   chapter: { title: string };
   act: { summary: string };
   keyframe: {
     content: string;
     shotSize: string;
-    cameraMove: string;
     angle: string;
   };
   cast: Array<{ name: string; description: string }>;
@@ -474,7 +476,6 @@ export function storyKeyframePromptParts(input: StoryKeyframePromptInput): {
     summary: input.act.summary,
     content: CONTENT_SEAM,
     shotSize: input.keyframe.shotSize,
-    cameraMove: input.keyframe.cameraMove,
     angle: input.keyframe.angle,
   });
   const at = whole.indexOf(CONTENT_SEAM);
@@ -503,7 +504,12 @@ export function storyKeyframePrompt(input: StoryKeyframePromptInput): string {
 export interface StoryActVideoShot {
   /** The second of the clip at which this shot opens. */
   at: number;
+  /** The still frame the moment opens on. */
   content: string;
+  /** What moves within the moment; nothing when the frame is held still. */
+  motion?: string;
+  /** How the camera travels during the moment. */
+  move: string;
   /** The lines this shot mouths, in the order they are said. */
   dialogue?: StoryDialogueLine[];
 }
@@ -536,6 +542,8 @@ export function storyActVideoPrompt(
   const shots = input.shots.map((shot) => ({
     at: shot.at,
     content: shot.content,
+    motion: shot.motion ?? "",
+    move: shot.move,
     dialogue: storySpokenLines(shot.dialogue ?? []),
   }));
   return render(storyActVideo, {
@@ -622,7 +630,12 @@ export function imagePromptRewriteAsk(input: {
 export function storyKeyframeVideoPrompt(
   input: StoryLook & {
     title: string;
+    /** The still frame the clip opens on. */
     content: string;
+    /** What moves during the clip; nothing when the frame is held still. */
+    motion?: string;
+    /** How the camera travels during the clip. */
+    move: string;
     seconds: number;
     /** The lines the shot mouths, in the order they are said. */
     dialogue?: StoryDialogueLine[];

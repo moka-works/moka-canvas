@@ -23,6 +23,7 @@
 import {
   MAX_ACTS_PER_CHAPTER,
   MAX_KEYFRAMES_PER_ACT,
+  MAX_KEYFRAME_MOTION,
   MAX_KEYFRAME_MS,
   MAX_VIDEO_SECONDS,
   MIN_KEYFRAME_MS,
@@ -655,6 +656,10 @@ function readShot(
     );
     return undefined;
   }
+  // What moves is the clip's own material and may be nothing at all: a shot
+  // held still is a shot, and a board written before this field existed films
+  // the frame alone.
+  const motion = words(value.motion);
 
   const shotSize = matchShotSize(String(value.shotSize ?? ""));
   const cameraMove = matchCameraMove(String(value.cameraMove ?? ""));
@@ -702,6 +707,15 @@ function readShot(
     cameraMove: cameraMove ?? "static",
     angle: angle ?? "eyeLevel",
     content: cut(content, CONTENT_MAX, `shot ${at} of act ${actAt}`, warnings),
+    motion:
+      motion === undefined
+        ? ""
+        : cut(
+            motion,
+            MAX_KEYFRAME_MOTION,
+            `shot ${at} of act ${actAt}'s motion`,
+            warnings,
+          ),
     dialogue: readDialogue(value.dialogue, ctx.elements, actAt, at, warnings),
     durationMs: fitted,
   };

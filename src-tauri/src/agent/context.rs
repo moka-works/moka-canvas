@@ -409,6 +409,7 @@ fn story_summary(moka: &MokaFile, scope: &AgentScope, warnings: &mut Vec<String>
                     "title": truncate(&keyframe.title, TITLE_CHARS),
                     "durationMs": keyframe.duration_ms,
                     "content": truncate(&keyframe.content, PROMPT_CHARS),
+                    "motion": keyframe.motion.as_deref().map(|motion| truncate(motion, PROMPT_CHARS)),
                     "dialogue": keyframe.dialogue.iter().take(6).map(|line| json!({
                         "speaker": line.speaker,
                         "text": truncate(&line.text, PROMPT_CHARS),

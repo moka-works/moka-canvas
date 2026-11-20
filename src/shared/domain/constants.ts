@@ -370,6 +370,8 @@ export const REFERENCE_IMAGES_DEFAULT = 3;
 export const REFERENCE_IMAGES_MAX = 9;
 export const MIN_KEYFRAME_MS = 400;
 export const MAX_KEYFRAME_MS = 60_000;
+/** How much of a shot's motion one field keeps, in characters. */
+export const MAX_KEYFRAME_MOTION = 1_000;
 /** The length a story's bridge between two acts is given when nobody says. */
 export const DEFAULT_STORY_TRANSITION_MS = 3_000;
 export const MIN_TOTAL_DURATION_MS = 30_000;

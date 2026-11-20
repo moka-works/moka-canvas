@@ -998,7 +998,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("index", "integer", "Position in the act"),
             ("keyframe", "object", "Shot fields"),
         ])),
-        command("story.update_keyframe", "story", ToolRisk::Write, "Change one shot's information, dialogue, or duration.", schema(&["storyId", "chapterId", "actId", "keyframeId", "patch"], &[
+        command("story.update_keyframe", "story", ToolRisk::Write, "Change one shot's still content, motion, dialogue, framing, or duration.", schema(&["storyId", "chapterId", "actId", "keyframeId", "patch"], &[
             ("storyId", "string", "Story id"),
             ("chapterId", "string", "Chapter id"),
             ("actId", "string", "Act id"),

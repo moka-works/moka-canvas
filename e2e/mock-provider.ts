@@ -427,6 +427,8 @@ function jsonAnswer(prompt: string): string | undefined {
               cameraMove: "pushIn",
               angle: "eyeLevel",
               content: "Rain over the platform, `Keeper` under the lamp.",
+              motion:
+                "The lamp flickers once, and rain falls through its light.",
               durationMs: 3_000,
               dialogue: [
                 { speaker: "Keeper", text: "It stopped running years ago." },
@@ -437,6 +439,8 @@ function jsonAnswer(prompt: string): string | undefined {
               cameraMove: "static",
               angle: "overTheShoulder",
               content: "`Traveller` turns.",
+              motion:
+                "Traveller turns from the dark platform toward the light.",
               durationMs: 2_000,
               dialogue: [{ speaker: "Traveller", text: "Then we walk." }],
             },
@@ -455,6 +459,7 @@ function jsonAnswer(prompt: string): string | undefined {
               cameraMove: "handheld",
               angle: "low",
               content: "The `Old ticket` is held up to the light.",
+              motion: "The ticket is lifted and turned slowly in the light.",
               durationMs: 2_000,
               dialogue: [],
             },

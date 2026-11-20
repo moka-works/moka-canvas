@@ -4,8 +4,9 @@ Chapter {{ number }} of the telling: {{ chapter.title }}
 Board this chapter as acts, and each act as the shots it is made of. An act is one stretch of the story in one place at one time; a shot is what the camera sees before it cuts.
 For each act give its cast, the place it happens in, the things in it, and what it sounds like — music, effects, ambience, or none where there is none.
 For each shot give what is seen, how long it is held (between 400 ms and {{ maxShotSeconds }} seconds, written in milliseconds), and any lines spoken with who says them and how they say it. Give each shot the time its action and its lines earn rather than a fixed number; the shots of an act add up to the time that act needs, and the acts add up to about {{ seconds }} seconds for the chapter.
+Each shot is told in two separate descriptions. "content" is one still frame — who and what stands where, the framing, the expression, the light — with nothing moving in it; it is what the picture is drawn from. "motion" is what happens during the shot — the action, the change of expression or posture, what enters or leaves the frame, how the light changes — and it is what the clip is filmed from. Write the motion as prose of its own rather than repeating the still frame, and leave it empty only when nothing moves at all. The camera's own movement is said by "cameraMove", not by "motion".
 One video clip films at most {{ maxVideoSeconds }} seconds, so no act's shots may add up to more than {{ maxVideoSeconds }} seconds: a stretch of the story that needs longer is boarded as more acts, each still one place at one time.
-In what is seen, wrap every element named from the list above in backticks — `林` waits on the platform — because a backticked name is the picture the shot's frame is drawn with, listed in the order the names appear; a name not wrapped is prose and carries no picture. Every shot that happens in a place must name its act's place from the scene list in backticks, unless it is a close-up (shotSize close or extremeClose) or truly shows no place: a frame drawn without its place loses the film's world. Every character who speaks in a shot must be named in backticks in that shot's content, whoever else the shot shows, so the frame carries the face the line belongs to.
+In what is seen, wrap every element named from the list above in backticks — `林` waits on the platform — because a backticked name is the picture the shot's frame is drawn with, listed in the order the names appear; a name not wrapped is prose and carries no picture. Backticks belong in "content" alone, never in "motion". Every shot that happens in a place must name its act's place from the scene list in backticks, unless it is a close-up (shotSize close or extremeClose) or truly shows no place: a frame drawn without its place loses the film's world. Every character who speaks in a shot must be named in backticks in that shot's content, whoever else the shot shows, so the frame carries the face the line belongs to.
 
 What is on file, by the names the cast and the sound must be written with:
 
@@ -31,7 +32,9 @@ Answer with a single fenced json block and nothing else:
       "keyframes": [
         {
           "shotSize": "medium", "cameraMove": "static", "angle": "eyeLevel",
-          "content": "…, with every element named in `backticks` …", "durationMs": 3000,
+          "content": "…, a still frame with every element named in `backticks` …",
+          "motion": "…, what moves during the shot, in prose and without backticks …",
+          "durationMs": 3000,
           "dialogue": [ { "speaker": "…", "text": "…", "tone": "…" } ]
         }
       ]

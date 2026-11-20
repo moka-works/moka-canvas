@@ -2865,6 +2865,11 @@ function applyOne(
       if (command.patch.imageModel !== undefined) {
         previous.imageModel = keyframe.imageModel ?? null;
       }
+      if (command.patch.motion !== undefined) {
+        // Absent and empty are one board: a frame that never said what moves
+        // reads back as the empty words, which is what the prompt leaves out.
+        previous.motion = keyframe.motion ?? "";
+      }
       if (command.patch.references !== undefined) {
         // A shot that kept no list of its own reads back as absent, not as an
         // empty one: the undo of the last removal draws the act's cast again.
@@ -2900,6 +2905,11 @@ function applyOne(
                             : { references }),
                         };
                         if (imageModel === null) delete merged.imageModel;
+                        if (
+                          command.patch.motion !== undefined &&
+                          command.patch.motion.trim() === ""
+                        )
+                          delete merged.motion;
                         if (
                           command.patch.variantChoices !== undefined &&
                           Object.keys(command.patch.variantChoices).length === 0

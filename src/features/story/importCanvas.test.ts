@@ -81,10 +81,12 @@ describe("the board a telling makes", () => {
     expect(card(canvas, "1.1 第 1 幕 空站台").data).toMatchObject({
       content: "站台上的灯一盏一盏亮起来。",
     });
-    // The words of a shot are what it shows and what is said in it — written
-    // without the backticks that mark a mention, which are the room's own.
+    // The words of a shot are what it shows, what moves in it, and what is
+    // said — written without the backticks that mark a mention, which are the
+    // room's own.
     expect(card(canvas, "1.1.1").data).toMatchObject({
-      content: "雨中的站台，林立在灯下。\n林：车已经停运了。（平静）",
+      content:
+        "雨中的站台，林立在灯下。\n灯光一盏一盏亮起来，林抬头看向站牌。\n林：车已经停运了。（平静）",
     });
     expect(card(canvas, "2. 第二章 车厢")).toBeDefined();
     // The drawings and the clip are the shelf's own files, read through the

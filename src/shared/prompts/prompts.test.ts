@@ -515,7 +515,6 @@ describe("story prompts", () => {
       keyframe: {
         content: "雨中的站台，一个人立在灯下。",
         shotSize: "wide",
-        cameraMove: "pushIn",
         angle: "eyeLevel",
       },
       cast: [
@@ -526,7 +525,10 @@ describe("story prompts", () => {
     expect(prompt).toContain("第一章 站台");
     expect(prompt).toContain("雨中的站台，一个人立在灯下。");
     expect(prompt).toContain("wide shot");
-    expect(prompt).toContain("pushIn");
+    // The picture is drawn from the still frame; the camera's travel belongs
+    // to the clip's ask and is not part of it.
+    expect(prompt).not.toContain("pushIn");
+    expect(prompt).toContain("one held moment");
     expect(prompt).toContain("1. 林 — 四十岁上下。");
     expect(prompt).toContain("2. 周 — 年轻。");
     expect(prompt).toContain("现代都市风");
@@ -542,7 +544,6 @@ describe("story prompts", () => {
       keyframe: {
         content: "雨中的站台，`林`立在灯下。",
         shotSize: "wide",
-        cameraMove: "pushIn",
         angle: "eyeLevel",
       },
       cast: [{ name: "林", description: "四十岁上下。" }],
@@ -573,7 +574,6 @@ describe("story prompts", () => {
       keyframe: {
         content: "空站台。",
         shotSize: "wide",
-        cameraMove: "static",
         angle: "eyeLevel",
       },
       cast: [],
@@ -589,17 +589,39 @@ describe("story prompts", () => {
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
       shots: [
-        { at: 0, content: "雨中的站台。" },
-        { at: 2, content: "灯亮了。" },
-        { at: 4, content: "另一人转过身来。" },
+        { at: 0, content: "雨中的站台。", move: "static" },
+        { at: 2, content: "灯亮了。", move: "static" },
+        { at: 4, content: "另一人转过身来。", move: "static" },
       ],
       seconds: 5,
     });
     expect(prompt).toContain("about 5 seconds");
-    expect(prompt).toContain("At 0s: 雨中的站台。");
-    expect(prompt).toContain("At 2s: 灯亮了。");
-    expect(prompt).toContain("At 4s: 另一人转过身来。");
+    expect(prompt).toContain("At 0s, camera static: 雨中的站台。");
+    expect(prompt).toContain("At 2s, camera static: 灯亮了。");
+    expect(prompt).toContain("At 4s, camera static: 另一人转过身来。");
     expect(prompt).not.toContain("{{");
+  });
+
+  it("films each moment from what moves in it, after the still frame it opens on", () => {
+    const prompt = storyActVideoPrompt({
+      aspect: "16:9",
+      style: "现代都市风",
+      title: "第 1 幕 空站台",
+      summary: "站台上的灯一盏一盏亮起来。",
+      shots: [
+        {
+          at: 0,
+          content: "雨中的站台。",
+          motion: "雨丝落下，灯一盏一盏亮起来。",
+          move: "pushIn",
+        },
+      ],
+      seconds: 5,
+    });
+    expect(prompt).toContain(
+      "At 0s, camera pushIn: 雨中的站台。 雨丝落下，灯一盏一盏亮起来。",
+    );
+    expect(prompt).toContain("what moves within it");
   });
 
   it("puts the lines an act says under the moment each is spoken in", () => {
@@ -612,6 +634,7 @@ describe("story prompts", () => {
         {
           at: 0,
           content: "雨中的站台。",
+          move: "static",
           dialogue: [
             {
               id: "line-1",
@@ -624,13 +647,18 @@ describe("story prompts", () => {
         {
           at: 3,
           content: "另一人转过身来。",
+          move: "static",
           dialogue: [{ id: "line-2", speaker: "", text: "远处传来一声汽笛。" }],
         },
       ],
       seconds: 5,
     });
-    expect(prompt).toContain('At 0s: 雨中的站台。 林 (平静): "车已经停运了。"');
-    expect(prompt).toContain('At 3s: 另一人转过身来。 "远处传来一声汽笛。"');
+    expect(prompt).toContain(
+      'At 0s, camera static: 雨中的站台。 林 (平静): "车已经停运了。"',
+    );
+    expect(prompt).toContain(
+      'At 3s, camera static: 另一人转过身来。 "远处传来一声汽笛。"',
+    );
     // The lines are not a paragraph of their own: each stands with the moment
     // that says it, and the instruction keeps it there.
     expect(prompt).not.toContain("Said in it");
@@ -647,9 +675,10 @@ describe("story prompts", () => {
         {
           at: 0,
           content: "雨中的站台。",
+          move: "static",
           dialogue: [{ id: "line-1", speaker: "林", text: "   " }],
         },
-        { at: 2, content: "另一人转过身来。" },
+        { at: 2, content: "另一人转过身来。", move: "static" },
       ],
       seconds: 4,
     });
@@ -664,15 +693,15 @@ describe("story prompts", () => {
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
       shots: [
-        { at: 0, content: "雨中的站台。" },
-        { at: 2, content: "另一人转过身来。" },
+        { at: 0, content: "雨中的站台。", move: "static" },
+        { at: 2, content: "另一人转过身来。", move: "static" },
       ],
       mode: "references",
       seconds: 5,
     });
     expect(prompt).toContain("about 5 seconds");
-    expect(prompt).toContain("At 0s: 雨中的站台。");
-    expect(prompt).toContain("At 2s: 另一人转过身来。");
+    expect(prompt).toContain("At 0s, camera static: 雨中的站台。");
+    expect(prompt).toContain("At 2s, camera static: 另一人转过身来。");
     expect(prompt).toContain("references the shots are drawn from");
     expect(prompt).not.toContain("frames it moves between");
     expect(prompt).not.toContain("{{");
@@ -684,12 +713,12 @@ describe("story prompts", () => {
       style: "现代都市风",
       title: "第 1 幕 空站台",
       summary: "站台上的灯一盏一盏亮起来。",
-      shots: [{ at: 0, content: "灯灭了。" }],
+      shots: [{ at: 0, content: "灯灭了。", move: "static" }],
       mode: "words",
       seconds: 4,
     });
     expect(prompt).toContain("about 4 seconds");
-    expect(prompt).toContain("At 0s: 灯灭了。");
+    expect(prompt).toContain("At 0s, camera static: 灯灭了。");
     expect(prompt).toContain("No pictures are given");
     expect(prompt).not.toContain("frames it moves between");
     expect(prompt).not.toContain("references the shots are drawn from");
@@ -701,6 +730,7 @@ describe("story prompts", () => {
       style: "现代都市风",
       title: "#1",
       content: "雨中的站台，一个人立在灯下。",
+      move: "pushIn",
       seconds: 2,
     });
     expect(prompt).toContain("about 2 seconds");
@@ -710,12 +740,39 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("Said in it");
   });
 
+  it("films one shot from its own motion and camera move", () => {
+    const prompt = storyKeyframeVideoPrompt({
+      aspect: "9:16",
+      style: "现代都市风",
+      title: "#1",
+      content: "雨中的站台，一个人立在灯下。",
+      motion: "她抬头看向站牌。",
+      move: "handheld",
+      seconds: 2,
+    });
+    expect(prompt).toContain("camera handheld: 雨中的站台，一个人立在灯下。");
+    expect(prompt).toContain("What happens during it: 她抬头看向站牌。");
+  });
+
+  it("leaves the motion line out of a shot held still", () => {
+    const prompt = storyKeyframeVideoPrompt({
+      aspect: "9:16",
+      style: "现代都市风",
+      title: "#1",
+      content: "空站台。",
+      move: "static",
+      seconds: 2,
+    });
+    expect(prompt).not.toContain("What happens during it");
+  });
+
   it("puts a shot's lines into its own clip, with the way they are said", () => {
     const prompt = storyKeyframeVideoPrompt({
       aspect: "9:16",
       style: "现代都市风",
       title: "#1",
       content: "雨中的站台，一个人立在灯下。",
+      move: "pushIn",
       seconds: 2,
       dialogue: [
         { id: "line-1", speaker: "林", text: "车已经停运了。", tone: "低声" },
@@ -785,7 +842,6 @@ describe("story prompts", () => {
         keyframe: {
           content: "…",
           shotSize: "wide",
-          cameraMove: "static",
           angle: "eyeLevel",
         },
         cast: [],
@@ -795,7 +851,7 @@ describe("story prompts", () => {
         style: "…",
         title: "…",
         summary: "…",
-        shots: [{ at: 0, content: "…" }],
+        shots: [{ at: 0, content: "…", move: "static" }],
         seconds: 1,
       }),
       storyKeyframeVideoPrompt({
@@ -803,6 +859,7 @@ describe("story prompts", () => {
         style: "…",
         title: "…",
         content: "…",
+        move: "static",
         seconds: 1,
       }),
     ];

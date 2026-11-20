@@ -20,6 +20,9 @@ Summary: {{ act.summary }}
 Frame {{ frame.id }} — {{ frame.title }}
   Shot: {{ frame.shotSize }}, {{ frame.cameraMove }}, {{ frame.angle }}, {{ frame.durationMs }} ms
   Content: {{ frame.content }}
+{% if frame.motion %}
+  Motion: {{ frame.motion }}
+{% endif %}
 {% if frame.dialogue.length > 0 %}
   Dialogue:
 {% for line in frame.dialogue %}
@@ -41,6 +44,7 @@ Change only what the new outline makes wrong. A frame whose words still tell the
 - If the change is a fact no shot's words can carry, put it in "unmapped" and change nothing about it.
 - Bridges between acts are not listed here; a change that belongs on one goes in "unmapped".
 - When a frame's content or dialogue changes, name the act's place and every speaker in backticks as before, unless the frame is a close-up or has no place, and only names from the cast list.
+- Content is the still frame the picture is drawn from; motion is what moves during the clip. Change whichever the new outline makes wrong, and keep backticks out of motion.
 - When a frame's dialogue changes, send the frame's whole list. Keep the id of every line that stays; leave the id off a new line.
 - Framing must come from these lists, written exactly as listed:
   shotSize: {% for size in shotSizes %}{{ size }}{% if not loop.last %}, {% endif %}{% endfor %}
@@ -63,6 +67,7 @@ Answer with a single fenced json block and nothing else:
     {
       "actId": "…", "keyframeId": "…", "reason": "…",
       "content": "…",
+      "motion": "…",
       "dialogue": [ { "id": "…", "speaker": "…", "text": "…", "tone": "…" } ],
       "shotSize": "…", "cameraMove": "…", "angle": "…"
     }
