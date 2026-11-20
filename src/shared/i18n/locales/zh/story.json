@@ -738,6 +738,7 @@
     "filmAct": "生成这一段视频",
     "videoPromptEdit": "编辑提示词",
     "videoPromptEdited": "已修改",
+    "promptHandEdited": "提示词已修改",
     "imagePromptTitle": "图片生成提示词",
     "imagePromptHint": "下面是图片的静态提示词，会原样发给图像模型；画面里的动作由视频提示词单独描述，不进入这里。画幅、质量与数量仍由参数单独发送，改文字不会改变它们。",
     "imagePromptEdit": "编辑图片提示词",

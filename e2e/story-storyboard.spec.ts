@@ -606,6 +606,13 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // its own ask is the only thing that waits on it. The act's clock names
     // the work and the model serving it, not only that something is running.
     await firstAct.getByTestId("story-kf-slot-0-generate").click();
+    // Every drawing is confirmed over the words it is asked with.
+    const frameAsk = page.getByTestId("story-image-prompt-dialog");
+    await expect(frameAsk).toBeVisible();
+    await expect(frameAsk.getByTestId("story-image-prompt-text")).toHaveValue(
+      /This shot/,
+    );
+    await frameAsk.getByTestId("story-image-prompt-draw").click();
     const running = firstAct.getByTestId("story-act-running");
     await expect(running).toBeVisible();
     await expect(running).toContainText("Painter");
@@ -615,12 +622,14 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     ).toBeVisible({ timeout: 60_000 });
 
     // A drawn picture keeps its cell short: replacing it from the shelf or
-    // this computer, rewriting its words, and editing the shot all stand
-    // behind one More.
+    // this computer, and editing the shot all stand behind one More. The words
+    // of the picture are confirmed when it is drawn again.
     await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
     await expect(firstAct.getByTestId("story-kf-slot-0-library")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-slot-0-upload")).toBeVisible();
-    await expect(firstAct.getByTestId("story-kf-image-prompt-0")).toBeVisible();
+    await expect(firstAct.getByTestId("story-kf-image-prompt-0")).toHaveCount(
+      0,
+    );
     await expect(firstAct.getByTestId("story-kf-edit-0")).toBeVisible();
     await firstAct.getByTestId("story-kf-slot-0-library").click();
     await expect(page.getByTestId("story-library")).toBeVisible();
@@ -683,8 +692,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     // not before the reader has seen, and may change, the whole ask that makes
     // it. What is written here is what the model is handed.
     const written = "A hand-written act: hold on the empty platform.";
-    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
-    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    await firstAct.getByTestId("story-act-video-go-0").click();
     const askDialog = page.getByTestId("story-video-prompt-dialog");
     await expect(askDialog).toBeVisible();
     await expect(
@@ -703,7 +711,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       /At 3s, camera static: Traveller turns\. Traveller turns from the dark platform[^\n]*Traveller: "Then we walk\."/,
     );
     await askDialog.getByTestId("story-video-prompt-text-0").fill(written);
-    await askDialog.getByTestId("story-video-prompt-film").click();
+    await askDialog.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
@@ -831,10 +839,10 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
       ".story-act-foot .story-act-clip-actions",
     );
     await expect(actActions).toHaveCSS("flex-direction", "column");
-    // The ask, the redraw, the takes, and the two sources a clip may come
-    // from without being filmed stand behind one More beside the take.
+    // The retake, the takes to choose from, and the two sources a clip may
+    // come from without being filmed stand beside one More.
     await firstAct.getByTestId("story-act-more-0").locator("summary").click();
-    await expect(actActions.locator("button")).toHaveCount(5);
+    await expect(actActions.locator("button")).toHaveCount(4);
     await firstAct.getByTestId("story-act-video-pick-0").click();
     const archive = page.getByTestId("story-clip-picks");
     await expect(archive).toBeVisible();
@@ -868,8 +876,7 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
 
     // Handing the ask back to the board is a press too: the hand-written words
     // go with the tell, and the board's own words stand again.
-    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
-    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    await firstAct.getByTestId("story-act-video-again-0").click();
     await expect(
       askDialog.getByTestId("story-video-prompt-text-0"),
     ).toHaveValue(written);
@@ -1113,8 +1120,7 @@ test("a shot that needs no picture is still a moment of the clip", async ({
     // The clip is filmed from the one picture there is, and its ask carries
     // the pictureless shot as a moment at its own second — words, line and
     // all — for the model to fill from the picture beside it.
-    await firstAct.getByTestId("story-act-more-0").locator("summary").click();
-    await firstAct.getByTestId("story-act-video-prompt-0").click();
+    await firstAct.getByTestId("story-act-video-go-0").click();
     const dialog = page.getByTestId("story-video-prompt-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
@@ -1123,7 +1129,7 @@ test("a shot that needs no picture is still a moment of the clip", async ({
     await expect(dialog.getByTestId("story-video-prompt-text-0")).toHaveValue(
       /At 3s, camera static: Traveller turns\.[^\n]*Traveller: "Then we walk\."/,
     );
-    await dialog.getByTestId("story-video-prompt-film").click();
+    await dialog.getByTestId("story-video-prompt-send").click();
     await expect(firstAct.getByTestId("story-act-video-0")).toBeVisible({
       timeout: 60_000,
     });
@@ -1551,8 +1557,8 @@ test("a picture's words are rewritten for the model's contract before it is draw
       timeout: 30_000,
     });
 
-    await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
-    await firstAct.getByTestId("story-kf-image-prompt-0").click();
+    // Drawing the frame again is the door the words are confirmed through.
+    await firstAct.getByTestId("story-kf-slot-0-again").click();
     const dialog = page.getByTestId("story-image-prompt-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("story-image-prompt-text")).toHaveValue(
@@ -1680,8 +1686,7 @@ test("a picture's rewrite goes on after the dialog is closed, and is taken back 
     });
 
     const openDialog = async () => {
-      await firstAct.getByTestId("story-kf-more-0").locator("summary").click();
-      await firstAct.getByTestId("story-kf-image-prompt-0").click();
+      await firstAct.getByTestId("story-kf-slot-0-again").click();
       const dialog = page.getByTestId("story-image-prompt-dialog");
       await expect(dialog).toBeVisible();
       return dialog;

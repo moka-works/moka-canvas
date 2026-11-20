@@ -738,6 +738,7 @@
     "filmAct": "Film this act",
     "videoPromptEdit": "Edit prompt",
     "videoPromptEdited": "edited",
+    "promptHandEdited": "Prompt edited",
     "imagePromptTitle": "Image prompt",
     "imagePromptHint": "This is the still picture's prompt, sent to the image model as it stands. What moves in a shot is described by the video prompt alone and never enters here. Frame shape, quality, and count still travel as parameters; changing the words does not change them.",
     "imagePromptEdit": "Edit image prompt",

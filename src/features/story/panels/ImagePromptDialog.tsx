@@ -297,63 +297,69 @@ export function ImagePromptDialog({
           </div>
         )}
 
-        {guide !== null && (
-          <div className="story-video-prompt-model">
-            {/* Which text model does the rewriting: the room's own unless the
-                reader names one for this picture. */}
-            <ModelPicker
-              capability="text"
-              disabled={rewriting}
-              label={t("story:storyboard.imagePromptRewriteModel")}
-              noneLabel={t("story:storyboard.modelGlobal")}
-              onChange={(reference) => patch(key, { rewriteModel: reference })}
-              testId="story-image-prompt-model"
-              value={rewriteModel}
-            />
-          </div>
-        )}
-
-        <div className="dialog-actions">
-          {/* Taking the rewrite back, not closing over it: the words the
-              field holds stay, and the dialog is open to asking again. */}
-          {rewriting && (
-            <button
-              data-testid="story-image-prompt-cancel"
-              onClick={() => cancelRewrite(key)}
-              type="button"
-            >
-              {t("story:panels.cancel")}
-            </button>
+        {/*
+          The rewrite stands in a column of its own, with the model it is asked
+          of beneath it: the picker governs the rewrite and nothing else, and
+          the drawing stands apart from both.
+        */}
+        <div className="story-prompt-footer">
+          {guide !== null && (
+            <div className="story-prompt-rewrite">
+              <button
+                data-testid="story-image-prompt-rewrite"
+                disabled={rewriting}
+                onClick={() => rewrite(key)}
+                type="button"
+              >
+                {rewriting
+                  ? t("story:storyboard.imagePromptRewriting")
+                  : t("story:storyboard.imagePromptRewrite")}
+              </button>
+              {/* Which text model does the rewriting: the room's own unless the
+                  reader names one for this picture. */}
+              <ModelPicker
+                capability="text"
+                disabled={rewriting}
+                label={t("story:storyboard.imagePromptRewriteModel")}
+                noneLabel={t("story:storyboard.modelGlobal")}
+                onChange={(reference) =>
+                  patch(key, { rewriteModel: reference })
+                }
+                testId="story-image-prompt-model"
+                value={rewriteModel}
+              />
+            </div>
           )}
-          {guide !== null ? (
+          <div className="dialog-actions">
+            {/* Taking the rewrite back, not closing over it: the words the
+                field holds stay, and the dialog is open to asking again. */}
+            {rewriting && (
+              <button
+                data-testid="story-image-prompt-cancel"
+                onClick={() => cancelRewrite(key)}
+                type="button"
+              >
+                {t("story:panels.cancel")}
+              </button>
+            )}
             <button
-              data-testid="story-image-prompt-rewrite"
+              data-testid="story-image-prompt-save"
               disabled={rewriting}
-              onClick={() => rewrite(key)}
+              onClick={() => save(false)}
               type="button"
             >
-              {rewriting
-                ? t("story:storyboard.imagePromptRewriting")
-                : t("story:storyboard.imagePromptRewrite")}
+              {t("story:storyboard.imagePromptSave")}
             </button>
-          ) : null}
-          <button
-            data-testid="story-image-prompt-save"
-            disabled={rewriting}
-            onClick={() => save(false)}
-            type="button"
-          >
-            {t("story:storyboard.imagePromptSave")}
-          </button>
-          <button
-            className="primary"
-            data-testid="story-image-prompt-draw"
-            disabled={rewriting}
-            onClick={() => save(true)}
-            type="button"
-          >
-            {t("story:storyboard.imagePromptSaveAndDraw")}
-          </button>
+            <button
+              className="primary"
+              data-testid="story-image-prompt-draw"
+              disabled={rewriting}
+              onClick={() => save(true)}
+              type="button"
+            >
+              {t("story:storyboard.imagePromptSaveAndDraw")}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

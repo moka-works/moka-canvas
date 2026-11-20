@@ -38,6 +38,7 @@ import {
   boardAnswer,
   withReadLine,
   openLine,
+  confirmFilm,
   resetStoryboard,
   cleanupStoryboard,
 } from "./storyboardStepKit";
@@ -456,6 +457,7 @@ describe("editing an episode's board", () => {
     expect(to).toContain("edge=first");
 
     fireEvent.click(screen.getByTestId("story-transition-video-go-1"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     const [item] = starts[0]!.items;
     expect(item?.inputs).toEqual([

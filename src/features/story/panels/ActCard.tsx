@@ -35,16 +35,13 @@ import { askPlaceOfKind, type StoryAskPlace } from "../stores/storyModels";
 import {
   actClipPieces,
   actVideoCeiling,
-  actVideoModel,
   drawnFrames,
   jobKey,
   planActMusic,
-  planActVideoWaves,
   planElementArtWaves,
   planKeyframeArtWaves,
   planLineVoiceAsks,
 } from "../jobs/plan";
-import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import {
   useStoryRun,
@@ -341,21 +338,10 @@ export function ActCard({
     void runArt(story.id, "keyframeArt", waves);
   };
 
-  const filmAct = () => {
-    // A model with a prompt contract is asked over words the reader has seen:
-    // the dialog stands in front of the press, and its send button films. The
-    // contract is read off the model that will film this act, which may be the
-    // act's own rather than the one the step is set to.
-    if (videoPromptRewrite("actVideo", actVideoModel(act)) !== null) {
-      setEditingPrompt("film");
-      return;
-    }
-    void runArt(
-      story.id,
-      "actVideo",
-      planActVideoWaves(story, chapterId, [act.id]),
-    );
-  };
+  // The act is filmed over words the reader has seen, whatever the model's
+  // contract: the dialog stands in front of every film press and films only
+  // what it was sent.
+  const filmAct = () => setEditingPrompt("film");
 
   // A clip the reader already has is kept without asking for one: nothing is
   // filmed, so the frames inside the act are not a condition of taking it.
@@ -886,22 +872,6 @@ export function ActCard({
                     <MoreMenu testId={`story-act-more-${index}`}>
                       {(close) => (
                         <>
-                          {everyFrameDrawn && (
-                            <button
-                              className="link"
-                              data-testid={`story-act-video-prompt-${index}`}
-                              onClick={() => {
-                                close();
-                                setEditingPrompt("edit");
-                              }}
-                              type="button"
-                            >
-                              {t("story:storyboard.videoPromptEdit")}
-                              {promptEdited
-                                ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                                : ""}
-                            </button>
-                          )}
                           {clip !== undefined && act.video.takes.length > 1 && (
                             /*
                             Every ask made another take and none of them was
@@ -965,6 +935,14 @@ export function ActCard({
                       ref={clipFile}
                       type="file"
                     />
+                  </span>
+                )}
+                {promptEdited && (
+                  <span
+                    className="story-hint"
+                    data-testid={`story-act-video-prompt-edited-${index}`}
+                  >
+                    {t("story:storyboard.promptHandEdited")}
                   </span>
                 )}
                 {/* Which model films this act stands where the act is filmed from:

@@ -53,19 +53,16 @@ import { planAssembly } from "../assembly";
 import { planDubbing, type DubCue } from "../dubbing";
 import {
   actDefaultReferences,
-  actVideoModel,
   drawnFrames,
   filmRoleOf,
   jobKey,
   keyframeCastFor,
-  planKeyframeArtWaves,
-  planKeyframeVideoWaves,
   settledRoleFrames,
 } from "../jobs/plan";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
-import { useStoryWavesAsk, useStoryWavesRun } from "../stores/storyJobStore";
+import { useStoryWavesRun } from "../stores/storyJobStore";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
 import { storyMentionOptions } from "./storyMentions";
@@ -83,7 +80,6 @@ import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
 import { useField } from "./useField";
-import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { ImagePromptDialog } from "./ImagePromptDialog";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 import { MoreMenu } from "../components/MoreMenu";
@@ -311,7 +307,6 @@ function KeyframeRow({
   onDialogue: () => void;
 }) {
   const { t } = useTranslation();
-  const runArt = useStoryWavesAsk();
   const [picking, setPicking] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -373,12 +368,9 @@ function KeyframeRow({
   const write = (patch: StoryKeyframePatch) =>
     writeKeyframe(story, chapterId, act, keyframe.id, patch);
 
-  const draw = () => {
-    const waves = planKeyframeArtWaves(story, [
-      { chapterId, actId: act.id, keyframeId: keyframe.id },
-    ]);
-    void runArt(story.id, "keyframeArt", waves);
-  };
+  // Every drawing is confirmed over the words it is asked with: the dialog
+  // stands in front of the press and draws only what the reader has seen.
+  const draw = () => setEditingImagePrompt(true);
 
   // A frame may be taken from the shelf or from this computer as well as
   // drawn: a shot's picture is a place like any other, and the board is where
@@ -390,19 +382,10 @@ function KeyframeRow({
     }
   };
 
-  const film = () => {
-    // A model with a prompt contract is asked over words the reader has seen.
-    // The shot is filmed by the act's model, so that is the contract read.
-    if (videoPromptRewrite("keyframeVideo", actVideoModel(act)) !== null) {
-      setEditingPrompt("film");
-      return;
-    }
-    void runArt(
-      story.id,
-      "keyframeVideo",
-      planKeyframeVideoWaves(story, chapterId, act.id, [keyframe.id]),
-    );
-  };
+  // The shot is filmed over words the reader has seen, whatever the model's
+  // contract: the dialog stands in front of every film press and films only
+  // what it was sent.
+  const film = () => setEditingPrompt("film");
 
   const remove = () =>
     writeKeyframes(
@@ -666,20 +649,6 @@ function KeyframeRow({
                       >
                         {t("story:panels.fromFile")}
                       </button>
-                      <button
-                        className="link"
-                        data-testid={`story-kf-image-prompt-${index}`}
-                        onClick={() => {
-                          close();
-                          setEditingImagePrompt(true);
-                        }}
-                        type="button"
-                      >
-                        {t("story:storyboard.imagePromptEdit")}
-                        {imagePromptEdited
-                          ? ` · ${t("story:storyboard.imagePromptEdited")}`
-                          : ""}
-                      </button>
                       {notNeededChange !== undefined && (
                         <button
                           className="link"
@@ -746,6 +715,14 @@ function KeyframeRow({
             slot={keyframe.art}
             testId={`story-kf-slot-${index}`}
           />
+          {imagePromptEdited && (
+            <span
+              className="story-hint"
+              data-testid={`story-kf-image-prompt-edited-${index}`}
+            >
+              {t("story:storyboard.promptHandEdited")}
+            </span>
+          )}
           {stale.length > 0 && (
             <span
               className="story-kf-stale"
@@ -776,19 +753,6 @@ function KeyframeRow({
                     ? placeText(t, clipBusy)
                     : t("story:storyboard.film")}
                 </button>
-                {filmed && (
-                  <button
-                    className="link"
-                    data-testid={`story-kf-video-prompt-${index}`}
-                    onClick={() => setEditingPrompt("edit")}
-                    type="button"
-                  >
-                    {t("story:storyboard.videoPromptEdit")}
-                    {promptEdited
-                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                      : ""}
-                  </button>
-                )}
               </>
             ) : (
               <span className="story-kf-clip">
@@ -822,19 +786,6 @@ function KeyframeRow({
                     ? placeText(t, clipBusy)
                     : t("story:voice.again")}
                 </button>
-                {filmed && (
-                  <button
-                    className="link"
-                    data-testid={`story-kf-video-prompt-${index}`}
-                    onClick={() => setEditingPrompt("edit")}
-                    type="button"
-                  >
-                    {t("story:storyboard.videoPromptEdit")}
-                    {promptEdited
-                      ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                      : ""}
-                  </button>
-                )}
                 {keyframe.video.takes.length > 1 && (
                   <button
                     className="link"
@@ -854,6 +805,14 @@ function KeyframeRow({
                     {t("story:storyboard.clipStale")}
                   </span>
                 )}
+              </span>
+            )}
+            {promptEdited && (
+              <span
+                className="story-hint"
+                data-testid={`story-kf-video-prompt-edited-${index}`}
+              >
+                {t("story:storyboard.promptHandEdited")}
               </span>
             )}
           </td>

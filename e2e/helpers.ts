@@ -300,9 +300,9 @@ export async function openSeededStory(
 /**
  * Film one act from its board, answering the prompt that stands in front of it.
  *
- * A model that declares a prompt contract shows the words a clip will be made
- * from before they are sent. A test that films for another reason sends them as
- * they stand, and leaves the dialog's own checks to the storyboard spec.
+ * Every film press stands behind the words the clip will be made from; a test
+ * that films for another reason sends them as they stand, and leaves the
+ * dialog's own checks to the storyboard spec.
  */
 export async function filmAct(
   page: Page,

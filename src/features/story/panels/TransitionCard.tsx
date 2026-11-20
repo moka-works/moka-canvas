@@ -17,20 +17,14 @@ import type {
 import { RunningBar, RunningModels } from "../components/RunningBar";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
-import {
-  actVideoCeiling,
-  actVideoModel,
-  planActVideoWaves,
-  jobKey,
-} from "../jobs/plan";
-import { useStoryWavesAsk, type ActRun } from "../stores/storyJobStore";
+import { actVideoCeiling, jobKey } from "../jobs/plan";
+import type { ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, trimTake, type TakePlace } from "./takePicks";
 import { liveStory } from "./removeOldTake";
 import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { useField } from "./useField";
-import { videoPromptRewrite } from "../jobs/promptRewrite";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import { VideoPromptDialog } from "./VideoPromptDialog";
 import { writeActs } from "./writeBoard";
@@ -71,7 +65,6 @@ export function TransitionCard({
   runs: ActRun[];
 }) {
   const { t } = useTranslation();
-  const run = useStoryWavesAsk();
   const models = useModelStore((state) => state.view);
   const [playing, setPlaying] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
@@ -176,23 +169,9 @@ export function TransitionCard({
     if (ms !== transition.durationMs) writeTransition({ durationMs: ms });
   });
 
-  const film = () => {
-    // A model with a prompt contract is asked over words the reader has seen.
-    // The bridge is filmed by the act's model, so that is the contract read.
-    if (videoPromptRewrite("actVideo", actVideoModel(act)) !== null) {
-      setEditingPrompt("film");
-      return;
-    }
-    // The words just typed are written when the field is left, which the
-    // press itself may be doing: the ask is planned from the document as it
-    // stands.
-    const live = liveStory(story.id) ?? story;
-    void run(
-      story.id,
-      "actVideo",
-      planActVideoWaves(live, chapter.id, [act.id]),
-    );
-  };
+  // The bridge is filmed over words the reader has seen, whatever the model's
+  // contract: the dialog stands in front of every film press.
+  const film = () => setEditingPrompt("film");
   const remove = () =>
     writeActs(
       story,
@@ -336,18 +315,13 @@ export function TransitionCard({
           data-testid={`story-transition-film-${index}`}
         >
           <span className="story-act-film-side">
-            {ready && (
-              <button
-                className="link"
-                data-testid={`story-transition-video-prompt-${index}`}
-                onClick={() => setEditingPrompt("edit")}
-                type="button"
+            {promptEdited && (
+              <span
+                className="story-hint"
+                data-testid={`story-transition-video-prompt-edited-${index}`}
               >
-                {t("story:storyboard.videoPromptEdit")}
-                {promptEdited
-                  ? ` · ${t("story:storyboard.videoPromptEdited")}`
-                  : ""}
-              </button>
+                {t("story:storyboard.promptHandEdited")}
+              </span>
             )}
             {clip === undefined ? (
               <button

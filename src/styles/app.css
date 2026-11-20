@@ -457,8 +457,25 @@ h2 {
   overflow-y: auto;
 }
 
-.story-video-prompt-model {
+/* The rewrite and the model it is asked of stand in one column, apart from the
+   buttons that send or close: the picker says what rewrites, not what is drawn. */
+.story-prompt-footer {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.story-prompt-rewrite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   max-width: 360px;
+}
+
+.story-prompt-footer .dialog-actions {
+  margin-left: auto;
 }
 
 .story-video-prompt-piece {

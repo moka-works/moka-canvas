@@ -324,49 +324,61 @@ export function VideoPromptDialog({
           </div>
         )}
 
-        {mode === "film" && guide !== null && (
-          <div className="story-video-prompt-model">
-            {/* Which text model does the rewriting: the room's own unless the
-                reader names one for this place, and nothing else about the
-                filming changes with it. */}
-            <ModelPicker
-              capability="text"
-              disabled={rewriting}
-              label={t("story:storyboard.videoPromptRewriteModel")}
-              noneLabel={t("story:storyboard.modelGlobal")}
-              onChange={(reference) => patch(key, { rewriteModel: reference })}
-              testId="story-video-prompt-model"
-              value={rewriteModel}
-            />
-          </div>
-        )}
-
-        <div className="dialog-actions">
-          {/* Taking the rewrite back, not closing over it: the words already
-              rewritten stay, and the dialog is open to asking again. */}
-          {rewriting && (
+        {/*
+          The rewrite stands in a column of its own, with the model it is asked
+          of beneath it: the picker governs the rewrite and nothing else, and
+          sending stands apart from both.
+        */}
+        <div className="story-prompt-footer">
+          {mode === "film" && guide !== null && (
+            <div className="story-prompt-rewrite">
+              <button
+                data-testid="story-video-prompt-rewrite"
+                disabled={rewriting || shown.length === 0}
+                onClick={() => rewrite(key)}
+                type="button"
+              >
+                {rewriting
+                  ? t("story:storyboard.videoPromptRewriting")
+                  : t("story:storyboard.videoPromptRewrite")}
+              </button>
+              {/* Which text model does the rewriting: the room's own unless the
+                  reader names one for this place, and nothing else about the
+                  filming changes with it. */}
+              <ModelPicker
+                capability="text"
+                disabled={rewriting}
+                label={t("story:storyboard.videoPromptRewriteModel")}
+                noneLabel={t("story:storyboard.modelGlobal")}
+                onChange={(reference) =>
+                  patch(key, { rewriteModel: reference })
+                }
+                testId="story-video-prompt-model"
+                value={rewriteModel}
+              />
+            </div>
+          )}
+          <div className="dialog-actions">
+            {/* Taking the rewrite back, not closing over it: the words already
+                rewritten stay, and the dialog is open to asking again. */}
+            {rewriting && (
+              <button
+                data-testid="story-video-prompt-cancel"
+                onClick={() => cancelRewrite(key)}
+                type="button"
+              >
+                {t("story:panels.cancel")}
+              </button>
+            )}
             <button
-              data-testid="story-video-prompt-cancel"
-              onClick={() => cancelRewrite(key)}
+              data-testid="story-video-prompt-save"
+              disabled={shown.length === 0}
+              onClick={() => save(false)}
               type="button"
             >
-              {t("story:panels.cancel")}
+              {t("story:storyboard.videoPromptSave")}
             </button>
-          )}
-          {mode === "film" ? (
-            <>
-              {guide !== null && (
-                <button
-                  data-testid="story-video-prompt-rewrite"
-                  disabled={rewriting || shown.length === 0}
-                  onClick={() => rewrite(key)}
-                  type="button"
-                >
-                  {rewriting
-                    ? t("story:storyboard.videoPromptRewriting")
-                    : t("story:storyboard.videoPromptRewrite")}
-                </button>
-              )}
+            {mode === "film" ? (
               <button
                 className="primary"
                 data-testid="story-video-prompt-send"
@@ -376,17 +388,7 @@ export function VideoPromptDialog({
               >
                 {t("story:storyboard.videoPromptSend")}
               </button>
-            </>
-          ) : (
-            <>
-              <button
-                data-testid="story-video-prompt-save"
-                disabled={shown.length === 0}
-                onClick={() => save(false)}
-                type="button"
-              >
-                {t("story:storyboard.videoPromptSave")}
-              </button>
+            ) : (
               <button
                 className="primary"
                 data-testid="story-video-prompt-film"
@@ -396,8 +398,8 @@ export function VideoPromptDialog({
               >
                 {t("story:storyboard.videoPromptSaveAndFilm")}
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>,

@@ -10,9 +10,9 @@ import {
   targetKey,
 } from "../../../shared/domain";
 import type { StoryDocument, StoryElement } from "../../../shared/domain/types";
-import { planElementArtWaves } from "../jobs/plan";
+import { jobKey } from "../jobs/plan";
 import { busyPlaces, placeText } from "../jobs/places";
-import { useStoryJobs, useStoryWavesAsk } from "../stores/storyJobStore";
+import { useStoryJobs } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 import {
   chooseElementTake,
@@ -60,7 +60,6 @@ export function ElementPictureInspector({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const run = useStoryWavesAsk();
   const jobs = useStoryJobs(story.id);
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -77,6 +76,15 @@ export function ElementPictureInspector({
   const canGenerate =
     view === "main" || currentTake(variant?.main ?? element.main) !== undefined;
   const formId = variant?.id;
+  const promptEdited =
+    story.imagePromptOverrides?.[
+      jobKey({
+        kind: "elementArt",
+        elementId: element.id,
+        view,
+        ...(formId === undefined ? {} : { variantId: formId }),
+      })
+    ] !== undefined;
   const busy = useMemo(
     () =>
       busyPlaces(jobs).get(
@@ -98,19 +106,9 @@ export function ElementPictureInspector({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const generate = () => {
-    void run(
-      story.id,
-      "elementArt",
-      planElementArtWaves(story, [
-        {
-          elementId: element.id,
-          view,
-          ...(variant === undefined ? {} : { variantId: variant.id }),
-        },
-      ]),
-    );
-  };
+  // Every drawing is confirmed over the words it is asked with: the dialog
+  // stands in front of the press and draws only what the reader has seen.
+  const generate = () => setEditingPrompt(true);
 
   // The edit dialog takes the inspector's place while it stands: two dark
   // veils over the board, one under the other, is a dialog nobody can press.
@@ -233,14 +231,6 @@ export function ElementPictureInspector({
                 {t("story:panels.edit")}
               </button>
               <button
-                data-testid="story-inspector-image-prompt"
-                disabled={busy !== undefined || !canGenerate}
-                onClick={() => setEditingPrompt(true)}
-                type="button"
-              >
-                {t("story:storyboard.imagePromptEdit")}
-              </button>
-              <button
                 data-testid="story-inspector-library"
                 onClick={() => setPicking(true)}
                 type="button"
@@ -286,6 +276,15 @@ export function ElementPictureInspector({
                 {t("story:inspector.openCard")}
               </button>
             </div>
+
+            {promptEdited && (
+              <span
+                className="story-hint"
+                data-testid="story-inspector-image-prompt-edited"
+              >
+                {t("story:storyboard.promptHandEdited")}
+              </span>
+            )}
 
             <div className="story-inspector-versions">
               <span className="story-hint">

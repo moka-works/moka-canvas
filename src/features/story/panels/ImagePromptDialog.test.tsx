@@ -210,6 +210,25 @@ describe("a picture's prompt before it is drawn", () => {
     open();
     expect(screen.getByTestId("story-image-prompt-draw")).toBeTruthy();
     expect(screen.queryByTestId("story-image-prompt-rewrite")).toBeNull();
+    expect(screen.queryByTestId("story-image-prompt-model")).toBeNull();
+  });
+
+  it("keeps the rewrite and its model in one column, apart from the buttons", () => {
+    imageWithContract();
+    open();
+    const tools = document.querySelector(".story-prompt-rewrite");
+    expect(tools).not.toBeNull();
+    expect(
+      tools!.contains(screen.getByTestId("story-image-prompt-rewrite")),
+    ).toBe(true);
+    expect(
+      tools!.contains(screen.getByTestId("story-image-prompt-model")),
+    ).toBe(true);
+    const actions = document.querySelector(".dialog-actions");
+    expect(
+      actions!.contains(screen.getByTestId("story-image-prompt-draw")),
+    ).toBe(true);
+    expect(actions!.contains(tools!)).toBe(false);
   });
 
   it("rewrites from the contract and the material, and names what is still wrong", async () => {

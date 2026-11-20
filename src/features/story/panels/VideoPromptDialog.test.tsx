@@ -229,6 +229,24 @@ describe("a clip's prompt before it is filmed", () => {
     expect(screen.queryByTestId("story-video-prompt-model")).toBeNull();
   });
 
+  it("keeps the rewrite and its model in one column, apart from the buttons", () => {
+    filmWithContract();
+    open(undefined, "film");
+    const tools = document.querySelector(".story-prompt-rewrite");
+    expect(tools).not.toBeNull();
+    expect(
+      tools!.contains(screen.getByTestId("story-video-prompt-rewrite")),
+    ).toBe(true);
+    expect(
+      tools!.contains(screen.getByTestId("story-video-prompt-model")),
+    ).toBe(true);
+    const actions = document.querySelector(".dialog-actions");
+    expect(
+      actions!.contains(screen.getByTestId("story-video-prompt-send")),
+    ).toBe(true);
+    expect(actions!.contains(tools!)).toBe(false);
+  });
+
   it("asks the text model the reader names, or the room's own when none is named", async () => {
     filmWithContract();
     const text = vi.spyOn(generateApi, "text").mockResolvedValue({

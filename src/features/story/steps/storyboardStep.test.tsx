@@ -46,6 +46,8 @@ import {
   filmingWithCeiling,
   replaceHeld,
   replaceLanded,
+  confirmDraw,
+  confirmFilm,
   resetStoryboard,
   cleanupStoryboard,
 } from "./storyboardStepKit";
@@ -276,19 +278,20 @@ describe("writing an episode's board", () => {
     const slot = screen.getByTestId("story-kf-slot-0");
 
     // The empty place holds the one button that draws it and the row's menu:
-    // the sources, the choice to need no picture, and the words' own dialog
-    // all wait behind More rather than standing on the picture.
+    // the sources and the choice to need no picture wait behind More rather
+    // than standing on the picture.
     expect(within(slot).getByTestId("story-kf-slot-0-generate")).toBeDefined();
     const more = within(slot).getByTestId("story-kf-more-0");
     expect(more).toBeDefined();
     expect(within(slot).queryByTestId("story-kf-slot-0-library")).toBeNull();
-    expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
 
     fireEvent.click(within(more).getByText("More"));
     expect(screen.getByTestId("story-kf-slot-0-library")).toBeDefined();
     expect(screen.getByTestId("story-kf-slot-0-upload")).toBeDefined();
     expect(screen.getByTestId("story-kf-slot-0-not-needed")).toBeDefined();
-    fireEvent.click(screen.getByTestId("story-kf-image-prompt-0"));
+    // The words are confirmed by the drawing itself, not by a separate door.
+    expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
+    fireEvent.click(within(slot).getByTestId("story-kf-slot-0-generate"));
     expect(screen.getByTestId("story-image-prompt-dialog")).toBeDefined();
   });
 
@@ -306,8 +309,8 @@ describe("writing an episode's board", () => {
     const cells = row.querySelectorAll("td");
     expect(cells[cells.length - 1]?.contains(role)).toBe(true);
 
-    // Replacing, keeping from this computer, editing the picture's words, and
-    // editing the shot stand behind More.
+    // Replacing, keeping from this computer, and editing the shot stand behind
+    // More; the picture's words are confirmed when it is drawn again.
     const more = screen.getByTestId("story-kf-more-0");
     expect(more).toBeDefined();
     expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
@@ -322,6 +325,36 @@ describe("writing an episode's board", () => {
     fireEvent.click(within(more).getByText("More"));
     fireEvent.click(screen.getByTestId("story-kf-edit-0"));
     expect(screen.getByTestId("story-edit-dialog")).toBeDefined();
+  });
+
+  it("marks a hand-written prompt on the board rather than on a button", () => {
+    const moka = withUndrawnFrames();
+    const held = moka.stories![0]!;
+    held.shotGranularity = "keyframe";
+    held.imagePromptOverrides = {
+      [`keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`]: {
+        prompt: "A still frame of the lantern.",
+        auto: "0badcafe",
+      },
+    };
+    held.videoPromptOverrides = {
+      [`keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`]: {
+        prompt: "Hold on the lantern.",
+        auto: "0badcafe",
+      },
+    };
+    openAtBoard(moka);
+
+    expect(
+      screen.getByTestId("story-kf-image-prompt-edited-0").textContent,
+    ).toBe("Prompt edited");
+    expect(
+      screen.getByTestId("story-kf-video-prompt-edited-0").textContent,
+    ).toBe("Prompt edited");
+    // The words are not a door of their own any more: they are confirmed by
+    // the drawing or filming they belong to.
+    expect(screen.queryByTestId("story-kf-image-prompt-0")).toBeNull();
+    expect(screen.queryByTestId("story-kf-video-prompt-0")).toBeNull();
   });
 
   it("keeps a picture from the shelf that the frame has never held", () => {
@@ -798,8 +831,10 @@ describe("writing an episode's board", () => {
     // Two shots of the one act are asked for on their own, one after the other:
     // two batches out for one act, which is what nothing about them needs.
     fireEvent.click(within(first).getByTestId("story-kf-slot-0-generate"));
+    confirmDraw();
     await waitFor(() => expect(starts).toHaveLength(1));
     fireEvent.click(within(first).getByTestId("story-kf-slot-1-generate"));
+    confirmDraw();
     await waitFor(() => expect(starts).toHaveLength(2));
 
     // The shots being drawn say so, offer no second ask of themselves — and the
@@ -1058,6 +1093,7 @@ describe("writing an episode's board", () => {
     ).toBe(false);
 
     fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     const [item] = starts[0]!.items;
     expect(starts[0]!.kind).toBe("actVideo");
@@ -1148,6 +1184,7 @@ describe("writing an episode's board", () => {
     // While no clip is there the first ask is the only one.
     expect(screen.queryByTestId("story-act-video-again-0")).toBeNull();
     fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     await comesBack();
 
@@ -1158,6 +1195,7 @@ describe("writing an episode's board", () => {
     ) as HTMLButtonElement;
     expect(again.disabled).toBe(false);
     fireEvent.click(again);
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(2));
     expect(starts[1]!.kind).toBe("actVideo");
     expect(starts[1]!.items[0]?.id).toBe(starts[0]!.items[0]?.id);
@@ -1208,6 +1246,7 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.videoModel).toBe("filmer");
 
     fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     expect(starts[0]?.kind).toBe("actVideo");
     expect(starts[0]?.model).toBe("filmer");
@@ -1232,6 +1271,7 @@ describe("writing an episode's board", () => {
 
     expect(screen.getByTestId("story-act-split-0").textContent).toContain("2");
     fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     expect(starts[0]!.items.map((item) => item.params?.seconds)).toEqual([
       9, 9,
@@ -1253,6 +1293,7 @@ describe("writing an episode's board", () => {
 
     expect(screen.getByTestId("story-act-clamp-0").textContent).toContain("30");
     fireEvent.click(screen.getByTestId("story-act-video-go-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     expect(starts[0]!.items.map((item) => item.params?.seconds)).toEqual([
       15, 15,
@@ -1276,6 +1317,7 @@ describe("writing an episode's board", () => {
     expect(acts()[0]?.video.takes).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId("story-kf-video-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     let item = starts[0]!.items[0];
     expect(starts[0]!.kind).toBe("keyframeVideo");
@@ -1292,6 +1334,7 @@ describe("writing an episode's board", () => {
     // The last shot has nothing after it to end on, so it is filmed from its
     // own frame alone.
     fireEvent.click(screen.getByTestId("story-kf-video-1"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(2));
     item = starts[1]!.items[0];
     expect(item?.inputs?.map((input) => input.role)).toEqual(["firstFrame"]);
@@ -1314,6 +1357,7 @@ describe("writing an episode's board", () => {
 
     // The row that belongs to the shot is the one that films it.
     fireEvent.click(screen.getByTestId("story-kf-video-0"));
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     expect(starts[0]!.kind).toBe("keyframeVideo");
   });
@@ -1344,6 +1388,7 @@ describe("writing an episode's board", () => {
     expect(within(first).getByTestId("story-kf-video-1")).toBeDefined();
 
     fireEvent.click(again);
+    confirmFilm();
     await waitFor(() => expect(starts).toHaveLength(1));
     expect(starts[0]!.kind).toBe("keyframeVideo");
     expect(starts[0]!.items[0]?.id).toBe(

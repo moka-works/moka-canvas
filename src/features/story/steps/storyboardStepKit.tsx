@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 
 import type {
@@ -405,6 +406,18 @@ export function lineVoice(): string | undefined {
 
 export function card(index: number): HTMLElement {
   return screen.getByTestId(`story-act-${index}`);
+}
+
+/** Answers the picture dialog a frame's generate press opened. */
+export function confirmDraw(): void {
+  const dialog = screen.getByTestId("story-image-prompt-dialog");
+  fireEvent.click(within(dialog).getByTestId("story-image-prompt-draw"));
+}
+
+/** Sends the clip dialog a film press opened. */
+export function confirmFilm(): void {
+  const dialog = screen.getByTestId("story-video-prompt-dialog");
+  fireEvent.click(within(dialog).getByTestId("story-video-prompt-send"));
 }
 
 /** An answer as a model writes one: acts of shots in the shape asked for. */
