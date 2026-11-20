@@ -73,7 +73,9 @@ function continuation(title: string): string {
  * no longer either of them, so neither may keep it. The frames themselves are
  * the ones the board already holds — their pictures, their clips and their
  * lines travel with them — and the act's cast and sound are copied to both,
- * since which half a character belongs to is the reader's to take away.
+ * since which half a character belongs to is the reader's to take away. The
+ * words at the act's top describe the act whole, so they stay with the first
+ * half; copying them as well would put the same description over both halves.
  */
 export function splitAct(
   story: StoryDocument,
@@ -86,7 +88,6 @@ export function splitAct(
   if (chapter === undefined || index < 0) return;
   if (at <= 0 || at >= act.keyframes.length) return;
   const common = {
-    summary: act.summary,
     characterIds: [...act.characterIds],
     propIds: [...act.propIds],
     sound: { ...act.sound },
@@ -96,7 +97,7 @@ export function splitAct(
       : { shotGranularity: act.shotGranularity }),
   };
   const head: StoryAct = {
-    ...createAct(act.title),
+    ...createAct(act.title, act.summary),
     ...common,
     keyframes: act.keyframes.slice(0, at),
     video: emptyStorySlot(),
@@ -118,7 +119,10 @@ export function splitAct(
  * The one written is a new act for the same reason a split's halves are: the
  * old clips belonged to the acts before they were joined. The shots are laid
  * end to end as they stood; the cast and sound come together, taking the first
- * act's words where both said something, since one card holds one of each.
+ * act's words where both said something, since one card holds one of each —
+ * and where both said the same thing, saying it twice is not one card's answer,
+ * so a repeated line is kept once. That is what makes a split and its merge
+ * whole again rather than a description written over itself.
  */
 export function mergeActsAt(
   story: StoryDocument,
@@ -132,12 +136,13 @@ export function mergeActsAt(
     return;
   }
   if (above.transition !== undefined || below.transition !== undefined) return;
-  const words = (one: string, other: string) =>
-    one.trim() === ""
-      ? other
-      : other.trim() === ""
-        ? one
-        : `${one}\n\n${other}`;
+  const words = (one: string, other: string) => {
+    const held = one.trim();
+    const also = other.trim();
+    if (held === "") return other;
+    if (also === "" || held === also) return one;
+    return `${one}\n\n${other}`;
+  };
   const sound = {
     music: words(above.sound.music, below.sound.music),
     sfx: words(above.sound.sfx, below.sound.sfx),
