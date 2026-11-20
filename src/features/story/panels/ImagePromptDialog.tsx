@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
+import {
+  MAX_IMAGES_PER_ASK,
+  MAX_PROMPT_LENGTH,
+} from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
 import { imagePromptOverride } from "../../../shared/domain/story";
 import type {
@@ -24,19 +27,25 @@ import { liveStory } from "./removeOldTake";
 
 export type { ImagePromptPlace };
 
-function wavesFor(story: StoryDocument, place: ImagePromptPlace) {
+function wavesFor(
+  story: StoryDocument,
+  place: ImagePromptPlace,
+  count: number,
+) {
   return place.kind === "keyframe"
     ? planKeyframeArtWaves(story, [
         {
           chapterId: place.chapterId,
           actId: place.actId,
           keyframeId: place.keyframeId,
+          count,
         },
       ])
     : planElementArtWaves(story, [
         {
           elementId: place.elementId,
           view: place.view,
+          count,
           ...(place.variantId === undefined
             ? {}
             : { variantId: place.variantId }),
@@ -84,6 +93,9 @@ export function ImagePromptDialog({
   const drop = useImagePromptSessions((state) => state.drop);
   const rewrite = useImagePromptSessions((state) => state.rewrite);
   const cancelRewrite = useImagePromptSessions((state) => state.cancelRewrite);
+  // How many pictures one press draws: one model call makes one drawing, so a
+  // set is drawn side by side and offered as a choice.
+  const [count, setCount] = useState(1);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -153,7 +165,7 @@ export function ImagePromptDialog({
       // The document as it stands after the write, not the telling this
       // dialog was opened from.
       const fresh = liveStory(story.id) ?? story;
-      void runArt(story.id, kind, wavesFor(fresh, place));
+      void runArt(story.id, kind, wavesFor(fresh, place, count));
     }
     // The telling holds the words now, so the session has nothing left to
     // keep — and a rewrite still on its way is let go rather than written
@@ -331,6 +343,28 @@ export function ImagePromptDialog({
             </div>
           )}
           <div className="dialog-actions">
+            <label
+              className="story-draw-count"
+              title={t("story:storyboard.imagePromptCountHint")}
+            >
+              <span>{t("story:panels.drawCount")}</span>
+              <select
+                aria-label={t("story:panels.drawCountLabel")}
+                data-testid="story-image-prompt-count"
+                disabled={rewriting}
+                onChange={(event) => setCount(Number(event.target.value))}
+                value={count}
+              >
+                {Array.from(
+                  { length: MAX_IMAGES_PER_ASK },
+                  (_, at) => at + 1,
+                ).map((each) => (
+                  <option key={each} value={each}>
+                    {t("story:panels.drawCountOption", { count: each })}
+                  </option>
+                ))}
+              </select>
+            </label>
             {/* Taking the rewrite back, not closing over it: the words the
                 field holds stay, and the dialog is open to asking again. */}
             {rewriting && (

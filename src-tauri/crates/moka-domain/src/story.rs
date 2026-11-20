@@ -20,6 +20,8 @@ pub const STORY_IDEA_MAX: usize = 20_000;
 pub const MAX_CHAPTERS_PER_STORY: usize = 5_000;
 pub const MAX_ELEMENTS_PER_STORY: usize = 500;
 pub const MAX_TAKES_PER_SLOT: usize = 12;
+/// How many pictures one place's ask may draw at once.
+pub const MAX_IMAGES_PER_ASK: usize = 3;
 pub const MAX_ACTS_PER_CHAPTER: usize = 300;
 pub const MAX_KEYFRAMES_PER_ACT: usize = 12;
 /// How many hand-written clip prompts one telling may keep, and how long the
@@ -354,6 +356,22 @@ impl<'de> Deserialize<'de> for StoryTake {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorySlot {
+    pub takes: Vec<StoryTake>,
+    /// Drawings made together as one ask, waiting for the reader to say which
+    /// of them the place keeps. A place holding them has not chosen yet: its
+    /// takes are untouched until one of these is confirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<StoryPending>,
+}
+
+/// One ask's drawings, before the reader has chosen between them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryPending {
+    /// The batch that drew them, so an answer read again is not shown twice.
+    pub job_id: String,
+    /// How many were asked for; the set is whole when this many are here.
+    pub count: usize,
     pub takes: Vec<StoryTake>,
 }
 
@@ -1030,6 +1048,11 @@ impl StoryDocument {
             for take in &held.takes {
                 found.extend(take.asset_ids.iter().cloned());
             }
+            if let Some(pending) = &held.pending {
+                for take in &pending.takes {
+                    found.extend(take.asset_ids.iter().cloned());
+                }
+            }
         }
         for element in &self.elements {
             slot(&mut found, &element.main);
@@ -1640,6 +1663,17 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
                 "A place holds too many takes".into(),
             ));
         }
+        if let Some(pending) = &held.pending {
+            if pending.count > MAX_IMAGES_PER_ASK
+                || pending.takes.len() > MAX_IMAGES_PER_ASK
+                || pending.takes.len() > pending.count
+            {
+                issues.push(issue(
+                    "STORY_SLOT_FULL",
+                    "A place is waiting on too many drawings at once".into(),
+                ));
+            }
+        }
     }
     issues
 }
@@ -1858,7 +1892,9 @@ fn check_story(story: &StoryDocument) -> Result<(), CommandError> {
 }
 
 /// A slot a caller may file: the takes trimmed to what one place keeps, with
-/// the oldest let go first, and no take kept twice.
+/// the oldest let go first, and no take kept twice. Drawings waiting to be
+/// chosen between are kept as they are: dropping them would be losing work
+/// the reader has already paid for.
 fn check_slot(slot: StorySlot) -> StorySlot {
     let mut seen: BTreeSet<Vec<AssetId>> = BTreeSet::new();
     let takes: Vec<StoryTake> = slot
@@ -1871,7 +1907,20 @@ fn check_slot(slot: StorySlot) -> StorySlot {
     } else {
         takes
     };
-    StorySlot { takes }
+    let pending = slot.pending.map(|pending| {
+        let mut seen: BTreeSet<Vec<AssetId>> = BTreeSet::new();
+        let takes: Vec<StoryTake> = pending
+            .takes
+            .into_iter()
+            .filter(|take| seen.insert(take.asset_ids.clone()))
+            .collect();
+        StoryPending {
+            job_id: pending.job_id,
+            count: pending.count.min(MAX_IMAGES_PER_ASK),
+            takes: takes.into_iter().take(MAX_IMAGES_PER_ASK).collect(),
+        }
+    });
+    StorySlot { takes, pending }
 }
 
 /// The voice a character or a narrator is given: a model and a tone named
@@ -3093,7 +3142,7 @@ mod outline_revision_tests {
                 ambience: None,
             },
             keyframes: Vec::new(),
-            video: StorySlot { takes: Vec::new() },
+            video: StorySlot::default(),
             shot_granularity: None,
             voice: None,
             music: None,

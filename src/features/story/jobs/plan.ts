@@ -20,6 +20,7 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import {
+  MAX_IMAGES_PER_ASK,
   MAX_ITEMS_PER_STORY_JOB,
   MAX_VIDEO_SECONDS,
   STORY_SPLIT_CHARS_DEFAULT,
@@ -181,6 +182,63 @@ export function jobKey(target: StoryTarget): string {
         actId: target.actId,
       });
   }
+}
+
+/** How many drawings one place's ask is set to make, within what a place may. */
+export function copiesFor(count: number | undefined): number {
+  if (!Number.isFinite(count ?? 1)) return 1;
+  return Math.min(MAX_IMAGES_PER_ASK, Math.max(1, Math.trunc(count ?? 1)));
+}
+
+/**
+ * One drawing place's asks: one piece, or the set a reader asked to choose
+ * between. Every piece of a set carries the count, which is what tells the
+ * room the answers are one choice rather than an ordinary redraw.
+ */
+function withCopies(
+  item: StoryJobItemDraft,
+  count: number | undefined,
+): StoryJobItemDraft[] {
+  const copies = copiesFor(count);
+  if (copies === 1) return [item];
+  return Array.from({ length: copies }, (_, at) => ({
+    ...item,
+    id: `${item.id}:${at + 1}`,
+    copies,
+    ...(item.name === undefined ? {} : { name: `${item.name} ${at + 1}` }),
+  }));
+}
+
+/**
+ * Splits asks into batches without cutting one place's set of drawings in two:
+ * a set is one choice, and the room only knows to offer it when every piece of
+ * it comes home in the same batch.
+ */
+function chunkKeepingSets(
+  items: StoryJobItemDraft[],
+  size: number,
+): StoryJobItemDraft[][] {
+  const waves: StoryJobItemDraft[][] = [];
+  let current: StoryJobItemDraft[] = [];
+  let at = 0;
+  while (at < items.length) {
+    const key = jobKey(items[at]!.target);
+    let end = at;
+    while (end < items.length && jobKey(items[end]!.target) === key) end += 1;
+    const run = items.slice(at, end);
+    if (current.length > 0 && current.length + run.length > size) {
+      waves.push(current);
+      current = [];
+    }
+    current.push(...run);
+    if (current.length >= size) {
+      waves.push(current);
+      current = [];
+    }
+    at = end;
+  }
+  if (current.length > 0) waves.push(current);
+  return waves;
 }
 
 /** The drawing size closest to the frame a story is cut to. */
@@ -976,10 +1034,12 @@ export function planElementArt(
     elementId: string;
     view: "main" | "turnaround";
     variantId?: string;
+    /** How many drawings the ask is for; absent is one. */
+    count?: number;
   }>,
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
-  return targets.flatMap(({ elementId, view, variantId }) => {
+  return targets.flatMap(({ elementId, view, variantId, count }) => {
     const element = elementOf(story, elementId);
     if (element === undefined) return [];
     const form = elementForm(element, variantId);
@@ -1005,7 +1065,7 @@ export function planElementArt(
       form?.reference ?? element.reference,
     );
     const id = jobKey(target);
-    return [
+    return withCopies(
       {
         id,
         target,
@@ -1047,7 +1107,8 @@ export function planElementArt(
           : {}),
         params: { size },
       },
-    ];
+      count,
+    );
   });
 }
 
@@ -1095,6 +1156,7 @@ export function planElementArtWaves(
     elementId: string;
     view: "main" | "turnaround";
     variantId?: string;
+    count?: number;
   }>,
 ): ElementArtWave[] {
   const groups = new Map<
@@ -1116,7 +1178,7 @@ export function planElementArtWaves(
     groups.set(key, group);
   }
   return [...groups.values()].flatMap(({ model, items }) =>
-    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+    chunkKeepingSets(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
       model,
       items: wave,
     })),
@@ -1417,11 +1479,17 @@ function carriedReference(
 /** One frame of a board, drawn with the cast that stands in it. */
 export function planKeyframeArt(
   story: StoryDocument,
-  targets: Array<{ chapterId: string; actId: string; keyframeId: string }>,
+  targets: Array<{
+    chapterId: string;
+    actId: string;
+    keyframeId: string;
+    /** How many drawings the ask is for; absent is one. */
+    count?: number;
+  }>,
 ): StoryJobItemDraft[] {
   const look = lookOf(story);
   const size = imageSizeForAspect(story.brief.aspect);
-  return targets.flatMap(({ chapterId, actId, keyframeId }) => {
+  return targets.flatMap(({ chapterId, actId, keyframeId, count }) => {
     const chapter = story.chapters.find((held) => held.id === chapterId);
     const act = actAt(story, chapterId, actId);
     const keyframe =
@@ -1438,7 +1506,7 @@ export function planKeyframeArt(
       keyframeId,
     };
     const id = jobKey(target);
-    return [
+    return withCopies(
       {
         id,
         target,
@@ -1465,7 +1533,8 @@ export function planKeyframeArt(
         })),
         params: { size },
       },
-    ];
+      count,
+    );
   });
 }
 
@@ -1499,7 +1568,12 @@ export function keyframeArtModel(
  */
 export function planKeyframeArtWaves(
   story: StoryDocument,
-  targets: Array<{ chapterId: string; actId: string; keyframeId: string }>,
+  targets: Array<{
+    chapterId: string;
+    actId: string;
+    keyframeId: string;
+    count?: number;
+  }>,
 ): Array<{ model: string | null; items: StoryJobItemDraft[] }> {
   const groups = new Map<
     string,
@@ -1517,7 +1591,7 @@ export function planKeyframeArtWaves(
     groups.set(key, group);
   }
   return [...groups.values()].flatMap(({ model, items }) =>
-    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+    chunkKeepingSets(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
       model,
       items: wave,
     })),

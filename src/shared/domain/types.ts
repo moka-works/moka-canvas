@@ -783,6 +783,25 @@ export type StoryElementKind = (typeof STORY_ELEMENT_KINDS)[number];
  */
 export interface StorySlot {
   takes: StoryTake[];
+  /**
+   * Pictures drawn together as one ask, waiting for the reader to say which of
+   * them the place keeps.
+   *
+   * A place asked to draw several pictures at once is not a place that has
+   * chosen: the drawings stand here together, whole, and only when one is
+   * confirmed do they all join the takes with the chosen one in use. Until
+   * then the place goes on showing what it held.
+   */
+  pending?: StoryPending;
+}
+
+/** One ask's drawings, before the reader has chosen between them. */
+export interface StoryPending {
+  /** The batch that drew them, so an answer read again is not shown twice. */
+  jobId: string;
+  /** How many were asked for; the set is whole when this many are here. */
+  count: number;
+  takes: StoryTake[];
 }
 
 /**

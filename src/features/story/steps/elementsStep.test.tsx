@@ -1496,6 +1496,20 @@ describe("the pictures of an element", () => {
     expect(starts[0]?.items).toHaveLength(1);
   });
 
+  it("draws the set the reader chose for each missing picture", async () => {
+    openAtElements(buildStoryMokaFile());
+    fireEvent.change(screen.getByTestId("story-elements-draw-all-count"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
+
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    expect(starts[0]?.items).toHaveLength(3);
+    expect(starts[0]?.items.every((item) => item.copies === 3)).toBe(true);
+  });
+
   it("settles the step once every element has a picture, and says what is missing until then", async () => {
     const moka = buildStoryMokaFile();
     // The third step unsettled, which is how it stands while the cast is

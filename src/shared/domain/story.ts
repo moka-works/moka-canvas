@@ -1160,6 +1160,41 @@ export function slotWithCurrent(slot: StorySlot, assetId: string): StorySlot {
   };
 }
 
+/** Whether an ask's drawings are all home and waiting to be chosen between. */
+export function pendingReady(slot: StorySlot): boolean {
+  const pending = slot.pending;
+  return pending !== undefined && pending.takes.length >= pending.count;
+}
+
+/**
+ * The place a set of drawings becomes once the reader says which is the one.
+ *
+ * Every drawing of the ask joins the place's takes — the chosen one last, so
+ * it is the one in use — and the set itself is let go. A drawing already kept
+ * by the place is not kept twice.
+ */
+export function choosePendingTake(slot: StorySlot, assetId: string): StorySlot {
+  const pending = slot.pending;
+  if (pending === undefined) return slot;
+  const chosen = pending.takes.find((take) => take.assetIds.includes(assetId));
+  if (chosen === undefined) return slot;
+  let next: StorySlot = { takes: slot.takes };
+  for (const take of pending.takes) {
+    if (take !== chosen) next = withTake(next, take);
+  }
+  next = withTake(next, chosen);
+  return next;
+}
+
+/** The same, without a choice: old drawings kept in the order they arrived. */
+export function foldPendingTakes(slot: StorySlot): StorySlot {
+  const pending = slot.pending;
+  if (pending === undefined) return slot;
+  let next: StorySlot = { takes: slot.takes };
+  for (const take of pending.takes) next = withTake(next, take);
+  return next;
+}
+
 /**
  * A place with one of its drawings thrown away.
  *

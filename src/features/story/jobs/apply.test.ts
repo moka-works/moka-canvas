@@ -7,10 +7,15 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
+import { choosePendingTake } from "../../../shared/domain/story";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
-import { applyJobResults, collectElementRepeats } from "./apply";
+import {
+  applyJobResults,
+  collectElementRepeats,
+  settlePendingArt,
+} from "./apply";
 
 const ids = storyIds();
 
@@ -122,6 +127,63 @@ describe("writing a batch's answers into the story", () => {
     expect(frame?.art.takes[0].itemId).toBe(
       `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`,
     );
+  });
+
+  it("holds a set of drawings together until one is chosen, then keeps them all", () => {
+    const base = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`;
+    const items = [1, 2, 3].map((at) =>
+      keyframeItem(ids.frameSecond, `asset-set-${at}`, {
+        id: `${base}:${at}`,
+        copies: 3,
+      }),
+    );
+    const report = applyJobResults(record("keyframeArt", items));
+
+    expect(report.applied).toBe(3);
+    const frame = story().chapters[0].acts[0].keyframes.find(
+      (each) => each.id === ids.frameSecond,
+    );
+    // Nothing is the place's yet: the set waits for the reader's choice.
+    expect(frame?.art.takes).toEqual([]);
+    expect(frame?.art.pending?.count).toBe(3);
+    expect(frame?.art.pending?.takes.map((take) => take.assetIds[0])).toEqual([
+      "asset-set-1",
+      "asset-set-2",
+      "asset-set-3",
+    ]);
+
+    // Choosing one keeps every drawing, the chosen one in use.
+    const chosen = choosePendingTake(frame!.art, "asset-set-2");
+    expect(chosen.takes.map((take) => take.assetIds[0])).toEqual([
+      "asset-set-1",
+      "asset-set-3",
+      "asset-set-2",
+    ]);
+    expect(chosen.pending).toBeUndefined();
+  });
+
+  it("closes a set that came home short rather than leaving it waiting", () => {
+    const base = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`;
+    const asked = [1, 2, 3].map((at) =>
+      keyframeItem(ids.frameSecond, `asset-set-${at}`, {
+        id: `${base}:${at}`,
+        copies: 3,
+      }),
+    );
+    applyJobResults(record("keyframeArt", asked.slice(0, 2)));
+
+    const frame = story().chapters[0].acts[0].keyframes.find(
+      (each) => each.id === ids.frameSecond,
+    );
+    expect(frame?.art.pending?.count).toBe(3);
+
+    settlePendingArt(record("keyframeArt", asked.slice(0, 2)));
+
+    const settled = story().chapters[0].acts[0].keyframes.find(
+      (each) => each.id === ids.frameSecond,
+    );
+    expect(settled?.art.pending?.count).toBe(2);
+    expect(settled?.art.pending?.takes).toHaveLength(2);
   });
 
   it("adds a drawing to the place rather than replacing what is there", () => {

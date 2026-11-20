@@ -24,6 +24,7 @@ import {
   MAX_PROMPT_LENGTH,
   MAX_STORIES_PER_PROJECT,
   MAX_TAKES_PER_SLOT,
+  MAX_IMAGES_PER_ASK,
   MAX_TIMELINES_PER_PROJECT,
   MAX_TITLE_LENGTH,
   MAX_TOTAL_DURATION_MS,
@@ -3463,11 +3464,28 @@ function checkStorySlot(slot: StorySlot): StorySlot {
     seen.add(key);
     return true;
   });
-  return {
+  const kept = {
+    ...slot,
     takes:
       takes.length > MAX_TAKES_PER_SLOT
         ? takes.slice(takes.length - MAX_TAKES_PER_SLOT)
         : takes,
+  };
+  if (slot.pending === undefined) return kept;
+  const pendingSeen = new Set<string>();
+  const pending = slot.pending.takes.filter((take) => {
+    const key = take.assetIds.join("\u0000");
+    if (pendingSeen.has(key)) return false;
+    pendingSeen.add(key);
+    return true;
+  });
+  return {
+    ...kept,
+    pending: {
+      ...slot.pending,
+      count: Math.min(slot.pending.count, MAX_IMAGES_PER_ASK),
+      takes: pending.slice(0, MAX_IMAGES_PER_ASK),
+    },
   };
 }
 

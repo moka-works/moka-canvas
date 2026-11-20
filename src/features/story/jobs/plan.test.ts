@@ -550,6 +550,36 @@ describe("planning the drawings", () => {
     ]);
   });
 
+  it("asks one place for the whole set the reader chose, as one choice", () => {
+    const waves = planKeyframeArtWaves(story(), [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+        count: 3,
+      },
+    ]);
+
+    expect(waves).toHaveLength(1);
+    const items = waves[0]!.items;
+    expect(items).toHaveLength(3);
+    expect(items.map((item) => item.id)).toEqual([
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:1`,
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:2`,
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:3`,
+    ]);
+    // Every piece says the set it belongs to, which is what tells the room the
+    // answers are one choice.
+    expect(items.map((item) => item.copies)).toEqual([3, 3, 3]);
+  });
+
+  it("never asks for more pictures than a place may draw at once", () => {
+    const items = planElementArt(story(), [
+      { elementId: ids.hero, view: "main", count: 9 },
+    ]);
+    expect(items).toHaveLength(3);
+  });
+
   it("gives each drawing its own turn of the step's list", () => {
     useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
 

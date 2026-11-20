@@ -352,7 +352,18 @@
     "librarySearch": "Search the assets",
     "librarySearchEmpty": "No asset matches “{{query}}”",
     "libraryVideoSearchEmpty": "No video matches “{{query}}”",
-    "fileFailed": "The file could not be added"
+    "fileFailed": "The file could not be added",
+    "drawCount": "Pictures",
+    "drawCountLabel": "How many pictures each press draws",
+    "drawCountOption": "{{count}}",
+    "candidateDrawing": "Drawing the choices ({{count}}/{{total}})",
+    "candidateReady": "{{count}} to choose",
+    "candidateChoose": "Choose ({{count}})",
+    "candidates": "Choose the main picture",
+    "candidatesHint": "{{label}}: these pictures were drawn side by side from the same prompt. The one you confirm becomes the main picture; the others stay in this place so you can switch later.",
+    "candidateAt": "Picture {{at}}",
+    "candidatePicked": "Chosen",
+    "candidateKeep": "Keep this one"
   },
   "inspector": {
     "label": "{{name}}'s reference",
@@ -741,6 +752,7 @@
     "promptHandEdited": "Prompt edited",
     "imagePromptTitle": "Image prompt",
     "imagePromptHint": "This is the still picture's prompt, sent to the image model as it stands. What moves in a shot is described by the video prompt alone and never enters here. Frame shape, quality, and count still travel as parameters; changing the words does not change them.",
+    "imagePromptCountHint": "Several pictures are drawn side by side; choose between them in the picture place once all have arrived",
     "imagePromptEdit": "Edit image prompt",
     "imagePromptEdited": "edited",
     "imagePromptReset": "Restore automatic",

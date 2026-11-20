@@ -257,6 +257,11 @@ pub struct StoryJobItem {
     /// label of the target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// How many pictures this piece's place asked for at once. One piece of a
+    /// set is one provider call; the number is what lets the room tell the
+    /// set apart from an ordinary redraw when the answers come home.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copies: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inputs: Vec<GenerateInput>,
     #[serde(default)]
@@ -319,6 +324,7 @@ impl StoryJobItem {
             prompt,
             system,
             name: None,
+            copies: None,
             inputs,
             params,
             status: StoryJobStatus::Queued,

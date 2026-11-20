@@ -22,6 +22,7 @@ import {
   MAX_RESULT_SLOTS,
   MAX_STORIES_PER_PROJECT,
   MAX_TAKES_PER_SLOT,
+  MAX_IMAGES_PER_ASK,
   MAX_TOTAL_DURATION_MS,
   MAX_CHAPTER_MS,
   MIN_CHAPTER_MS,
@@ -370,6 +371,11 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
   const files = (take: StoryTake, holderId: string) => {
     for (const assetId of take.assetIds) add(assetId, holderId);
   };
+  /** A place's drawings, including the ones still waiting to be chosen. */
+  const slotFiles = (slot: StorySlot, holderId: string) => {
+    for (const take of slot.takes) files(take, holderId);
+    for (const take of slot.pending?.takes ?? []) files(take, holderId);
+  };
   /** A picture an element names as what a drawing is made from. */
   const picture = (
     reference: StoryPictureReference | undefined,
@@ -416,30 +422,29 @@ export function collectAssetReferences(moka: MokaFile): Map<string, string[]> {
     for (const element of story.elements) {
       add(element.voice?.referenceAssetId, element.id);
       picture(element.reference, element.id);
-      for (const take of element.main.takes) files(take, element.id);
-      for (const take of element.turnaround?.takes ?? [])
-        files(take, element.id);
+      slotFiles(element.main, element.id);
+      if (element.turnaround !== undefined)
+        slotFiles(element.turnaround, element.id);
       for (const variant of element.variants ?? []) {
         picture(variant.reference, element.id);
-        for (const take of variant.main.takes) files(take, element.id);
-        for (const take of variant.turnaround?.takes ?? []) {
-          files(take, element.id);
-        }
+        slotFiles(variant.main, element.id);
+        if (variant.turnaround !== undefined)
+          slotFiles(variant.turnaround, element.id);
       }
     }
     for (const chapter of story.chapters) {
       for (const act of chapter.acts) {
         // A clip filmed in pieces keeps every piece in use, not only the one
         // it opens on: the shelf must not offer to collect the rest.
-        for (const take of act.video.takes) files(take, act.id);
-        for (const take of act.voice?.takes ?? []) files(take, act.id);
-        for (const take of act.music?.takes ?? []) files(take, act.id);
+        slotFiles(act.video, act.id);
+        if (act.voice !== undefined) slotFiles(act.voice, act.id);
+        if (act.music !== undefined) slotFiles(act.music, act.id);
         for (const keyframe of act.keyframes) {
-          for (const take of keyframe.art.takes) files(take, keyframe.id);
-          for (const take of keyframe.video.takes) files(take, keyframe.id);
+          slotFiles(keyframe.art, keyframe.id);
+          slotFiles(keyframe.video, keyframe.id);
           // The lines a shot read aloud keep their takes in use.
           for (const voice of keyframe.voices ?? []) {
-            for (const take of voice.slot.takes) files(take, keyframe.id);
+            slotFiles(voice.slot, keyframe.id);
           }
           for (const reference of keyframe.references ?? []) {
             add(reference.assetId, keyframe.id);
@@ -1247,6 +1252,12 @@ export function validateStory(story: StoryDocument): ValidationIssue[] {
 
   const slot = (held: StorySlot) => {
     if (held.takes.length > MAX_TAKES_PER_SLOT)
+      at("STORY_SLOT_FULL", i18n.t("errors:validate.storySlotFull"));
+    if (
+      held.pending !== undefined &&
+      (held.pending.count > MAX_IMAGES_PER_ASK ||
+        held.pending.takes.length > held.pending.count)
+    )
       at("STORY_SLOT_FULL", i18n.t("errors:validate.storySlotFull"));
   };
   for (const element of story.elements) {

@@ -10,10 +10,10 @@ use moka_canvas::domain::commands::apply_commands;
 use moka_canvas::domain::story::{
     self, StoryAct, StoryActSound, StoryBrief, StoryChapter, StoryDialogueLine, StoryDocument,
     StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind, StoryElementPatch,
-    StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryPromptOverride, StoryShotGranularity,
-    StoryShotSize, StorySlot, StorySlotTarget, StoryTake, MAX_ACTS_PER_CHAPTER,
-    MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT,
-    MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
+    StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryPending, StoryPromptOverride,
+    StoryShotGranularity, StoryShotSize, StorySlot, StorySlotTarget, StoryTake,
+    MAX_ACTS_PER_CHAPTER, MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT,
+    MAX_STORIES_PER_PROJECT, MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
 };
 use moka_canvas::domain::validate::{validate_moka_file, MAX_PROMPT_LENGTH};
 use moka_canvas::domain::{
@@ -80,7 +80,7 @@ fn take(asset_id: &str) -> StoryTake {
 }
 
 fn empty_slot() -> StorySlot {
-    StorySlot { takes: Vec::new() }
+    StorySlot::default()
 }
 
 fn resource(id: &str, name: &str, path: &str, mime: &str, bytes: i64) -> ResourceEntry {
@@ -261,6 +261,7 @@ fn story_document() -> MokaFile {
                 out_ms: None,
                 created_at: NOW.into(),
             }],
+            ..Default::default()
         },
         art_not_needed: false,
         video: empty_slot(),
@@ -333,6 +334,7 @@ fn story_document() -> MokaFile {
                             out_ms: None,
                             created_at: NOW.into(),
                         }],
+                        ..Default::default()
                     },
                     shot_granularity: None,
                     voice: None,
@@ -366,9 +368,11 @@ fn story_document() -> MokaFile {
                 chapter_ids: vec![CHAPTER_FIRST.into()],
                 main: StorySlot {
                     takes: vec![take(HERO_MAIN)],
+                    ..Default::default()
                 },
                 turnaround: Some(StorySlot {
                     takes: vec![take(HERO_SHEET)],
+                    ..Default::default()
                 }),
                 variants: None,
                 reference: None,
@@ -1999,7 +2003,10 @@ fn keeps_the_window_a_take_was_cut_to_across_the_codec() {
     let mut cut = take("asset-act-video");
     cut.in_ms = Some(1_000);
     cut.out_ms = Some(3_500);
-    let slot = StorySlot { takes: vec![cut] };
+    let slot = StorySlot {
+        takes: vec![cut],
+        ..Default::default()
+    };
     let next = round_trip(
         &moka,
         vec![DocumentCommand::SetStorySlot {
@@ -2024,10 +2031,53 @@ fn keeps_the_window_a_take_was_cut_to_across_the_codec() {
 }
 
 #[test]
+fn keeps_the_drawings_a_place_is_waiting_to_choose_between() {
+    let moka = story_document();
+    let slot = StorySlot {
+        takes: Vec::new(),
+        pending: Some(StoryPending {
+            job_id: "job-set".into(),
+            count: 2,
+            takes: vec![take("asset-choice-a"), take("asset-choice-b")],
+        }),
+    };
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SetStorySlot {
+            story_id: STORY.into(),
+            target: StorySlotTarget::Keyframe {
+                chapter_id: CHAPTER_FIRST.into(),
+                act_id: ACT.into(),
+                keyframe_id: FRAME_SECOND.into(),
+            },
+            slot,
+            read: None,
+        }],
+    );
+    let art = &story_of(&next).chapters[0].acts[0].keyframes[1].art;
+    let pending = art.pending.as_ref().expect("the set is kept");
+    assert_eq!(pending.job_id, "job-set");
+    assert_eq!(
+        pending
+            .takes
+            .iter()
+            .map(|take| take.asset_ids[0].as_str())
+            .collect::<Vec<_>>(),
+        vec!["asset-choice-a", "asset-choice-b"]
+    );
+    // The drawings are in use while the reader is choosing between them.
+    assert!(next.asset_references().contains_key("asset-choice-a"));
+    // A place without a set writes nothing for it.
+    let encoded = serde_json::to_string(&story_of(&next).chapters[0].acts[0].video).unwrap();
+    assert!(!encoded.contains("pending"));
+}
+
+#[test]
 fn files_a_drawing_at_the_place_a_target_names() {
     let moka = story_document();
     let slot = StorySlot {
         takes: vec![take("asset-new")],
+        ..Default::default()
     };
     let next = round_trip(
         &moka,
@@ -2064,6 +2114,7 @@ fn files_a_voice_and_a_score_where_an_act_keeps_them() {
             },
             slot: StorySlot {
                 takes: vec![take("asset-act-voice")],
+                ..Default::default()
             },
             read: None,
         }],
@@ -2086,6 +2137,7 @@ fn files_a_voice_and_a_score_where_an_act_keeps_them() {
             },
             slot: StorySlot {
                 takes: vec![take("asset-act-music")],
+                ..Default::default()
             },
             read: None,
         }],
@@ -2114,7 +2166,10 @@ fn trims_a_slot_to_what_a_place_keeps_oldest_first_and_drops_two_of_one_drawing(
                 view: StoryElementView::Main,
                 variant_id: None,
             },
-            slot: StorySlot { takes },
+            slot: StorySlot {
+                takes,
+                ..Default::default()
+            },
             read: None,
         }],
     )
@@ -2314,7 +2369,10 @@ fn reports_a_slot_that_carries_more_takes_than_it_may() {
     let takes: Vec<StoryTake> = (0..MAX_TAKES_PER_SLOT + 1)
         .map(|n| take(&format!("asset-{n}")))
         .collect();
-    moka.stories.as_mut().unwrap()[0].elements[0].main = StorySlot { takes };
+    moka.stories.as_mut().unwrap()[0].elements[0].main = StorySlot {
+        takes,
+        ..Default::default()
+    };
     assert!(validate_moka_file(&moka)
         .iter()
         .any(|issue| issue.code == "STORY_SLOT_FULL"));
@@ -2325,9 +2383,11 @@ fn counts_every_drawing_and_the_manuscript_as_in_use() {
     let mut moka = story_document();
     moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].voice = Some(StorySlot {
         takes: vec![take("asset-act-voice")],
+        ..Default::default()
     });
     moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].music = Some(StorySlot {
         takes: vec![take("asset-act-music")],
+        ..Default::default()
     });
     let refs = moka.asset_references();
     for asset_id in [
@@ -2477,9 +2537,9 @@ fn a_voiced_act_survives_the_codec_with_its_sound_and_an_unvoiced_one_without() 
 
     moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].voice = Some(StorySlot {
         takes: vec![take("asset-act-voice")],
+        ..Default::default()
     });
-    moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].music =
-        Some(StorySlot { takes: Vec::new() });
+    moka.stories.as_mut().unwrap()[0].chapters[0].acts[0].music = Some(StorySlot::default());
     let bytes = encode_moka_file(&moka, None).unwrap();
     let read = decode_moka_file(&bytes).unwrap();
     let act = &story_of(&read).chapters[0].acts[0];

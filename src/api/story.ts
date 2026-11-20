@@ -102,6 +102,11 @@ export interface StoryJobItem {
   name?: string;
   inputs: StoryJobInput[];
   params: Record<string, unknown>;
+  /**
+   * How many pictures one drawing place asked for at once, for an ask that
+   * draws a set to choose between. Absent is one.
+   */
+  copies?: number;
   status: StoryJobStatus;
   /** What a text piece was answered with, kept whole for a reader to repair. */
   text?: string;
@@ -164,7 +169,7 @@ export type StoryJobItemDraft = Pick<
   Partial<
     Pick<
       StoryJobItem,
-      "inputs" | "params" | "system" | "promptContext" | "name"
+      "inputs" | "params" | "system" | "promptContext" | "name" | "copies"
     >
   >;
 

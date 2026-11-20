@@ -74,6 +74,23 @@ describe("moka codec", () => {
     expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
   });
 
+  it("carries a set of drawings waiting to be chosen between", () => {
+    const moka = buildStoryMokaFile();
+    const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+    frame.art.pending = {
+      jobId: "job-1",
+      count: 2,
+      takes: [
+        { assetIds: ["asset-candidate-a"], createdAt: "2026-01-01T00:00:00Z" },
+        { assetIds: ["asset-candidate-b"], createdAt: "2026-01-01T00:00:01Z" },
+      ],
+    };
+
+    const back = decodeMokaFile(encodeMokaFile(moka)).stories![0]!.chapters[0]!
+      .acts[0]!.keyframes[0]!;
+    expect(back.art.pending).toEqual(frame.art.pending);
+  });
+
   it("carries an outline revision and the board it is ahead of, and reads a telling written before them", () => {
     const old = buildStoryMokaFile();
     expect(old.stories![0]!.chapters[0]!.revision).toBeUndefined();

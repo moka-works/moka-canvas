@@ -33,6 +33,7 @@ import { useProjectStore } from "../../editor/stores/projectStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { elementRatio } from "./ratios";
 import {
+  chooseElementPending,
   chooseElementTake,
   keepElementPicture,
   uploadElementPicture,
@@ -328,6 +329,9 @@ export const ElementCard = memo(function ElementCard({
           onChoose={(assetId) =>
             chooseElementTake(story, element, "main", assetId, variant?.id)
           }
+          onChoosePending={(assetId) =>
+            chooseElementPending(story, element, "main", assetId, variant?.id)
+          }
           onGenerate={() => generate("main")}
           onPickFromLibrary={() => setPicking("main")}
           onUpload={(file) =>
@@ -382,6 +386,15 @@ export const ElementCard = memo(function ElementCard({
             note={t("story:elements.turnaroundFour")}
             onChoose={(assetId) =>
               chooseElementTake(
+                story,
+                element,
+                "turnaround",
+                assetId,
+                variant?.id,
+              )
+            }
+            onChoosePending={(assetId) =>
+              chooseElementPending(
                 story,
                 element,
                 "turnaround",

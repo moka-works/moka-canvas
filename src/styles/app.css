@@ -8367,6 +8367,167 @@ button > .story-spin {
   font-size: 12px;
 }
 
+/* A bulk drawing press with the number of pictures on its right edge: one
+   action, and the count the action asks every place for. */
+.story-split {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.story-split > button {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.story-split-pick {
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-bottom-right-radius: var(--radius-sm);
+  border-left: 0;
+  border-top-right-radius: var(--radius-sm);
+  color: var(--muted);
+  display: inline-flex;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.story-split-label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.story-split-pick select {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 2px;
+}
+
+/* Drawings made together, standing in the place as a choice rather than as
+   the place's picture: none of them is kept until one is confirmed. */
+.story-slot-pending {
+  background: var(--canvas);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.story-slot-pending-grid {
+  display: grid;
+  gap: 2px;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+}
+
+.story-slot-pending-grid img {
+  aspect-ratio: 1;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.story-slot-pending-foot {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--ink);
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+/* The set a press drew, looked at side by side before one is kept. */
+.story-candidates {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 20px;
+  width: min(1100px, calc(100vw - 48px));
+}
+
+.story-candidates-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.story-candidates-head h2 {
+  margin: 0 0 4px;
+}
+
+.story-candidates-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.story-candidate {
+  background: var(--canvas);
+  border: 2px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+}
+
+.story-candidate.is-picked {
+  border-color: var(--primary);
+}
+
+.story-candidate img {
+  background: #000;
+  display: block;
+  max-height: 52vh;
+  object-fit: contain;
+  width: 100%;
+}
+
+.story-candidate-foot {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+/* How many pictures an ask makes, kept to the action row: a low-frequency
+   choice that belongs beside the press rather than a line of its own. */
+.story-draw-count {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.story-draw-count select {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+  padding: 3px 6px;
+  width: auto;
+}
+
 /* The picks and the lightbox, which both stand over the step. */
 
 .story-lightbox {

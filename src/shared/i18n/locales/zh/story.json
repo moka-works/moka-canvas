@@ -352,7 +352,18 @@
     "librarySearch": "搜索素材",
     "librarySearchEmpty": "素材库里没有与「{{query}}」相符的图片",
     "libraryVideoSearchEmpty": "素材库里没有与「{{query}}」相符的视频",
-    "fileFailed": "文件没能加入素材库"
+    "fileFailed": "文件没能加入素材库",
+    "drawCount": "张数",
+    "drawCountLabel": "每次生成几张",
+    "drawCountOption": "{{count}} 张",
+    "candidateDrawing": "正在画候选图（{{count}}/{{total}}）",
+    "candidateReady": "{{count}} 张待选",
+    "candidateChoose": "挑一张（{{count}} 张）",
+    "candidates": "选择主图",
+    "candidatesHint": "「{{label}}」的这些图按同一段提示词并行画出。确认后选中的一张作为主图，其余也留在这个图片位，之后可以再切换。",
+    "candidateAt": "第 {{at}} 张",
+    "candidatePicked": "选用这张",
+    "candidateKeep": "用这张作主图"
   },
   "inspector": {
     "label": "「{{name}}」的参考图",
@@ -741,6 +752,7 @@
     "promptHandEdited": "提示词已修改",
     "imagePromptTitle": "图片生成提示词",
     "imagePromptHint": "下面是图片的静态提示词，会原样发给图像模型；画面里的动作由视频提示词单独描述，不进入这里。画幅、质量与数量仍由参数单独发送，改文字不会改变它们。",
+    "imagePromptCountHint": "多张会并行生成；全部完成后在图片位里一起挑选",
     "imagePromptEdit": "编辑图片提示词",
     "imagePromptEdited": "已修改",
     "imagePromptReset": "恢复自动",

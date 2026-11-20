@@ -139,6 +139,19 @@ pub fn validate_start(
                 ),
             ));
         }
+        if item
+            .copies
+            .is_some_and(|copies| !(1..=crate::domain::story::MAX_IMAGES_PER_ASK).contains(&copies))
+        {
+            issues.push(issue(
+                "VALIDATION_FAILED",
+                format!(
+                    "Item {at} asks for {} pictures; a place draws one to {} at a time",
+                    item.copies.unwrap_or(0),
+                    crate::domain::story::MAX_IMAGES_PER_ASK
+                ),
+            ));
+        }
         if let Some(key) = unknown_param(item) {
             issues.push(issue(
                 "VALIDATION_FAILED",

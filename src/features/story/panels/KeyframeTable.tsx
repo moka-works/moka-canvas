@@ -21,6 +21,7 @@ import {
   referenceName,
   referenceTake,
   stripMentionNamed,
+  choosePendingTake,
   keyframeAt,
   newId,
   slotWithoutTake,
@@ -701,6 +702,9 @@ function KeyframeRow({
             label={t("story:storyboard.frame")}
             onChoose={(assetId) =>
               keepFrame(story, chapterId, act, keyframe, assetId)
+            }
+            onChoosePending={(assetId) =>
+              chooseFramePending(story, chapterId, act, keyframe, assetId)
             }
             onGenerate={draw}
             onNotNeededChange={notNeededChange}
@@ -1850,6 +1854,34 @@ function dropFrame(
   return writeFrame(live, chapterId, act, frame, without) === null
     ? "refused"
     : "dropped";
+}
+
+/**
+ * Keeps one of the drawings an ask made together, and every other with it.
+ *
+ * Read off the live document for the same reason a chosen frame is: the set
+ * arrived in the background, and a slot computed before it would put back the
+ * place as it stood then.
+ */
+function chooseFramePending(
+  story: StoryDocument,
+  chapterId: string,
+  act: StoryAct,
+  keyframe: StoryKeyframe,
+  assetId: string,
+): void {
+  const live = liveStory(story.id);
+  const frame =
+    live === undefined
+      ? undefined
+      : keyframeAt(live, {
+          chapterId,
+          actId: act.id,
+          keyframeId: keyframe.id,
+        });
+  if (live === undefined || frame === undefined) return;
+  const next = choosePendingTake(frame.art, assetId);
+  if (next !== frame.art) writeFrame(live, chapterId, act, frame, next);
 }
 
 /**

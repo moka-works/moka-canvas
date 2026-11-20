@@ -98,6 +98,9 @@ pub struct StoryJobItemDraft {
     /// its own for it rather than the generic label of its target.
     #[serde(default)]
     pub name: Option<String>,
+    /// How many pictures this piece's place asked for at once.
+    #[serde(default)]
+    pub copies: Option<usize>,
     #[serde(default)]
     pub inputs: Vec<StoryJobInput>,
     #[serde(default)]
@@ -131,6 +134,7 @@ impl StoryJobItemDraft {
     /// The piece the job manager works with.
     pub fn into_item(self) -> StoryJobItem {
         let name = self.name;
+        let copies = self.copies;
         let mut item = StoryJobItem::queued(
             self.id,
             self.target,
@@ -144,6 +148,7 @@ impl StoryJobItemDraft {
             self.params.unwrap_or(serde_json::Value::Null),
         );
         item.name = name;
+        item.copies = copies;
         item
     }
 }

@@ -34,6 +34,7 @@ import {
   useModelStore,
 } from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DrawCountButton } from "../components/DrawCountButton";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
@@ -171,6 +172,8 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const focusElementId = useStoryStore((state) => state.focusElementId);
   const focusVoiceId = useStoryStore((state) => state.focusVoiceId);
   const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
+  // How many pictures one bulk press draws for each place.
+  const [imageCount, setImageCount] = useState(1);
   const [removingPicked, setRemovingPicked] = useState(false);
   // The page each kind was last standing on, so going back to a kind goes
   // back to what the reader was looking at rather than to its first page.
@@ -668,10 +671,11 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
               </button>
             )}
             {drawable.length > 0 && (
-              <button
-                className="primary"
-                data-testid="story-elements-draw-all"
-                onClick={() =>
+              <DrawCountButton
+                count={imageCount}
+                label={t("story:elements.drawAll", { count: drawable.length })}
+                onCount={setImageCount}
+                onRun={() =>
                   void run(
                     story.id,
                     "elementArt",
@@ -680,20 +684,22 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                       drawable.map(({ element, form }) => ({
                         elementId: element.id,
                         view: "main" as const,
+                        count: imageCount,
                         ...(form === undefined ? {} : { variantId: form.id }),
                       })),
                     ),
                   )
                 }
-                type="button"
-              >
-                {t("story:elements.drawAll", { count: drawable.length })}
-              </button>
+                primary
+                testId="story-elements-draw-all"
+              />
             )}
             {viewable.length > 0 && (
-              <button
-                data-testid="story-elements-views-all"
-                onClick={() =>
+              <DrawCountButton
+                count={imageCount}
+                label={t("story:elements.viewsAll", { count: viewable.length })}
+                onCount={setImageCount}
+                onRun={() =>
                   void run(
                     story.id,
                     "elementArt",
@@ -702,15 +708,14 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                       viewable.map(({ element, form }) => ({
                         elementId: element.id,
                         view: "turnaround" as const,
+                        count: imageCount,
                         ...(form === undefined ? {} : { variantId: form.id }),
                       })),
                     ),
                   )
                 }
-                type="button"
-              >
-                {t("story:elements.viewsAll", { count: viewable.length })}
-              </button>
+                testId="story-elements-views-all"
+              />
             )}
             <button
               className="link"

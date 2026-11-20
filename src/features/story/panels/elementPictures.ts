@@ -11,7 +11,11 @@
 
 import { errorText } from "../../../api/client";
 import { assetsApi } from "../../../api/assets";
-import { slotWithCurrent, withTake } from "../../../shared/domain";
+import {
+  choosePendingTake,
+  slotWithCurrent,
+  withTake,
+} from "../../../shared/domain";
 import type {
   StoryDocument,
   StoryElement,
@@ -21,6 +25,7 @@ import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
+import { liveStory } from "./removeOldTake";
 
 export type ElementView = "main" | "turnaround";
 
@@ -81,6 +86,28 @@ export function chooseElementTake(
     slotWithCurrent(slot, assetId),
     variantId,
   );
+}
+
+/**
+ * Keeps one of the drawings an ask made together, and every other with it.
+ *
+ * Read off the live document rather than the render the choice was made in:
+ * the set arrived in the background, and writing a slot computed before it
+ * would put back the place as it stood then.
+ */
+export function chooseElementPending(
+  story: StoryDocument,
+  element: StoryElement,
+  view: ElementView,
+  assetId: string,
+  variantId?: string,
+): void {
+  const live = liveStory(story.id);
+  const held = live?.elements.find((each) => each.id === element.id);
+  const slot = held === undefined ? undefined : slotOf(held, view, variantId);
+  if (live === undefined || held === undefined || slot === undefined) return;
+  const next = choosePendingTake(slot, assetId);
+  if (next !== slot) writeElementSlot(live, held, view, next, variantId);
 }
 
 /**

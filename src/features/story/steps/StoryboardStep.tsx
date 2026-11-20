@@ -28,6 +28,7 @@ import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DrawCountButton } from "../components/DrawCountButton";
 import { OutlineRevisionDialog } from "../components/OutlineRevisionDialog";
 import { OutlineSyncDialog } from "../components/OutlineSyncDialog";
 import { RunningBar } from "../components/RunningBar";
@@ -112,6 +113,8 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const resources = useProjectStore((state) => state.moka?.resources);
   const models = useModelStore((state) => state.view);
   const [asking, setAsking] = useState(false);
+  // How many pictures one bulk press draws for each frame.
+  const [imageCount, setImageCount] = useState(1);
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
   const [waves, setWaves] = useState<string[][]>([]);
@@ -482,38 +485,51 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           </span>
           <div className="story-step-actions">
             {redrawable.length > 0 && (
-              <button
-                data-testid="story-board-redraw-drifted"
-                onClick={() =>
-                  void runArt(
-                    story.id,
-                    "keyframeArt",
-                    planKeyframeArtWaves(story, redrawable),
-                  )
-                }
-                type="button"
-              >
-                {t("story:storyboard.redrawDrifted", {
+              <DrawCountButton
+                count={imageCount}
+                label={t("story:storyboard.redrawDrifted", {
                   count: redrawable.length,
                 })}
-              </button>
-            )}
-            {missingFrames.length > 0 && (
-              <button
-                data-testid="story-board-draw-missing"
-                onClick={() =>
+                onCount={setImageCount}
+                onRun={() =>
                   void runArt(
                     story.id,
                     "keyframeArt",
-                    planKeyframeArtWaves(story, missingFrames),
+                    planKeyframeArtWaves(
+                      story,
+                      redrawable.map((target) => ({
+                        ...target,
+                        count: imageCount,
+                      })),
+                    ),
                   )
                 }
-                type="button"
-              >
-                {t("story:storyboard.drawAllMissing", {
+                testId="story-board-redraw-drifted"
+              />
+            )}
+            {missingFrames.length > 0 && (
+              <DrawCountButton
+                count={imageCount}
+                label={t("story:storyboard.drawAllMissing", {
                   count: missingFrames.length,
                 })}
-              </button>
+                onCount={setImageCount}
+                onRun={() =>
+                  void runArt(
+                    story.id,
+                    "keyframeArt",
+                    planKeyframeArtWaves(
+                      story,
+                      missingFrames.map((target) => ({
+                        ...target,
+                        count: imageCount,
+                      })),
+                    ),
+                  )
+                }
+                primary
+                testId="story-board-draw-missing"
+              />
             )}
             {boardable.length >= 2 && (
               <button

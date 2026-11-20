@@ -25,6 +25,7 @@ import { nowIso } from "../../../shared/domain/ids";
 import type { DocumentCommand } from "../../../shared/domain/types";
 import {
   elementKey,
+  foldPendingTakes,
   keyframeAt,
   mergeActs,
   mergeChaptersAt,
@@ -146,6 +147,175 @@ function slotCommand(
       ...(read === undefined ? {} : { read }),
     },
   ];
+}
+
+/** Whether a piece is one drawing of a set asked for together. */
+function multiArtItem(item: StoryJobItem): boolean {
+  return (
+    (item.copies ?? 1) > 1 &&
+    (item.target.kind === "elementArt" || item.target.kind === "keyframeArt")
+  );
+}
+
+/**
+ * Writes one ask's drawings into the place as a set waiting to be chosen
+ * between, rather than as takes already kept.
+ *
+ * A set is one choice, so its drawings do not become the place's history one
+ * by one: they wait here until the reader says which is the one, and only then
+ * do all of them join the takes. A set still arriving is the same set, so a
+ * second landing appends to it rather than starting over; a set the reader
+ * ignored in favour of a newer ask is kept as ordinary takes first, so its
+ * drawings are not lost from the place.
+ */
+function pendingArtCommands(
+  story: StoryDocument,
+  record: StoryJobRecord,
+  items: StoryJobItem[],
+  report: ApplyReport,
+): DocumentCommand[] {
+  const target = slotTargetOf(items[0]!);
+  if (target === undefined) {
+    report.skipped += items.length;
+    return [];
+  }
+  const slot = slotAt(story, target);
+  if (slot === undefined) {
+    report.skipped += items.length;
+    report.notes.push(
+      i18n.t("story:jobs.targetGone", { label: jobKey(items[0]!.target) }),
+    );
+    return [];
+  }
+  const expected = Math.max(...items.map((item) => item.copies ?? 1));
+  let base = slot;
+  if (base.pending !== undefined && base.pending.jobId !== record.id) {
+    base = foldPendingTakes(base);
+  }
+  const candidates = [...(base.pending?.takes ?? [])];
+  const known = new Set(
+    candidates.flatMap((take) => take.assetIds.map((id) => `${id}`)),
+  );
+  let added = 0;
+  for (const item of items) {
+    const assetId = item.assetIds?.[0];
+    if (assetId === undefined) {
+      report.skipped += 1;
+      continue;
+    }
+    if (known.has(assetId)) {
+      report.skipped += 1;
+      continue;
+    }
+    known.add(assetId);
+    candidates.push(takeOf(record, item, [assetId]));
+    added += 1;
+  }
+  if (added === 0) return [];
+  report.applied += added;
+  return slotCommand(story, target, {
+    ...base,
+    pending: {
+      jobId: record.id,
+      count: Math.max(expected, base.pending?.count ?? 0),
+      takes: candidates,
+    },
+  });
+}
+
+/**
+ * Every place a story holds, with the target that names it.
+ *
+ * The same walk the document's own checks make, kept here for the one thing
+ * reading a batch needs: finding the sets still waiting on a batch that has
+ * ended.
+ */
+function storySlotPlaces(
+  story: StoryDocument,
+): Array<{ target: StorySlotTarget; slot: StorySlot }> {
+  const places: Array<{ target: StorySlotTarget; slot: StorySlot }> = [];
+  for (const element of story.elements) {
+    places.push({
+      target: { kind: "element", elementId: element.id, view: "main" },
+      slot: element.main,
+    });
+    if (element.turnaround !== undefined) {
+      places.push({
+        target: { kind: "element", elementId: element.id, view: "turnaround" },
+        slot: element.turnaround,
+      });
+    }
+    for (const variant of element.variants ?? []) {
+      places.push({
+        target: {
+          kind: "element",
+          elementId: element.id,
+          view: "main",
+          variantId: variant.id,
+        },
+        slot: variant.main,
+      });
+      if (variant.turnaround !== undefined) {
+        places.push({
+          target: {
+            kind: "element",
+            elementId: element.id,
+            view: "turnaround",
+            variantId: variant.id,
+          },
+          slot: variant.turnaround,
+        });
+      }
+    }
+  }
+  for (const chapter of story.chapters) {
+    for (const act of chapter.acts) {
+      for (const keyframe of act.keyframes) {
+        places.push({
+          target: {
+            kind: "keyframe",
+            chapterId: chapter.id,
+            actId: act.id,
+            keyframeId: keyframe.id,
+          },
+          slot: keyframe.art,
+        });
+      }
+    }
+  }
+  return places;
+}
+
+/**
+ * Closes the sets a batch left open.
+ *
+ * A set that came home short — one drawing refused, the batch cancelled — is
+ * one the reader can still choose from: what did arrive is made whole by
+ * counting it as the whole set, rather than leaving a place that waits forever
+ * for a drawing nobody is making. A set that came home with nothing is let go.
+ */
+export function settlePendingArt(record: StoryJobRecord): void {
+  const story = storyOf(record);
+  if (story === undefined) return;
+  const commands: DocumentCommand[] = [];
+  for (const { target, slot } of storySlotPlaces(story)) {
+    const pending = slot.pending;
+    if (pending === undefined || pending.jobId !== record.id) continue;
+    if (pending.takes.length >= pending.count) continue;
+    if (pending.takes.length === 0) {
+      const rest = { ...slot };
+      delete rest.pending;
+      commands.push(...slotCommand(story, target, rest));
+      continue;
+    }
+    commands.push(
+      ...slotCommand(story, target, {
+        ...slot,
+        pending: { ...pending, count: pending.takes.length },
+      }),
+    );
+  }
+  if (commands.length > 0) execute(historyLabel(record), commands, record.id);
 }
 
 /**
@@ -873,13 +1043,28 @@ export function applyJobResults(
   const commands: DocumentCommand[] = outlineCommands(story, record, report);
   // An act's pieces are one clip for the same reason, and are read the same way.
   commands.push(...actVideoCommands(story, record, report));
+  // A place's drawings asked for together are one choice, so they are read as
+  // one set rather than as takes landing one by one.
+  const sets = new Map<string, StoryJobItem[]>();
+  for (const item of record.items) {
+    if (item.status !== "succeeded" || !multiArtItem(item)) continue;
+    const key = jobKey(item.target);
+    sets.set(key, [...(sets.get(key) ?? []), item]);
+  }
+  for (const items of sets.values()) {
+    commands.push(...pendingArtCommands(story, record, items, report));
+  }
   for (const item of record.items) {
     if (item.status !== "succeeded") {
       // A piece of an act's clip is counted where its act is read.
       if (item.target.kind !== "actVideo") report.skipped += 1;
       continue;
     }
-    if (item.target.kind === "outline" || item.target.kind === "actVideo") {
+    if (
+      item.target.kind === "outline" ||
+      item.target.kind === "actVideo" ||
+      multiArtItem(item)
+    ) {
       continue;
     }
     commands.push(...commandsFor(story, record, item, report, context));

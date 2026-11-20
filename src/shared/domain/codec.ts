@@ -434,9 +434,17 @@ function encodeStoryTake(take: StoryTake): Record<string, unknown> {
 }
 
 function encodeStorySlot(slot: StorySlot): Record<string, unknown> {
-  return {
+  const doc: Record<string, unknown> = {
     takes: slot.takes.map(encodeStoryTake),
   };
+  if (slot.pending !== undefined) {
+    doc.pending = {
+      jobId: slot.pending.jobId,
+      count: slot.pending.count,
+      takes: slot.pending.takes.map(encodeStoryTake),
+    };
+  }
+  return doc;
 }
 
 function encodeStoryDialogue(line: StoryDialogueLine): Record<string, unknown> {
@@ -1598,9 +1606,22 @@ function decodeStoryTake(value: unknown): StoryTake {
 
 function decodeStorySlot(value: unknown): StorySlot {
   const doc = asRecord(value, "stories[].slots[]");
-  return {
+  const slot: StorySlot = {
     takes: asArray(doc.takes, "slots[].takes").map(decodeStoryTake),
   };
+  if (doc.pending !== undefined) {
+    const pending = asRecord(doc.pending, "slots[].pending");
+    slot.pending = {
+      jobId: asString(pending.jobId, "slots[].pending.jobId"),
+      count: Math.trunc(
+        requireField(unwrapNumber(pending.count), "slots[].pending.count"),
+      ),
+      takes: asArray(pending.takes, "slots[].pending.takes").map(
+        decodeStoryTake,
+      ),
+    };
+  }
+  return slot;
 }
 
 function decodeStoryDialogue(value: unknown): StoryDialogueLine {

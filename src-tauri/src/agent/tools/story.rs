@@ -402,7 +402,7 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
 }
 
 fn empty_slot() -> StorySlot {
-    StorySlot { takes: Vec::new() }
+    StorySlot::default()
 }
 
 fn act_from(

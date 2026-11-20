@@ -22,6 +22,17 @@ function slot(takes: string[]): StorySlot {
   };
 }
 
+function pendingSet(takes: string[], count = takes.length): StorySlot {
+  return {
+    ...slot([]),
+    pending: {
+      jobId: "job-1",
+      count,
+      takes: slot(takes).takes,
+    },
+  };
+}
+
 function draw(overrides: Partial<Parameters<typeof StorySlotView>[0]> = {}) {
   const onGenerate = vi.fn();
   const onChoose = vi.fn();
@@ -44,6 +55,29 @@ function draw(overrides: Partial<Parameters<typeof StorySlotView>[0]> = {}) {
 
 afterEach(() => {
   cleanup();
+});
+
+describe("a place asked for a set of drawings", () => {
+  it("stands the set in the place and keeps the one the reader confirms", () => {
+    const onChoosePending = vi.fn();
+    draw({
+      slot: pendingSet(["asset-a", "asset-b"]),
+      onChoosePending,
+    });
+
+    fireEvent.click(screen.getByTestId("story-slot-main-candidates"));
+    expect(screen.getByTestId("story-candidates")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("story-candidate-1"));
+    fireEvent.click(screen.getByTestId("story-candidates-confirm"));
+
+    expect(onChoosePending).toHaveBeenCalledWith("asset-b");
+  });
+
+  it("says how many of the set are still being drawn", () => {
+    draw({ slot: pendingSet(["asset-a"], 3) });
+    expect(screen.getByTestId("story-slot-main").textContent).toContain("1/3");
+    expect(screen.queryByTestId("story-slot-main-candidates")).toBeNull();
+  });
 });
 
 describe("a place with nothing in it", () => {

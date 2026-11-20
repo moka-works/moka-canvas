@@ -2,9 +2,14 @@ import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
-import { currentTake, takeFile } from "../../../shared/domain/story";
+import {
+  currentTake,
+  pendingReady,
+  takeFile,
+} from "../../../shared/domain/story";
 import type { StorySlot } from "../../../shared/domain/types";
 import { placeText, type PlaceBusy } from "../jobs/places";
+import { StoryCandidateDialog } from "./StoryCandidateDialog";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 
@@ -92,6 +97,7 @@ export function StorySlotView({
   disabledReason,
   onGenerate,
   onChoose,
+  onChoosePending,
   onRemove,
   note,
   actions,
@@ -112,6 +118,8 @@ export function StorySlotView({
   disabledReason?: string;
   onGenerate: () => void;
   onChoose: (assetId: string) => void;
+  /** Keeps one of the drawings an ask made together, and the rest with it. */
+  onChoosePending?: (assetId: string) => void;
   /** Throws an old drawing away, and answers the line to say about it. */
   onRemove: (assetId: string) => Promise<string | undefined>;
   /** A line under the picture, for what the place is waiting on. */
@@ -140,8 +148,13 @@ export function StorySlotView({
   const { t } = useTranslation();
   const [picking, setPicking] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const take = currentTake(slot);
   const many = slot.takes.length > 1;
+  const pending = slot.pending;
+  const waiting = pending !== undefined && pendingReady(slot);
+  const pendingCount = pending?.takes.length ?? 0;
+  const pendingTotal = pending?.count ?? 0;
 
   /** Choosing a take moves it to the head of the list, the rest as they were. */
   const choose = (assetId: string) => {
@@ -151,15 +164,52 @@ export function StorySlotView({
 
   return (
     <div className="story-slot" data-testid={testId}>
-      {take === undefined ? (
+      {waiting && pending !== undefined ? (
+        // One ask made several drawings: none is the place's yet, so they
+        // stand here together and the press opens the choice.
+        <button
+          className="story-slot-pending"
+          data-testid={
+            testId === undefined ? undefined : `${testId}-candidates`
+          }
+          onClick={() => {
+            if (onChoosePending !== undefined) setChoosing(true);
+          }}
+          type="button"
+        >
+          <span className="story-slot-pending-grid">
+            {pending.takes.map((held, at) => (
+              <img
+                alt={`${label} ${at + 1}`}
+                decoding="async"
+                key={`${held.assetIds[0] ?? at}-${at}`}
+                loading="lazy"
+                src={assetThumbUrl(held.assetIds[0] ?? "", SLOT_THUMB_WIDTH)}
+              />
+            ))}
+          </span>
+          <span className="story-slot-pending-foot">
+            {t("story:panels.candidateReady", {
+              count: pending.takes.length,
+            })}
+          </span>
+        </button>
+      ) : take === undefined ? (
         <div
           className={`story-slot-empty${busy !== undefined ? " is-busy" : ""}`}
           style={{ aspectRatio: ratio }}
         >
-          {busy !== undefined ? (
+          {busy !== undefined || (pending !== undefined && !waiting) ? (
             <span className="story-slot-waiting" role="status">
-              {busy.state === "running" && <span className="story-spin" />}
-              {placeText(t, busy)}
+              <span className="story-spin" />
+              {pending !== undefined
+                ? t("story:panels.candidateDrawing", {
+                    count: pendingCount,
+                    total: pendingTotal,
+                  })
+                : busy === undefined
+                  ? ""
+                  : placeText(t, busy)}
             </span>
           ) : notNeeded === true && onNotNeededChange !== undefined ? (
             <>
@@ -253,7 +303,12 @@ export function StorySlotView({
             // place says it is working on this picture and not on some other.
             <span className="story-slot-veil" role="status">
               {busy.state === "running" && <span className="story-spin" />}
-              {placeText(t, busy)}
+              {pending !== undefined && !waiting
+                ? t("story:panels.candidateDrawing", {
+                    count: pendingCount,
+                    total: pendingTotal,
+                  })
+                : placeText(t, busy)}
             </span>
           )}
         </div>
@@ -272,6 +327,20 @@ export function StorySlotView({
           >
             {busy !== undefined ? placeText(t, busy) : t("story:panels.again")}
           </button>
+          {waiting && (
+            <button
+              className="link"
+              data-testid={
+                testId === undefined ? undefined : `${testId}-choose`
+              }
+              onClick={() => setChoosing(true)}
+              type="button"
+            >
+              {t("story:panels.candidateChoose", {
+                count: pendingCount,
+              })}
+            </button>
+          )}
           {many && (
             <button
               className="link"
@@ -297,8 +366,22 @@ export function StorySlotView({
         </div>
       )}
 
-      {take === undefined && promptAction !== undefined && (
-        <div className="story-slot-actions">{promptAction}</div>
+      {take === undefined && (waiting || promptAction !== undefined) && (
+        <div className="story-slot-actions">
+          {waiting && (
+            <button
+              className="link"
+              data-testid={
+                testId === undefined ? undefined : `${testId}-choose`
+              }
+              onClick={() => setChoosing(true)}
+              type="button"
+            >
+              {t("story:panels.candidateChoose", { count: pendingCount })}
+            </button>
+          )}
+          {promptAction}
+        </div>
       )}
 
       {picking && (
@@ -316,6 +399,17 @@ export function StorySlotView({
           assetIds={[take.assetIds[0]]}
           label={`${label}${note === undefined ? "" : ` · ${note}`}`}
           onClose={() => setZoomed(false)}
+        />
+      )}
+      {choosing && pending !== undefined && onChoosePending !== undefined && (
+        <StoryCandidateDialog
+          candidates={pending.takes}
+          label={label}
+          onChoose={(assetId) => {
+            setChoosing(false);
+            onChoosePending(assetId);
+          }}
+          onClose={() => setChoosing(false)}
         />
       )}
     </div>

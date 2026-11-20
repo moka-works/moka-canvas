@@ -45,7 +45,11 @@ import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
-import { applyJobResults, readElementsAnswer } from "../jobs/apply";
+import {
+  applyJobResults,
+  readElementsAnswer,
+  settlePendingArt,
+} from "../jobs/apply";
 import {
   ELEMENT_MERGE_ID,
   itemsForTargets,
@@ -587,6 +591,10 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
           known.applied += report.applied;
           if (report.notes.length > 0) toast("info", report.notes.join(" "));
         }
+        // A set of drawings that came home short is closed with what did
+        // arrive, so the place offers the choice instead of waiting forever
+        // for a drawing nobody is making.
+        if (ending) settlePendingArt(record);
         if (ending && !known.endingSaid) {
           known.endingSaid = true;
           const failedItems = record.items.filter(
@@ -956,6 +964,33 @@ async function awaitSettled(id: string): Promise<void> {
 }
 
 /**
+ * The drawing places a batch lost, one per place, with the set size it asked
+ * for.
+ *
+ * A place asked for several drawings is one choice: asking again for only the
+ * pieces that failed would draw into a set that is no longer whole, so the
+ * place is asked for the whole set again. Places whose pieces did not name a
+ * count are ordinary single drawings.
+ */
+function artTargetsWithCount(
+  failed: StoryJobItem[],
+): Array<{ target: StoryTarget; count: number }> {
+  const held = new Map<string, { target: StoryTarget; count: number }>();
+  for (const item of failed) {
+    if (item.target.kind !== "elementArt" && item.target.kind !== "keyframeArt")
+      continue;
+    const key = jobKey(item.target);
+    const count = item.copies ?? 1;
+    const before = held.get(key);
+    held.set(key, {
+      target: item.target,
+      count: Math.max(before?.count ?? 1, count),
+    });
+  }
+  return [...held.values()];
+}
+
+/**
  * Asks again for the pieces of a batch that failed, planned from the story as
  * it stands now.
  *
@@ -994,8 +1029,19 @@ export async function retryFailed(
   // that lost several of them is handed over as one ask per model rather than
   // all of them to the room's own.
   if (job.kind === "elementArt") {
-    const targets = failed.flatMap((item) =>
-      item.target.kind === "elementArt" ? [item.target] : [],
+    const targets = artTargetsWithCount(failed).flatMap(({ target, count }) =>
+      target.kind === "elementArt"
+        ? [
+            {
+              elementId: target.elementId,
+              view: target.view,
+              count,
+              ...(target.variantId === undefined
+                ? {}
+                : { variantId: target.variantId }),
+            },
+          ]
+        : [],
     );
     const waves = planElementArtWaves(story, targets);
     for (const wave of waves) {
@@ -1010,8 +1056,17 @@ export async function retryFailed(
   // of them is handed over as one ask per model rather than all of them to the
   // step's own.
   if (job.kind === "keyframeArt") {
-    const targets = failed.flatMap((item) =>
-      item.target.kind === "keyframeArt" ? [item.target] : [],
+    const targets = artTargetsWithCount(failed).flatMap(({ target, count }) =>
+      target.kind === "keyframeArt"
+        ? [
+            {
+              chapterId: target.chapterId,
+              actId: target.actId,
+              keyframeId: target.keyframeId,
+              count,
+            },
+          ]
+        : [],
     );
     const waves = planKeyframeArtWaves(story, targets);
     for (const wave of waves) {

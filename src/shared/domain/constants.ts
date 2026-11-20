@@ -347,6 +347,8 @@ export const MAX_CHAPTERS_PER_STORY = 5_000;
 export const MAX_ELEMENTS_PER_STORY = 500;
 /** How many drawings one place keeps before the oldest is let go. */
 export const MAX_TAKES_PER_SLOT = 12;
+/** How many pictures one place's ask may draw at once. */
+export const MAX_IMAGES_PER_ASK = 3;
 export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
 /** How many hand-written clip prompts one telling may keep. */
