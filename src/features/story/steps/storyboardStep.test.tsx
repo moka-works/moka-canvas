@@ -13,9 +13,12 @@ import {
   goldenNodeIds,
 } from "../../../shared/domain/fixtures";
 import { assetsApi } from "../../../api/assets";
+import { generateApi } from "../../../api/generate";
+import type { GenerateResponse } from "../../../api/generate";
 import { clampSeconds } from "../jobs/plan";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { useModelStore } from "../../settings/modelStore";
 import { useStoryJobStore } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
 import {
@@ -131,6 +134,71 @@ describe("writing an episode's board", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("story-act-asking-0")).toBeNull(),
     );
+  });
+
+  it("rewrites a frame's words once before drawing its set, and keeps the turns", async () => {
+    paintingWithTwoModels();
+    useModelStore.setState({
+      protocols: {
+        image: {
+          openaiImage: {
+            script: "image/openaiImage/openaiImage.lua",
+            displayName: "OpenAI Image",
+            urlExample: "https://provider.test/images",
+            promptRewrite: {
+              guide: "IMAGE CONTRACT",
+              checks: {},
+              version: 1,
+            },
+          },
+        },
+      },
+    });
+    openAtBoard(withUndrawnFrames());
+
+    fireEvent.click(screen.getByTestId("story-model-image-toggle"));
+    fireEvent.click(screen.getByTestId("story-model-image-option-paint-1"));
+    fireEvent.click(screen.getByTestId("story-model-image-option-paint-2"));
+    const text = vi.spyOn(generateApi, "text").mockResolvedValue({
+      status: "succeeded",
+      outputs: [],
+      text: "A rewritten frame.",
+    } as GenerateResponse);
+
+    fireEvent.change(screen.getByTestId("story-board-draw-missing-count"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("story-board-draw-missing-rewrite"));
+    fireEvent.click(screen.getByTestId("story-board-draw-missing"));
+    await waitFor(() => expect(starts).toHaveLength(2));
+
+    // Two frames, two pictures each: the words are rewritten once per frame
+    // rather than once per request, and every copy carries that one answer.
+    expect(text).toHaveBeenCalledTimes(2);
+    expect(
+      starts.flatMap((batch) => batch.items.map((item) => item.prompt)),
+    ).toEqual(Array(4).fill("A rewritten frame."));
+
+    // The copies of a frame still take different models in turn: rewriting the
+    // words changed what each ask says, not whose turn it is.
+    expect(new Set(starts.map((batch) => batch.model))).toEqual(
+      new Set(["paint-1", "paint-2"]),
+    );
+    const frames = new Set(
+      starts.flatMap((batch) =>
+        batch.items.map((item) => item.id.replace(/:\d+$/, "")),
+      ),
+    );
+    expect(frames.size).toBe(2);
+    for (const frame of frames) {
+      const first = starts.findIndex((batch) =>
+        batch.items.some((item) => item.id === `${frame}:1`),
+      );
+      const second = starts.findIndex((batch) =>
+        batch.items.some((item) => item.id === `${frame}:2`),
+      );
+      expect(first).not.toBe(second);
+    }
   });
 
   it("folds the episode strip down to the episodes around the one open", () => {

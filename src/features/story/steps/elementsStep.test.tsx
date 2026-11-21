@@ -15,6 +15,9 @@ import type {
   StoryJobKind,
   StoryJobRecord,
 } from "../../../api/story";
+import { generateApi } from "../../../api/generate";
+import type { GenerateResponse } from "../../../api/generate";
+import type { ModelsView } from "../../../api/models";
 import { createElement, type MokaFile } from "../../../shared/domain";
 import {
   buildStoryMokaFile,
@@ -1508,6 +1511,76 @@ describe("the pictures of an element", () => {
     });
     expect(starts[0]?.items).toHaveLength(3);
     expect(starts[0]?.items.every((item) => item.copies === 3)).toBe(true);
+  });
+
+  it("rewrites a picture's words once before drawing its set", async () => {
+    useModelStore.setState({
+      view: {
+        version: 1,
+        revision: 1,
+        models: [
+          {
+            id: "paint-1",
+            category: "image",
+            protocol: "openai-images",
+            url: "https://provider.test/images",
+            model: "paint-1",
+            displayName: "Paint One",
+            enabled: true,
+            apiKey: { set: false, masked: null },
+          },
+        ],
+        defaults: {
+          text: null,
+          image: "paint-1",
+          speech: null,
+          music: null,
+          video: null,
+          asr: null,
+        },
+        preferences: {},
+        secretStorage: "unset",
+      } as unknown as ModelsView,
+      protocols: {
+        image: {
+          "openai-images": {
+            script: "image/openai-images/openai-images.lua",
+            displayName: "OpenAI Images",
+            urlExample: "https://provider.test/images",
+            promptRewrite: {
+              guide: "IMAGE CONTRACT",
+              checks: {},
+              version: 1,
+            },
+          },
+        },
+      },
+    });
+    openAtElements(buildStoryMokaFile());
+    fireEvent.click(screen.getByTestId("story-model-image-toggle"));
+    fireEvent.click(screen.getByTestId("story-model-image-option-paint-1"));
+    const text = vi.spyOn(generateApi, "text").mockResolvedValue({
+      status: "succeeded",
+      outputs: [],
+      text: "A rewritten element.",
+    } as GenerateResponse);
+
+    fireEvent.change(screen.getByTestId("story-elements-draw-all-count"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("story-elements-draw-all-rewrite"));
+    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
+
+    await waitFor(() => {
+      expect(starts).toHaveLength(1);
+    });
+    // Two pictures were asked for, and the place was rewritten once: every
+    // copy of the set is drawn from the one answer.
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(starts[0]?.items).toHaveLength(2);
+    expect(
+      starts[0]?.items.every((item) => item.prompt === "A rewritten element."),
+    ).toBe(true);
   });
 
   it("settles the step once every element has a picture, and says what is missing until then", async () => {

@@ -76,6 +76,7 @@ import {
   useStoryStore,
 } from "../stores/storyStore";
 import { useField } from "../panels/useField";
+import { usePromptRewrite } from "./usePromptRewrite";
 
 /** How many episodes one batch is asked to board at once. */
 const BOARDS_PER_ASK = 8;
@@ -113,8 +114,17 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const resources = useProjectStore((state) => state.moka?.resources);
   const models = useModelStore((state) => state.view);
   const [asking, setAsking] = useState(false);
-  // How many pictures one bulk press draws for each frame.
+  // How many pictures one bulk press draws for each frame, and whether the
+  // press asks a text model to rewrite each frame's words for its picture
+  // model first. The words are rewritten once per frame, however many pictures
+  // the set holds.
   const [imageCount, setImageCount] = useState(1);
+  const [rewritePrompts, setRewritePrompts] = useState(false);
+  const {
+    state: rewriting,
+    prepare: preparePrompts,
+    cancel: stopRewriting,
+  } = usePromptRewrite();
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
   const [waves, setWaves] = useState<string[][]>([]);
@@ -407,6 +417,27 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const previewRecord =
     previewId === null ? undefined : jobs.find((job) => job.id === previewId);
 
+  /**
+   * One bulk press's drawings, their frames rewritten first where the reader
+   * asked for it. A frame whose words could not be rewritten is not drawn;
+   * the toast that carries the failure says which, and why.
+   */
+  const drawFrames = async (
+    targets: Array<{
+      chapterId: string;
+      actId: string;
+      keyframeId: string;
+      count?: number;
+    }>,
+  ) => {
+    const waves = planKeyframeArtWaves(story, targets);
+    const prepared = rewritePrompts
+      ? await preparePrompts(story, "keyframeArt", waves)
+      : waves;
+    if (prepared.length === 0) return;
+    await runArt(story.id, "keyframeArt", prepared);
+  };
+
   /** One episode's chip, as the strip shows it open or folded. */
   const chapterChip = (held: StoryChapter, at: number) => {
     const state = boardState(held, story.shotGranularity);
@@ -487,49 +518,59 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             {redrawable.length > 0 && (
               <DrawCountButton
                 count={imageCount}
+                disabled={rewriting !== null}
                 label={t("story:storyboard.redrawDrifted", {
                   count: redrawable.length,
                 })}
                 onCount={setImageCount}
+                onRewrite={setRewritePrompts}
                 onRun={() =>
-                  void runArt(
-                    story.id,
-                    "keyframeArt",
-                    planKeyframeArtWaves(
-                      story,
-                      redrawable.map((target) => ({
-                        ...target,
-                        count: imageCount,
-                      })),
-                    ),
+                  void drawFrames(
+                    redrawable.map((target) => ({
+                      ...target,
+                      count: imageCount,
+                    })),
                   )
                 }
+                rewrite={rewritePrompts}
                 testId="story-board-redraw-drifted"
               />
             )}
             {missingFrames.length > 0 && (
               <DrawCountButton
                 count={imageCount}
+                disabled={rewriting !== null}
                 label={t("story:storyboard.drawAllMissing", {
                   count: missingFrames.length,
                 })}
                 onCount={setImageCount}
+                onRewrite={setRewritePrompts}
                 onRun={() =>
-                  void runArt(
-                    story.id,
-                    "keyframeArt",
-                    planKeyframeArtWaves(
-                      story,
-                      missingFrames.map((target) => ({
-                        ...target,
-                        count: imageCount,
-                      })),
-                    ),
+                  void drawFrames(
+                    missingFrames.map((target) => ({
+                      ...target,
+                      count: imageCount,
+                    })),
                   )
                 }
                 primary
+                rewrite={rewritePrompts}
                 testId="story-board-draw-missing"
               />
+            )}
+            {rewriting !== null && (
+              <span className="story-hint" data-testid="story-board-rewriting">
+                <span className="story-spin" />
+                {t("story:panels.rewriteProgress", { ...rewriting })}
+                <button
+                  className="link"
+                  data-testid="story-board-rewriting-stop"
+                  onClick={stopRewriting}
+                  type="button"
+                >
+                  {t("story:panels.rewriteStop")}
+                </button>
+              </span>
             )}
             {boardable.length >= 2 && (
               <button

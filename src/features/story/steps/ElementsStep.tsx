@@ -63,6 +63,7 @@ import {
   useStoryJobStore,
 } from "../stores/storyJobStore";
 import { useStoryStore } from "../stores/storyStore";
+import { usePromptRewrite } from "./usePromptRewrite";
 
 /** The kinds of element, in the order the room shows them. */
 const KINDS: StoryElementKind[] = ["character", "scene", "prop"];
@@ -172,8 +173,17 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const focusElementId = useStoryStore((state) => state.focusElementId);
   const focusVoiceId = useStoryStore((state) => state.focusVoiceId);
   const [bulkAction, setBulkAction] = useState<"" | "delete" | "model">("");
-  // How many pictures one bulk press draws for each place.
+  // How many pictures one bulk press draws for each place, and whether the
+  // press asks a text model to put each place's words in its model's contract
+  // first. The words are rewritten once per place, however many pictures a
+  // set holds.
   const [imageCount, setImageCount] = useState(1);
+  const [rewritePrompts, setRewritePrompts] = useState(false);
+  const {
+    state: rewriting,
+    prepare: preparePrompts,
+    cancel: stopRewriting,
+  } = usePromptRewrite();
   const [removingPicked, setRemovingPicked] = useState(false);
   // The page each kind was last standing on, so going back to a kind goes
   // back to what the reader was looking at rather than to its first page.
@@ -548,6 +558,27 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     if (cut.length > 1) partIds.current.push(record.id);
   };
 
+  /**
+   * One bulk press's drawings, their places rewritten first where the reader
+   * asked for it. A place whose words could not be rewritten is not drawn;
+   * the press says why in the toast that carries the failure.
+   */
+  const drawPlaces = async (
+    targets: Array<{
+      elementId: string;
+      view: "main" | "turnaround";
+      variantId?: string;
+      count?: number;
+    }>,
+  ) => {
+    const waves = planElementArtWaves(story, targets);
+    const prepared = rewritePrompts
+      ? await preparePrompts(story, "elementArt", waves)
+      : waves;
+    if (prepared.length === 0) return;
+    await run(story.id, "elementArt", prepared);
+  };
+
   return (
     <div className="story-step-scroll" data-testid="story-step-elements-body">
       <div className="story-step-wide">
@@ -673,49 +704,62 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             {drawable.length > 0 && (
               <DrawCountButton
                 count={imageCount}
+                disabled={rewriting !== null}
                 label={t("story:elements.drawAll", { count: drawable.length })}
                 onCount={setImageCount}
+                onRewrite={setRewritePrompts}
                 onRun={() =>
-                  void run(
-                    story.id,
-                    "elementArt",
-                    planElementArtWaves(
-                      story,
-                      drawable.map(({ element, form }) => ({
-                        elementId: element.id,
-                        view: "main" as const,
-                        count: imageCount,
-                        ...(form === undefined ? {} : { variantId: form.id }),
-                      })),
-                    ),
+                  void drawPlaces(
+                    drawable.map(({ element, form }) => ({
+                      elementId: element.id,
+                      view: "main",
+                      count: imageCount,
+                      ...(form === undefined ? {} : { variantId: form.id }),
+                    })),
                   )
                 }
                 primary
+                rewrite={rewritePrompts}
                 testId="story-elements-draw-all"
               />
             )}
             {viewable.length > 0 && (
               <DrawCountButton
                 count={imageCount}
+                disabled={rewriting !== null}
                 label={t("story:elements.viewsAll", { count: viewable.length })}
                 onCount={setImageCount}
+                onRewrite={setRewritePrompts}
                 onRun={() =>
-                  void run(
-                    story.id,
-                    "elementArt",
-                    planElementArtWaves(
-                      story,
-                      viewable.map(({ element, form }) => ({
-                        elementId: element.id,
-                        view: "turnaround" as const,
-                        count: imageCount,
-                        ...(form === undefined ? {} : { variantId: form.id }),
-                      })),
-                    ),
+                  void drawPlaces(
+                    viewable.map(({ element, form }) => ({
+                      elementId: element.id,
+                      view: "turnaround",
+                      count: imageCount,
+                      ...(form === undefined ? {} : { variantId: form.id }),
+                    })),
                   )
                 }
+                rewrite={rewritePrompts}
                 testId="story-elements-views-all"
               />
+            )}
+            {rewriting !== null && (
+              <span
+                className="story-hint"
+                data-testid="story-elements-rewriting"
+              >
+                <span className="story-spin" />
+                {t("story:panels.rewriteProgress", { ...rewriting })}
+                <button
+                  className="link"
+                  data-testid="story-elements-rewriting-stop"
+                  onClick={stopRewriting}
+                  type="button"
+                >
+                  {t("story:panels.rewriteStop")}
+                </button>
+              </span>
             )}
             <button
               className="link"

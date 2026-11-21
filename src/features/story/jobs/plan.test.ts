@@ -580,6 +580,29 @@ describe("planning the drawings", () => {
     expect(items).toHaveLength(3);
   });
 
+  it("gives every request of one place its own turn, a set included", () => {
+    useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
+
+    // A set of three from one frame is three requests, and each takes the next
+    // model of the list: the copies that land on one model then travel
+    // together, so neither model is asked for the whole set.
+    const waves = planKeyframeArtWaves(story(), [
+      {
+        chapterId: ids.chapterFirst,
+        actId: ids.act,
+        keyframeId: ids.frameFirst,
+        count: 3,
+      },
+    ]);
+
+    expect(waves.map((wave) => wave.model)).toEqual(["paint-1", "paint-2"]);
+    expect(waves.flatMap((wave) => wave.items.map((item) => item.id))).toEqual([
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:1`,
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:3`,
+      `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}:2`,
+    ]);
+  });
+
   it("gives each drawing its own turn of the step's list", () => {
     useStoryModels.getState().choose("image", ["paint-1", "paint-2"]);
 

@@ -8550,6 +8550,32 @@ button > .story-spin {
   padding: 2px 2px;
 }
 
+/* The count's neighbour on a bulk press: the same box, so the two read as one
+   control, holding the choice to rewrite the words before the pictures. */
+.story-split-pick.is-before-rewrite {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.story-split-rewrite {
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--stroke);
+  border-bottom-right-radius: var(--radius-sm);
+  border-left: 0;
+  border-top-right-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.story-split-rewrite input {
+  accent-color: var(--primary);
+  margin: 0;
+}
+
 /* Drawings made together, standing in the place as a choice rather than as
    the place's picture: none of them is kept until one is confirmed. */
 .story-slot-pending {
