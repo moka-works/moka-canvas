@@ -20,6 +20,7 @@ import { modelNameOf, useModelStore } from "../../settings/modelStore";
 import { actVideoCeiling, jobKey } from "../jobs/plan";
 import type { ActRun } from "../stores/storyJobStore";
 import { keepTake, removeTake, trimTake, type TakePlace } from "./takePicks";
+import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
 import { liveStory } from "./removeOldTake";
 import { frameRatio } from "./ratios";
 import { StoryLightbox } from "./StoryLightbox";
@@ -141,6 +142,12 @@ export function TransitionCard({
     chapterId: chapter.id,
     actId: act.id,
   };
+  // A bulk press films a bridge like any act short of a clip: several takes
+  // are a choice the card offers until one of them is kept.
+  const clipChoice = clipChoiceKey(story.id, clipPlace);
+  const choosingMain = useClipChoiceStore((state) =>
+    state.pending.includes(clipChoice),
+  );
   // The bridge is filmed from the picture it starts at: its own first frame
   // once it is made, and the neighbour's last until then.
   const clipPoster =
@@ -350,15 +357,28 @@ export function TransitionCard({
                     ? placeText(t, videoBusy)
                     : t("story:storyboard.transitionAgain")}
                 </button>
-                {act.video.takes.length > 1 && (
+                {choosingMain && act.video.takes.length > 1 ? (
                   <button
                     className="link"
-                    data-testid={`story-transition-video-pick-${index}`}
+                    data-testid={`story-transition-main-clip-${index}`}
                     onClick={() => setPickingClip(true)}
                     type="button"
                   >
-                    {t("story:panels.pickClip")}
+                    {t("story:storyboard.chooseMainClip", {
+                      count: act.video.takes.length,
+                    })}
                   </button>
+                ) : (
+                  act.video.takes.length > 1 && (
+                    <button
+                      className="link"
+                      data-testid={`story-transition-video-pick-${index}`}
+                      onClick={() => setPickingClip(true)}
+                      type="button"
+                    >
+                      {t("story:panels.pickClip")}
+                    </button>
+                  )
                 )}
               </span>
             )}
@@ -427,6 +447,7 @@ export function TransitionCard({
           label={t("story:storyboard.transitionTitle")}
           onChoose={(assetId) => {
             keepTake(story.id, clipPlace, assetId);
+            useClipChoiceStore.getState().clear(clipChoice);
             setPickingClip(false);
           }}
           onClose={() => setPickingClip(false)}
