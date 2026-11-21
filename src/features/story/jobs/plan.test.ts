@@ -1581,6 +1581,42 @@ describe("planning the clips", () => {
     expect(shared.map((item) => item.params?.seconds)).toEqual([8, 8]);
   });
 
+  it("keeps every act's pieces in one ask where a batch would cut it in two", () => {
+    // Four acts of twelve pieces each outrun the forty pieces a batch may
+    // carry, so they travel in two asks — and the cut falls between acts
+    // rather than through the fourth one's clip.
+    useModelStore.setState({ view: settingsWithVideoCeiling(15) });
+    const held = plannedShot(900_000);
+    const base = held.chapters[0]!.acts[0]!;
+    const actIds = Array.from({ length: 4 }, (_, at) => `long-act-${at + 1}`);
+    const acts = actIds.map((id, at) => ({
+      ...base,
+      id,
+      title: `第 ${at + 1} 幕`,
+      keyframes: Array.from({ length: 12 }, (_, index) => ({
+        ...base.keyframes[0]!,
+        id: `${id}-frame-${index + 1}`,
+        dialogue: [],
+      })),
+    }));
+    const story: StoryDocument = {
+      ...held,
+      chapters: [{ ...held.chapters[0]!, acts }],
+    };
+
+    const waves = planActVideoWaves(story, ids.chapterFirst, actIds);
+    expect(waves.map((wave) => wave.items.length)).toEqual([36, 12]);
+    for (const actId of actIds) {
+      const holding = waves.filter((wave) =>
+        wave.items.some(
+          (item) =>
+            item.target.kind === "actVideo" && item.target.actId === actId,
+        ),
+      );
+      expect(holding).toHaveLength(1);
+    }
+  });
+
   it("asks for the act's own ceiling when the model declares none", () => {
     // Two shots of four hundred seconds is over thirteen minutes; with no
     // window of its own to go by, the app's own ceiling is what each piece is

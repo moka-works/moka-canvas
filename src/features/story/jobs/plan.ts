@@ -1884,7 +1884,9 @@ export function planActVideoWaves(
     groups.set(key, group);
   }
   return [...groups.values()].flatMap(({ model, items }) =>
-    chunkWaves(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
+    // An act's pieces are one clip: a batch that cut them in two would film a
+    // shorter act than the board wrote, so the cuts keep every act whole.
+    chunkKeepingSets(items, MAX_ITEMS_PER_STORY_JOB).map((wave) => ({
       model,
       items: wave,
     })),
