@@ -175,7 +175,8 @@ export function answered(record: StoryJobRecord): StoryJobRecord {
     const files = partial
       ? landed[item.id]
       : [
-          item.target.kind === "actVideo" || item.target.kind === "keyframeVideo"
+          item.target.kind === "actVideo" ||
+          item.target.kind === "keyframeVideo"
             ? `${stem}-${record.id}`
             : stem,
         ];

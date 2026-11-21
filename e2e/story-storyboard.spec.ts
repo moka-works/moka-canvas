@@ -1742,3 +1742,74 @@ test("a picture's rewrite goes on after the dialog is closed, and is taken back 
     forgetHome(home);
   }
 });
+
+/**
+ * A bulk press films a set of takes and leaves the choice on the card.
+ *
+ * The seed's act is one drawing short of a clip; the board's own press
+ * finishes the picture, and the clips are asked for as a set of two.
+ */
+test("a bulk press films a set of takes and offers the choice", async ({
+  page,
+}) => {
+  const home = projectHome("story-bulk-film");
+  await forgetProjects();
+  await configureTheWholeStudio();
+  try {
+    await openSeededStory(page, home);
+    const firstAct = page.getByTestId("story-act-0");
+    await expect(firstAct.getByTestId("story-table")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Every picture has to stand before the act is a clip the press offers:
+    // the board's own drawing press finishes the one still missing.
+    const draw = page.getByTestId("story-board-draw-missing");
+    if ((await draw.count()) > 0) {
+      await draw.click();
+      await expect(draw).toHaveCount(0, { timeout: 60_000 });
+    }
+
+    const film = page.getByTestId("story-board-film-missing");
+    await expect(film).toBeVisible();
+    await page.getByTestId("story-board-film-missing-count").selectOption("2");
+    await film.click();
+
+    // Two takes come home and the card says they are a choice, not a clip
+    // already chosen.
+    const choice = page.getByTestId("story-act-main-clip-0");
+    await expect(choice).toBeVisible({ timeout: 90_000 });
+    await expect(firstAct.getByTestId("story-act-video-again-0")).toBeVisible();
+
+    await choice.click();
+    const picks = page.getByTestId("story-clip-picks");
+    await expect(picks).toBeVisible();
+    await expect(picks.locator(".story-pick-tile")).toHaveCount(2);
+    await picks.locator(".story-pick-keep").first().click();
+    await expect(picks).toHaveCount(0);
+
+    // The choice is settled and the other take is still there to come back
+    // to, which is what asking for a set is for.
+    await expect(choice).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/projects/current");
+          const body = (await response.json()) as {
+            moka?: {
+              stories?: {
+                chapters?: { acts?: { video?: { takes?: unknown[] } }[] }[];
+              }[];
+            };
+          };
+          return (
+            body.moka?.stories?.[0]?.chapters?.[0]?.acts?.[0]?.video?.takes
+              ?.length ?? 0
+          );
+        }),
+      )
+      .toBe(2);
+  } finally {
+    forgetHome(home);
+  }
+});
