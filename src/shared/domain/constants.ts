@@ -349,6 +349,14 @@ export const MAX_ELEMENTS_PER_STORY = 500;
 export const MAX_TAKES_PER_SLOT = 12;
 /** How many pictures one place's ask may draw at once. */
 export const MAX_IMAGES_PER_ASK = 3;
+/**
+ * How many clips one bulk press may film for each place.
+ *
+ * A clip is minutes of a provider's time rather than seconds, so a batch asks
+ * for a small set to choose between instead of a take per press. The stories
+ * themselves hold up to {@link MAX_TAKES_PER_SLOT} takes per place.
+ */
+export const MAX_VIDEO_TAKES_PER_ASK = 3;
 export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
 /** How many hand-written clip prompts one telling may keep. */

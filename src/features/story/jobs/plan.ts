@@ -54,6 +54,7 @@ import {
   targetKey,
   videoPromptOverride,
   voiceFor,
+  type StoryMissingClip,
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
 import { chapterText } from "../readText";
@@ -1917,6 +1918,63 @@ export function planKeyframeVideoWaves(
       items: wave,
     })),
   );
+}
+
+/** One ask of a bulk film press: the kind of clip it makes, and its pieces. */
+export interface VideoAskWave {
+  kind: "actVideo" | "keyframeVideo";
+  model: string | null;
+  items: StoryJobItemDraft[];
+}
+
+/**
+ * A bulk press's clips, gathered by the kind of ask and the model each takes
+ * its turn with.
+ *
+ * A whole act and a shot filmed on its own are two kinds of ask, and a batch
+ * carries one kind and one model; the pieces that land on one of each travel
+ * together. The plan is made once for the press, and every take is asked from
+ * it again — what differs between takes is the words, not the places.
+ */
+export function planMissingVideoWaves(
+  story: StoryDocument,
+  targets: StoryMissingClip[],
+): VideoAskWave[] {
+  const byChapter = new Map<
+    string,
+    { acts: string[]; shots: Map<string, string[]> }
+  >();
+  for (const target of targets) {
+    const held = byChapter.get(target.chapterId) ?? {
+      acts: [],
+      shots: new Map<string, string[]>(),
+    };
+    if (target.keyframeId === undefined) {
+      if (!held.acts.includes(target.actId)) held.acts.push(target.actId);
+    } else {
+      const shots = held.shots.get(target.actId) ?? [];
+      if (!shots.includes(target.keyframeId)) shots.push(target.keyframeId);
+      held.shots.set(target.actId, shots);
+    }
+    byChapter.set(target.chapterId, held);
+  }
+  const waves: VideoAskWave[] = [];
+  for (const [chapterId, held] of byChapter) {
+    for (const wave of planActVideoWaves(story, chapterId, held.acts)) {
+      waves.push({ kind: "actVideo", ...wave });
+    }
+    for (const [actId, keyframeIds] of held.shots) {
+      for (const wave of planKeyframeVideoWaves(
+        story,
+        chapterId,
+        actId,
+        keyframeIds,
+      )) {
+        waves.push({ kind: "keyframeVideo", ...wave });
+      }
+    }
+  }
+  return waves;
 }
 
 // -----------------------------------------------------------------------------

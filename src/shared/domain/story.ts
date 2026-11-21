@@ -232,6 +232,80 @@ export function actComplete(
   return actHasShots(act) && actHasAllArt(act) && actHasVideo(act, granularity);
 }
 
+/** One place a missing clip would be made: a whole act, or one shot of it. */
+export interface StoryMissingClip {
+  chapterId: string;
+  actId: string;
+  keyframeId?: string;
+}
+
+/**
+ * Every place a telling still owes a clip, over what is askable just now.
+ *
+ * A bulk film press reaches only what its pictures already stand behind: an
+ * act with a shot still waiting for a drawing is not one to film yet, since
+ * the clip is made of the pictures the board holds. A bridge has no pictures
+ * of its own and is made from its neighbours' clips, so it is due once both
+ * of those are made. A place already being filmed is not offered again, as
+ * asking twice pays for it twice.
+ *
+ * How a clip is made decides what a missing one is: an act filmed whole owes
+ * one clip, and one filmed shot by shot owes a clip for each of its shots. A
+ * keyframe-granularity act holding a pictureless shot cannot be filmed that
+ * way at all, and is left to the card that films it whole.
+ */
+export function missingVideoTargets(
+  story: StoryDocument,
+  busy: ReadonlySet<string>,
+): StoryMissingClip[] {
+  const targets: StoryMissingClip[] = [];
+  for (const chapter of story.chapters) {
+    chapter.acts.forEach((act, at) => {
+      const actBusy = busy.has(
+        targetKey({
+          kind: "actVideo",
+          chapterId: chapter.id,
+          actId: act.id,
+        }),
+      );
+      if (act.transition !== undefined) {
+        if (act.video.takes.length > 0 || actBusy) return;
+        const ends = neighbourVideos(story, chapter, at);
+        if (ends.from !== undefined && ends.to !== undefined) {
+          targets.push({ chapterId: chapter.id, actId: act.id });
+        }
+        return;
+      }
+      if (!actHasAllArt(act)) return;
+      if (actGranularity(act, story.shotGranularity) === "keyframe") {
+        if (actHasPicturelessShot(act)) return;
+        for (const keyframe of act.keyframes) {
+          if (currentTake(keyframe.art) === undefined) continue;
+          if (keyframe.video.takes.length > 0) continue;
+          const clipBusy = busy.has(
+            targetKey({
+              kind: "keyframeVideo",
+              chapterId: chapter.id,
+              actId: act.id,
+              keyframeId: keyframe.id,
+            }),
+          );
+          if (clipBusy) continue;
+          targets.push({
+            chapterId: chapter.id,
+            actId: act.id,
+            keyframeId: keyframe.id,
+          });
+        }
+        return;
+      }
+      if (act.video.takes.length > 0 || actBusy) return;
+      targets.push({ chapterId: chapter.id, actId: act.id });
+    });
+  }
+  return targets;
+}
+
 /** Whether every shot of an act has been filmed, which is how a clip is made. */
 function chapterClipMade(act: StoryAct): boolean {
   return (

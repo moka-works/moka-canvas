@@ -30,6 +30,7 @@ import {
   planKeyframeArtWaves,
   planKeyframeVideos,
   planLineVoiceAsks,
+  planMissingVideoWaves,
   planOutline,
   planOutlineRevision,
   planStoryboard,
@@ -1579,6 +1580,44 @@ describe("planning the clips", () => {
     held.chapters[0]!.acts[0]!.videoModel = undefined;
     const shared = planActVideos(held, ids.chapterFirst, [ids.act]);
     expect(shared.map((item) => item.params?.seconds)).toEqual([8, 8]);
+  });
+
+  it("gathers a bulk press's missing clips by the kind of ask they are", () => {
+    // A whole act and a shot filmed on its own are two kinds of ask, and each
+    // kind travels as its own batch: an act filmed whole is one piece, and a
+    // keyframe act's missing shots are the pieces of the shots' own kind.
+    const whole = drawnStory();
+    const wholeAct = whole.chapters[0]!.acts[0]!;
+    wholeAct.video = { takes: [] };
+    const [actWave] = planMissingVideoWaves(whole, [
+      { chapterId: ids.chapterFirst, actId: wholeAct.id },
+    ]);
+    expect(actWave).toMatchObject({ kind: "actVideo" });
+    expect(actWave?.items.map((item) => item.target.kind)).toEqual([
+      "actVideo",
+    ]);
+
+    const perShot = drawnStory();
+    const shotAct = perShot.chapters[0]!.acts[0]!;
+    perShot.shotGranularity = "keyframe";
+    const waves = planMissingVideoWaves(perShot, [
+      {
+        chapterId: ids.chapterFirst,
+        actId: shotAct.id,
+        keyframeId: ids.frameFirst,
+      },
+      {
+        chapterId: ids.chapterFirst,
+        actId: shotAct.id,
+        keyframeId: ids.frameSecond,
+      },
+    ]);
+    expect(waves).toHaveLength(1);
+    expect(waves[0]?.kind).toBe("keyframeVideo");
+    expect(waves[0]?.items.map((item) => item.id)).toEqual([
+      `keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`,
+      `keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`,
+    ]);
   });
 
   it("keeps every act's pieces in one ask where a batch would cut it in two", () => {

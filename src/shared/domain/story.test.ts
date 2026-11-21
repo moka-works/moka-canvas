@@ -49,11 +49,13 @@ import {
   mergeChapters,
   mergeChaptersAt,
   mergeElements,
+  missingVideoTargets,
   reviseChapter,
   slotWithoutTake,
   stepComplete,
   stepGaps,
   stepReachable,
+  targetKey,
   storyMentions,
   STORY_STEPS,
   storyProgress,
@@ -3005,6 +3007,116 @@ describe("defaultChapterCount", () => {
     expect(defaultChapterCount(600_000, 90_000)).toBe(7);
     expect(defaultChapterCount(600_000, 300_000)).toBe(2);
     expect(defaultChapterCount(180_000, 180_000)).toBe(1);
+  });
+});
+
+describe("the clips a bulk press still owes", () => {
+  const ids = storyIds();
+  const take = (assetId: string) => ({
+    assetIds: [assetId],
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  /** The fixture's first act, with both pictures drawn and its clip pending. */
+  function boardWithPictures() {
+    const story = buildStoryMokaFile().stories![0]!;
+    const act = story.chapters[0]!.acts[0]!;
+    act.video = { takes: [] };
+    act.keyframes[1]!.art = { takes: [take("asset-frame-second")] };
+    return { story, act };
+  }
+
+  it("films an act whose pictures all stand and which has no clip", () => {
+    const { story, act } = boardWithPictures();
+    expect(missingVideoTargets(story, new Set())).toEqual([
+      { chapterId: ids.chapterFirst, actId: act.id },
+    ]);
+  });
+
+  it("leaves an act still waiting on a picture for the painter", () => {
+    const { story } = boardWithPictures();
+    story.chapters[0]!.acts[0]!.keyframes[1]!.art = { takes: [] };
+    expect(missingVideoTargets(story, new Set())).toEqual([]);
+  });
+
+  it("leaves a place already being filmed alone", () => {
+    const { story, act } = boardWithPictures();
+    const busy = new Set([
+      targetKey({
+        kind: "actVideo",
+        chapterId: ids.chapterFirst,
+        actId: act.id,
+      }),
+    ]);
+    expect(missingVideoTargets(story, busy)).toEqual([]);
+  });
+
+  it("asks shot by shot for the shots a keyframe act has not filmed", () => {
+    const { story, act } = boardWithPictures();
+    story.shotGranularity = "keyframe";
+    act.video = { takes: [take("asset-act-clip")] };
+    expect(missingVideoTargets(story, new Set())).toEqual([
+      {
+        chapterId: ids.chapterFirst,
+        actId: act.id,
+        keyframeId: ids.frameFirst,
+      },
+      {
+        chapterId: ids.chapterFirst,
+        actId: act.id,
+        keyframeId: ids.frameSecond,
+      },
+    ]);
+
+    act.keyframes[0]!.video = { takes: [take("asset-shot-clip")] };
+    expect(missingVideoTargets(story, new Set())).toEqual([
+      {
+        chapterId: ids.chapterFirst,
+        actId: act.id,
+        keyframeId: ids.frameSecond,
+      },
+    ]);
+  });
+
+  it("leaves a keyframe act holding a pictureless shot to be filmed whole", () => {
+    const { story, act } = boardWithPictures();
+    story.shotGranularity = "keyframe";
+    act.video = { takes: [] };
+    act.keyframes[1]!.art = { takes: [] };
+    act.keyframes[1]!.artNotNeeded = true;
+    expect(missingVideoTargets(story, new Set())).toEqual([]);
+  });
+
+  it("films a bridge once both of its neighbours have a clip", () => {
+    const { story } = boardWithPictures();
+    const chapter = story.chapters[0]!;
+    const first = chapter.acts[0]!;
+    first.video = { takes: [take("asset-first-clip")] };
+    const second = {
+      ...structuredClone(first),
+      id: "act-second",
+      video: { takes: [take("asset-second-clip")] },
+    };
+    const bridge = {
+      ...structuredClone(first),
+      id: "act-bridge",
+      title: "过渡",
+      keyframes: [],
+      video: { takes: [] },
+      transition: { prompt: "", durationMs: 1_000 },
+    };
+    chapter.acts = [first, bridge, second];
+    expect(missingVideoTargets(story, new Set())).toEqual([
+      { chapterId: ids.chapterFirst, actId: "act-bridge" },
+    ]);
+
+    // The next act's own missing clip is a place of its own; the bridge is
+    // not due until both ends it moves between exist.
+    second.video = { takes: [] };
+    expect(
+      missingVideoTargets(story, new Set()).some(
+        (target) => target.actId === "act-bridge",
+      ),
+    ).toBe(false);
   });
 });
 
