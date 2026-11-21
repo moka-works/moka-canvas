@@ -3,14 +3,15 @@ import { useTranslation } from "react-i18next";
 import { MAX_IMAGES_PER_ASK } from "../../../shared/domain/constants";
 
 /**
- * A step's bulk drawing press, with the number of pictures each place may be
- * asked for at once on its right edge.
+ * A step's bulk press, with how many each place may be asked for at once on
+ * its right edge — pictures to choose between, or clips.
  *
  * One model call makes one picture, so a place asked for several is several
  * calls made side by side; the press says how many before it is made, because
  * a set is minutes of a provider's time and not something to discover after.
  * Beside the count stands the choice to rewrite each place's words for its
- * picture model first — once per place, however many pictures the set holds.
+ * model first — once per place for a drawing set, once per take for clips,
+ * since each take is its own ask.
  */
 export function DrawCountButton({
   label,
@@ -34,7 +35,7 @@ export function DrawCountButton({
   onRun: () => void;
   testId: string;
   primary?: boolean;
-  /** Whether the prompts are rewritten before the pictures are drawn. */
+  /** Whether the prompts are rewritten before the asks are sent. */
   rewrite?: boolean;
   /** The switch's change; absent hides the switch. */
   onRewrite?: (rewrite: boolean) => void;
