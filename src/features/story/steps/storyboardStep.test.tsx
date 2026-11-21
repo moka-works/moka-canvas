@@ -36,6 +36,8 @@ import {
   withoutThePlace,
   withThreeUndrawnShots,
   withASecondAct,
+  withTwoMissingClips,
+  withAMissingClipAndAnUndrawnAct,
   withoutTheClip,
   withFilmedShot,
   openAtBoard,
@@ -199,6 +201,121 @@ describe("writing an episode's board", () => {
       );
       expect(first).not.toBe(second);
     }
+  });
+
+  it("offers to film every complete act still short of a clip", () => {
+    openAtBoard(withAMissingClipAndAnUndrawnAct());
+    // The act beside it is still waiting on a drawing, so it is not a clip
+    // the press would film: the count is the work its pictures stand behind.
+    expect(screen.getByTestId("story-board-film-missing").textContent).toBe(
+      "Film every missing clip (1)",
+    );
+  });
+
+  it("counts every act short of a clip, and asks only those", async () => {
+    openAtBoard(withTwoMissingClips());
+    expect(screen.getByTestId("story-board-film-missing").textContent).toBe(
+      "Film every missing clip (2)",
+    );
+
+    fireEvent.click(screen.getByTestId("story-board-film-missing"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("actVideo");
+    expect(starts[0]!.items).toHaveLength(2);
+    expect(
+      new Set(
+        starts[0]!.items.map((item) =>
+          item.target.kind === "actVideo" ? item.target.actId : "",
+        ),
+      ).size,
+    ).toBe(2);
+  });
+
+  it("films a keyframe act's missing shots, not its whole clip", async () => {
+    openAtBoard(withFilmedShot());
+    expect(screen.getByTestId("story-board-film-missing").textContent).toBe(
+      "Film every missing clip (1)",
+    );
+
+    fireEvent.click(screen.getByTestId("story-board-film-missing"));
+    await waitFor(() => expect(starts).toHaveLength(1));
+    expect(starts[0]!.kind).toBe("keyframeVideo");
+    const target = starts[0]!.items[0]?.target;
+    expect(target?.kind === "keyframeVideo" ? target.keyframeId : "").toBe(
+      ids.frameSecond,
+    );
+  });
+
+  it("films a set of takes and offers the choice on the act", async () => {
+    openAtBoard(withoutTheClip());
+    fireEvent.change(screen.getByTestId("story-board-film-missing-count"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("story-board-film-missing"));
+
+    await waitFor(() => expect(starts).toHaveLength(2));
+    // Two takes are two asks of the same place, read back under the same
+    // names: the answers append as takes rather than as pieces of one clip.
+    expect(starts.map((batch) => batch.kind)).toEqual(["actVideo", "actVideo"]);
+    expect(starts[0]!.items[0]?.id).toBe(starts[1]!.items[0]?.id);
+
+    const choice = await screen.findByTestId("story-act-main-clip-0");
+    expect(choice.textContent).toBe("Choose main clip (2)");
+    await waitFor(() => expect(acts()[0]?.video.takes).toHaveLength(2));
+
+    const takes = acts()[0]!.video.takes.map((take) => take.assetIds[0]);
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByTestId(`story-clip-keep-${takes[0]}`));
+    await waitFor(() =>
+      expect(acts()[0]?.video.takes.at(-1)?.assetIds[0]).toBe(takes[0]),
+    );
+    expect(screen.queryByTestId("story-act-main-clip-0")).toBeNull();
+  });
+
+  it("rewrites each take from the board's own words, one take at a time", async () => {
+    filmingWithCeiling(15);
+    useModelStore.setState({
+      protocols: {
+        video: {
+          bailianVideo: {
+            script: "video/bailianVideo/bailianVideo.lua",
+            displayName: "Bailian Video",
+            urlExample: "https://provider.test/video-synthesis",
+            promptRewrite: {
+              guide: "VIDEO CONTRACT",
+              checks: {},
+              version: 1,
+            },
+          },
+        },
+      },
+    });
+    openAtBoard(withoutTheClip());
+    const text = vi
+      .spyOn(generateApi, "text")
+      .mockResolvedValueOnce({
+        status: "succeeded",
+        outputs: [],
+        text: "First take words.",
+      } as GenerateResponse)
+      .mockResolvedValueOnce({
+        status: "succeeded",
+        outputs: [],
+        text: "Second take words.",
+      } as GenerateResponse);
+
+    fireEvent.change(screen.getByTestId("story-board-film-missing-count"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("story-board-film-missing-rewrite"));
+    fireEvent.click(screen.getByTestId("story-board-film-missing"));
+
+    await waitFor(() => expect(starts).toHaveLength(2));
+    // Each take was read afresh: the second ask carries the second reading
+    // of the board's words, not the first take's answer.
+    expect(text).toHaveBeenCalledTimes(2);
+    expect(starts[0]!.items[0]?.prompt).toBe("First take words.");
+    expect(starts[1]!.items[0]?.prompt).toBe("Second take words.");
   });
 
   it("folds the episode strip down to the episodes around the one open", () => {

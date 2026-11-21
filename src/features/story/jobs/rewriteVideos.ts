@@ -46,6 +46,7 @@ function labelOf(
   story: StoryDocument,
   target: VideoAskWave["items"][number]["target"],
 ): string {
+  if (target.kind !== "actVideo" && target.kind !== "keyframeVideo") return "";
   const chapter = story.chapters.find((held) => held.id === target.chapterId);
   const act = actAt(story, target.chapterId, target.actId);
   const shot =

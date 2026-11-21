@@ -13,6 +13,7 @@ import {
   formatDuration,
   frameSettled,
   keyframeCount,
+  missingVideoTargets,
   targetKey,
   type StoryAct,
   type StoryChapter,
@@ -20,7 +21,10 @@ import {
   type StoryGuess,
   type StoryShotGranularity,
 } from "../../../shared/domain";
-import { REFERENCE_IMAGES_MAX } from "../../../shared/domain/constants";
+import {
+  MAX_VIDEO_TAKES_PER_ASK,
+  REFERENCE_IMAGES_MAX,
+} from "../../../shared/domain/constants";
 import { createAct } from "../../../shared/domain/factories";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -44,6 +48,7 @@ import { chapterGuesses } from "../jobs/apply";
 import {
   jobKey,
   planKeyframeArtWaves,
+  planMissingVideoWaves,
   planOutlineRevision,
   planStoryboard,
 } from "../jobs/plan";
@@ -69,6 +74,7 @@ import {
   useStoryJobStore,
   useStoryRun,
   useStoryWavesAsk,
+  waitForJob,
 } from "../stores/storyJobStore";
 import {
   rememberStripFold,
@@ -76,7 +82,11 @@ import {
   useStoryStore,
 } from "../stores/storyStore";
 import { useField } from "../panels/useField";
+import { liveStory } from "../panels/removeOldTake";
+import { slotAt } from "../panels/takePicks";
+import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
 import { usePromptRewrite } from "./usePromptRewrite";
+import { useVideoPromptRewrite } from "./useVideoPromptRewrite";
 
 /** How many episodes one batch is asked to board at once. */
 const BOARDS_PER_ASK = 8;
@@ -120,6 +130,18 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // the set holds.
   const [imageCount, setImageCount] = useState(1);
   const [rewritePrompts, setRewritePrompts] = useState(false);
+  // The same two choices for the clips: how many takes one press films for
+  // each place, and whether each take's words are rewritten before it is
+  // filmed. A take's words are its own, so a press asks the text model once
+  // per take rather than once for the whole set.
+  const [videoCount, setVideoCount] = useState(1);
+  const [rewriteClips, setRewriteClips] = useState(false);
+  const {
+    state: rewritingClips,
+    prepare: prepareClips,
+    cancel: stopRewritingClips,
+  } = useVideoPromptRewrite();
+  const stoppedClips = useRef(false);
   const {
     state: rewriting,
     prepare: preparePrompts,
@@ -213,6 +235,11 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
         })),
     ),
   );
+  // The clips a bulk press would film: the acts whose pictures all stand and
+  // which hold no clip yet, the shots of a keyframe act short of one, and the
+  // bridges whose neighbours have both been filmed. A place already being
+  // filmed, or an act still waiting on a drawing, is not offered again.
+  const missingClips = missingVideoTargets(story, new Set(places.keys()));
   // A bridge keeps its clip whichever granularity is in force, so it is not a
   // clip a switch would strand.
   const videos = countVideos(
@@ -414,6 +441,9 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const pending = pendingRevision(jobs, chapter.id);
   const revisionJobs = revisionRuns(jobs, chapter.id);
   const redrawable = driftedTargets.filter((target) => !drawing(target));
+  // One rewrite at a time: both bulk presses ask the same text model, and a
+  // second press while the first is still reading would only queue behind it.
+  const bulkBusy = rewriting !== null || rewritingClips !== null;
   const previewRecord =
     previewId === null ? undefined : jobs.find((job) => job.id === previewId);
 
@@ -436,6 +466,77 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
       : waves;
     if (prepared.length === 0) return;
     await runArt(story.id, "keyframeArt", prepared);
+  };
+
+  /** Stops a press whose words are still being rewritten. */
+  const stopFilming = () => {
+    stoppedClips.current = true;
+    stopRewritingClips();
+  };
+
+  /**
+   * One bulk press's clips, a take at a time — and, where the reader asked
+   * for it, each take's words read afresh from the board's own prompt before
+   * it is filmed, since the same words tend to come back as the same film.
+   *
+   * Every take is an ask of its own, so its answer appends to the place it
+   * was asked for; the card offers the choice when more than one came home.
+   * A take that could not be started, or a place whose words could not be
+   * rewritten, leaves the takes around it alone.
+   */
+  const filmMissing = async () => {
+    const live = liveStory(story.id) ?? story;
+    const targets = missingVideoTargets(live, new Set(places.keys()));
+    if (targets.length === 0) return;
+    const planned = planMissingVideoWaves(live, targets);
+    if (planned.length === 0) return;
+    stoppedClips.current = false;
+    const records: string[] = [];
+    for (let round = 1; round <= videoCount; round += 1) {
+      if (stoppedClips.current) break;
+      let waves = planned;
+      if (rewriteClips) {
+        waves = await prepareClips(live, planned, {
+          round,
+          rounds: videoCount,
+        });
+        if (stoppedClips.current) break;
+        if (waves.length === 0) continue;
+      }
+      for (const wave of waves) {
+        const record = await useStoryJobStore
+          .getState()
+          .start(story.id, wave.kind, wave.items, wave.model);
+        if (record !== null) records.push(record.id);
+      }
+    }
+    await Promise.all(
+      records.map((id) => waitForJob(id).catch(() => undefined)),
+    );
+    if (videoCount <= 1) return;
+    // What came home is read off the document rather than the records: an
+    // answer the room refused, or one read in already, is not a take.
+    const after = liveStory(story.id) ?? live;
+    const keys = targets.flatMap((target) => {
+      const place =
+        target.keyframeId === undefined
+          ? {
+              kind: "actVideo" as const,
+              chapterId: target.chapterId,
+              actId: target.actId,
+            }
+          : {
+              kind: "keyframeVideo" as const,
+              chapterId: target.chapterId,
+              actId: target.actId,
+              keyframeId: target.keyframeId,
+            };
+      const slot = slotAt(after, place);
+      return slot !== undefined && slot.takes.length > 1
+        ? [clipChoiceKey(story.id, place)]
+        : [];
+    });
+    useClipChoiceStore.getState().mark(keys);
   };
 
   /** One episode's chip, as the strip shows it open or folded. */
@@ -518,7 +619,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             {redrawable.length > 0 && (
               <DrawCountButton
                 count={imageCount}
-                disabled={rewriting !== null}
+                disabled={bulkBusy}
                 label={t("story:storyboard.redrawDrifted", {
                   count: redrawable.length,
                 })}
@@ -539,7 +640,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             {missingFrames.length > 0 && (
               <DrawCountButton
                 count={imageCount}
-                disabled={rewriting !== null}
+                disabled={bulkBusy}
                 label={t("story:storyboard.drawAllMissing", {
                   count: missingFrames.length,
                 })}
@@ -566,6 +667,42 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                   className="link"
                   data-testid="story-board-rewriting-stop"
                   onClick={stopRewriting}
+                  type="button"
+                >
+                  {t("story:panels.rewriteStop")}
+                </button>
+              </span>
+            )}
+            {missingClips.length > 0 && (
+              <DrawCountButton
+                count={videoCount}
+                disabled={bulkBusy}
+                kind="clip"
+                label={t("story:storyboard.filmAllMissing", {
+                  count: missingClips.length,
+                })}
+                max={MAX_VIDEO_TAKES_PER_ASK}
+                onCount={setVideoCount}
+                onRewrite={setRewriteClips}
+                onRun={() => void filmMissing()}
+                rewrite={rewriteClips}
+                testId="story-board-film-missing"
+                title={t("story:storyboard.filmAllMissingHint")}
+              />
+            )}
+            {rewritingClips !== null && (
+              <span
+                className="story-hint"
+                data-testid="story-board-rewriting-clips"
+              >
+                <span className="story-spin" />
+                {t("story:panels.videoRewriteProgress", {
+                  ...rewritingClips,
+                })}
+                <button
+                  className="link"
+                  data-testid="story-board-rewriting-clips-stop"
+                  onClick={stopFilming}
                   type="button"
                 >
                   {t("story:panels.rewriteStop")}

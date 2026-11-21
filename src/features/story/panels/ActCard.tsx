@@ -60,6 +60,7 @@ import {
 } from "./takePicks";
 import { StoryPicks } from "./StoryPicks";
 import { StoryLibraryPicker } from "./StoryLibraryPicker";
+import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
 import { ElementDraftDialog } from "./ElementDraftDialog";
 import { ElementPictureInspector } from "./ElementPictureInspector";
 import { elementFromDraft, type ElementDraft } from "./elementDraft";
@@ -205,6 +206,12 @@ export function ActCard({
     chapterId,
     actId: act.id,
   };
+  // A bulk press that filmed several takes for this act has not chosen: the
+  // card says so until one of them is kept.
+  const clipChoice = clipChoiceKey(story.id, clipPlace);
+  const choosingMain = useClipChoiceStore((state) =>
+    state.pending.includes(clipChoice),
+  );
   const voicePlace: TakePlace = {
     kind: "actVoice",
     chapterId,
@@ -347,6 +354,7 @@ export function ActCard({
   // filmed, so the frames inside the act are not a condition of taking it.
   const keepClip = (assetId: string) => {
     addTake(story.id, clipPlace, assetId);
+    useClipChoiceStore.getState().clear(clipChoice);
     setPickingClipLibrary(false);
   };
 
@@ -869,28 +877,42 @@ export function ActCard({
                           : t("story:voice.again")}
                       </button>
                     )}
+                    {choosingMain && act.video.takes.length > 1 && (
+                      <button
+                        className="link"
+                        data-testid={`story-act-main-clip-${index}`}
+                        onClick={() => setPickingClip(true)}
+                        type="button"
+                      >
+                        {t("story:storyboard.chooseMainClip", {
+                          count: act.video.takes.length,
+                        })}
+                      </button>
+                    )}
                     <MoreMenu testId={`story-act-more-${index}`}>
                       {(close) => (
                         <>
-                          {clip !== undefined && act.video.takes.length > 1 && (
-                            /*
+                          {clip !== undefined &&
+                            act.video.takes.length > 1 &&
+                            !choosingMain && (
+                              /*
                             Every ask made another take and none of them was
                             thrown away, so the menu that plays one is also
                             where the reader says which one the act is filmed
                             by — and where an unwanted one leaves.
                           */
-                            <button
-                              className="link"
-                              data-testid={`story-act-video-pick-${index}`}
-                              onClick={() => {
-                                close();
-                                setPickingClip(true);
-                              }}
-                              type="button"
-                            >
-                              {t("story:panels.pickClip")}
-                            </button>
-                          )}
+                              <button
+                                className="link"
+                                data-testid={`story-act-video-pick-${index}`}
+                                onClick={() => {
+                                  close();
+                                  setPickingClip(true);
+                                }}
+                                type="button"
+                              >
+                                {t("story:panels.pickClip")}
+                              </button>
+                            )}
                           {/*
                           A clip the reader already has is taken as it is:
                           neither source films anything, so neither waits for
@@ -1183,6 +1205,7 @@ export function ActCard({
           label={t("story:import.clip")}
           onChoose={(assetId) => {
             keepTake(story.id, clipPlace, assetId);
+            useClipChoiceStore.getState().clear(clipChoice);
             setPickingClip(false);
           }}
           onClose={() => setPickingClip(false)}

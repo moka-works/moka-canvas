@@ -55,7 +55,6 @@ import {
   stepComplete,
   stepGaps,
   stepReachable,
-  targetKey,
   storyMentions,
   STORY_STEPS,
   storyProgress,

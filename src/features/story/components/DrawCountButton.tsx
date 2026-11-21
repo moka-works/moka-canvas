@@ -22,8 +22,13 @@ export function DrawCountButton({
   rewrite,
   onRewrite,
   disabled = false,
+  max = MAX_IMAGES_PER_ASK,
+  kind = "picture",
+  title,
 }: {
   label: string;
+  /** The long reason the press stands for, where it has one. */
+  title?: string;
   count: number;
   onCount: (count: number) => void;
   onRun: () => void;
@@ -35,8 +40,26 @@ export function DrawCountButton({
   onRewrite?: (rewrite: boolean) => void;
   /** Whether the press waits on another ask just now. */
   disabled?: boolean;
+  /** How many one press may ask for; a clip press asks for fewer. */
+  max?: number;
+  /** What one press asks for: pictures each place keeps, or clips to choose between. */
+  kind?: "picture" | "clip";
 }) {
   const { t } = useTranslation();
+  const words =
+    kind === "clip"
+      ? {
+          count: "story:storyboard.filmCount",
+          aria: "story:storyboard.filmCountLabel",
+          option: "story:storyboard.filmCountOption",
+          hint: "story:storyboard.videoRewritePromptsHint",
+        }
+      : {
+          count: "story:panels.drawCount",
+          aria: "story:panels.drawCountLabel",
+          option: "story:panels.drawCountOption",
+          hint: "story:panels.rewritePromptsHint",
+        };
   return (
     <span className="story-split">
       <button
@@ -44,6 +67,7 @@ export function DrawCountButton({
         data-testid={testId}
         disabled={disabled}
         onClick={onRun}
+        title={title}
         type="button"
       >
         {label}
@@ -51,28 +75,23 @@ export function DrawCountButton({
       <label
         className={`story-split-pick${onRewrite === undefined ? "" : " is-before-rewrite"}`}
       >
-        <span className="story-split-label">{t("story:panels.drawCount")}</span>
+        <span className="story-split-label">{t(words.count)}</span>
         <select
-          aria-label={t("story:panels.drawCountLabel")}
+          aria-label={t(words.aria)}
           data-testid={`${testId}-count`}
           disabled={disabled}
           onChange={(event) => onCount(Number(event.target.value))}
           value={count}
         >
-          {Array.from({ length: MAX_IMAGES_PER_ASK }, (_, at) => at + 1).map(
-            (each) => (
-              <option key={each} value={each}>
-                {t("story:panels.drawCountOption", { count: each })}
-              </option>
-            ),
-          )}
+          {Array.from({ length: max }, (_, at) => at + 1).map((each) => (
+            <option key={each} value={each}>
+              {t(words.option, { count: each })}
+            </option>
+          ))}
         </select>
       </label>
       {onRewrite !== undefined && (
-        <label
-          className="story-split-rewrite"
-          title={t("story:panels.rewritePromptsHint")}
-        >
+        <label className="story-split-rewrite" title={t(words.hint)}>
           <input
             checked={rewrite ?? false}
             data-testid={`${testId}-rewrite`}

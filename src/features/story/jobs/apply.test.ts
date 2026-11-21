@@ -235,6 +235,28 @@ describe("writing a batch's answers into the story", () => {
     );
   });
 
+  it("keeps two presses for one act as two takes", () => {
+    // The same act asked for twice is not one clip with two answers: each
+    // press is a take of its own, newest last, which is what a reader with
+    // several takes chooses between.
+    const base = `actVideo:${ids.chapterFirst}:${ids.act}`;
+    const before = story().chapters[0].acts[0].video.takes.length;
+
+    applyJobResults({
+      ...record("actVideo", [actPiece(base, "asset-take-one")]),
+      id: "job-take-one",
+    });
+    applyJobResults({
+      ...record("actVideo", [actPiece(base, "asset-take-two")]),
+      id: "job-take-two",
+    });
+
+    const takes = story().chapters[0].acts[0].video.takes;
+    expect(takes).toHaveLength(before + 2);
+    expect(takes.at(-2)?.assetIds).toEqual(["asset-take-one"]);
+    expect(takes.at(-1)?.assetIds).toEqual(["asset-take-two"]);
+  });
+
   it("writes no clip for an act whose pieces did not all come back", () => {
     // A sequence with a piece missing is not a shorter act but a broken one:
     // the film would run to something the board never planned.

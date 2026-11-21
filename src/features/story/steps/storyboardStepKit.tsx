@@ -168,9 +168,17 @@ export function batchOf(
 export function answered(record: StoryJobRecord): StoryJobRecord {
   const partial = Object.keys(landed).length > 0;
   const items = record.items.map((item) => {
+    // A video's take carries its batch in the name: two takes of one place are
+    // two answers, and apply would read the second as the first kept again
+    // without it. A drawing is kept by a set of its own and needs no such mark.
+    const stem = `asset-${item.id.replace(/[^\w-]/g, "-")}`;
     const files = partial
       ? landed[item.id]
-      : [`asset-${item.id.replace(/[^\w-]/g, "-")}`];
+      : [
+          item.target.kind === "actVideo" || item.target.kind === "keyframeVideo"
+            ? `${stem}-${record.id}`
+            : stem,
+        ];
     if (files === undefined) return item;
     return {
       ...item,
@@ -322,6 +330,26 @@ export function withTwoFilmedActs(): MokaFile {
   second!.video = {
     takes: [{ assetIds: ["asset-second-clip"], createdAt: T0 }],
   };
+  return moka;
+}
+
+/** Two acts whose pictures all stand, neither of them filmed yet. */
+export function withTwoMissingClips(): MokaFile {
+  const moka = withTwoDrawnActs();
+  for (const act of moka.stories![0].chapters[0]!.acts) {
+    act.video = { takes: [] };
+  }
+  return moka;
+}
+
+/** The act owed a clip, with an act beside it still waiting on a picture. */
+export function withAMissingClipAndAnUndrawnAct(): MokaFile {
+  const moka = withoutTheClip();
+  const chapter = moka.stories![0].chapters[0]!;
+  chapter.acts.push({
+    ...createAct("第 2 幕 空车厢", "灯管忽明忽暗。"),
+    keyframes: [createKeyframe(0)],
+  });
   return moka;
 }
 

@@ -80,6 +80,7 @@ import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
 import { keepTake, removeTake, type TakePlace } from "./takePicks";
+import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
 import { useField } from "./useField";
 import { ImagePromptDialog } from "./ImagePromptDialog";
 import { VideoPromptDialog } from "./VideoPromptDialog";
@@ -331,6 +332,12 @@ function KeyframeRow({
     actId: act.id,
     keyframeId: keyframe.id,
   };
+  // A bulk press that filmed several takes for this shot has not chosen: the
+  // row says so until the reader keeps one of them.
+  const clipChoice = clipChoiceKey(story.id, clipPlace);
+  const choosingMain = useClipChoiceStore((state) =>
+    state.pending.includes(clipChoice),
+  );
   // The clip leads with its own first frame, and falls back to the frame the
   // shot was drawn with where the machine cannot take one out of the film.
   const drawnPoster = takeFile(currentTake(keyframe.art));
@@ -790,15 +797,28 @@ function KeyframeRow({
                     ? placeText(t, clipBusy)
                     : t("story:voice.again")}
                 </button>
-                {keyframe.video.takes.length > 1 && (
+                {choosingMain && keyframe.video.takes.length > 1 ? (
                   <button
                     className="link"
-                    data-testid={`story-kf-video-pick-${index}`}
+                    data-testid={`story-kf-main-clip-${index}`}
                     onClick={() => setPickingClip(true)}
                     type="button"
                   >
-                    {t("story:panels.pickClip")}
+                    {t("story:storyboard.chooseMainClip", {
+                      count: keyframe.video.takes.length,
+                    })}
                   </button>
+                ) : (
+                  keyframe.video.takes.length > 1 && (
+                    <button
+                      className="link"
+                      data-testid={`story-kf-video-pick-${index}`}
+                      onClick={() => setPickingClip(true)}
+                      type="button"
+                    >
+                      {t("story:panels.pickClip")}
+                    </button>
+                  )
                 )}
                 {clipStale && (
                   <span
@@ -955,6 +975,7 @@ function KeyframeRow({
           label={t("story:import.clip")}
           onChoose={(assetId) => {
             keepTake(story.id, clipPlace, assetId);
+            useClipChoiceStore.getState().clear(clipChoice);
             setPickingClip(false);
           }}
           onClose={() => setPickingClip(false)}
