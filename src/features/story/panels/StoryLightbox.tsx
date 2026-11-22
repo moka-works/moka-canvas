@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -133,10 +134,7 @@ export function StoryLightbox({
     };
   });
   const [at, setAt] = useState(() => (timed ? pieceAt(range.inMs) : 0));
-  // Whether the reader has begun watching: a clip opens on its poster and
-  // waits to be played, and only the pieces that follow one already being
-  // watched start by themselves.
-  const [started, setStarted] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [momentMs, setMomentMs] = useState(range.inMs);
   const [seeking, setSeeking] = useState<{
     index: number;
@@ -149,8 +147,28 @@ export function StoryLightbox({
   const dragging = useRef<"in" | "out" | null>(null);
   const track = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playRequested = useRef(false);
   const file = assetIds[Math.min(at, assetIds.length - 1)] ?? "";
   const pieces = assetIds.length;
+
+  const requestPlay = useCallback(
+    (element: HTMLVideoElement): void => {
+      playRequested.current = true;
+      void element.play().catch((problem: unknown) => {
+        playRequested.current = false;
+        setPlaying(false);
+        useAppStore
+          .getState()
+          .pushToast(
+            "error",
+            t("editor:player.failed"),
+            undefined,
+            problem instanceof Error ? problem.message : String(problem),
+          );
+      });
+    },
+    [t],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -168,13 +186,13 @@ export function StoryLightbox({
     if (element === null) return;
     const apply = () => {
       element.currentTime = seeking.localMs / 1000;
-      if (seeking.resume) void element.play();
+      if (seeking.resume) requestPlay(element);
       setSeeking(null);
     };
     if (element.readyState >= 1) apply();
     else element.addEventListener("loadedmetadata", apply, { once: true });
     return () => element.removeEventListener("loadedmetadata", apply);
-  }, [seeking]);
+  }, [requestPlay, seeking]);
 
   /** Moves the preview to a moment of the take, opening another piece if need be. */
   const seekTo = (ms: number, resume = false): void => {
@@ -186,11 +204,26 @@ export function StoryLightbox({
     const element = videoRef.current;
     if (index === at && element !== null) {
       element.currentTime = localMs / 1000;
-      if (resume) void element.play();
+      if (resume) requestPlay(element);
       return;
     }
     setSeeking({ index, localMs, resume });
     setAt(index);
+  };
+
+  const togglePlay = (): void => {
+    const element = videoRef.current;
+    if (element === null) return;
+    if (!element.paused) {
+      playRequested.current = false;
+      element.pause();
+      return;
+    }
+    if (trim !== 0 && momentMs >= range.outMs - 50) {
+      seekTo(range.inMs, true);
+      return;
+    }
+    requestPlay(element);
   };
 
   const msAt = (clientX: number): number => {
@@ -207,6 +240,7 @@ export function StoryLightbox({
       event.stopPropagation();
       dragging.current = edge;
       event.currentTarget.setPointerCapture(event.pointerId);
+      playRequested.current = false;
       videoRef.current?.pause();
     };
 
@@ -306,16 +340,24 @@ export function StoryLightbox({
         {video === true ? (
           <>
             <video
-              autoPlay={started && at > 0}
-              controls
+              controls={trim === 0}
+              data-testid="story-lightbox-video"
               key={file}
               onEnded={() => {
                 const end = (offsets[at] ?? 0) + (durations[at] ?? 0);
                 if (trim !== 0 && end >= range.outMs) {
+                  playRequested.current = false;
+                  setPlaying(false);
                   setMomentMs(range.outMs);
                   return;
                 }
-                setAt((held) => Math.min(held + 1, pieces - 1));
+                if (at >= pieces - 1) {
+                  playRequested.current = false;
+                  setPlaying(false);
+                  return;
+                }
+                playRequested.current = true;
+                setAt(at + 1);
               }}
               onLoadedMetadata={(event) => {
                 const element = event.currentTarget;
@@ -323,9 +365,13 @@ export function StoryLightbox({
                 if (start > 0 && element.currentTime < start / 1000 - 0.05) {
                   element.currentTime = start / 1000;
                 }
+                if (playRequested.current) requestPlay(element);
+                else element.pause();
               }}
+              onPause={() => setPlaying(false)}
               onPlay={(event) => {
-                setStarted(true);
+                playRequested.current = true;
+                setPlaying(true);
                 if (trim !== 0 && momentMs >= range.outMs - 50) {
                   event.currentTarget.pause();
                   seekTo(range.inMs, true);
@@ -342,6 +388,7 @@ export function StoryLightbox({
                     (range.inMs - (offsets[at] ?? 0)) / 1000,
                   );
                 } else if (moment >= range.outMs - 5) {
+                  playRequested.current = false;
                   element.pause();
                   if (rangeEnd > 0) {
                     element.currentTime = Math.min(
@@ -359,9 +406,21 @@ export function StoryLightbox({
             />
             {trim !== 0 && (
               <div className="story-trim" data-testid="story-trim">
-                <span className="story-trim-time">
-                  {formatMs(momentMs)} / {formatMs(totalMs)}
-                </span>
+                <div className="story-trim-playback">
+                  <button
+                    className="link"
+                    data-testid="story-lightbox-toggle"
+                    onClick={togglePlay}
+                    type="button"
+                  >
+                    {playing
+                      ? t("editor:player.pause")
+                      : t("editor:player.play")}
+                  </button>
+                  <span className="story-trim-time">
+                    {formatMs(momentMs)} / {formatMs(totalMs)}
+                  </span>
+                </div>
                 <div
                   className="story-trim-track"
                   data-testid="story-trim-track"

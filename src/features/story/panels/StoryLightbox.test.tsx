@@ -81,6 +81,58 @@ describe("saving what is being looked at", () => {
 });
 
 describe("the window a clip is kept to", () => {
+  it("opens paused and gives its one timeline a working play control", async () => {
+    render(
+      <StoryLightbox
+        assetIds={[ids.actVideo]}
+        label="Clip"
+        onClose={() => {}}
+        onTrim={() => {}}
+        video
+      />,
+    );
+    const video = screen.getByTestId(
+      "story-lightbox-video",
+    ) as HTMLVideoElement;
+    let paused = true;
+    Object.defineProperty(video, "paused", {
+      configurable: true,
+      get: () => paused,
+    });
+    const play = vi.spyOn(video, "play").mockImplementation(() => {
+      paused = false;
+      fireEvent.play(video);
+      return Promise.resolve();
+    });
+    vi.mocked(video.pause).mockImplementation(() => {
+      paused = true;
+      fireEvent.pause(video);
+    });
+
+    fireEvent.loadedMetadata(video);
+
+    expect(video.autoplay).toBe(false);
+    expect(video.controls).toBe(false);
+    expect(paused).toBe(true);
+    expect(play).not.toHaveBeenCalled();
+    expect(screen.getByTestId("story-trim")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("story-lightbox-toggle"));
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(paused).toBe(false);
+    await waitFor(() =>
+      expect(screen.getByTestId("story-lightbox-toggle").textContent).toBe(
+        "Pause",
+      ),
+    );
+
+    fireEvent.click(screen.getByTestId("story-lightbox-toggle"));
+    expect(paused).toBe(true);
+    expect(screen.getByTestId("story-lightbox-toggle").textContent).toBe(
+      "Play",
+    );
+  });
+
   it("offers two ends over a measured take and hands the cut window on", () => {
     const onTrim = vi.fn();
     render(

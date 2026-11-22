@@ -8743,6 +8743,13 @@ button > .story-spin {
   justify-items: center;
 }
 
+.story-trim-playback {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
 .story-trim-time {
   color: var(--muted);
   font-size: 12px;

@@ -759,6 +759,21 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(
       page.getByTestId("story-lightbox").locator("video"),
     ).not.toHaveAttribute("autoplay", "");
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).toHaveJSProperty("paused", true);
+    // The trimmer is the only timeline, and its own transport really plays.
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).toHaveJSProperty("controls", false);
+    await page.getByTestId("story-lightbox-toggle").click();
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).toHaveJSProperty("paused", false);
+    await page.getByTestId("story-lightbox-toggle").click();
+    await expect(
+      page.getByTestId("story-lightbox").locator("video"),
+    ).toHaveJSProperty("paused", true);
 
     // The clip on show is saved where the reader says, and the same window
     // trims what is played and what the cut will lay down.
