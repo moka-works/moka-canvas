@@ -259,9 +259,10 @@ describe("writing an episode's board", () => {
     expect(starts.map((batch) => batch.kind)).toEqual(["actVideo", "actVideo"]);
     expect(starts[0]!.items[0]?.id).toBe(starts[1]!.items[0]?.id);
 
-    const choice = await screen.findByTestId("story-act-main-clip-0");
-    expect(choice.textContent).toBe("Choose main clip (2)");
     await waitFor(() => expect(acts()[0]?.video.takes).toHaveLength(2));
+    const choice = screen.getByTestId("story-act-video-0");
+    expect(choice.getAttribute("aria-label")).toBe("Choose main clip (2)");
+    expect(screen.queryByTestId("story-act-main-clip-0")).toBeNull();
 
     const takes = acts()[0]!.video.takes.map((take) => take.assetIds[0]);
     fireEvent.click(choice);
@@ -270,6 +271,7 @@ describe("writing an episode's board", () => {
       expect(acts()[0]?.video.takes.at(-1)?.assetIds[0]).toBe(takes[0]),
     );
     expect(screen.queryByTestId("story-act-main-clip-0")).toBeNull();
+    expect(choice.getAttribute("aria-label")).toBe("Play this clip");
   });
 
   it("rewrites each take from the board's own words, one take at a time", async () => {

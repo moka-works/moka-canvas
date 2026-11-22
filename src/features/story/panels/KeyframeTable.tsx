@@ -768,10 +768,22 @@ function KeyframeRow({
             ) : (
               <span className="story-kf-clip">
                 <button
-                  aria-label={t("story:storyboard.playClip")}
+                  aria-label={
+                    choosingMain && keyframe.video.takes.length > 1
+                      ? t("story:storyboard.chooseMainClip", {
+                          count: keyframe.video.takes.length,
+                        })
+                      : t("story:storyboard.playClip")
+                  }
                   className="story-act-play"
                   data-testid={`story-kf-video-${index}`}
-                  onClick={() => setPlaying(true)}
+                  onClick={() => {
+                    if (choosingMain && keyframe.video.takes.length > 1) {
+                      setPickingClip(true);
+                    } else {
+                      setPlaying(true);
+                    }
+                  }}
                   type="button"
                 >
                   <img
@@ -797,28 +809,15 @@ function KeyframeRow({
                     ? placeText(t, clipBusy)
                     : t("story:voice.again")}
                 </button>
-                {choosingMain && keyframe.video.takes.length > 1 ? (
+                {!choosingMain && keyframe.video.takes.length > 1 && (
                   <button
                     className="link"
-                    data-testid={`story-kf-main-clip-${index}`}
+                    data-testid={`story-kf-video-pick-${index}`}
                     onClick={() => setPickingClip(true)}
                     type="button"
                   >
-                    {t("story:storyboard.chooseMainClip", {
-                      count: keyframe.video.takes.length,
-                    })}
+                    {t("story:panels.pickClip")}
                   </button>
-                ) : (
-                  keyframe.video.takes.length > 1 && (
-                    <button
-                      className="link"
-                      data-testid={`story-kf-video-pick-${index}`}
-                      onClick={() => setPickingClip(true)}
-                      type="button"
-                    >
-                      {t("story:panels.pickClip")}
-                    </button>
-                  )
                 )}
                 {clipStale && (
                   <span

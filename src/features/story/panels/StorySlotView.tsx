@@ -327,20 +327,6 @@ export function StorySlotView({
           >
             {busy !== undefined ? placeText(t, busy) : t("story:panels.again")}
           </button>
-          {waiting && (
-            <button
-              className="link"
-              data-testid={
-                testId === undefined ? undefined : `${testId}-choose`
-              }
-              onClick={() => setChoosing(true)}
-              type="button"
-            >
-              {t("story:panels.candidateChoose", {
-                count: pendingCount,
-              })}
-            </button>
-          )}
           {many && (
             <button
               className="link"
@@ -366,22 +352,8 @@ export function StorySlotView({
         </div>
       )}
 
-      {take === undefined && (waiting || promptAction !== undefined) && (
-        <div className="story-slot-actions">
-          {waiting && (
-            <button
-              className="link"
-              data-testid={
-                testId === undefined ? undefined : `${testId}-choose`
-              }
-              onClick={() => setChoosing(true)}
-              type="button"
-            >
-              {t("story:panels.candidateChoose", { count: pendingCount })}
-            </button>
-          )}
-          {promptAction}
-        </div>
+      {take === undefined && promptAction !== undefined && (
+        <div className="story-slot-actions">{promptAction}</div>
       )}
 
       {picking && (

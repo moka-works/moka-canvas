@@ -157,6 +157,11 @@ function multiArtItem(item: StoryJobItem): boolean {
   );
 }
 
+export function pendingArtSetId(record: StoryJobRecord): string | undefined {
+  const item = record.items.find(multiArtItem);
+  return item === undefined ? undefined : (item.setId ?? record.id);
+}
+
 /**
  * Writes one ask's drawings into the place as a set waiting to be chosen
  * between, rather than as takes already kept.
@@ -188,8 +193,9 @@ function pendingArtCommands(
     return [];
   }
   const expected = Math.max(...items.map((item) => item.copies ?? 1));
+  const setId = pendingArtSetId(record) ?? record.id;
   let base = slot;
-  if (base.pending !== undefined && base.pending.jobId !== record.id) {
+  if (base.pending !== undefined && base.pending.jobId !== setId) {
     base = foldPendingTakes(base);
   }
   const candidates = [...(base.pending?.takes ?? [])];
@@ -216,7 +222,7 @@ function pendingArtCommands(
   return slotCommand(story, target, {
     ...base,
     pending: {
-      jobId: record.id,
+      jobId: setId,
       count: Math.max(expected, base.pending?.count ?? 0),
       takes: candidates,
     },
@@ -294,13 +300,28 @@ function storySlotPlaces(
  * counting it as the whole set, rather than leaving a place that waits forever
  * for a drawing nobody is making. A set that came home with nothing is let go.
  */
-export function settlePendingArt(record: StoryJobRecord): void {
+export function settlePendingArt(
+  record: StoryJobRecord,
+  records: StoryJobRecord[] = [record],
+): void {
+  const setId = pendingArtSetId(record);
+  if (setId === undefined) return;
+  const at = records.findIndex((other) => other.id === record.id);
+  // A later record may be finished on the server but not applied here yet.
+  const waiting = records.some(
+    (other, index) =>
+      pendingArtSetId(other) === setId &&
+      (other.status === "queued" ||
+        other.status === "running" ||
+        (index > at && other.readAt === undefined)),
+  );
+  if (waiting) return;
   const story = storyOf(record);
   if (story === undefined) return;
   const commands: DocumentCommand[] = [];
   for (const { target, slot } of storySlotPlaces(story)) {
     const pending = slot.pending;
-    if (pending === undefined || pending.jobId !== record.id) continue;
+    if (pending === undefined || pending.jobId !== setId) continue;
     if (pending.takes.length >= pending.count) continue;
     if (pending.takes.length === 0) {
       const rest = { ...slot };

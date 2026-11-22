@@ -222,6 +222,24 @@ function filmWithContract() {
 }
 
 describe("a clip's prompt before it is filmed", () => {
+  it("puts the number of takes with the send actions", () => {
+    open(undefined, "film");
+    const count = screen.getByTestId(
+      "story-video-prompt-count",
+    ) as HTMLSelectElement;
+    expect(Array.from(count.options).map((option) => option.value)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(document.querySelector(".dialog-actions")?.contains(count)).toBe(
+      true,
+    );
+
+    fireEvent.change(count, { target: { value: "2" } });
+    expect(count.value).toBe("2");
+  });
+
   it("offers a rewrite only when the model declares a contract", () => {
     open(undefined, "film");
     expect(screen.getByTestId("story-video-prompt-send")).toBeTruthy();

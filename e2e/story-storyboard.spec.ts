@@ -1790,10 +1790,13 @@ test("a bulk press films a set of takes and offers the choice", async ({
     await page.getByTestId("story-board-film-missing-count").selectOption("2");
     await film.click();
 
-    // Two takes come home and the card says they are a choice, not a clip
-    // already chosen.
-    const choice = page.getByTestId("story-act-main-clip-0");
-    await expect(choice).toBeVisible({ timeout: 90_000 });
+    // Two takes come home and the preview itself opens their choice, with no
+    // second button standing between the reader and the clips.
+    const choice = firstAct.getByTestId("story-act-video-0");
+    await expect(choice).toHaveAttribute("aria-label", "Choose main clip (2)", {
+      timeout: 90_000,
+    });
+    await expect(page.getByTestId("story-act-main-clip-0")).toHaveCount(0);
     await expect(firstAct.getByTestId("story-act-video-again-0")).toBeVisible();
 
     await choice.click();
@@ -1805,7 +1808,7 @@ test("a bulk press films a set of takes and offers the choice", async ({
 
     // The choice is settled and the other take is still there to come back
     // to, which is what asking for a set is for.
-    await expect(choice).toHaveCount(0);
+    await expect(choice).toHaveAttribute("aria-label", "Play this clip");
     await expect
       .poll(async () =>
         page.evaluate(async () => {
@@ -1824,6 +1827,60 @@ test("a bulk press films a set of takes and offers the choice", async ({
         }),
       )
       .toBe(2);
+  } finally {
+    forgetHome(home);
+  }
+});
+
+test("a clip prompt films its chosen count over fast and slow models", async ({
+  page,
+}) => {
+  const home = projectHome("story-prompt-film-set");
+  await forgetProjects();
+  await configureTheWholeStudio();
+  await configureModels([
+    { id: VIDEOGRAPHER, capability: "video", alias: "Videographer" },
+    {
+      id: "slow-videographer",
+      capability: "video",
+      alias: "Slow Videographer",
+    },
+  ]);
+  try {
+    await openSeededStory(page, home);
+    await page.getByTestId("story-model-video-toggle").click();
+    await page.getByTestId(`story-model-video-option-${VIDEOGRAPHER}`).check();
+    await page
+      .getByTestId("story-model-video-option-slow-videographer")
+      .check();
+    const firstAct = page.getByTestId("story-act-0");
+    const draw = page.getByTestId("story-board-draw-missing");
+    if ((await draw.count()) > 0) {
+      await draw.click();
+      await expect(draw).toHaveCount(0, { timeout: 60_000 });
+    }
+
+    await firstAct.getByTestId("story-act-video-go-0").click();
+    const dialog = page.getByTestId("story-video-prompt-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("story-video-prompt-count").selectOption("2");
+    await dialog.getByTestId("story-video-prompt-send").click();
+
+    const choice = firstAct.getByTestId("story-act-video-0");
+    await expect(choice).toHaveAttribute("aria-label", "Choose main clip (2)", {
+      timeout: 90_000,
+    });
+    const filmmakers = new Set(
+      (await providerCalls())
+        .filter((call) => call.path === "/v1/videos" && call.model !== "")
+        .map((call) => call.model),
+    );
+    expect(filmmakers).toEqual(new Set([VIDEOGRAPHER, "slow-videographer"]));
+    await choice.click();
+    await expect(page.getByTestId("story-clip-picks")).toBeVisible();
+    await expect(
+      page.getByTestId("story-clip-picks").locator(".story-pick-tile"),
+    ).toHaveCount(2);
   } finally {
     forgetHome(home);
   }

@@ -1406,6 +1406,39 @@ describe("asking again for what did not come back", () => {
     return JSON.parse(sent.body) as { items: { id: string; prompt: string }[] };
   }
 
+  it("keeps a retried drawing set together across model waves", async () => {
+    serving({ "/api/v1/projects/current/story/jobs": job() });
+    useStoryModels.setState({
+      choices: { image: ["paint-1", "paint-2"] },
+    });
+    const held = job({
+      items: [
+        {
+          ...job().items[0]!,
+          copies: 2,
+          status: "failed",
+        },
+      ],
+    });
+
+    await retryFailed(openStory(), held);
+
+    const asks = calls
+      .filter(
+        (call) => call.method === "POST" && call.url.endsWith("/story/jobs"),
+      )
+      .map(
+        (call) =>
+          JSON.parse(call.body ?? "{}") as {
+            items: { setId?: string; copies?: number }[];
+          },
+      );
+    expect(asks).toHaveLength(2);
+    expect(asks.map((ask) => ask.items[0]?.copies)).toEqual([2, 2]);
+    expect(asks[0]?.items[0]?.setId).toBeDefined();
+    expect(asks[1]?.items[0]?.setId).toBe(asks[0]?.items[0]?.setId);
+  });
+
   it("sends a manuscript's part again as the part it was, not as a new outline", async () => {
     serving({ "/api/v1/projects/current/story/jobs": job() });
     const held = job({

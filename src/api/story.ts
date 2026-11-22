@@ -107,6 +107,8 @@ export interface StoryJobItem {
    * draws a set to choose between. Absent is one.
    */
   copies?: number;
+  /** Identifies the copies drawn by one press across several model batches. */
+  setId?: string;
   status: StoryJobStatus;
   /** What a text piece was answered with, kept whole for a reader to repair. */
   text?: string;
@@ -169,7 +171,13 @@ export type StoryJobItemDraft = Pick<
   Partial<
     Pick<
       StoryJobItem,
-      "inputs" | "params" | "system" | "promptContext" | "name" | "copies"
+      | "inputs"
+      | "params"
+      | "system"
+      | "promptContext"
+      | "name"
+      | "copies"
+      | "setId"
     >
   >;
 

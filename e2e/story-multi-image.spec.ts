@@ -1,13 +1,18 @@
 import { join } from "node:path";
 import { expect, test, type Page } from "./fixtures";
 import {
+  configureModels,
   configureWordsAndPictures,
   createProject,
   forgetHome,
   forgetProjects,
   newStory,
+  openSeededStory,
   projectHome,
 } from "./helpers";
+import { PAINTER, STORYTELLER } from "./mock-provider";
+
+test.describe.configure({ timeout: 120_000 });
 
 /**
  * Pictures drawn a set at a time, kept as a choice rather than as takes one by
@@ -138,9 +143,10 @@ test("a place asked for three pictures waits for the set, then keeps the choice"
     await expect(keeper.getByTestId("story-slot-main-candidates")).toBeVisible({
       timeout: 90_000,
     });
+    await expect(keeper.getByTestId("story-slot-main-choose")).toHaveCount(0);
     await expect(
-      keeper.getByTestId("story-slot-main").locator(".story-slot-actions"),
-    ).toContainText("Choose (3)");
+      keeper.getByTestId("story-slot-main-candidates").locator("img"),
+    ).toHaveCount(3);
     await keeper.evaluate((element) =>
       element.scrollIntoView({ block: "start" }),
     );
@@ -234,6 +240,65 @@ test("a place asked for three pictures waits for the set, then keeps the choice"
     await expect(page.getByTestId("story-candidates")).toBeVisible();
     await painted(page);
     await shot(page, "storyboard-candidate-dialog.png");
+  } finally {
+    forgetHome(home);
+  }
+});
+
+test("copies split over fast and slow painters stay one choice", async ({
+  page,
+}) => {
+  const home = projectHome("story-split-image-set");
+  await forgetProjects();
+  await configureModels([
+    { id: PAINTER, capability: "image", alias: "Painter" },
+    { id: "slow-painter", capability: "image", alias: "Slow Painter" },
+    { id: STORYTELLER, capability: "text", alias: "Storyteller" },
+  ]);
+  try {
+    await openSeededStory(page, home);
+    await page.getByTestId("story-model-image-toggle").click();
+    await page.getByTestId(`story-model-image-option-${PAINTER}`).check();
+    await page.getByTestId("story-model-image-option-slow-painter").check();
+
+    const firstAct = page.getByTestId("story-act-0");
+    await firstAct.getByTestId("story-kf-slot-0-again").click();
+    const dialog = page.getByTestId("story-image-prompt-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("story-image-prompt-count").selectOption("2");
+    await dialog.getByTestId("story-image-prompt-draw").click();
+
+    const candidates = page.locator('[data-testid$="-candidates"]').first();
+    await expect(candidates).toBeVisible({ timeout: 90_000 });
+    await expect(candidates.locator("img")).toHaveCount(2, { timeout: 30_000 });
+    await expect(page.locator('[data-testid$="-choose"]')).toHaveCount(0);
+    const batches = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/projects/current/story/jobs");
+      const jobs = (await response.json()) as {
+        kind: string;
+        model: string;
+        items: { copies?: number; setId?: string }[];
+      }[];
+      return jobs
+        .filter((job) =>
+          job.items.some(
+            (item) => item.copies === 2 && item.setId !== undefined,
+          ),
+        )
+        .map((job) => ({
+          model: job.model,
+          setIds: job.items.map((item) => item.setId),
+        }));
+    });
+    expect(batches).toHaveLength(2);
+    expect(new Set(batches.map((job) => job.model))).toEqual(
+      new Set([PAINTER, "slow-painter"]),
+    );
+    expect(new Set(batches.flatMap((job) => job.setIds)).size).toBe(1);
+
+    await candidates.click();
+    await expect(page.getByTestId("story-candidates")).toBeVisible();
+    await expect(page.locator(".story-candidate")).toHaveCount(2);
   } finally {
     forgetHome(home);
   }

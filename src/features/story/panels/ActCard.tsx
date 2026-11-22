@@ -877,18 +877,6 @@ export function ActCard({
                           : t("story:voice.again")}
                       </button>
                     )}
-                    {choosingMain && act.video.takes.length > 1 && (
-                      <button
-                        className="link"
-                        data-testid={`story-act-main-clip-${index}`}
-                        onClick={() => setPickingClip(true)}
-                        type="button"
-                      >
-                        {t("story:storyboard.chooseMainClip", {
-                          count: act.video.takes.length,
-                        })}
-                      </button>
-                    )}
                     <MoreMenu testId={`story-act-more-${index}`}>
                       {(close) => (
                         <>
@@ -986,10 +974,22 @@ export function ActCard({
               {clip !== undefined && (
                 <span className="story-act-clip">
                   <button
-                    aria-label={t("story:storyboard.playClip")}
+                    aria-label={
+                      choosingMain && act.video.takes.length > 1
+                        ? t("story:storyboard.chooseMainClip", {
+                            count: act.video.takes.length,
+                          })
+                        : t("story:storyboard.playClip")
+                    }
                     className="story-act-play"
                     data-testid={`story-act-video-${index}`}
-                    onClick={() => setPlaying(true)}
+                    onClick={() => {
+                      if (choosingMain && act.video.takes.length > 1) {
+                        setPickingClip(true);
+                      } else {
+                        setPlaying(true);
+                      }
+                    }}
                     type="button"
                   >
                     <img

@@ -162,6 +162,62 @@ describe("writing a batch's answers into the story", () => {
     expect(chosen.pending).toBeUndefined();
   });
 
+  it("keeps one set whole when its model batches come home at different times", () => {
+    const base = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`;
+    const first = {
+      ...record("keyframeArt", [
+        keyframeItem(ids.frameSecond, "asset-set-1", {
+          id: `${base}:1`,
+          copies: 3,
+          setId: "set-1",
+        }),
+      ]),
+      id: "job-set-1",
+    };
+    const second = {
+      ...record("keyframeArt", [
+        keyframeItem(ids.frameSecond, "asset-set-2", {
+          id: `${base}:2`,
+          copies: 3,
+          setId: "set-1",
+        }),
+      ]),
+      id: "job-set-2",
+    };
+    const running: StoryJobRecord = {
+      ...second,
+      status: "running",
+      items: second.items.map((held) => ({
+        ...held,
+        status: "running",
+        assetIds: undefined,
+      })),
+    };
+
+    applyJobResults(first);
+    settlePendingArt(first, [first, running]);
+    const early = story().chapters[0].acts[0].keyframes.find(
+      (each) => each.id === ids.frameSecond,
+    );
+    expect(early?.art.pending?.count).toBe(3);
+    expect(early?.art.pending?.takes).toHaveLength(1);
+
+    settlePendingArt(first, [first, second]);
+    expect(early?.art.pending?.count).toBe(3);
+    expect(early?.art.pending?.takes).toHaveLength(1);
+
+    applyJobResults(second);
+    settlePendingArt(second, [first, second]);
+    const landed = story().chapters[0].acts[0].keyframes.find(
+      (each) => each.id === ids.frameSecond,
+    );
+    expect(landed?.art.pending?.count).toBe(2);
+    expect(landed?.art.pending?.takes.map((take) => take.assetIds[0])).toEqual([
+      "asset-set-1",
+      "asset-set-2",
+    ]);
+  });
+
   it("closes a set that came home short rather than leaving it waiting", () => {
     const base = `keyframe:${ids.chapterFirst}:${ids.act}:${ids.frameSecond}`;
     const asked = [1, 2, 3].map((at) =>
