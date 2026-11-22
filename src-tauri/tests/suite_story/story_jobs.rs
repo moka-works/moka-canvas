@@ -883,18 +883,17 @@ async fn a_batch_of_drawings_is_answered_and_filed_under_the_batch_that_asked() 
         .await;
     harness.project("Story Drawings").await;
 
-    let job = harness
-        .start_ok(batch(
-            "keyframeArt",
-            vec![piece(
-                "kf:1",
-                keyframe_target("chapter-1", "act-1", "frame-1"),
-                "image",
-                "雨中的站台",
-            )],
-        ))
-        .await;
+    let mut asked = piece(
+        "kf:1",
+        keyframe_target("chapter-1", "act-1", "frame-1"),
+        "image",
+        "雨中的站台",
+    );
+    asked["copies"] = json!(2);
+    asked["setId"] = json!("set-1");
+    let job = harness.start_ok(batch("keyframeArt", vec![asked])).await;
     assert_eq!(job["status"], "queued");
+    assert_eq!(job["items"][0]["setId"], "set-1");
     let job_id = job["id"].as_str().expect("a job has an id").to_string();
 
     let settled = harness.settled(&job_id).await;
@@ -902,6 +901,7 @@ async fn a_batch_of_drawings_is_answered_and_filed_under_the_batch_that_asked() 
     assert_eq!(settled["model"], PAINTER);
     let item = &settled["items"][0];
     assert_eq!(item["status"], "succeeded");
+    assert_eq!(item["setId"], "set-1");
     let asset_id = item["assetIds"][0]
         .as_str()
         .expect("the answer became a file")

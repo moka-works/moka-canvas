@@ -262,6 +262,10 @@ pub struct StoryJobItem {
     /// set apart from an ordinary redraw when the answers come home.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copies: Option<usize>,
+    /// One press's set, shared by its copies even when several model batches
+    /// carry them home separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub set_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inputs: Vec<GenerateInput>,
     #[serde(default)]
@@ -325,6 +329,7 @@ impl StoryJobItem {
             system,
             name: None,
             copies: None,
+            set_id: None,
             inputs,
             params,
             status: StoryJobStatus::Queued,

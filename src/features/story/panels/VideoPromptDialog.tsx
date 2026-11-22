@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import { MAX_PROMPT_LENGTH } from "../../../shared/domain/constants";
+import {
+  MAX_PROMPT_LENGTH,
+  MAX_VIDEO_TAKES_PER_ASK,
+} from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
 import { actAt, videoPromptOverride } from "../../../shared/domain/story";
 import type {
@@ -23,8 +26,10 @@ import {
   useVideoPromptSessions,
   type VideoPromptPlace,
 } from "./videoPromptSessions";
-import { useStoryWavesAsk } from "../stores/storyJobStore";
+import { useStoryWavesAsk, waitForJob } from "../stores/storyJobStore";
 import { ModelPicker } from "../../settings/ModelPicker";
+import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
+import { slotAt } from "./takePicks";
 
 export type { VideoPromptPlace };
 
@@ -79,6 +84,7 @@ export function VideoPromptDialog({
   const drop = useVideoPromptSessions((state) => state.drop);
   const rewrite = useVideoPromptSessions((state) => state.rewrite);
   const cancelRewrite = useVideoPromptSessions((state) => state.cancelRewrite);
+  const [count, setCount] = useState(1);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -102,6 +108,19 @@ export function VideoPromptDialog({
     rewriteError,
   } = session;
   const kind = place.kind === "act" ? "actVideo" : "keyframeVideo";
+  const clipPlace =
+    place.kind === "act"
+      ? {
+          kind: "actVideo" as const,
+          chapterId: place.chapterId,
+          actId: place.actId,
+        }
+      : {
+          kind: "keyframeVideo" as const,
+          chapterId: place.chapterId,
+          actId: place.actId,
+          keyframeId: place.keyframeId ?? "",
+        };
   // The guide is the one the words will be held to when they are sent, which
   // is the contract of the model that films the place rather than the step's.
   const act = actAt(live, place.chapterId, place.actId);
@@ -143,6 +162,28 @@ export function VideoPromptDialog({
     setValue(at, autoPrompt(ask.id, ask.prompt));
   };
 
+  const filmTakes = async (fresh: StoryDocument) => {
+    const records: string[] = [];
+    for (let round = 0; round < count; round += 1) {
+      const waves =
+        place.kind === "act"
+          ? planActVideoWaves(fresh, place.chapterId, [place.actId])
+          : planKeyframeVideoWaves(fresh, place.chapterId, place.actId, [
+              place.keyframeId ?? "",
+            ]);
+      records.push(...(await runArt(story.id, kind, waves)));
+    }
+    await Promise.all(
+      records.map((id) => waitForJob(id).catch(() => undefined)),
+    );
+    if (count <= 1) return;
+    const after = liveStory(story.id) ?? fresh;
+    const slot = slotAt(after, clipPlace);
+    if (slot !== undefined && slot.takes.length > 1) {
+      useClipChoiceStore.getState().mark([clipChoiceKey(story.id, clipPlace)]);
+    }
+  };
+
   const save = (film: boolean) => {
     for (const value of values) {
       if (value.trim() === "") {
@@ -181,15 +222,7 @@ export function VideoPromptDialog({
       // dialog was opened from. The model the place is filmed by is read from
       // that document too, since an act may name one of its own.
       const fresh = liveStory(story.id) ?? story;
-      void runArt(
-        story.id,
-        place.kind === "act" ? "actVideo" : "keyframeVideo",
-        place.kind === "act"
-          ? planActVideoWaves(fresh, place.chapterId, [place.actId])
-          : planKeyframeVideoWaves(fresh, place.chapterId, place.actId, [
-              place.keyframeId ?? "",
-            ]),
-      );
+      void filmTakes(fresh);
     }
     // The telling holds the words now, so the session has nothing left to
     // keep — and a rewrite still on its way is let go rather than written
@@ -359,6 +392,28 @@ export function VideoPromptDialog({
             </div>
           )}
           <div className="dialog-actions">
+            <label
+              className="story-draw-count"
+              title={t("story:storyboard.videoPromptCountHint")}
+            >
+              <span>{t("story:storyboard.filmCount")}</span>
+              <select
+                aria-label={t("story:storyboard.filmCountLabel")}
+                data-testid="story-video-prompt-count"
+                disabled={rewriting || shown.length === 0}
+                onChange={(event) => setCount(Number(event.target.value))}
+                value={count}
+              >
+                {Array.from(
+                  { length: MAX_VIDEO_TAKES_PER_ASK },
+                  (_, at) => at + 1,
+                ).map((each) => (
+                  <option key={each} value={each}>
+                    {t("story:storyboard.filmCountOption", { count: each })}
+                  </option>
+                ))}
+              </select>
+            </label>
             {/* Taking the rewrite back, not closing over it: the words already
                 rewritten stay, and the dialog is open to asking again. */}
             {rewriting && (

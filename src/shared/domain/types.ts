@@ -797,7 +797,7 @@ export interface StorySlot {
 
 /** One ask's drawings, before the reader has chosen between them. */
 export interface StoryPending {
-  /** The batch that drew them, so an answer read again is not shown twice. */
+  /** The press's set id, or the batch id for a set drawn before ids were shared. */
   jobId: string;
   /** How many were asked for; the set is whole when this many are here. */
   count: number;

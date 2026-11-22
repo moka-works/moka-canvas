@@ -357,28 +357,15 @@ export function TransitionCard({
                     ? placeText(t, videoBusy)
                     : t("story:storyboard.transitionAgain")}
                 </button>
-                {choosingMain && act.video.takes.length > 1 ? (
+                {!choosingMain && act.video.takes.length > 1 && (
                   <button
                     className="link"
-                    data-testid={`story-transition-main-clip-${index}`}
+                    data-testid={`story-transition-video-pick-${index}`}
                     onClick={() => setPickingClip(true)}
                     type="button"
                   >
-                    {t("story:storyboard.chooseMainClip", {
-                      count: act.video.takes.length,
-                    })}
+                    {t("story:panels.pickClip")}
                   </button>
-                ) : (
-                  act.video.takes.length > 1 && (
-                    <button
-                      className="link"
-                      data-testid={`story-transition-video-pick-${index}`}
-                      onClick={() => setPickingClip(true)}
-                      type="button"
-                    >
-                      {t("story:panels.pickClip")}
-                    </button>
-                  )
                 )}
               </span>
             )}
@@ -399,10 +386,22 @@ export function TransitionCard({
           {clip !== undefined && (
             <span className="story-act-clip">
               <button
-                aria-label={t("story:storyboard.playClip")}
+                aria-label={
+                  choosingMain && act.video.takes.length > 1
+                    ? t("story:storyboard.chooseMainClip", {
+                        count: act.video.takes.length,
+                      })
+                    : t("story:storyboard.playClip")
+                }
                 className="story-act-play"
                 data-testid={`story-transition-video-${index}`}
-                onClick={() => setPlaying(true)}
+                onClick={() => {
+                  if (choosingMain && act.video.takes.length > 1) {
+                    setPickingClip(true);
+                  } else {
+                    setPlaying(true);
+                  }
+                }}
                 type="button"
               >
                 <img

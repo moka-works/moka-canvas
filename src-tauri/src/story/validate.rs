@@ -117,6 +117,16 @@ pub fn validate_start(
             ));
         }
         seen.push(&item.id);
+        if item
+            .set_id
+            .as_ref()
+            .is_some_and(|set_id| !item_id_shaped(set_id))
+        {
+            issues.push(issue(
+                "VALIDATION_FAILED",
+                format!("Item {at} does not name its drawing set by a plain id"),
+            ));
+        }
         if item.target.kind() != kind {
             issues.push(issue(
                 STORY_TARGET_INVALID,

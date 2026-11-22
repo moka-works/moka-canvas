@@ -41,12 +41,14 @@ import {
   type StoryStep,
 } from "../../../shared/domain/story";
 import { MAX_ITEMS_PER_STORY_JOB } from "../../../shared/domain/constants";
+import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { useAppStore } from "../../editor/stores/appStore";
 import { saveTrouble, useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
 import {
   applyJobResults,
+  pendingArtSetId,
   readElementsAnswer,
   settlePendingArt,
 } from "../jobs/apply";
@@ -67,6 +69,14 @@ import { useStoryStore } from "./storyStore";
 
 /** How often a batch that is running is looked at. It runs for minutes. */
 export const POLL_MS = 1500;
+
+// A fast batch can finish before its sibling waves have been started.
+const startingArtSets = new Set<string>();
+
+function artSetStarting(record: StoryJobRecord): boolean {
+  const setId = pendingArtSetId(record);
+  return setId !== undefined && startingArtSets.has(setId);
+}
 
 /** Which steps a batch of each kind is doing the work of. */
 const STEP_OF_KIND: Record<StoryJobKind, StoryStep> = {
@@ -604,10 +614,11 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
           known.applied += report.applied;
           if (report.notes.length > 0) toast("info", report.notes.join(" "));
         }
+        const starting = ending && artSetStarting(record);
         // A set of drawings that came home short is closed with what did
         // arrive, so the place offers the choice instead of waiting forever
         // for a drawing nobody is making.
-        if (ending) settlePendingArt(record);
+        if (ending && !starting) settlePendingArt(record, inOrder);
         if (ending && !known.endingSaid) {
           known.endingSaid = true;
           const failedItems = record.items.filter(
@@ -680,7 +691,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             );
           }
         }
-        if (ending) settled.push(record.id);
+        if (ending && !starting) settled.push(record.id);
       }
       // A batch is written down as read only once what it answered is really
       // in the story: nothing of this look's may still be waiting to be saved,
@@ -1072,12 +1083,7 @@ export async function retryFailed(
         : [],
     );
     const waves = planElementArtWaves(story, targets);
-    for (const wave of waves) {
-      const record = await useStoryJobStore
-        .getState()
-        .start(story.id, "elementArt", wave.items, wave.model);
-      if (record === null) return;
-    }
+    await askWaves(story.id, "elementArt", waves);
     return;
   }
   // A frame is drawn by the model its row names, so a batch that lost several
@@ -1097,12 +1103,7 @@ export async function retryFailed(
         : [],
     );
     const waves = planKeyframeArtWaves(story, targets);
-    for (const wave of waves) {
-      const record = await useStoryJobStore
-        .getState()
-        .start(story.id, "keyframeArt", wave.items, wave.model);
-      if (record === null) return;
-    }
+    await askWaves(story.id, "keyframeArt", waves);
     return;
   }
   // An act filmed by a model of its own is asked of that model again, and the
@@ -1229,23 +1230,56 @@ export async function redoGeneratedChapter(
  * other: one model's drawings are its own batch, and the next model's need not
  * sit idle until the first has finished painting.
  */
-export function useStoryWavesAsk(): (
+type StoryAskWaves = Array<{
+  model: string | null;
+  items: StoryJobItemDraft[];
+}>;
+
+async function askWaves(
   storyId: string,
   kind: StoryJobKind,
-  waves: Array<{ model: string | null; items: StoryJobItemDraft[] }>,
-) => Promise<void> {
-  const start = useStoryJobStore((state) => state.start);
-  return async (storyId, kind, waves) => {
-    const promised = waves.filter((wave) => wave.items.length > 0);
-    if (promised.length === 0) {
-      toast("info", i18n.t("story:jobs.nothingToAsk"));
-      return;
-    }
+  waves: StoryAskWaves,
+): Promise<string[]> {
+  const start = useStoryJobStore.getState().start;
+  const promised = waves.filter((wave) => wave.items.length > 0);
+  if (promised.length === 0) {
+    toast("info", i18n.t("story:jobs.nothingToAsk"));
+    return [];
+  }
+  const setId = promised.some((wave) =>
+    wave.items.some((item) => (item.copies ?? 1) > 1),
+  )
+    ? newId()
+    : undefined;
+  if (setId !== undefined) startingArtSets.add(setId);
+  const records: string[] = [];
+  let stopped = false;
+  try {
     for (const wave of promised) {
-      const record = await start(storyId, kind, wave.items, wave.model);
-      if (record === null) return;
+      const items =
+        setId === undefined
+          ? wave.items
+          : wave.items.map((item) =>
+              (item.copies ?? 1) > 1 ? { ...item, setId } : item,
+            );
+      const record = await start(storyId, kind, items, wave.model);
+      if (record === null) {
+        stopped = true;
+        break;
+      }
+      records.push(record.id);
     }
-  };
+  } finally {
+    if (setId !== undefined) startingArtSets.delete(setId);
+  }
+  if (stopped && setId !== undefined) {
+    await useStoryJobStore.getState().load(storyId);
+  }
+  return records;
+}
+
+export function useStoryWavesAsk(): typeof askWaves {
+  return askWaves;
 }
 
 /** Makes one place again, from the story as it stands now. */
@@ -1254,23 +1288,19 @@ export async function redoTarget(
   target: StoryJobRecord["items"][number]["target"],
 ): Promise<void> {
   if (target.kind === "elementArt") {
-    const waves = planElementArtWaves(story, [target]);
-    for (const wave of waves) {
-      const record = await useStoryJobStore
-        .getState()
-        .start(story.id, "elementArt", wave.items, wave.model);
-      if (record === null) return;
-    }
+    await askWaves(
+      story.id,
+      "elementArt",
+      planElementArtWaves(story, [target]),
+    );
     return;
   }
   if (target.kind === "keyframeArt") {
-    const waves = planKeyframeArtWaves(story, [target]);
-    for (const wave of waves) {
-      const record = await useStoryJobStore
-        .getState()
-        .start(story.id, "keyframeArt", wave.items, wave.model);
-      if (record === null) return;
-    }
+    await askWaves(
+      story.id,
+      "keyframeArt",
+      planKeyframeArtWaves(story, [target]),
+    );
     return;
   }
   if (target.kind === "actVideo") {

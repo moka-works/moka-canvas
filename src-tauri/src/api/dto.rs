@@ -101,6 +101,9 @@ pub struct StoryJobItemDraft {
     /// How many pictures this piece's place asked for at once.
     #[serde(default)]
     pub copies: Option<usize>,
+    /// One press's set, shared across the model batches carrying its copies.
+    #[serde(default)]
+    pub set_id: Option<String>,
     #[serde(default)]
     pub inputs: Vec<StoryJobInput>,
     #[serde(default)]
@@ -135,6 +138,7 @@ impl StoryJobItemDraft {
     pub fn into_item(self) -> StoryJobItem {
         let name = self.name;
         let copies = self.copies;
+        let set_id = self.set_id;
         let mut item = StoryJobItem::queued(
             self.id,
             self.target,
@@ -149,6 +153,7 @@ impl StoryJobItemDraft {
         );
         item.name = name;
         item.copies = copies;
+        item.set_id = set_id;
         item
     }
 }

@@ -621,6 +621,9 @@ export async function startMockProvider(): Promise<MockProvider> {
     if (path === "/v1/chat/completions" && raw.includes("[hold]")) {
       await sleep(2500);
     }
+    if (String(body.model ?? "").startsWith("slow-")) {
+      await sleep(4000);
+    }
 
     if (path === "/v1/images/generations" || path === "/v1/images/edits") {
       const count = multipart ? 1 : Math.max(1, Number(body.n ?? 1));

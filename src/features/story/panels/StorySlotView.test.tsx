@@ -66,11 +66,25 @@ describe("a place asked for a set of drawings", () => {
     });
 
     fireEvent.click(screen.getByTestId("story-slot-main-candidates"));
+    expect(screen.queryByTestId("story-slot-main-choose")).toBeNull();
     expect(screen.getByTestId("story-candidates")).toBeTruthy();
     fireEvent.click(screen.getByTestId("story-candidate-1"));
     fireEvent.click(screen.getByTestId("story-candidates-confirm"));
 
     expect(onChoosePending).toHaveBeenCalledWith("asset-b");
+  });
+
+  it("opens the same choice from the picture area over an older take", () => {
+    const pending = pendingSet(["asset-a", "asset-b"]).pending;
+    draw({
+      slot: { ...slot(["asset-old", "asset-older"]), pending },
+      onChoosePending: vi.fn(),
+    });
+
+    expect(screen.queryByTestId("story-slot-main-choose")).toBeNull();
+    expect(screen.getByTestId("story-slot-main-pick")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("story-slot-main-candidates"));
+    expect(screen.getByTestId("story-candidates")).toBeTruthy();
   });
 
   it("says how many of the set are still being drawn", () => {
