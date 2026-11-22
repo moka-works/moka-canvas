@@ -264,6 +264,16 @@ describe("story prompts", () => {
     expect(prompt).toContain("no voice or way of speaking");
     expect(prompt).toContain("nothing that happens in the telling");
     expect(prompt).toContain('"characters"');
+    expect(prompt).toContain('"forms"');
+    expect(prompt).toContain(
+      "fully self-contained, static, precise and unambiguous",
+    );
+    expect(prompt).toContain(
+      "upper garment, lower garment, socks and footwear",
+    );
+    expect(prompt).toContain("every accessory and item worn or carried");
+    expect(prompt).toContain("never refer to another form");
+    expect(prompt).toContain('do not use "或", "或者", "or", "either"');
     expect(prompt).not.toContain("{{");
   });
 
@@ -290,7 +300,7 @@ describe("story prompts", () => {
     expect(prompt).toContain("anything only one shot shows");
   });
 
-  it("keeps a scene to one place, and its change to its description", () => {
+  it("keeps a scene to one place and each static state to its own form", () => {
     const prompt = storyElementsPrompt({
       chapters: [
         { number: 1, title: "第一章 站台", text: "他在站台上等列车。" },
@@ -298,12 +308,14 @@ describe("story prompts", () => {
       genre: "对白剧情",
       style: "现代都市风",
     });
-    // A scene is drawn once and every shot of that place points at the one
-    // picture, so two places in one entry cannot be drawn and an hour or a
-    // weather of its own is a state the drawing is given, not a second entry.
+    // A visually different hour or weather is another form of the same place,
+    // not another place and not a temporal alternative inside one description.
     expect(prompt).toContain("one place to an entry");
     expect(prompt).toContain(
-      "is still the one place, with the change written into its description",
+      "The same place at another hour or in other weather is still the one scene entry",
+    );
+    expect(prompt).toContain(
+      "each visually different state is its own form with a complete static description",
     );
     // "Each at their own workplace" is words that cover two places, and a
     // picture of one place cannot stand for both: the entry has to name the
@@ -338,18 +350,29 @@ describe("story prompts", () => {
     );
   });
 
-  it("merges the parts' descriptions of one name, and nothing else", () => {
+  it("merges repeated readings without combining incompatible appearances", () => {
     const prompt = storyMergeElementsPrompt({
       groups: [
         {
           kind: "character",
           name: "林玉兰",
-          descriptions: ["五十岁，短发。", "便利店店主，总是系围裙。"],
+          readings: [
+            {
+              description: "五十岁，黑色短发，穿深灰上装和黑色长裤。",
+              forms: [
+                { name: "围裙", description: "五十岁，黑色短发，系蓝色围裙。" },
+              ],
+            },
+            { description: "五十岁，黑色短发，穿深蓝上装和黑色长裤。" },
+          ],
         },
         {
           kind: "scene",
           name: "便利店",
-          descriptions: ["深夜仍亮着灯的店面。", "收银台后的货架摆得很满。"],
+          readings: [
+            { description: "深夜仍亮着灯的店面。" },
+            { description: "收银台后的货架摆得很满。" },
+          ],
         },
       ],
       genre: "对白剧情",
@@ -358,19 +381,23 @@ describe("story prompts", () => {
       total: 2,
     });
     expect(prompt).toContain('- character "林玉兰"');
-    expect(prompt).toContain("  - 五十岁，短发。");
-    expect(prompt).toContain("  - 便利店店主，总是系围裙。");
+    expect(prompt).toContain("  - Default appearance: 五十岁，黑色短发");
+    expect(prompt).toContain('    - Additional form "围裙"');
+    expect(prompt).toContain("穿深蓝上装和黑色长裤");
     expect(prompt).toContain('- scene "便利店"');
-    // The model is asked for new words about the names it is given, not for a
-    // cast: an entry it invented or left out would change the room's list.
-    expect(prompt).toContain("do not add or leave out an entry");
-    expect(prompt).toContain("do not rename the thing");
-    // Merging the parts' words is still a character's look, not a script: the
-    // merge must not bring a voice or a plot into the description.
-    expect(prompt).toContain("only what a drawing can show");
-    expect(prompt).toContain("no voice, habits, manner");
+    expect(prompt).toContain(
+      "Keep visually incompatible appearances as separate forms",
+    );
+    expect(prompt).toContain(
+      "fully self-contained, static, precise and unambiguous",
+    );
+    expect(prompt).toContain(
+      "upper garment, lower garment, socks and footwear",
+    );
+    expect(prompt).toContain("add or leave out an entry");
+    expect(prompt).toContain("never voice, habits, manner");
     expect(prompt).toContain("This is merge 1 of 2");
-    expect(prompt).toContain('"characters"');
+    expect(prompt).toContain('"forms"');
     expect(prompt).not.toContain("{{");
   });
 
@@ -463,6 +490,8 @@ describe("story prompts", () => {
     expect(prompt).toContain("16:9");
     expect(prompt).toContain("head to foot");
     expect(prompt).toContain("plain white background");
+    expect(prompt).toContain("exactly one static form");
+    expect(prompt).toContain("do not introduce alternatives");
     expect(prompt).toContain("no watermark");
     expect(prompt).not.toContain("{{");
   });
@@ -501,6 +530,14 @@ describe("story prompts", () => {
       description: "四十岁上下。",
     });
     expect(prompt).toContain("four views");
+    expect(prompt).toContain("approximately 16:9 horizontal landscape");
+    expect(prompt).toContain("left approximately 2/5 (40%)");
+    expect(prompt).toContain("upper-body and face close-up");
+    expect(prompt).toContain("right approximately 3/5 (60%)");
+    expect(prompt).toContain("front, side and back");
+    expect(prompt).toContain("three separate full-body views");
+    expect(prompt).toContain("no overlap");
+    expect(prompt).toContain("exactly one static form");
     expect(prompt).toContain("white background");
     expect(prompt).toContain("林 — 四十岁上下。");
     expect(prompt).toContain("现代都市风");
@@ -806,7 +843,13 @@ describe("story prompts", () => {
       storyChapterPrompt({ idea: "…", chapters: 1, number: 1 }),
       storyElementsPrompt({ chapters: [], genre: "…", style: "…" }),
       storyMergeElementsPrompt({
-        groups: [{ kind: "character", name: "…", descriptions: ["…", "…"] }],
+        groups: [
+          {
+            kind: "character",
+            name: "…",
+            readings: [{ description: "…" }, { description: "…" }],
+          },
+        ],
         genre: "…",
         style: "…",
       }),

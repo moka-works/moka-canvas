@@ -54,6 +54,7 @@ import {
   targetKey,
   videoPromptOverride,
   voiceFor,
+  type StoryElementFormDraft,
   type StoryMissingClip,
   type StoryReadingPiece,
 } from "../../../shared/domain/story";
@@ -718,24 +719,21 @@ export function planElements(
 // Step three: what the parts said about the same name
 // -----------------------------------------------------------------------------
 
+/** One part's reading of an element's default and additional forms. */
+export interface ElementReading {
+  description: string;
+  forms?: StoryElementFormDraft[];
+}
+
 /** One name the telling's parts described more than once. */
 export interface ElementRepeat {
   kind: StoryElementKind;
   name: string;
-  descriptions: string[];
+  readings: ElementReading[];
 }
 
 /** The name every merge piece's id begins with. */
 export const ELEMENT_MERGE_ID = "elements:merge";
-
-/** How much of one part's description a merge ask carries. */
-const MERGE_DESCRIPTION_CHARS = 600;
-
-function cutText(text: string, limit: number): string {
-  const chars = Array.from(text);
-  if (chars.length <= limit) return text;
-  return `${chars.slice(0, Math.max(0, limit - 1)).join("")}…`;
-}
 
 function mergePromptLength(
   story: StoryDocument,
@@ -753,46 +751,11 @@ function mergePromptLength(
 }
 
 /**
- * One name's descriptions cut to the ask that carries them.
- *
- * An element is never split across two asks: all of one name's descriptions
- * travel together. Where that name alone would still outrun the budget, its
- * descriptions are shortened evenly rather than the name being moved and cut.
- * An ask wider than the budget itself cannot be made narrower from here — the
- * template's own words are already the whole budget — so the group goes as it
- * stands rather than arriving with nothing said.
- */
-function fitMergeGroup(
-  story: StoryDocument,
-  group: ElementRepeat,
-  budget: number,
-  part: number,
-  total: number,
-): ElementRepeat {
-  const measure = (descriptions: string[]) =>
-    mergePromptLength(story, [{ ...group, descriptions }], part, total);
-  if (measure(group.descriptions) <= budget) return group;
-  const bare = measure([]);
-  const room = budget - bare;
-  if (room <= 0) return group;
-  const each = Math.max(1, Math.floor(room / group.descriptions.length) - 1);
-  for (let width = each; width >= 1; width -= 1) {
-    const descriptions = group.descriptions.map((text) => cutText(text, width));
-    if (measure(descriptions) <= budget) return { ...group, descriptions };
-  }
-  return {
-    ...group,
-    descriptions: group.descriptions.map((text) => cutText(text, 1)),
-  };
-}
-
-/**
  * How the names are handed over, the room's reading budget at a time.
  *
- * A batch carries whole names: the next one that does not fit opens the next
- * batch rather than being cut in two, since half a name's descriptions would
- * be merged against nothing. Descriptions are capped before packing so one
- * long part cannot fill a batch on its own.
+ * A batch carries whole names and complete appearances: dropping words to fit
+ * a budget could erase exactly the difference that makes two forms necessary.
+ * One name too large for a batch therefore travels in an oversized ask alone.
  */
 export function chunkElementMerges(
   story: StoryDocument,
@@ -801,28 +764,19 @@ export function chunkElementMerges(
 ): ElementRepeat[][] {
   const limit = Math.max(1, Math.floor(budget));
   const total = repeats.length;
-  const capped = repeats.map((group) => ({
-    ...group,
-    descriptions: group.descriptions.map((text) =>
-      cutText(text, MERGE_DESCRIPTION_CHARS),
-    ),
-  }));
   const waves: ElementRepeat[][] = [];
   let wave: ElementRepeat[] = [];
-  for (const group of capped) {
+  for (const group of repeats) {
     const part = waves.length + 1;
-    // Measured against the widest part number it could carry, so a group that
-    // starts a new batch is not fitted to the batch it just left.
-    const alone = fitMergeGroup(story, group, limit, total, total);
     if (
       wave.length > 0 &&
-      mergePromptLength(story, [...wave, alone], part, total) > limit
+      mergePromptLength(story, [...wave, group], part, total) > limit
     ) {
       waves.push(wave);
-      wave = [alone];
+      wave = [group];
       continue;
     }
-    wave.push(alone);
+    wave.push(group);
   }
   if (wave.length > 0) waves.push(wave);
   return waves;
@@ -1053,10 +1007,10 @@ export function planElementArt(
       view,
       ...(variantId === undefined ? {} : { variantId }),
     };
-    // A turn-around is one sheet of four views and stays square; every other
-    // picture is drawn in the frame its kind is drawn in.
+    // A turn-around uses a landscape sheet: close-up on the left, three
+    // full-body views on the right; every other picture keeps its kind's frame.
     const size = imageSizeForAspect(
-      view === "turnaround" ? "1:1" : formAspect(story, element, form),
+      view === "turnaround" ? "16:9" : formAspect(story, element, form),
     );
     // A drawing may be made from another element's picture or one on the
     // shelf; a form made from its element starts out pointing at the default

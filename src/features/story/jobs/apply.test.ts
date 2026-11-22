@@ -417,6 +417,12 @@ describe("writing a batch's answers into the story", () => {
               {
                 name: "林",
                 description: "四十岁上下，灰呢大衣，说话很慢。",
+                forms: [
+                  {
+                    name: "蓝衣",
+                    description: "四十岁上下，蓝色大衣，黑色长裤。",
+                  },
+                ],
               },
             ],
             scenes: [],
@@ -437,6 +443,14 @@ describe("writing a batch's answers into the story", () => {
     expect(hero?.turnaround?.takes.map((take) => take.assetIds[0])).toEqual([
       ids.heroSheet,
     ]);
+    expect(hero?.variants).toHaveLength(1);
+    expect(hero?.variants?.[0]).toMatchObject({
+      name: "蓝衣",
+      description: "四十岁上下，蓝色大衣，黑色长裤。",
+      main: { takes: [] },
+      turnaround: { takes: [] },
+      reference: { kind: "element", elementId: ids.hero },
+    });
   });
 
   it("writes no step when a merge says what the cast already says", () => {
@@ -890,7 +904,11 @@ describe("collecting the names the parts repeated", () => {
     ]);
 
     expect(repeats).toEqual([
-      { kind: "character", name: "林", descriptions: ["第一批。", "后一批。"] },
+      {
+        kind: "character",
+        name: "林",
+        readings: [{ description: "第一批。" }, { description: "后一批。" }],
+      },
     ]);
   });
 
@@ -911,6 +929,44 @@ describe("collecting the names the parts repeated", () => {
     ]);
 
     expect(repeats).toEqual([]);
+  });
+
+  it("collects different forms even when the default words stay the same", () => {
+    const repeats = collectElementRepeats([
+      part(
+        1,
+        JSON.stringify({
+          characters: [
+            {
+              name: "林",
+              description: "黑色短发，穿深灰上装和黑色长裤。",
+              forms: [],
+            },
+          ],
+        }),
+      ),
+      part(
+        2,
+        JSON.stringify({
+          characters: [
+            {
+              name: "林",
+              description: "黑色短发，穿深灰上装和黑色长裤。",
+              forms: [
+                {
+                  name: "蓝衣",
+                  description: "黑色短发，穿蓝色上装和黑色长裤。",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    ]);
+
+    expect(repeats).toHaveLength(1);
+    expect(repeats[0].readings).toHaveLength(2);
+    expect(repeats[0].readings[1].forms?.[0]?.name).toBe("蓝衣");
   });
 
   it("does not read a merge answer as one of the parts", () => {

@@ -74,7 +74,7 @@ export function elementArtPromptContext(
   return {
     kind: "element",
     mode: carriesPicture ? "reference" : "generate",
-    aspect: view === "turnaround" ? "1:1" : formAspect(story, element, form),
+    aspect: view === "turnaround" ? "16:9" : formAspect(story, element, form),
     style: story.brief.style,
     references: carriesPicture ? [{ name, description }] : [],
     element: {

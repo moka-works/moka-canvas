@@ -135,7 +135,7 @@ export function planPictureEdit(
     place.kind === "element"
       ? imageSizeForAspect(
           place.view === "turnaround"
-            ? "1:1"
+            ? "16:9"
             : elementAspect(story, place.element),
         )
       : imageSizeForAspect(story.brief.aspect);

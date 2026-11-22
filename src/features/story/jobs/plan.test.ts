@@ -391,7 +391,13 @@ describe("planning the words", () => {
       {
         kind: "character",
         name: "林",
-        descriptions: ["第一批的描述。", "后一批的描述。"],
+        readings: [
+          { description: "第一批的描述。" },
+          {
+            description: "后一批的描述。",
+            forms: [{ name: "蓝衣", description: "后一批的蓝衣描述。" }],
+          },
+        ],
       },
     ]);
 
@@ -403,6 +409,8 @@ describe("planning the words", () => {
     expect(item.prompt).toContain('- character "林"');
     expect(item.prompt).toContain("第一批的描述。");
     expect(item.prompt).toContain("后一批的描述。");
+    expect(item.prompt).toContain('Additional form "蓝衣"');
+    expect(item.prompt).toContain("后一批的蓝衣描述。");
     // One merge is not numbered as a part of several.
     expect(item.prompt).not.toContain("This is merge");
   });
@@ -412,7 +420,10 @@ describe("planning the words", () => {
     const groups: ElementRepeat[] = ["甲", "乙", "丙"].map((name) => ({
       kind: "character",
       name,
-      descriptions: ["一".repeat(80), "二".repeat(80)],
+      readings: [
+        { description: "一".repeat(80) },
+        { description: "二".repeat(80) },
+      ],
     }));
     const measure = (which: typeof groups) =>
       storyMergeElementsPrompt({
@@ -433,47 +444,39 @@ describe("planning the words", () => {
     ]);
     for (const wave of waves) {
       for (const group of wave) {
-        expect(group.descriptions).toHaveLength(2);
+        expect(group.readings).toHaveLength(2);
       }
       expect(measure(wave)).toBeLessThanOrEqual(budget);
     }
   });
 
-  it("shortens one name's words rather than cutting the name in two", () => {
+  it("keeps every appearance whole when one name exceeds the budget", () => {
     const held = story();
     const group = {
       kind: "character" as const,
       name: "林",
-      descriptions: ["甲".repeat(200), "乙".repeat(200)],
+      readings: [
+        {
+          description: "甲".repeat(200),
+          forms: [{ name: "蓝衣", description: "乙".repeat(200) }],
+        },
+        { description: "丙".repeat(200) },
+      ],
     };
-    const bare = storyMergeElementsPrompt({
-      groups: [{ ...group, descriptions: [] }],
+
+    const waves = chunkElementMerges(held, [group], 60);
+
+    expect(waves).toEqual([[group]]);
+    const prompt = storyMergeElementsPrompt({
+      groups: waves[0],
       genre: held.brief.genre,
       style: held.brief.style,
       part: 1,
       total: 1,
-    }).length;
-    const budget = bare + 60;
-
-    const waves = chunkElementMerges(held, [group], budget);
-
-    // The element is one ask by itself: what does not fit is cut from its
-    // descriptions, never from the set of names.
-    expect(waves).toHaveLength(1);
-    expect(waves[0]).toHaveLength(1);
-    expect(waves[0][0].name).toBe("林");
-    expect(waves[0][0].descriptions.join("").length).toBeLessThan(
-      group.descriptions.join("").length,
-    );
-    expect(
-      storyMergeElementsPrompt({
-        groups: waves[0],
-        genre: held.brief.genre,
-        style: held.brief.style,
-        part: 1,
-        total: 1,
-      }).length,
-    ).toBeLessThanOrEqual(budget);
+    });
+    expect(prompt).toContain("甲".repeat(200));
+    expect(prompt).toContain("乙".repeat(200));
+    expect(prompt).toContain("丙".repeat(200));
   });
 
   it("asks nothing when the parts repeated no name", () => {
@@ -725,11 +728,14 @@ describe("planning the drawings", () => {
     expect(prop[0].params).toEqual({ size: "1024x1536" });
   });
 
-  it("keeps the turn-around a square sheet of four views", () => {
+  it("keeps the turn-around a landscape sheet of four views", () => {
     const items = planElementArt(story(), [
       { elementId: ids.hero, view: "turnaround" },
     ]);
-    expect(items[0].params).toEqual({ size: "1024x1024" });
+    expect(items[0].params).toEqual({ size: "1536x1024" });
+    expect(items[0].prompt).toContain("approximately 16:9 horizontal");
+    expect(items[0].prompt).toContain("left approximately 2/5 (40%)");
+    expect(items[0].prompt).toContain("right approximately 3/5 (60%)");
     // The sheet is filed under the character's own name and a fixed suffix,
     // not a generic label carrying a batch's random tag.
     expect(items[0].name).toBe("林 turn-around");

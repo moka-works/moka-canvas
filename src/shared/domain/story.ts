@@ -13,6 +13,7 @@ import {
   createAct,
   createChapter,
   createElement,
+  createElementVariant,
   createKeyframe,
   emptyStorySlot,
 } from "./factories";
@@ -771,11 +772,19 @@ export interface StoryChapterDraft {
   targetDurationMs?: number;
 }
 
+/** One static appearance beyond an element's default form. */
+export interface StoryElementFormDraft {
+  name: string;
+  description: string;
+}
+
 /** An identified element, before it meets the elements already known. */
 export interface StoryElementDraft {
   kind: StoryElementKind;
   name: string;
   description: string;
+  /** Additional static forms; absent means a legacy flat reading. */
+  forms?: StoryElementFormDraft[];
   /** Where the outline put this, counted in chapters; resolved by the caller. */
   chapterIndexes?: number[];
 }
@@ -949,13 +958,30 @@ function chapterIdsOf(ids: string[], chapters: StoryChapter[]): string[] {
   );
 }
 
+/** Forms with the same visual label are one form; different labels stay apart. */
+function mergeFormDrafts(
+  one: StoryElementFormDraft[] | undefined,
+  other: StoryElementFormDraft[] | undefined,
+): StoryElementFormDraft[] | undefined {
+  if (one === undefined && other === undefined) return undefined;
+  const merged = [...(one ?? [])];
+  for (const form of other ?? []) {
+    const key = bareName(form.name);
+    const at = merged.findIndex((held) => bareName(held.name) === key);
+    if (at < 0) {
+      merged.push(form);
+      continue;
+    }
+    const held = merged[at];
+    merged[at] =
+      form.description.length > held.description.length ? form : held;
+  }
+  return merged;
+}
+
 /**
- * One copy of an element written over another from the same answer.
- *
- * A reading that names the same thing twice named it once, and how it is said
- * the second time is not a second thing: the description with more in it
- * stands, since a description is what the thing is drawn from, and the chapters
- * are added up.
+ * One copy of an element written over another from the same answer. The fuller
+ * default description stands, distinct forms stay separate, and chapters add up.
  */
 export function mergeElementDrafts(
   one: StoryElementDraft,
@@ -963,6 +989,7 @@ export function mergeElementDrafts(
 ): StoryElementDraft {
   const fuller =
     other.description.length > one.description.length ? other : one;
+  const forms = mergeFormDrafts(one.forms, other.forms);
   const chapterIndexes = [
     ...new Set([
       ...(one.chapterIndexes ?? []),
@@ -971,7 +998,39 @@ export function mergeElementDrafts(
   ].sort((left, right) => left - right);
   return {
     ...fuller,
+    ...(forms === undefined ? {} : { forms }),
     ...(chapterIndexes.length > 0 ? { chapterIndexes } : {}),
+  };
+}
+
+/** Write one reading's looks while leaving the element's artwork untouched. */
+export function applyElementAppearance(
+  element: StoryElement,
+  draft: StoryElementDraft,
+): StoryElement {
+  const written: StoryElement = {
+    ...element,
+    name: draft.name,
+    description: draft.description,
+  };
+  if (draft.forms === undefined) return written;
+  const variants = [...(element.variants ?? [])];
+  const matched = new Set<number>();
+  for (const form of mergeFormDrafts(undefined, draft.forms) ?? []) {
+    const key = bareName(form.name);
+    const at = variants.findIndex(
+      (held, index) => !matched.has(index) && bareName(held.name) === key,
+    );
+    if (at < 0) {
+      variants.push({ ...createElementVariant(element, form.name), ...form });
+      continue;
+    }
+    matched.add(at);
+    variants[at] = { ...variants[at], ...form };
+  }
+  return {
+    ...written,
+    ...(variants.length > 0 ? { variants } : {}),
   };
 }
 
@@ -1025,10 +1084,13 @@ export function mergeElements(
       .filter((id): id is string => id !== undefined);
     const held = cast.get(key) ?? known.get(key);
     if (held === undefined) {
-      cast.set(
-        key,
-        createElement(draft.kind, draft.name, draft.description, noticed),
+      const created = createElement(
+        draft.kind,
+        draft.name,
+        draft.description,
+        noticed,
       );
+      cast.set(key, applyElementAppearance(created, draft));
       continue;
     }
     const chapterIds = partial
@@ -1041,9 +1103,7 @@ export function mergeElements(
       continue;
     }
     cast.set(key, {
-      ...held,
-      name: draft.name,
-      description: draft.description,
+      ...applyElementAppearance(held, draft),
       chapterIds,
     });
   }

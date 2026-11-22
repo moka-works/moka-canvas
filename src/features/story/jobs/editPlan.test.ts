@@ -36,6 +36,20 @@ describe("an edit of a picture", () => {
     expect(item?.params).toEqual({ size: "1024x1536" });
   });
 
+  it("keeps a four-view edit in the same landscape frame", () => {
+    const { story, hero } = scene();
+    const item = planPictureEdit(
+      story,
+      { kind: "element", element: hero, view: "turnaround" },
+      { instruction: "保持四视图布局，调整外套颜色" },
+    );
+
+    expect(item?.inputs).toEqual([
+      { role: "reference", assetId: ids.heroSheet },
+    ]);
+    expect(item?.params).toEqual({ size: "1536x1024" });
+  });
+
   it("carries the mask as a mask, and says what it means", () => {
     const { story, hero } = scene();
     const item = planPictureEdit(
