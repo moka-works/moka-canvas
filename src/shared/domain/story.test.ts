@@ -691,6 +691,66 @@ describe("mergeElements", () => {
     expect(merged[0].turnaround?.takes).toHaveLength(1);
   });
 
+  it("writes distinct static forms while preserving existing artwork and manual forms", () => {
+    const existing: StoryElement = {
+      ...hero,
+      variants: [
+        {
+          id: "variant-blue",
+          name: "蓝衣",
+          description: "旧的蓝衣描述",
+          main: { takes: [take("asset-blue-main")] },
+          turnaround: { takes: [take("asset-blue-sheet")] },
+          reference: { kind: "asset", assetId: "asset-reference" },
+          imageModel: "model-blue",
+        },
+        {
+          id: "variant-manual",
+          name: "手工形态",
+          description: "读者保留的描述",
+          main: { takes: [take("asset-manual")] },
+          turnaround: { takes: [] },
+        },
+      ],
+    };
+    const draft: StoryElementDraft = {
+      kind: "character",
+      name: "林",
+      description: "黑色短发，深灰上装，黑色长裤。",
+      forms: [
+        { name: "蓝衣", description: "黑色短发，蓝色上装，黑色长裤。" },
+        { name: "红衣", description: "黑色短发，红色上装，黑色长裤。" },
+      ],
+    };
+
+    const merged = mergeElements([existing], [draft], []);
+    expect(merged[0].variants).toHaveLength(3);
+    expect(merged[0].variants?.[0]).toMatchObject({
+      id: "variant-blue",
+      description: "黑色短发，蓝色上装，黑色长裤。",
+      imageModel: "model-blue",
+      reference: { kind: "asset", assetId: "asset-reference" },
+    });
+    expect(merged[0].variants?.[0].main.takes[0].assetIds).toEqual([
+      "asset-blue-main",
+    ]);
+    expect(merged[0].variants?.[1]).toEqual(existing.variants?.[1]);
+    expect(merged[0].variants?.[2]).toMatchObject({
+      name: "红衣",
+      description: "黑色短发，红色上装，黑色长裤。",
+      main: { takes: [] },
+      reference: { kind: "element", elementId: hero.id },
+    });
+    expect(mergeElements(merged, [draft], [])).toEqual(merged);
+
+    const legacy = mergeElements(
+      merged,
+      [{ kind: "character", name: "林", description: "旧式扁平响应" }],
+      [],
+    );
+    expect(legacy[0].variants).toEqual(merged[0].variants);
+  });
+
   it("keeps the order the reader arranged, adding what the reading found anew", () => {
     const partner = {
       ...element("element-partner", "character"),
@@ -780,6 +840,7 @@ describe("mergeElements", () => {
           kind: "character",
           name: "林",
           description: "后一批的描述。",
+          forms: [{ name: "蓝衣", description: "后一批的蓝衣描述。" }],
           chapterIndexes: [1],
         },
       ],
@@ -793,6 +854,7 @@ describe("mergeElements", () => {
     // held for the merge — while the chapter it read is added straight away.
     expect(merged).toHaveLength(1);
     expect(merged[0].description).toBe("旧描述");
+    expect(merged[0].variants).toBeUndefined();
     expect(merged[0].chapterIds).toEqual([chapters[0].id, chapters[1].id]);
   });
 

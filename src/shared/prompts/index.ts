@@ -286,16 +286,24 @@ export function storyElementsPrompt(input: {
 }
 
 /**
- * What the parts said about the same name, as one description.
+ * What the parts said about the same name, reconciled into static forms.
  *
  * A long telling is read a part at a time, and a name more than one part
  * returned to was described more than once. The parts' words are put in front
- * of the model together, whole names at a time, and what comes back is the one
- * description the element keeps — a part's words are held rather than written
- * until this runs, so nothing is lost to whichever part landed last.
+ * of the model together, whole names at a time. What comes back keeps one
+ * default appearance and every incompatible additional form — a part's words
+ * are held rather than written until this runs, so no visual difference is lost
+ * to whichever part landed last.
  */
 export function storyMergeElementsPrompt(input: {
-  groups: Array<{ kind: string; name: string; descriptions: string[] }>;
+  groups: Array<{
+    kind: string;
+    name: string;
+    readings: Array<{
+      description: string;
+      forms?: Array<{ name: string; description: string }>;
+    }>;
+  }>;
   genre: string;
   style: string;
   part?: number;

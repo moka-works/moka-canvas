@@ -24,6 +24,7 @@
 import { nowIso } from "../../../shared/domain/ids";
 import type { DocumentCommand } from "../../../shared/domain/types";
 import {
+  applyElementAppearance,
   elementKey,
   foldPendingTakes,
   keyframeAt,
@@ -64,6 +65,7 @@ import {
   jobKey,
   videoCeiling,
   withRequiredReferences,
+  type ElementReading,
   type ElementRepeat,
 } from "./plan";
 
@@ -492,8 +494,8 @@ function partOf(record: StoryJobRecord): number {
  * The names this recognition's parts described more than once.
  *
  * The parts are read in the order they were asked for, and each name keeps its
- * descriptions in that order: the first part's words come first, and a part
- * that said the same thing again adds nothing. A name only one part returned
+ * appearances in that order: the first part's words come first, and a part
+ * that said the same default and forms again adds nothing. A name only one part returned
  * to is not a repeat and earns no merge ask — the cast already keeps it as the
  * one part described it.
  */
@@ -515,12 +517,20 @@ export function collectElementRepeats(
         const key = elementKey(draft.kind, draft.name);
         let group = groups.get(key);
         if (group === undefined) {
-          group = { kind: draft.kind, name: draft.name, descriptions: [] };
+          group = { kind: draft.kind, name: draft.name, readings: [] };
           groups.set(key, group);
           order.push(key);
         }
-        if (!group.descriptions.includes(draft.description)) {
-          group.descriptions.push(draft.description);
+        const reading: ElementReading = {
+          description: draft.description,
+          ...(draft.forms === undefined ? {} : { forms: draft.forms }),
+        };
+        if (
+          !group.readings.some(
+            (held) => JSON.stringify(held) === JSON.stringify(reading),
+          )
+        ) {
+          group.readings.push(reading);
         }
       }
     }
@@ -529,7 +539,7 @@ export function collectElementRepeats(
     .map((key) => groups.get(key))
     .filter(
       (group): group is ElementRepeat =>
-        group !== undefined && group.descriptions.length >= 2,
+        group !== undefined && group.readings.length >= 2,
     );
 }
 
@@ -772,8 +782,8 @@ export interface MergedDescriptionWrite {
 /**
  * The descriptions one merge ask wrote over the ones on file.
  *
- * A merge changes words and nothing else: the element keeps its id, its
- * drawings, its voice and the chapters that were already added up locally. A
+ * A merge changes appearance words and adds missing forms: the element keeps
+ * its id, its drawings, its voice and the chapters already added up locally. A
  * name that no longer matches anything — renamed or taken out while the parts
  * were being read — is left alone rather than written back as a new element.
  */
@@ -792,11 +802,11 @@ export function applyMergedDescriptions(
   let changed = 0;
   const elements = story.elements.map((element) => {
     const draft = byKey.get(elementKey(element.kind, element.name));
-    if (draft === undefined || draft.description === element.description) {
-      return element;
-    }
+    if (draft === undefined) return element;
+    const written = applyElementAppearance(element, draft);
+    if (JSON.stringify(written) === JSON.stringify(element)) return element;
     changed += 1;
-    return { ...element, description: draft.description };
+    return written;
   });
   const missing = [...byKey]
     .filter(([key]) => !held.has(key))

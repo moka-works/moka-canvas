@@ -28,7 +28,11 @@ import {
   MAX_VIDEO_SECONDS,
   MIN_KEYFRAME_MS,
 } from "../constants";
-import type { StoryChapterDraft, StoryElementDraft } from "../story";
+import type {
+  StoryChapterDraft,
+  StoryElementDraft,
+  StoryElementFormDraft,
+} from "../story";
 import { elementKey, mergeElementDrafts } from "../story";
 import type { ActDraft, KeyframeDraft, StoryGuess } from "../story";
 import type { StoryActSound, StoryElement, StoryElementKind } from "../types";
@@ -323,6 +327,39 @@ export function parseElements(
           .map((number) => Math.round(number) - 1)
           .filter((index) => index >= 0)
       : [];
+    let forms: StoryElementFormDraft[] | undefined;
+    if (entry.forms !== undefined) {
+      if (!Array.isArray(entry.forms)) {
+        warnings.push(`${where}'s forms was not a list and was left out`);
+      } else {
+        const parsedForms: StoryElementFormDraft[] = [];
+        entry.forms.forEach((form, index) => {
+          const formWhere = `${where}'s form ${index + 1}`;
+          if (!isObject(form)) {
+            warnings.push(`${formWhere} was not an object and was left out`);
+            return;
+          }
+          const formName = words(form.name);
+          const formDescription = words(form.description);
+          if (formName === undefined || formDescription === undefined) {
+            warnings.push(
+              `${formWhere} had no ${formName === undefined ? "name" : "description"} and was left out`,
+            );
+            return;
+          }
+          parsedForms.push({
+            name: cut(formName, TITLE_MAX, `${formWhere}'s name`, warnings),
+            description: cut(
+              formDescription,
+              DESCRIPTION_MAX,
+              `${formWhere}'s description`,
+              warnings,
+            ),
+          });
+        });
+        forms = parsedForms;
+      }
+    }
     elements.push({
       kind,
       name: cut(name, TITLE_MAX, `${where}'s name`, warnings),
@@ -332,6 +369,7 @@ export function parseElements(
         `${where}'s description`,
         warnings,
       ),
+      ...(forms === undefined ? {} : { forms }),
       ...(chapters.length > 0 ? { chapterIndexes: chapters } : {}),
     });
   };

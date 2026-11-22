@@ -335,10 +335,16 @@ function jsonAnswer(prompt: string): string | undefined {
   const table = /as (\d+) chapters/.exec(prompt);
   if (table !== null) {
     const count = Math.max(1, Number(table[1]));
+    const changingCoat = prompt.includes(
+      "The keeper changes into a blue coat in the second chapter.",
+    );
     return JSON.stringify({
       chapters: Array.from({ length: count }, (_, index) => ({
         title: `Chapter ${index + 1}`,
-        synopsis: `What happens in chapter ${index + 1} of the telling.`,
+        synopsis:
+          changingCoat && index === 1
+            ? "Keeper now wears a blue coat."
+            : `What happens in chapter ${index + 1} of the telling.`,
       })),
     });
   }
@@ -475,6 +481,17 @@ function jsonAnswer(prompt: string): string | undefined {
         {
           name: "Keeper",
           description: "A woman in a grey coat, slow to speak.",
+          ...(prompt.includes("Keeper now wears a blue coat.")
+            ? {
+                forms: [
+                  {
+                    name: "Blue coat",
+                    description:
+                      "The same woman with the same face and hairstyle, wearing a blue coat, black trousers and black shoes.",
+                  },
+                ],
+              }
+            : {}),
           chapters: [1],
         },
         {

@@ -220,6 +220,72 @@ describe("the elements", () => {
     }
   });
 
+  it("reads additional static forms for characters, scenes and props", () => {
+    const read = parseElements({
+      characters: [
+        {
+          name: "林",
+          description: "黑色短发，深灰上装，黑色长裤。",
+          forms: [
+            { name: "蓝衣", description: "黑色短发，蓝色上装，黑色长裤。" },
+          ],
+          chapters: [1, 2],
+        },
+      ],
+      scenes: [
+        {
+          name: "车厢",
+          description: "白天，顶灯关闭，座椅干燥。",
+          forms: [{ name: "雨夜", description: "夜晚，顶灯全开，座椅潮湿。" }],
+          chapters: [2],
+        },
+      ],
+      props: [
+        {
+          name: "车票",
+          description: "完整的蓝色纸质车票。",
+          forms: [{ name: "撕角", description: "右下角撕缺的蓝色纸质车票。" }],
+          chapters: [3],
+        },
+      ],
+    });
+
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value).toHaveLength(3);
+      expect(read.value.map((draft) => draft.forms?.[0]?.name)).toEqual([
+        "蓝衣",
+        "雨夜",
+        "撕角",
+      ]);
+      expect(read.value[0].chapterIndexes).toEqual([0, 1]);
+      expect(read.warnings).toEqual([]);
+    }
+  });
+
+  it("keeps a readable element when one of its forms is malformed", () => {
+    const read = parseElements({
+      characters: [
+        {
+          name: "林",
+          description: "黑色短发，深灰上装。",
+          forms: [
+            { name: "蓝衣" },
+            { name: "红衣", description: "黑色短发，红色上装。" },
+          ],
+        },
+      ],
+    });
+
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value[0].forms).toEqual([
+        { name: "红衣", description: "黑色短发，红色上装。" },
+      ]);
+      expect(read.warnings.join()).toContain("form 1 had no description");
+    }
+  });
+
   it("reads one name said twice as one element, and says so", () => {
     // A long telling is read a part at a time, and a reading that names the
     // same thing twice has named one thing: filed twice it would be two
@@ -230,6 +296,7 @@ describe("the elements", () => {
         {
           name: "林",
           description: "四十岁上下，穿深色大衣。",
+          forms: [{ name: "蓝衣", description: "四十岁上下，穿蓝色大衣。" }],
           chapters: [2],
         },
       ],
@@ -240,6 +307,9 @@ describe("the elements", () => {
       // The description with more in it stands, since that is what a picture
       // is drawn from, and the chapters add up.
       expect(read.value[0].description).toBe("四十岁上下，穿深色大衣。");
+      expect(read.value[0].forms).toEqual([
+        { name: "蓝衣", description: "四十岁上下，穿蓝色大衣。" },
+      ]);
       expect(read.value[0].chapterIndexes).toEqual([0, 1]);
       expect(read.warnings.join()).toContain("was named twice");
     }

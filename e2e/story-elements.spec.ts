@@ -101,7 +101,7 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
     // A premise, and the chapters it is told in.
     await page
       .getByTestId("story-idea-input")
-      .fill("Eleven at night, and the last train stops where it should not.");
+      .fill("The keeper changes into a blue coat in the second chapter.");
     await page.getByTestId("story-idea-duration-3").click();
     await page.getByTestId("story-confirm-idea").click();
     await expect(page.getByTestId("story-step-body-outline")).toBeVisible();
@@ -153,6 +153,16 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
         "story-element-description-Keeper",
       ),
     ).toHaveValue(/grey coat/);
+    const keeperForm = card(page, "character", "Keeper").getByTestId(
+      "story-element-form-Keeper",
+    );
+    await keeperForm.selectOption({ label: "Blue coat" });
+    await expect(
+      card(page, "character", "Keeper").getByTestId(
+        "story-element-description-Keeper",
+      ),
+    ).toHaveValue(/blue coat, black trousers and black shoes/);
+    await keeperForm.selectOption("");
     // A prop's quick press asks for the props alone, and four views belong to
     // characters, so the group of things offers no such press.
     await page.getByTestId("story-elements-group-prop").click();
@@ -188,27 +198,26 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
         .getByRole("combobox"),
     ).not.toHaveValue("");
 
-    // Nobody has a picture yet, so the step's press says what it is missing
-    // rather than opening the board: there is no agreement per element to give.
+    // The second coat is a form of Keeper, so five forms need pictures while
+    // the cast still holds four elements.
     await expect(page.getByTestId("story-elements-draw-all")).toHaveText(
-      "Draw every missing picture (4)",
+      "Draw every missing picture (5)",
     );
     await page.getByTestId("story-confirm-elements").click();
     await expect(page.getByTestId("story-confirm-gaps-elements")).toContainText(
-      "4 elements have no picture",
+      "5 elements have no picture",
     );
     await expect(page.getByTestId("story-step-storyboard")).toBeDisabled();
 
-    // Drawing them all is four asks of the painter, said out loud.
+    // Drawing them all includes the second coat as a separate generation.
     await page.getByTestId("story-elements-draw-all").click();
     await expect(card(page, "character", "Keeper").locator("img")).toBeVisible({
       timeout: 60_000,
     });
 
-    // A character is drawn with the four views as well, and only the two
-    // characters need them.
+    // Each character form gets its own four-view sheet, including the blue coat.
     await expect(page.getByTestId("story-elements-views-all")).toHaveText(
-      "Four views for every character (2)",
+      "Four views for every character (3)",
     );
     await page.getByTestId("story-elements-views-all").click();
     await expect(
@@ -216,6 +225,15 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
         .getByTestId("story-slot-turnaround")
         .locator("img"),
     ).toBeVisible({ timeout: 60_000 });
+    const calls = await providerCalls();
+    expect(
+      calls.some(
+        (call) =>
+          call.prompt.includes("approximately 16:9 horizontal landscape") &&
+          call.prompt.includes("left approximately 2/5 (40%)") &&
+          call.prompt.includes("right approximately 3/5 (60%)"),
+      ),
+    ).toBe(true);
 
     // Every element described and drawn: the press settles the step and takes
     // the reader on to the board, which is now a door.
