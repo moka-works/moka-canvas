@@ -80,6 +80,12 @@ export interface ApplyContext {
   holdDescriptionKeys?: Set<string>;
 }
 
+/** One answer that was succeeded but could not be read into the story. */
+export interface UnreadableAnswer {
+  id: string;
+  kind: "outline" | "elements";
+}
+
 /** What reading one batch's answers did to the story. */
 export interface ApplyReport {
   /** Pieces whose answers were written into the document. */
@@ -88,6 +94,11 @@ export interface ApplyReport {
   skipped: number;
   /** What could not be written, in the reader's language. */
   notes: string[];
+  /**
+   * Answers that came home but could not be read. They are the ones a repair
+   * ask can help with; a piece that failed has nothing to repair.
+   */
+  unreadable?: UnreadableAnswer[];
   /**
    * Whether the document refused the whole lot, so nothing of it was written.
    *
@@ -702,6 +713,10 @@ function outlineCommands(
     if (item.status !== "succeeded") continue;
     const found = chapterWrites(item);
     if (found === undefined) {
+      report.unreadable = [
+        ...(report.unreadable ?? []),
+        { id: item.id, kind: "outline" },
+      ];
       report.notes.push(i18n.t("story:jobs.unreadableAnswer", { at: item.id }));
       continue;
     }
@@ -942,6 +957,10 @@ function commandsFor(
       }
       const read = readElementsAnswer(item.text ?? "");
       if (read.drafts === undefined) {
+        report.unreadable = [
+          ...(report.unreadable ?? []),
+          { id: item.id, kind: "elements" },
+        ];
         report.notes.push(
           i18n.t("story:jobs.unreadableAnswer", { at: item.id }),
         );

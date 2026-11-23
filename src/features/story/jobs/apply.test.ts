@@ -356,6 +356,22 @@ describe("writing a batch's answers into the story", () => {
     expect(story().chapters[0].acts).toHaveLength(1);
   });
 
+  it("names an outline answer that could not be read", () => {
+    const report = applyJobResults(
+      record("outline", [
+        item({
+          id: "outline",
+          target: { kind: "outline" },
+          capability: "text",
+          text: "I am afraid I cannot help with that.",
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(0);
+    expect(report.unreadable).toEqual([{ id: "outline", kind: "outline" }]);
+  });
+
   it("reads a part of a manuscript that answered with one chapter", () => {
     const report = applyJobResults(
       record("outline", [

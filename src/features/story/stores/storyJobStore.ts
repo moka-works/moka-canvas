@@ -53,6 +53,11 @@ import {
   settlePendingArt,
 } from "../jobs/apply";
 import {
+  clearDoctorAttempts,
+  forgetAnswerRepair,
+  planAnswerRepair,
+} from "../jobs/doctor";
+import {
   ELEMENT_MERGE_ID,
   itemsForTargets,
   jobKey,
@@ -590,6 +595,12 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     set({
       applying: [...get().applying, ...waiting.map(({ record }) => record.id)],
     });
+    // Answers that were read as prose rather than as the shape they were asked
+    // for are asked again below, after this look has written what it could.
+    const repairs = new Map<
+      string,
+      { kind: StoryJobKind; model: string; items: StoryJobItemDraft[] }
+    >();
     try {
       const settled: string[] = [];
       for (const { record, known, fresh, ending } of waiting) {
@@ -598,6 +609,36 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
             { ...record, items: fresh },
             { holdDescriptionKeys: heldDescriptionKeys(get().jobs, record) },
           );
+          if (report.unreadable !== undefined && report.unreadable.length > 0) {
+            const story = useProjectStore
+              .getState()
+              .moka?.stories?.find((held) => held.id === record.storyId);
+            if (story !== undefined) {
+              for (const entry of report.unreadable) {
+                const planned = planAnswerRepair(story, record, entry);
+                if (planned === undefined) continue;
+                const key = `${record.kind}:${record.model}`;
+                const group = repairs.get(key) ?? {
+                  kind: record.kind,
+                  model: record.model,
+                  items: [],
+                };
+                group.items.push(planned);
+                repairs.set(key, group);
+              }
+            }
+          } else if (report.applied > 0) {
+            // A whole answer for these places: a later failure starts its
+            // repairs from the beginning rather than from the last ask's count.
+            for (const item of record.items) {
+              if (
+                item.target.kind === "outline" ||
+                item.target.kind === "elements"
+              ) {
+                forgetAnswerRepair(record.storyId, item.target.kind, item.id);
+              }
+            }
+          }
 
           if (report.refused === true) {
             // The document would not take it, so it is not in: nothing of the
@@ -707,6 +748,14 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       const finished = new Set(waiting.map(({ record }) => record.id));
       set({ applying: get().applying.filter((id) => !finished.has(id)) });
     }
+    // The answers that could not be read are asked for again now that what
+    // could be written is in — one ask per model, as the first ones were.
+    for (const group of repairs.values()) {
+      if (group.items.length === 0) continue;
+      const storyId = get().storyId;
+      if (storyId === null) return;
+      await get().start(storyId, group.kind, group.items, group.model);
+    }
   };
 
   const readAnswers = (records: StoryJobRecord[]): Promise<void> =>
@@ -811,6 +860,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         readIn = new Map<string, BatchRead>();
         watched = new Set<string>();
         jobRun = new Map<string, string>();
+        clearDoctorAttempts();
         set({ cancelling: [], ignored: [] });
       }
       set({ storyId });
@@ -961,6 +1011,7 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       jobRun = new Map<string, string>();
       handingOver = new Set<string>();
       lookTrouble = null;
+      clearDoctorAttempts();
       set({
         storyId: null,
         jobs: [],

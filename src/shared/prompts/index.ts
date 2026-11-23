@@ -45,6 +45,7 @@ import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
 import storyStoryboardRepair from "./story/storyboard-repair.tmpl?raw";
 import storyContinuity from "./story/continuity.tmpl?raw";
+import storyAnswerRepair from "./story/answer-repair.tmpl?raw";
 import storyRevision from "./story/revise.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
@@ -369,6 +370,26 @@ export function storyStoryboardRepairPrompt(
     render(storyStoryboardRepair, {
       previous: input.previous,
       problems: input.problems.map((problem) => `- ${problem}`).join("\n"),
+    }),
+  ].join("\n\n");
+}
+
+/**
+ * A written answer asked again with the reasons it could not be read.
+ *
+ * The whole ask travels: an answer is still an answer to the same question,
+ * and the rules it forgot are the ones most likely to be forgotten again.
+ */
+export function storyAnswerRepairPrompt(
+  original: string,
+  previous: string,
+  problems: string[],
+): string {
+  return [
+    original,
+    render(storyAnswerRepair, {
+      previous,
+      problems: problems.map((problem) => `- ${problem}`).join("\n"),
     }),
   ].join("\n\n");
 }
