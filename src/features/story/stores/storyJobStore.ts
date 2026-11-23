@@ -83,6 +83,7 @@ const STEP_OF_KIND: Record<StoryJobKind, StoryStep> = {
   outline: "outline",
   elements: "elements",
   storyboard: "storyboard",
+  continuity: "storyboard",
   outlineRevision: "storyboard",
   elementArt: "elements",
   keyframeArt: "storyboard",

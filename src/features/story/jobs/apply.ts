@@ -69,6 +69,7 @@ import {
   type ElementRepeat,
 } from "./plan";
 import { checkBoard, type BoardAnswer } from "./board";
+import { applyContinuity } from "./continuity";
 
 /** What the room knows about a batch that the record alone does not say. */
 export interface ApplyContext {
@@ -423,6 +424,7 @@ function slotTargetOf(item: StoryJobItem): StorySlotTarget | undefined {
     case "outline":
     case "elements":
     case "storyboard":
+    case "continuity":
     case "outlineRevision":
       return undefined;
   }
@@ -990,6 +992,45 @@ function commandsFor(
       if (written.length === 0) return written;
       report.applied += 1;
       return written;
+    }
+    case "continuity": {
+      const { chapterId } = item.target;
+      const chapter = story.chapters.find((held) => held.id === chapterId);
+      if (chapter === undefined) {
+        report.skipped += 1;
+        report.notes.push(i18n.t("story:jobs.targetGone", { label: item.id }));
+        return [];
+      }
+      const applied = applyContinuity(story, chapter, item);
+      if (applied.stale === true) {
+        report.skipped += 1;
+        report.notes.push(i18n.t("story:jobs.continuityStale"));
+        return [];
+      }
+      if (applied.error !== undefined) {
+        report.skipped += 1;
+        report.notes.push(
+          i18n.t("story:jobs.continuityRejected", { reason: applied.error }),
+        );
+        return [];
+      }
+      if (applied.changed === 0) {
+        report.skipped += 1;
+        report.notes.push(i18n.t("story:jobs.continuityNone"));
+        return [];
+      }
+      report.applied += 1;
+      report.notes.push(
+        (applied.summary ?? "").trim() === ""
+          ? i18n.t("story:jobs.continuitySummary", {
+              count: applied.changed,
+            })
+          : i18n.t("story:jobs.continuitySummarySaid", {
+              count: applied.changed,
+              summary: applied.summary,
+            }),
+      );
+      return applied.commands;
     }
     default:
       return [];

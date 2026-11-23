@@ -1,0 +1,36 @@
+Chapter {{ number }} of the telling: {{ chapter.title }}
+{{ chapter.text }}
+
+The board as it stands. Its acts and shots are fixed: do not add, remove, reorder or merge them, and do not change what is said or what happens.
+
+{{ board }}
+
+Look only at staging that must run on from shot to shot: where each person stands, which way they face, where they look, where the camera sits, and how bodies sit against the furniture, doors and walls of the place. A person who moves must arrive where the next shot finds them. People facing each other must not swap sides without a move. Nobody may pass through a table, stand inside a chair, or be embedded in a wall. A change of place may rebuild the staging.
+
+Keep every line and every piece of plot exactly as it is. Change only "content", "motion", "shotSize", "cameraMove" and "angle", and only for a shot that is wrong. Do not give a patch for a shot that is already right. An empty patches list means the board needs no change.
+
+Choose the framing from these lists and write the key exactly as it is listed:
+
+- shotSize: {% for size in shotSizes %}{{ size }}{% if not loop.last %}, {% endif %}{% endfor %}
+- cameraMove: {% for move in cameraMoves %}{{ move }}{% if not loop.last %}, {% endif %}{% endfor %}
+- angle: {% for angle in angles %}{{ angle }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+Answer with a single fenced json block and nothing else:
+
+```json
+{
+  "summary": "…",
+  "patches": [
+    {
+      "actId": "the act's id, copied exactly",
+      "keyframeId": "the shot's id, copied exactly",
+      "reason": "what was wrong and how this fixes it",
+      "content": "the still frame, rewritten only if it must change",
+      "motion": "what moves, rewritten only if it must change",
+      "shotSize": "…",
+      "cameraMove": "…",
+      "angle": "…"
+    }
+  ]
+}
+```

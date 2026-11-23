@@ -86,6 +86,7 @@ import {
   storyKeyframeVideoPrompt,
   storyMergeElementsPrompt,
   storyOutlinePrompt,
+  storyContinuityPrompt,
   storyRevisionPrompt,
   storyStoryboardPrompt,
   storyStoryboardRepairPrompt,
@@ -105,6 +106,7 @@ import {
   shotsFor,
   soundFor,
 } from "../../../shared/prompts/story/promptContext";
+import { fnv1a } from "../../../shared/domain/digest";
 import { i18n } from "../../../shared/i18n";
 import {
   effectiveDefaultId,
@@ -134,6 +136,8 @@ export function jobKey(target: StoryTarget): string {
       return "elements";
     case "storyboard":
       return `storyboard:${target.chapterId}`;
+    case "continuity":
+      return `continuity:${target.chapterId}`;
     case "outlineRevision":
       return `outlineRevision:${target.chapterId}`;
     case "elementArt":
@@ -900,6 +904,98 @@ export function planStoryboardRepair(
       ...asked.input,
       previous,
       problems,
+    }),
+  };
+}
+
+/**
+ * The board's staging as it stands, in a form a check can be stamped with.
+ *
+ * A patch is written against the shots the check read: if a reader moves a
+ * shot while the check is out, the answer is no longer about this board and is
+ * not written. The cast and the place are part of it because a check reads the
+ * board with them in mind.
+ */
+export function continuityFingerprint(chapter: StoryChapter): string {
+  const rows: string[] = [];
+  for (const act of chapter.acts) {
+    if (act.transition !== undefined) continue;
+    rows.push(
+      `act:${act.id}:${act.title}:${act.sceneId ?? ""}:${act.characterIds.join(",")}:${act.propIds.join(",")}`,
+    );
+    for (const keyframe of act.keyframes) {
+      rows.push(
+        `shot:${keyframe.id}:${keyframe.shotSize}:${keyframe.cameraMove}:${keyframe.angle}:${keyframe.durationMs}:${keyframe.content}:${keyframe.motion}`,
+      );
+      for (const line of keyframe.dialogue) {
+        rows.push(`line:${line.id}:${line.speaker}:${line.text}`);
+      }
+    }
+  }
+  return fnv1a(rows.join("\n"));
+}
+
+/** The board as a staging check reads it: ids to patch by, and what stands. */
+function continuityBoard(story: StoryDocument, chapter: StoryChapter): string {
+  return chapter.acts
+    .filter((act) => act.transition === undefined)
+    .map((act, at) => {
+      const cast = act.characterIds
+        .map((id) => elementOf(story, id)?.name)
+        .filter((name): name is string => name !== undefined);
+      const place = elementOf(story, act.sceneId ?? "")?.name;
+      const shots = act.keyframes.map((keyframe, shotAt) =>
+        [
+          `  Shot ${shotAt + 1} — id: ${keyframe.id} — ${keyframe.shotSize}/${keyframe.cameraMove}/${keyframe.angle}, ${keyframe.durationMs} ms`,
+          `    content: ${keyframe.content}`,
+          ...(keyframe.motion === "" ? [] : [`    motion: ${keyframe.motion}`]),
+          ...keyframe.dialogue.map(
+            (line) => `    line (${line.speaker}): ${line.text}`,
+          ),
+        ].join("\n"),
+      );
+      return [
+        `Act ${at + 1} — id: ${act.id} — “${act.title}”`,
+        `  place: ${place ?? "—"}; cast: ${cast.join(", ") || "—"}`,
+        ...shots,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+/** One chapter's staging checked, as an ask that patches the board it holds. */
+export function planContinuity(
+  story: StoryDocument,
+  chapterId: string,
+): StoryJobItemDraft | undefined {
+  const number = story.chapters.findIndex((held) => held.id === chapterId);
+  const chapter = story.chapters[number];
+  if (
+    chapter === undefined ||
+    chapter.acts.every(
+      (act) => act.transition !== undefined || act.keyframes.length === 0,
+    )
+  ) {
+    return undefined;
+  }
+  const target: StoryTarget = { kind: "continuity", chapterId };
+  const stamp = `${chapterRevision(chapter)}:${continuityFingerprint(chapter)}`;
+  return {
+    id: `${jobKey(target)}:${stamp}`,
+    target,
+    capability: "text",
+    system: storySystemPrompt(),
+    prompt: storyContinuityPrompt({
+      ...factsOf(story),
+      number: number + 1,
+      chapter: {
+        title: chapter.title,
+        text: chapterWordsOf(chapter),
+      },
+      board: continuityBoard(story, chapter),
+      shotSizes: STORY_SHOT_SIZES,
+      cameraMoves: STORY_CAMERA_MOVES,
+      angles: STORY_CAMERA_ANGLES,
     }),
   };
 }
@@ -2299,6 +2395,10 @@ export function itemsForTargets(
         return planElements(story);
       case "storyboard":
         return planStoryboard(story, [target.chapterId]);
+      case "continuity": {
+        const planned = planContinuity(story, target.chapterId);
+        return planned === undefined ? [] : [planned];
+      }
       case "outlineRevision": {
         const planned = planOutlineRevision(story, target.chapterId);
         return planned === undefined ? [] : [planned];

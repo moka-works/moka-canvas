@@ -22,6 +22,7 @@ import {
   planActVideoWaves,
   planActVoice,
   planChapterRewrite,
+  planContinuity,
   planElementArt,
   planElementArtWaves,
   planElementMergeWaves,
@@ -519,6 +520,21 @@ describe("planning the words", () => {
     expect(repair?.prompt).toContain("Your previous answer could not be used");
     expect(repair?.prompt).toContain("the first answer");
     expect(repair?.prompt).toContain("act 2 was boarded with no shots");
+  });
+
+  it("asks a staging check for a boarded chapter alone", () => {
+    const held = story();
+    const chapter = held.chapters[0]!;
+    const planned = planContinuity(held, chapter.id);
+
+    expect(planned?.target).toEqual({
+      kind: "continuity",
+      chapterId: chapter.id,
+    });
+    expect(planned?.prompt).toContain(chapter.acts[0]!.keyframes[0]!.id);
+    expect(planned?.prompt).toContain("do not add, remove, reorder or merge");
+    // The second chapter has no board, so there is no staging to check.
+    expect(planContinuity(held, held.chapters[1]!.id)).toBeUndefined();
   });
 
   it("plans a revision only while the outline is ahead of the board", () => {

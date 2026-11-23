@@ -7,7 +7,10 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
-import { choosePendingTake } from "../../../shared/domain/story";
+import {
+  chapterRevision,
+  choosePendingTake,
+} from "../../../shared/domain/story";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { useHistoryStore } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -16,6 +19,7 @@ import {
   collectElementRepeats,
   settlePendingArt,
 } from "./apply";
+import { continuityFingerprint } from "./plan";
 
 const ids = storyIds();
 
@@ -642,6 +646,39 @@ describe("writing a batch's answers into the story", () => {
       (each) => each.id === ids.chapterSecond,
     );
     expect(chapter?.acts).toHaveLength(0);
+  });
+
+  it("writes a staging check into the board as one step", () => {
+    open();
+    const held = story();
+    const chapter = held.chapters[0]!;
+    const act = chapter.acts[0]!;
+    const shot = act.keyframes[0]!;
+    const report = applyJobResults(
+      record("continuity", [
+        item({
+          id: `continuity:${chapter.id}:${chapterRevision(chapter)}:${continuityFingerprint(chapter)}`,
+          target: { kind: "continuity", chapterId: chapter.id },
+          capability: "text",
+          text: JSON.stringify({
+            summary: "They kept their sides.",
+            patches: [
+              {
+                actId: act.id,
+                keyframeId: shot.id,
+                content: "`林` stands left of the door.",
+              },
+            ],
+          }),
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(1);
+    expect(report.notes.join(" ")).toContain("They kept their sides.");
+    const after = story().chapters[0]!.acts[0]!.keyframes[0]!;
+    expect(after.content).toBe("`林` stands left of the door.");
+    expect(after.dialogue).toEqual(shot.dialogue);
   });
 
   it("keeps a board's place and speakers in the shots that must carry them", () => {

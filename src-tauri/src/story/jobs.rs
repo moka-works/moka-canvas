@@ -171,6 +171,10 @@ pub enum StoryJobKind {
     Elements,
     /// One episode's board: its acts and its shots. Words, one call an episode.
     Storyboard,
+    /// One episode's board checked for staging that runs on across shots.
+    /// Words, one call: the answer is a patch to the shots already on file,
+    /// never a board again.
+    Continuity,
     /// One episode's board revised from a newer outline. Words, one call: the
     /// answer is a patch to the shots already on file, not a board again.
     OutlineRevision,
@@ -195,6 +199,7 @@ impl StoryJobKind {
             StoryJobKind::Outline
             | StoryJobKind::Elements
             | StoryJobKind::Storyboard
+            | StoryJobKind::Continuity
             | StoryJobKind::OutlineRevision => Capability::Text,
             StoryJobKind::ElementArt | StoryJobKind::KeyframeArt => Capability::Image,
             StoryJobKind::ActVideo | StoryJobKind::KeyframeVideo => Capability::Video,
@@ -210,6 +215,7 @@ impl StoryJobKind {
             StoryJobKind::Outline
                 | StoryJobKind::Elements
                 | StoryJobKind::Storyboard
+                | StoryJobKind::Continuity
                 | StoryJobKind::OutlineRevision
         )
     }
@@ -377,6 +383,11 @@ pub enum StoryTarget {
     Storyboard {
         chapter_id: String,
     },
+    /// A board's staging checked at one chapter, answered as a patch.
+    #[serde(rename_all = "camelCase")]
+    Continuity {
+        chapter_id: String,
+    },
     /// A board revised from a newer outline, at one chapter.
     #[serde(rename_all = "camelCase")]
     OutlineRevision {
@@ -434,6 +445,7 @@ impl StoryTarget {
             StoryTarget::Outline => StoryJobKind::Outline,
             StoryTarget::Elements => StoryJobKind::Elements,
             StoryTarget::Storyboard { .. } => StoryJobKind::Storyboard,
+            StoryTarget::Continuity { .. } => StoryJobKind::Continuity,
             StoryTarget::OutlineRevision { .. } => StoryJobKind::OutlineRevision,
             StoryTarget::ElementArt { .. } => StoryJobKind::ElementArt,
             StoryTarget::KeyframeArt { .. } => StoryJobKind::KeyframeArt,

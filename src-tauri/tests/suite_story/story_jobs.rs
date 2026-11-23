@@ -1362,6 +1362,36 @@ async fn a_batch_of_words_keeps_what_the_provider_said() {
 }
 
 #[tokio::test]
+async fn a_staging_check_is_a_batch_of_words_at_one_chapter() {
+    let tmp = TempDir::new().unwrap();
+    let harness = harness_at(&tmp);
+    let recorded = Recorded::default();
+    let provider = serve(answering(recorded.clone(), Arc::new(AtomicBool::new(true)))).await;
+    harness
+        .configure(&provider, &[(WRITER, Capability::Text)])
+        .await;
+    harness.project("Story Staging").await;
+
+    let job = harness
+        .start_ok(batch(
+            "continuity",
+            vec![piece(
+                "continuity:c1:1:abc",
+                json!({ "kind": "continuity", "chapterId": "c1" }),
+                "text",
+                "check the staging",
+            )],
+        ))
+        .await;
+    let id = job["id"].as_str().unwrap().to_string();
+    let settled = harness.settled(&id).await;
+
+    assert_eq!(settled["status"], "succeeded", "{settled}");
+    // A staging check is words the room reads as a patch, not a file.
+    assert_eq!(settled["items"][0]["text"], json!(SENTENCE));
+}
+
+#[tokio::test]
 async fn a_shot_is_placed_written_down_and_then_waited_out() {
     let tmp = TempDir::new().unwrap();
     let harness = harness_at(&tmp);

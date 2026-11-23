@@ -44,6 +44,7 @@ import storyElements from "./story/elements.tmpl?raw";
 import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
 import storyStoryboardRepair from "./story/storyboard-repair.tmpl?raw";
+import storyContinuity from "./story/continuity.tmpl?raw";
 import storyRevision from "./story/revise.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
@@ -370,6 +371,26 @@ export function storyStoryboardRepairPrompt(
       problems: input.problems.map((problem) => `- ${problem}`).join("\n"),
     }),
   ].join("\n\n");
+}
+
+/**
+ * One episode's board checked for staging that runs on across its shots.
+ *
+ * The board travels with the ids an answer patches by, so a model that finds
+ * a person standing inside a table says which shot to change rather than
+ * writing the board again.
+ */
+export function storyContinuityPrompt(
+  input: StoryFacts & {
+    number: number;
+    chapter: { title: string; text: string };
+    board: string;
+    shotSizes: readonly string[];
+    cameraMoves: readonly string[];
+    angles: readonly string[];
+  },
+): string {
+  return [storyFactsPrompt(input), render(storyContinuity, input)].join("\n\n");
 }
 
 function storyElementsList(

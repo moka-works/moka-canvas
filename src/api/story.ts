@@ -17,6 +17,7 @@ export type StoryJobKind =
   | "outline"
   | "elements"
   | "storyboard"
+  | "continuity"
   | "outlineRevision"
   | "elementArt"
   | "keyframeArt"
@@ -37,6 +38,8 @@ export type StoryTarget =
   | { kind: "outline" }
   | { kind: "elements" }
   | { kind: "storyboard"; chapterId: string }
+  /** A board's staging checked, answered as a patch rather than a board. */
+  | { kind: "continuity"; chapterId: string }
   /** A board revised from a newer outline, answered as a patch rather than a board. */
   | { kind: "outlineRevision"; chapterId: string }
   | {

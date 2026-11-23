@@ -474,6 +474,28 @@ function jsonAnswer(prompt: string): string | undefined {
       ],
     });
   }
+  // One episode's staging checked: the answer patches the first shot it was
+  // shown, so a test can tell the check was applied by reading that shot.
+  if (
+    prompt.includes("Look only at staging that must run on from shot to shot")
+  ) {
+    const actId = /Act 1 — id: ([^\s]+)/.exec(prompt)?.[1];
+    const shotId = /Shot 1 — id: ([^\s]+)/.exec(prompt)?.[1];
+    return JSON.stringify({
+      summary: "The keeper keeps her side of the platform.",
+      patches:
+        actId === undefined || shotId === undefined
+          ? []
+          : [
+              {
+                actId,
+                keyframeId: shotId,
+                reason: "She kept her side of the platform.",
+                content: "Staging check wrote this frame.",
+              },
+            ],
+    });
+  }
   // The cast of a telling, asked for by the chapters it stands in.
   if (prompt.includes("List what this telling is made of")) {
     return JSON.stringify({

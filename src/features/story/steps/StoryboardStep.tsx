@@ -47,6 +47,7 @@ import { chapterStripWindow } from "./chapterStrip";
 import { chapterGuesses } from "../jobs/apply";
 import {
   jobKey,
+  planContinuity,
   planKeyframeArtWaves,
   planMissingVideoWaves,
   planOutlineRevision,
@@ -209,6 +210,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // own that are not already being written. It is also what the button counts,
   // so its number is the work it would ask for.
   const boardable = unboarded.filter((held) => !boarding(held.id));
+  const boardedChapters = story.chapters.filter((held) => held.acts.length > 0);
   const actsTotal = story.chapters.reduce(
     (sum, held) => sum + held.acts.length,
     0,
@@ -330,6 +332,19 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   const boardEpisodes = async (chapterIds: string[]) => {
     await settleRevisions(chapterIds);
     await runBoards(story.id, chapterIds);
+  };
+
+  /** Checks the staging of these episodes' boards, one ask each. */
+  const checkContinuity = async (chapterIds: string[]) => {
+    const items = chapterIds.flatMap((chapterId) => {
+      const planned = planContinuity(story, chapterId);
+      return planned === undefined ? [] : [planned];
+    });
+    if (items.length === 0) {
+      toast("info", t("story:storyboard.continuityNothing"));
+      return;
+    }
+    await run(story.id, "continuity", items);
   };
 
   const boardAll = async () => {
@@ -706,6 +721,32 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                   {t("story:panels.rewriteStop")}
                 </button>
               </span>
+            )}
+            {boarded && (
+              <button
+                data-testid="story-board-continuity"
+                disabled={kindRunning(jobs, "continuity")}
+                onClick={() => void checkContinuity([chapter.id])}
+                title={t("story:storyboard.continuityHint")}
+                type="button"
+              >
+                {t("story:storyboard.continuity")}
+              </button>
+            )}
+            {boardedChapters.length >= 2 && (
+              <button
+                data-testid="story-board-continuity-all"
+                disabled={kindRunning(jobs, "continuity")}
+                onClick={() =>
+                  void checkContinuity(boardedChapters.map((held) => held.id))
+                }
+                title={t("story:storyboard.continuityAllHint")}
+                type="button"
+              >
+                {t("story:storyboard.continuityAll", {
+                  count: boardedChapters.length,
+                })}
+              </button>
             )}
             {boardable.length >= 2 && (
               <button
