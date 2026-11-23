@@ -88,6 +88,11 @@ export function failurePieceLabel(
       return (
         join(chapterText(target.chapterId), t("story:jobs.pieceBoard")) ?? gone
       );
+    case "actPlan":
+      return (
+        join(chapterText(target.chapterId), t("story:jobs.pieceActPlan")) ??
+        gone
+      );
     case "continuity":
       return (
         join(chapterText(target.chapterId), t("story:jobs.pieceContinuity")) ??

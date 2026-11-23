@@ -1,0 +1,25 @@
+Chapter {{ number }} of the telling: {{ chapter.title }}
+{{ chapter.text }}
+
+Plan this chapter as acts before any shot is written. An act is one stretch of the story in one place at one time: give the beat it carries, the place it happens in, who is in it, what it must accomplish, and how long it should run. The acts together should tell the chapter in about {{ seconds }} seconds. A chapter that needs more time than one act can hold has more acts; there is no fixed count.
+
+{{ standing }}
+
+Write each plan as one to three sentences: what happens, who is there, where it starts and ends, and what must be true when it ends. Do not write shots, framing or camera moves; the board does that. Use only the names on file.
+
+{{ elements }}
+
+Answer with a single fenced json block and nothing else:
+
+```json
+{
+  "acts": [
+    {
+      "actId": "the planned act's id, only when one is already on file",
+      "title": "…",
+      "summary": "…",
+      "plan": "…"
+    }
+  ]
+}
+```

@@ -125,6 +125,23 @@ describe("checking a board", () => {
     expect(checked.warnings.join(" ")).not.toContain("does not name its place");
   });
 
+  it("boards exactly the acts a chapter was planned as, by id", () => {
+    const held = chapter.acts[0]!;
+    const planned = {
+      ...chapter,
+      acts: [{ ...held, plan: "She waits until the announcement." }],
+    };
+    const good = checkBoard(story, planned, answer([act({ actId: held.id })]));
+    expect(good.errors).toEqual([]);
+
+    const wrong = checkBoard(
+      story,
+      planned,
+      answer([act({ actId: "another-act" })]),
+    );
+    expect(wrong.errors.join(" ")).toContain("must board the planned act");
+  });
+
   it("warns when motion is written with backticks", () => {
     const checked = checkBoard(
       story,

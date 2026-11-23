@@ -99,12 +99,15 @@ export function splitAct(
   const head: StoryAct = {
     ...createAct(act.title, act.summary),
     ...common,
+    ...(act.plan === undefined ? {} : { plan: act.plan }),
+    ...(act.videoModel === undefined ? {} : { videoModel: act.videoModel }),
     keyframes: act.keyframes.slice(0, at),
     video: emptyStorySlot(),
   };
   const tail: StoryAct = {
     ...createAct(continuation(act.title)),
     ...common,
+    ...(act.videoModel === undefined ? {} : { videoModel: act.videoModel }),
     keyframes: act.keyframes.slice(at),
     video: emptyStorySlot(),
   };
@@ -156,9 +159,11 @@ export function mergeActsAt(
           ),
         }),
   };
+  const plan = words(above.plan ?? "", below.plan ?? "");
   const merged: StoryAct = {
     ...createAct(above.title, words(above.summary, below.summary)),
     id: newId(),
+    ...(plan.trim() === "" ? {} : { plan }),
     characterIds: [...new Set([...above.characterIds, ...below.characterIds])],
     propIds: [...new Set([...above.propIds, ...below.propIds])],
     sound,
@@ -170,6 +175,9 @@ export function mergeActsAt(
     ...(above.shotGranularity !== undefined &&
     above.shotGranularity === below.shotGranularity
       ? { shotGranularity: above.shotGranularity }
+      : {}),
+    ...(above.videoModel !== undefined && above.videoModel === below.videoModel
+      ? { videoModel: above.videoModel }
       : {}),
   };
   const acts = [...chapter.acts];

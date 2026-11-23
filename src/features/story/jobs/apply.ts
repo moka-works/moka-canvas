@@ -70,6 +70,7 @@ import {
 } from "./plan";
 import { checkBoard, type BoardAnswer } from "./board";
 import { applyContinuity } from "./continuity";
+import { applyActPlan } from "./actPlan";
 
 /** What the room knows about a batch that the record alone does not say. */
 export interface ApplyContext {
@@ -435,6 +436,7 @@ function slotTargetOf(item: StoryJobItem): StorySlotTarget | undefined {
     case "outline":
     case "elements":
     case "storyboard":
+    case "actPlan":
     case "continuity":
     case "outlineRevision":
       return undefined;
@@ -1011,6 +1013,25 @@ function commandsFor(
       if (written.length === 0) return written;
       report.applied += 1;
       return written;
+    }
+    case "actPlan": {
+      const { chapterId } = item.target;
+      const chapter = story.chapters.find((held) => held.id === chapterId);
+      if (chapter === undefined) {
+        report.skipped += 1;
+        report.notes.push(i18n.t("story:jobs.targetGone", { label: item.id }));
+        return [];
+      }
+      const applied = applyActPlan(story, chapter, item);
+      if (applied.error !== undefined) {
+        report.skipped += 1;
+        report.notes.push(
+          i18n.t("story:jobs.actPlanRejected", { reason: applied.error }),
+        );
+        return [];
+      }
+      report.applied += 1;
+      return applied.commands;
     }
     case "continuity": {
       const { chapterId } = item.target;

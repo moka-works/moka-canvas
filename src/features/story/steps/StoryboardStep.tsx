@@ -7,6 +7,7 @@ import {
   actHasPicturelessShot,
   actsRegenerationCost,
   chapterBoardRevision,
+  chapterBoarded,
   chapterOutlineAhead,
   chapterRevision,
   chunkWaves,
@@ -47,6 +48,7 @@ import { chapterStripWindow } from "./chapterStrip";
 import { chapterGuesses } from "../jobs/apply";
 import {
   jobKey,
+  planActPlan,
   planContinuity,
   planKeyframeArtWaves,
   planMissingVideoWaves,
@@ -215,12 +217,12 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
       ? new Map<string, StoryGuess[]>()
       : chapterGuesses(story, chapter.id, jobs);
 
-  const unboarded = story.chapters.filter((held) => held.acts.length === 0);
+  const unboarded = story.chapters.filter((held) => !chapterBoarded(held));
   // What "board every episode" hands over: the episodes with no board of their
   // own that are not already being written. It is also what the button counts,
   // so its number is the work it would ask for.
   const boardable = unboarded.filter((held) => !boarding(held.id));
-  const boardedChapters = story.chapters.filter((held) => held.acts.length > 0);
+  const boardedChapters = story.chapters.filter((held) => chapterBoarded(held));
   const actsTotal = story.chapters.reduce(
     (sum, held) => sum + held.acts.length,
     0,
@@ -344,6 +346,14 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     await runBoards(story.id, chapterIds);
   };
 
+  /** Plans the acts of a chapter, or one act of it again, before its shots. */
+  const planActs = async (chapterId: string, actId?: string) => {
+    if (kindRunning(jobs, "actPlan")) return;
+    const planned = planActPlan(story, chapterId, actId);
+    if (planned === undefined) return;
+    await run(story.id, "actPlan", [planned]);
+  };
+
   /** Checks the staging of these episodes' boards, one ask each. */
   const checkContinuity = async (chapterIds: string[]) => {
     const items = chapterIds.flatMap((chapterId) => {
@@ -459,7 +469,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // in: with no board it writes one straight away, and with one standing it
   // takes the name of writing it again and asks first, since that replaces
   // what is there.
-  const boarded = chapter.acts.length > 0;
+  const boarded = chapterBoarded(chapter);
   const ahead = chapterOutlineAhead(chapter);
   const pending = pendingRevision(jobs, chapter.id);
   const revisionJobs = revisionRuns(jobs, chapter.id);
@@ -852,6 +862,19 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                 {t("story:storyboard.generateAll", { count: boardable.length })}
               </button>
             )}
+            {!boarded && (
+              <button
+                data-testid="story-board-plan-acts"
+                disabled={kindRunning(jobs, "actPlan")}
+                onClick={() => void planActs(chapter.id)}
+                title={t("story:storyboard.planActsHint")}
+                type="button"
+              >
+                {kindRunning(jobs, "actPlan")
+                  ? t("story:storyboard.planActsRunning")
+                  : t("story:storyboard.planActs")}
+              </button>
+            )}
             <button
               className="primary"
               data-testid={
@@ -1133,6 +1156,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
                       index={at}
                       last={at === chapter.acts.length - 1}
                       musicBusy={busy.music}
+                      onPlan={() => void planActs(chapter.id, act.id)}
                       runs={actRuns(jobs, chapter.id, act.id)}
                       story={story}
                       videoBusy={busy.video}

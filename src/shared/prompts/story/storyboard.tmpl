@@ -1,5 +1,11 @@
 Chapter {{ number }} of the telling: {{ chapter.title }}
 {{ chapter.text }}
+{% if planned %}
+The chapter is already planned as these acts. Board exactly these acts, in this order: copy each act's id into "actId", keep its title and summary, and let its plan decide the shots. Do not add, remove, merge or reorder acts.
+{% for act in planned %}
+- {{ act.id }} — {{ act.title }} — {{ act.summary }} — {{ act.plan }}
+{% endfor %}
+{% endif %}
 
 Board this chapter as acts, and each act as the shots it is made of. An act is one stretch of the story in one place at one time; a shot is what the camera sees before it cuts.
 For each act give its cast, the place it happens in, the things in it, and what it sounds like — music, effects, ambience, or none where there is none.
@@ -27,6 +33,7 @@ Answer with a single fenced json block and nothing else:
 {
   "acts": [
     {
+      "actId": "…, the planned act's id; leave it out only when the chapter was not planned",
       "title": "…", "summary": "…",
       "characters": ["…"], "scene": "…", "props": ["…"],
       "sound": { "music": "…", "sfx": "…", "ambience": "…" },

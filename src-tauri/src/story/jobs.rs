@@ -171,6 +171,8 @@ pub enum StoryJobKind {
     Elements,
     /// One episode's board: its acts and its shots. Words, one call an episode.
     Storyboard,
+    /// One episode's acts planned before their shots are written. Words.
+    ActPlan,
     /// One episode's board checked for staging that runs on across shots.
     /// Words, one call: the answer is a patch to the shots already on file,
     /// never a board again.
@@ -199,6 +201,7 @@ impl StoryJobKind {
             StoryJobKind::Outline
             | StoryJobKind::Elements
             | StoryJobKind::Storyboard
+            | StoryJobKind::ActPlan
             | StoryJobKind::Continuity
             | StoryJobKind::OutlineRevision => Capability::Text,
             StoryJobKind::ElementArt | StoryJobKind::KeyframeArt => Capability::Image,
@@ -215,6 +218,7 @@ impl StoryJobKind {
             StoryJobKind::Outline
                 | StoryJobKind::Elements
                 | StoryJobKind::Storyboard
+                | StoryJobKind::ActPlan
                 | StoryJobKind::Continuity
                 | StoryJobKind::OutlineRevision
         )
@@ -383,6 +387,13 @@ pub enum StoryTarget {
     Storyboard {
         chapter_id: String,
     },
+    /// One chapter's acts planned, or one act of it planned again.
+    #[serde(rename_all = "camelCase")]
+    ActPlan {
+        chapter_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        act_id: Option<String>,
+    },
     /// A board's staging checked at one chapter, answered as a patch.
     #[serde(rename_all = "camelCase")]
     Continuity {
@@ -445,6 +456,7 @@ impl StoryTarget {
             StoryTarget::Outline => StoryJobKind::Outline,
             StoryTarget::Elements => StoryJobKind::Elements,
             StoryTarget::Storyboard { .. } => StoryJobKind::Storyboard,
+            StoryTarget::ActPlan { .. } => StoryJobKind::ActPlan,
             StoryTarget::Continuity { .. } => StoryJobKind::Continuity,
             StoryTarget::OutlineRevision { .. } => StoryJobKind::OutlineRevision,
             StoryTarget::ElementArt { .. } => StoryJobKind::ElementArt,

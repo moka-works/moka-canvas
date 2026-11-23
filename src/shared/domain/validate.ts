@@ -15,6 +15,7 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_FOLDER_NAME_LENGTH,
   MAX_FOLDERS_PER_PROJECT,
+  ACT_PLAN_MAX,
   MAX_KEYFRAMES_PER_ACT,
   MAX_KEYFRAME_MS,
   MAX_NODES_PER_CANVAS,
@@ -1274,6 +1275,8 @@ export function validateStory(story: StoryDocument): ValidationIssue[] {
           "STORY_KEYFRAME_LIMIT",
           i18n.t("errors:validate.storyKeyframeLimit"),
         );
+      if (act.plan !== undefined && act.plan.length > ACT_PLAN_MAX)
+        at("VALIDATION_FAILED", i18n.t("errors:validate.storyActPlanTooLong"));
       if (
         act.transition !== undefined &&
         (!Number.isInteger(act.transition.durationMs) ||

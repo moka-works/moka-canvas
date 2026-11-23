@@ -7,6 +7,7 @@ import {
   MAX_TOTAL_DURATION_MS,
   MIN_TOTAL_DURATION_MS,
   chapterBoardRevision,
+  chapterBoarded,
   chapterOutlineAhead,
   chapterRegenerationCost,
   chapterRevision,
@@ -115,7 +116,7 @@ export function OutlineStep({ story }: { story: StoryDocument }) {
       ? chapterRegenerationCost(story, wanted)
       : chapterRegenerationCost(story);
   const spoken = story.chapters.some(chapterWritten);
-  const drawn = story.chapters.some((chapter) => chapter.acts.length > 0);
+  const drawn = story.chapters.some(chapterBoarded);
 
   /** The manuscript, read once for this telling and kept for the session. */
   const needText = async (): Promise<string | null> => {

@@ -418,6 +418,38 @@ function jsonAnswer(prompt: string): string | undefined {
   // from are written in backticks, the way the prompt asks for them: a mention
   // is the picture that travels with the shot's ask.
   if (prompt.includes("Board this chapter as acts")) {
+    // A planned chapter names its acts by id; the board follows them in order.
+    const planned = [
+      ...prompt.matchAll(/^- (\S+) — (.+?) — (.*?) — (.*)$/gm),
+    ].map((match) => ({
+      id: match[1]!,
+      title: match[2]!,
+      summary: match[3]!,
+    }));
+    if (planned.length > 0) {
+      return JSON.stringify({
+        acts: planned.map((act, at) => ({
+          actId: act.id,
+          title: act.title,
+          summary: act.summary,
+          characters: [at === 0 ? "Keeper" : "Traveller"],
+          scene: "Last carriage",
+          props: [],
+          sound: { music: "", sfx: "rain", ambience: "carriage hum" },
+          keyframes: [
+            {
+              shotSize: "wide",
+              cameraMove: "static",
+              angle: "eyeLevel",
+              content: `\`${at === 0 ? "Keeper" : "Traveller"}\` stands in the last carriage.`,
+              motion: "",
+              durationMs: 2_000,
+              dialogue: [],
+            },
+          ],
+        })),
+      });
+    }
     return JSON.stringify({
       acts: [
         {
@@ -470,6 +502,23 @@ function jsonAnswer(prompt: string): string | undefined {
               dialogue: [],
             },
           ],
+        },
+      ],
+    });
+  }
+  // One chapter planned as acts: two beats, each with its own place in time.
+  if (prompt.includes("Plan this chapter as acts before any shot is written")) {
+    return JSON.stringify({
+      acts: [
+        {
+          title: "The platform",
+          summary: "She waits under the one lamp still burning.",
+          plan: "She waits under the lamp until the announcement says the train has stopped running.",
+        },
+        {
+          title: "The carriage",
+          summary: "The doors close on both of them.",
+          plan: "She boards the last carriage and the doors close behind her.",
         },
       ],
     });

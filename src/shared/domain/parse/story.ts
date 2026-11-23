@@ -537,6 +537,7 @@ function readAct(
 
   const title = words(value.title);
   const summary = words(value.summary);
+  const actId = words(value.actId)?.trim();
   if (title === undefined) warnings.push(`act ${at} was left without a title`);
   if (summary === undefined)
     warnings.push(`act ${at} was left without a summary`);
@@ -567,6 +568,7 @@ function readAct(
   )[0];
 
   return {
+    ...(actId === undefined || actId === "" ? {} : { actId }),
     title:
       title === undefined
         ? ""

@@ -530,10 +530,12 @@ function encodeStoryAct(act: StoryAct): Record<string, unknown> {
     video: encodeStorySlot(act.video),
   };
   if (act.sceneId !== undefined) doc.sceneId = act.sceneId;
+  if (act.plan !== undefined && act.plan.trim() !== "") doc.plan = act.plan;
   // An act that has not chosen a granularity is left to the telling's, so the
   // field is written only where it says something the story does not.
   if (act.shotGranularity !== undefined)
     doc.shotGranularity = act.shotGranularity;
+  if (act.videoModel !== undefined) doc.videoModel = act.videoModel;
   // A slot that was never made is left out rather than written back empty:
   // the document says which of the two the reader has not asked for yet.
   if (act.voice !== undefined) doc.voice = encodeStorySlot(act.voice);
@@ -1788,6 +1790,10 @@ function decodeStoryAct(value: unknown): StoryAct {
     video: decodeStorySlot(doc.video),
   };
   if (doc.sceneId !== undefined) act.sceneId = optionalString(doc.sceneId);
+  const plan = optionalString(doc.plan);
+  if (plan !== undefined) act.plan = plan;
+  const videoModel = optionalString(doc.videoModel);
+  if (videoModel !== undefined) act.videoModel = videoModel;
   if (doc.shotGranularity !== undefined)
     act.shotGranularity = fallbackOneOf(
       STORY_SHOT_GRANULARITIES,

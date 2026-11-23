@@ -21,7 +21,10 @@ import type {
   StoryShotGranularity,
 } from "../../../shared/domain/types";
 import { assetThumbUrl, assetUrl } from "../../../api/assets";
-import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
+import {
+  ACT_PLAN_MAX,
+  MAX_ELEMENTS_PER_STORY,
+} from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -127,6 +130,7 @@ export function ActCard({
   voiceBusy,
   musicBusy,
   runs,
+  onPlan,
 }: {
   story: StoryDocument;
   chapterId: string;
@@ -148,6 +152,8 @@ export function ActCard({
   musicBusy: PlaceBusy | undefined;
   /** The lines of this act being read just now, by the line's own name. */
   busyLines: Map<string, PlaceBusy>;
+  /** Asks the step to plan this act before, or again after, its shots. */
+  onPlan: () => void;
   /** Whether the act's clip was filmed from words that have since changed. */
   clipPromptDrifted: boolean;
   /** The shots whose pictures were drawn from words that have since changed. */
@@ -297,6 +303,12 @@ export function ActCard({
   });
   const summary = useField(act.summary, (value) => {
     if (value !== act.summary) write({ summary: value });
+  });
+  const plan = useField(act.plan ?? "", (value) => {
+    const trimmed = value.trim();
+    if (trimmed !== (act.plan ?? "")) {
+      write({ plan: trimmed === "" ? null : trimmed });
+    }
   });
 
   // A reference nobody has drawn cannot travel with the prompt, which is worth
@@ -704,6 +716,36 @@ export function ActCard({
             onChange={(event) => summary.set(event.target.value)}
             rows={3}
             value={summary.value}
+          />
+
+          <div className="story-act-plan-bar">
+            <label className="story-field-label" htmlFor={`act-plan-${index}`}>
+              {t("story:storyboard.actPlan")}
+            </label>
+            <button
+              data-testid={`story-act-plan-go-${index}`}
+              onClick={onPlan}
+              title={t("story:storyboard.actPlanHint")}
+              type="button"
+            >
+              {t(
+                act.plan === undefined
+                  ? "story:storyboard.actPlanGo"
+                  : "story:storyboard.actPlanAgain",
+              )}
+            </button>
+          </div>
+          <textarea
+            aria-label={t("story:storyboard.actPlan")}
+            className="story-act-plan"
+            data-testid={`story-act-plan-text-${index}`}
+            id={`act-plan-${index}`}
+            maxLength={ACT_PLAN_MAX}
+            onBlur={plan.commit}
+            onChange={(event) => plan.set(event.target.value)}
+            placeholder={t("story:storyboard.actPlanPlaceholder")}
+            rows={3}
+            value={plan.value}
           />
 
           <div className="story-act-sound">

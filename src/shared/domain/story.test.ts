@@ -2030,6 +2030,30 @@ describe("the board commands", () => {
     expect(act.title).toBe("第 1 幕 空站台");
   });
 
+  it("writes and clears the plan an act is boarded from", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const set = expectRoundTrip(moka, {
+      type: "updateStoryAct",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      patch: { plan: "她等到广播说车停了。" },
+    });
+    expect(storyOfFile(set).chapters[0].acts[0].plan).toBe(
+      "她等到广播说车停了。",
+    );
+
+    const cleared = expectRoundTrip(set, {
+      type: "updateStoryAct",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      patch: { plan: null },
+    });
+    expect(storyOfFile(cleared).chapters[0].acts[0].plan).toBeUndefined();
+  });
+
   it("moves only the fields a shot patch names, and keeps a shot to its length", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();

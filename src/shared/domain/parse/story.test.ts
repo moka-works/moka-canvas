@@ -374,6 +374,13 @@ describe("the board", () => {
     expect(read.warnings).toEqual([]);
   });
 
+  it("reads the planned act a board was written for", () => {
+    const read = board({ acts: [act({ actId: "act-planned" })] });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.value[0]?.actId).toBe("act-planned");
+  });
+
   it("reads a board that is a bare list of acts", () => {
     const read = board([act()]);
     expect(read.ok && read.value.length).toBe(1);

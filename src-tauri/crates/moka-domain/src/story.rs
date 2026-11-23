@@ -34,6 +34,7 @@ pub const REFERENCE_IMAGES_DEFAULT: u32 = 3;
 pub const REFERENCE_IMAGES_MAX: u32 = 9;
 pub const MAX_DIALOGUE_LINES_PER_KEYFRAME: usize = 12;
 pub const MAX_DIALOGUE_LINE_LENGTH: usize = 500;
+pub const MAX_ACT_PLAN_CHARS: usize = 2_000;
 /// What a voice named in a story may be called, and what it may say of itself.
 pub const VOICE_MODEL_MAX: usize = 120;
 /// The longest model reference an element may name for its own drawings.
@@ -556,6 +557,9 @@ pub struct StoryAct {
     pub id: String,
     pub title: String,
     pub summary: String,
+    /// What this act is for before its shots are written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
     pub character_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_id: Option<String>,
@@ -930,6 +934,12 @@ pub struct StoryActPatch {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub plan: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character_ids: Option<Vec<String>>,
     #[serde(
@@ -1633,6 +1643,16 @@ pub fn validate_story(story: &StoryDocument) -> Vec<ValidationIssue> {
                     "Keyframe limit reached".into(),
                 ));
             }
+            if act
+                .plan
+                .as_ref()
+                .is_some_and(|plan| plan.chars().count() > MAX_ACT_PLAN_CHARS)
+            {
+                issues.push(issue(
+                    "VALIDATION_FAILED",
+                    "An act's plan is longer than the story keeps".into(),
+                ));
+            }
             if let Some(transition) = &act.transition {
                 if !(MIN_KEYFRAME_MS..=MAX_KEYFRAME_MS).contains(&transition.duration_ms) {
                     issues.push(issue(
@@ -1884,6 +1904,16 @@ fn check_story(story: &StoryDocument) -> Result<(), CommandError> {
                 return Err(CommandError::new(
                     "STORY_KEYFRAME_LIMIT",
                     "Keyframe limit reached",
+                ));
+            }
+            if act
+                .plan
+                .as_ref()
+                .is_some_and(|plan| plan.chars().count() > MAX_ACT_PLAN_CHARS)
+            {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "An act's plan is longer than the story keeps",
                 ));
             }
         }
@@ -2631,6 +2661,14 @@ pub fn apply_story_command(
             let act = story
                 .act(chapter_id, act_id)
                 .ok_or_else(story_target_invalid)?;
+            if let Some(Some(plan)) = &patch.plan {
+                if plan.chars().count() > MAX_ACT_PLAN_CHARS {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The act's plan is longer than the story keeps",
+                    ));
+                }
+            }
             if let Some(Some(model)) = &patch.video_model {
                 let model = model.trim();
                 if model.is_empty() || model.chars().count() > MODEL_REFERENCE_MAX {
@@ -2643,6 +2681,7 @@ pub fn apply_story_command(
             let previous = StoryActPatch {
                 title: patch.title.as_ref().map(|_| act.title.clone()),
                 summary: patch.summary.as_ref().map(|_| act.summary.clone()),
+                plan: patch.plan.as_ref().map(|_| act.plan.clone()),
                 character_ids: patch
                     .character_ids
                     .as_ref()
@@ -2666,6 +2705,12 @@ pub fn apply_story_command(
                     }
                     if let Some(summary) = &patch.summary {
                         held.summary = summary.clone();
+                    }
+                    if let Some(plan) = &patch.plan {
+                        held.plan = plan
+                            .as_ref()
+                            .map(|held| held.trim().to_string())
+                            .filter(|held| !held.is_empty());
                     }
                     if let Some(ids) = &patch.character_ids {
                         held.character_ids = ids.clone();
@@ -3133,6 +3178,7 @@ mod outline_revision_tests {
             id: "act-1".into(),
             title: String::new(),
             summary: String::new(),
+            plan: None,
             character_ids: Vec::new(),
             scene_id: None,
             prop_ids: Vec::new(),

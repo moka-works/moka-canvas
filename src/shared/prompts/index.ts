@@ -45,6 +45,7 @@ import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
 import storyStoryboardRepair from "./story/storyboard-repair.tmpl?raw";
 import storyContinuity from "./story/continuity.tmpl?raw";
+import storyActPlan from "./story/act-plan.tmpl?raw";
 import storyAnswerRepair from "./story/answer-repair.tmpl?raw";
 import storyRevision from "./story/revise.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
@@ -336,6 +337,8 @@ export type StoryStoryboardPromptInput = StoryFacts & {
   shotSizes: readonly string[];
   cameraMoves: readonly string[];
   angles: readonly string[];
+  /** The acts a plan already set, which the board must follow by id. */
+  planned?: Array<{ id: string; title: string; summary: string; plan: string }>;
 };
 
 export function storyStoryboardPrompt(
@@ -390,6 +393,35 @@ export function storyAnswerRepairPrompt(
     render(storyAnswerRepair, {
       previous,
       problems: problems.map((problem) => `- ${problem}`).join("\n"),
+    }),
+  ].join("\n\n");
+}
+
+/**
+ * One chapter's acts planned before their shots are written.
+ *
+ * The plan is prose by design: it is the beat, the place and the time, and
+ * the board is what turns them into framing and lines.
+ */
+export function storyActPlanPrompt(
+  input: StoryFacts & {
+    number: number;
+    chapter: { title: string; text: string };
+    targetDurationMs: number;
+    standing: string;
+    elements: Array<{
+      kind: StoryElementKind;
+      name: string;
+      description: string;
+    }>;
+  },
+): string {
+  return [
+    storyFactsPrompt(input),
+    render(storyActPlan, {
+      ...input,
+      seconds: Math.round(input.targetDurationMs / 1000),
+      elements: storyElementsList(input.elements),
     }),
   ].join("\n\n");
 }

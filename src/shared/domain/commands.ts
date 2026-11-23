@@ -1,4 +1,5 @@
 import {
+  ACT_PLAN_MAX,
   BACKGROUND_MODES,
   CANVAS_SCHEMA_VERSION,
   MAX_ACTS_PER_CHAPTER,
@@ -2726,6 +2727,16 @@ function applyOne(
       const act = actOf(chapter, command.actId);
       if (command.patch.sound !== undefined) checkActSound(command.patch.sound);
       if (
+        command.patch.plan !== undefined &&
+        command.patch.plan !== null &&
+        command.patch.plan.length > ACT_PLAN_MAX
+      ) {
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.storyActPlanTooLong"),
+        );
+      }
+      if (
         command.patch.videoModel !== undefined &&
         command.patch.videoModel !== null
       ) {
@@ -2756,6 +2767,12 @@ function applyOne(
                   next.title = command.patch.title;
                 if (command.patch.summary !== undefined)
                   next.summary = command.patch.summary;
+                if (command.patch.plan === null) delete next.plan;
+                else if (command.patch.plan !== undefined) {
+                  const plan = command.patch.plan.trim();
+                  if (plan === "") delete next.plan;
+                  else next.plan = plan;
+                }
                 if (command.patch.characterIds !== undefined)
                   next.characterIds = command.patch.characterIds;
                 if (command.patch.sceneId === null) delete next.sceneId;

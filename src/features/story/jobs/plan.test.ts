@@ -18,6 +18,7 @@ import {
   jobKey,
   keyframeCast,
   planActMusic,
+  planActPlan,
   planActVideos,
   planActVideoWaves,
   planActVoice,
@@ -520,6 +521,34 @@ describe("planning the words", () => {
     expect(repair?.prompt).toContain("Your previous answer could not be used");
     expect(repair?.prompt).toContain("the first answer");
     expect(repair?.prompt).toContain("act 2 was boarded with no shots");
+  });
+
+  it("plans a chapter's acts before its board is written", () => {
+    const held = story();
+    const planned = planActPlan(held, held.chapters[1]!.id);
+
+    expect(planned?.target).toEqual({
+      kind: "actPlan",
+      chapterId: held.chapters[1]!.id,
+    });
+    expect(planned?.prompt).toContain("Plan this chapter as acts");
+    expect(planned?.prompt).toContain("The chapter has no acts yet");
+  });
+
+  it("plans one act of a boarded chapter again by its id", () => {
+    const held = story();
+    const chapter = held.chapters[0]!;
+    const act = chapter.acts[0]!;
+    const planned = planActPlan(held, chapter.id, act.id);
+
+    expect(planned?.target).toEqual({
+      kind: "actPlan",
+      chapterId: chapter.id,
+      actId: act.id,
+    });
+    expect(planned?.prompt).toContain("Write the plan for this one act only");
+    expect(planned?.prompt).toContain(act.id);
+    expect(planActPlan(held, chapter.id, "act-gone")).toBeUndefined();
   });
 
   it("asks a staging check for a boarded chapter alone", () => {

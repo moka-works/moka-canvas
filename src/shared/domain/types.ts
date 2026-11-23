@@ -1034,6 +1034,12 @@ export interface StoryAct {
   id: string;
   title: string;
   summary: string;
+  /**
+   * What this act is for, before its shots are written: the beat it carries,
+   * the place and the time it needs. A board written after a plan follows it;
+   * a reader may also write the plan by hand.
+   */
+  plan?: string;
   /** The characters in this act, by the element ids step three settled on. */
   characterIds: string[];
   sceneId?: string;
@@ -1459,6 +1465,8 @@ export interface StoryElementPatch {
 export interface StoryActPatch {
   title?: string;
   summary?: string;
+  /** The act's plan; a null takes the plan away. */
+  plan?: string | null;
   characterIds?: string[];
   sceneId?: string | null;
   propIds?: string[];

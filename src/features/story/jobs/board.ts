@@ -19,6 +19,7 @@ import {
   MIN_KEYFRAME_MS,
 } from "../../../shared/domain/constants";
 import {
+  chapterActPlan,
   storyMentions,
   type ActDraft,
   type KeyframeDraft,
@@ -86,7 +87,7 @@ function elementName(
  */
 export function checkBoard(
   story: StoryDocument,
-  _chapter: StoryChapter,
+  chapter: StoryChapter,
   answer: BoardAnswer,
 ): BoardCheck {
   const errors: string[] = [];
@@ -120,6 +121,35 @@ export function checkBoard(
     errors.push(
       `the answer wrote ${shotsWritten} shots, and only ${shotsRead} could be read`,
     );
+  }
+
+  // A chapter planned before its board is boarded as the acts it planned: the
+  // answer must name them by id, in their order, and not invent or drop one.
+  const planned = chapterActPlan(chapter) ?? [];
+  if (planned.length > 0) {
+    if (drafts.length !== planned.length) {
+      errors.push(
+        `the chapter was planned as ${planned.length} acts, and the answer boarded ${drafts.length}`,
+      );
+    }
+    drafts.forEach((draft, at) => {
+      const held = planned[at];
+      if (held === undefined) {
+        errors.push(`act ${at + 1} was not one of the chapter's planned acts`);
+        return;
+      }
+      if (draft.actId !== held.id) {
+        errors.push(
+          `act ${at + 1} must board the planned act ${held.id}, not ${draft.actId ?? "an unnamed act"}`,
+        );
+        return;
+      }
+      if (draft.title !== "" && draft.title !== held.title) {
+        warnings.push(
+          `act ${at + 1} renamed the planned act “${held.title}” to “${draft.title}”`,
+        );
+      }
+    });
   }
 
   const ceilingMs = Math.max(

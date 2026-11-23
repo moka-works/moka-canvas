@@ -419,6 +419,7 @@ fn act_from(
                 .unwrap_or_else(crate::domain::new_id),
             title: String::new(),
             summary: String::new(),
+            plan: None,
             character_ids: Vec::new(),
             scene_id: None,
             prop_ids: Vec::new(),

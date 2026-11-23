@@ -33,6 +33,7 @@ import {
 import {
   actAt,
   actPlannedMs,
+  chapterActPlan,
   chapterOutlineAhead,
   chapterRevision,
   chunkWaves,
@@ -86,6 +87,7 @@ import {
   storyKeyframeVideoPrompt,
   storyMergeElementsPrompt,
   storyOutlinePrompt,
+  storyActPlanPrompt,
   storyContinuityPrompt,
   storyRevisionPrompt,
   storyStoryboardPrompt,
@@ -136,6 +138,10 @@ export function jobKey(target: StoryTarget): string {
       return "elements";
     case "storyboard":
       return `storyboard:${target.chapterId}`;
+    case "actPlan":
+      return target.actId === undefined
+        ? `actPlan:${target.chapterId}`
+        : `actPlan:${target.chapterId}:${target.actId}`;
     case "continuity":
       return `continuity:${target.chapterId}`;
     case "outlineRevision":
@@ -839,6 +845,7 @@ function storyboardAsk(
   const number = story.chapters.findIndex((held) => held.id === chapterId);
   const chapter = story.chapters[number];
   if (chapter === undefined) return undefined;
+  const plans = chapterActPlan(chapter);
   return {
     target: { kind: "storyboard", chapterId },
     input: {
@@ -858,6 +865,7 @@ function storyboardAsk(
       shotSizes: STORY_SHOT_SIZES,
       cameraMoves: STORY_CAMERA_MOVES,
       angles: STORY_CAMERA_ANGLES,
+      ...(plans === undefined ? {} : { planned: plans }),
     },
   };
 }
@@ -904,6 +912,65 @@ export function planStoryboardRepair(
       ...asked.input,
       previous,
       problems,
+    }),
+  };
+}
+
+/**
+ * One chapter's acts planned before their shots are written, or one act of it
+ * planned again after a split, a merge or a reader's own hand.
+ */
+export function planActPlan(
+  story: StoryDocument,
+  chapterId: string,
+  actId?: string,
+): StoryJobItemDraft | undefined {
+  const number = story.chapters.findIndex((held) => held.id === chapterId);
+  const chapter = story.chapters[number];
+  if (chapter === undefined) return undefined;
+  const regular = chapter.acts.filter((act) => act.transition === undefined);
+  const single =
+    actId === undefined ? undefined : regular.find((act) => act.id === actId);
+  if (actId !== undefined && single === undefined) return undefined;
+  const standing =
+    single !== undefined
+      ? [
+          "Write the plan for this one act only:",
+          `- ${single.id} — “${single.title}” — ${single.summary}`,
+        ].join("\n")
+      : regular.length === 0
+        ? "The chapter has no acts yet: write them."
+        : [
+            "The chapter is already planned as the acts below. Keep each actId and the order; rewrite what the chapter needs.",
+            ...regular.map(
+              (act) =>
+                `- ${act.id} — “${act.title}” — ${act.summary}${act.plan === undefined ? "" : ` — ${act.plan}`}`,
+            ),
+          ].join("\n");
+  const target: StoryTarget = {
+    kind: "actPlan",
+    chapterId,
+    ...(actId === undefined ? {} : { actId }),
+  };
+  return {
+    id: jobKey(target),
+    target,
+    capability: "text",
+    system: storySystemPrompt(),
+    prompt: storyActPlanPrompt({
+      ...factsOf(story),
+      number: number + 1,
+      chapter: {
+        title: chapter.title,
+        text: chapterWordsOf(chapter),
+      },
+      targetDurationMs: chapter.targetDurationMs,
+      standing,
+      elements: story.elements.map((element) => ({
+        kind: element.kind,
+        name: element.name,
+        description: element.description,
+      })),
     }),
   };
 }
@@ -2395,6 +2462,10 @@ export function itemsForTargets(
         return planElements(story);
       case "storyboard":
         return planStoryboard(story, [target.chapterId]);
+      case "actPlan": {
+        const planned = planActPlan(story, target.chapterId, target.actId);
+        return planned === undefined ? [] : [planned];
+      }
       case "continuity": {
         const planned = planContinuity(story, target.chapterId);
         return planned === undefined ? [] : [planned];

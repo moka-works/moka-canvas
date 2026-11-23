@@ -115,6 +115,51 @@ export function frameSettled(keyframe: StoryKeyframe): boolean {
 }
 
 /** Whether every shot in an act has a frame drawn for it. */
+/**
+ * Whether a chapter has shots on file.
+ *
+ * Acts may stand for a plan before any shot is written: the chapter is then
+ * planned but not boarded, and the board is still the step's work.
+ */
+export function chapterBoarded(chapter: StoryChapter): boolean {
+  return chapter.acts.some(
+    (act) => act.transition === undefined && act.keyframes.length > 0,
+  );
+}
+
+/** One act as a chapter's plan states it, for the board to follow. */
+export interface ChapterActPlan {
+  id: string;
+  title: string;
+  summary: string;
+  plan: string;
+}
+
+/**
+ * The acts a chapter is planned as, when any of them carries a plan.
+ *
+ * A chapter with one planned act is planned as all of them: a board written
+ * from a plan may not drop the acts beside it, so every ordinary act travels
+ * even when its own plan is still the reader's to write.
+ */
+export function chapterActPlan(
+  chapter: StoryChapter,
+): ChapterActPlan[] | undefined {
+  const regular = chapter.acts.filter((act) => act.transition === undefined);
+  if (
+    !regular.some((act) => act.plan !== undefined && act.plan.trim() !== "")
+  ) {
+    return undefined;
+  }
+  return regular.map((act) => ({
+    id: act.id,
+    title: act.title,
+    summary: act.summary,
+    plan:
+      act.plan !== undefined && act.plan.trim() !== "" ? act.plan : act.summary,
+  }));
+}
+
 export function actHasAllArt(act: StoryAct): boolean {
   return (
     act.keyframes.length > 0 &&
@@ -826,6 +871,8 @@ export interface KeyframeDraft {
  * reference nobody can draw is not a reference.
  */
 export interface ActDraft {
+  /** The planned act this board is for, when the chapter was planned first. */
+  actId?: string;
   title: string;
   summary: string;
   characters: string[];
@@ -1146,8 +1193,17 @@ export function mergeActs(
   // A bridge is not a board the model wrote and has nothing to keep when the
   // board is written again; the acts around it are matched without it.
   const regular = existing.filter((act) => act.transition === undefined);
+  // A board written from an act plan names the acts it boards, and is matched
+  // by those names rather than by place: a plan that was edited, split or
+  // added to since must not have its shots written onto its neighbour.
+  const byId = new Map(regular.map((act) => [act.id, act]));
+  const named = proposed.some((draft) => draft.actId !== undefined);
   return proposed.map((draft, index) => {
-    const held = regular[index];
+    const held = named
+      ? draft.actId === undefined
+        ? undefined
+        : byId.get(draft.actId)
+      : regular[index];
     const keyframes = mergeKeyframes(held?.keyframes ?? [], draft.keyframes);
     if (!held) {
       return {
@@ -1159,12 +1215,13 @@ export function mergeActs(
         keyframes,
       };
     }
+    const sceneId = draft.scene ?? held.sceneId;
     return {
       ...held,
-      title: draft.title,
-      summary: draft.summary,
+      title: draft.title === "" ? held.title : draft.title,
+      summary: draft.summary === "" ? held.summary : draft.summary,
       characterIds: draft.characters,
-      sceneId: draft.scene,
+      ...(sceneId === undefined ? {} : { sceneId }),
       propIds: draft.props,
       sound: draft.sound,
       keyframes,

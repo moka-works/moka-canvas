@@ -21,7 +21,7 @@ import {
   MAX_KEYFRAME_MS,
   MIN_KEYFRAME_MS,
 } from "../../../shared/domain/constants";
-import type { ActDraft } from "../../../shared/domain/story";
+import { chapterActPlan, type ActDraft } from "../../../shared/domain/story";
 import type { StoryChapter, StoryDocument } from "../../../shared/domain/types";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -37,7 +37,29 @@ function toast(kind: "info" | "success" | "error", message: string): void {
   useAppStore.getState().pushToast(kind, message);
 }
 
-/** One act and one shot, written from the chapter's own first words. */
+/** One shot, broad and still, holding the words it was written from. */
+function plainShot(
+  content: string,
+  durationMs: number,
+): ActDraft["keyframes"][number] {
+  return {
+    shotSize: "wide",
+    cameraMove: "static",
+    angle: "eyeLevel",
+    content: content === "" ? "—" : content,
+    motion: "",
+    dialogue: [],
+    durationMs,
+  };
+}
+
+/**
+ * The board a chapter is given when no answer could be kept.
+ *
+ * A planned chapter keeps every act it was planned as: the fallback is one
+ * broad shot per act, each with its own plan's words, rather than one act
+ * standing where the chapter's plan had several.
+ */
 function fallbackDrafts(chapter: StoryChapter): ActDraft[] {
   const text = chapterText(chapter);
   const words = (text === "" ? chapter.synopsis : text)
@@ -56,6 +78,32 @@ function fallbackDrafts(chapter: StoryChapter): ActDraft[] {
       Math.min(ceilingMs, Math.max(MIN_KEYFRAME_MS, chapter.targetDurationMs)) /
         100,
     ) * 100;
+  const planned = chapterActPlan(chapter);
+  if (planned !== undefined) {
+    const each = Math.max(
+      1,
+      Math.floor(durationMs / planned.length / 100) * 100,
+    );
+    const held = new Map(chapter.acts.map((act) => [act.id, act]));
+    return planned.map((plan) => {
+      const act = held.get(plan.id);
+      return {
+        actId: plan.id,
+        title: plan.title,
+        summary: plan.summary,
+        characters: act?.characterIds ?? [],
+        ...(act?.sceneId === undefined ? {} : { scene: act.sceneId }),
+        props: act?.propIds ?? [],
+        sound: act?.sound ?? { music: "", sfx: "" },
+        keyframes: [
+          plainShot(
+            Array.from(plan.plan).slice(0, 600).join(""),
+            Math.max(MIN_KEYFRAME_MS, Math.min(ceilingMs, each)),
+          ),
+        ],
+      };
+    });
+  }
   return [
     {
       title: chapter.title,
@@ -63,17 +111,7 @@ function fallbackDrafts(chapter: StoryChapter): ActDraft[] {
       characters: [],
       props: [],
       sound: { music: "", sfx: "" },
-      keyframes: [
-        {
-          shotSize: "wide",
-          cameraMove: "static",
-          angle: "eyeLevel",
-          content: content === "" ? chapter.title : content,
-          motion: "",
-          dialogue: [],
-          durationMs,
-        },
-      ],
+      keyframes: [plainShot(content, durationMs)],
     },
   ];
 }
@@ -84,8 +122,11 @@ function fallbackCommands(
   chapter: StoryChapter,
   reading: BoardReading,
 ) {
+  // A planned chapter's acts are the one thing the fallback may not lose, so
+  // its plan is what the last board is written from.
+  const planned = chapterActPlan(chapter) !== undefined;
   const drafts =
-    reading.drafts !== undefined && reading.drafts.length > 0
+    !planned && reading.drafts !== undefined && reading.drafts.length > 0
       ? reading.drafts
       : fallbackDrafts(chapter);
   return boardCommands(story, chapter.id, drafts);
