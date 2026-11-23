@@ -4,14 +4,29 @@ import { useTranslation } from "react-i18next";
 import { assetThumbUrl } from "../../../api/assets";
 import type { StoryElement, StoryElementKind } from "../../../shared/domain";
 import { currentTake } from "../../../shared/domain";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 
 /** How wide a chip's little picture is asked for: it is drawn 20 px square. */
 const AVATAR_THUMB_WIDTH = 64;
 
-/** The little picture a reference is recognised by, or the empty it has not. */
-function RefAvatar({ assetId }: { assetId?: string }) {
+/** The little picture a reference is recognised by, or its kind's stand-in. */
+function RefAvatar({
+  assetId,
+  kind,
+}: {
+  assetId?: string;
+  kind: StoryElementKind;
+}) {
   if (assetId === undefined) {
-    return <span className="story-ref-avatar is-empty" aria-hidden="true" />;
+    return (
+      <img
+        alt=""
+        className="story-ref-avatar story-placeholder"
+        decoding="async"
+        loading="lazy"
+        src={elementPlaceholderUrl(kind)}
+      />
+    );
   }
   return (
     <img
@@ -110,7 +125,7 @@ export function RefPicker({
                   })}
                   type="button"
                 >
-                  <RefAvatar assetId={pictureOf?.(element)} />
+                  <RefAvatar assetId={pictureOf?.(element)} kind={kind} />
                   <span>{element.name}</span>
                 </button>
               )}
@@ -189,7 +204,7 @@ export function RefPicker({
               type="button"
             >
               <span className="story-ref-choice-name">
-                <RefAvatar assetId={pictureOf?.(element)} />
+                <RefAvatar assetId={pictureOf?.(element)} kind={kind} />
                 {element.name}
               </span>
               <span className="story-hint">

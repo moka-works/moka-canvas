@@ -1583,7 +1583,7 @@ describe("the pictures of an element", () => {
     ).toBe(true);
   });
 
-  it("settles the step once every element has a picture, and says what is missing until then", async () => {
+  it("settles the step on the words alone, and takes the reader to the boarding", () => {
     const moka = buildStoryMokaFile();
     // The third step unsettled, which is how it stands while the cast is
     // still being drawn.
@@ -1597,38 +1597,10 @@ describe("the pictures of an element", () => {
       })),
     });
 
-    // Two things are still to come — the prop has no picture of its own and 周
-    // has nothing drawn of their four views — and the press says so rather
-    // than letting the reader on.
-    fireEvent.click(screen.getByTestId("story-confirm-elements"));
-    expect(
-      screen.getByTestId("story-confirm-gaps-elements").textContent,
-    ).toContain("2 elements have no picture: 周,旧车票");
-    expect(story().confirmedSteps).not.toContain("elements");
-    expect(useStoryStore.getState().step).toBe("elements");
-
-    fireEvent.click(screen.getByTestId("story-elements-draw-all"));
-    await waitFor(() => {
-      expect(starts).toHaveLength(1);
-    });
-    pictures[`element:main:${ids.prop}`] = ["asset-ticket-main"];
-    await comesBack();
-    await waitFor(() => {
-      expect(slotOf("旧车票", "main")?.takes).toHaveLength(1);
-    });
-
-    // The views the characters are still missing are asked for in their own
-    // batch, and the press reads the document as it stands after it.
-    fireEvent.click(screen.getByTestId("story-elements-views-all"));
-    await waitFor(() => {
-      expect(starts).toHaveLength(2);
-    });
-    pictures[`element:turnaround:${ids.partner}`] = ["asset-partner-sheet"];
-    await comesBack();
-    await waitFor(() => {
-      expect(slotOf("周", "turnaround")?.takes).toHaveLength(1);
-    });
-
+    // Two pictures are still to come — the prop has none of its own and 周 has
+    // no four views — but a picture is not what the step owes: the press
+    // settles it, and the board stands the missing drawings in with
+    // placeholders until the reader comes back to draw them.
     fireEvent.click(screen.getByTestId("story-confirm-elements"));
 
     expect(screen.queryByTestId("story-confirm-gaps-elements")).toBeNull();

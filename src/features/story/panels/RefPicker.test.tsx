@@ -51,4 +51,13 @@ describe("an act's reference menu", () => {
     expect(onPick).toHaveBeenCalledWith([picked.id]);
     expect(screen.getByTestId("story-ref-menu-character")).toBeDefined();
   });
+
+  it("stands an undrawn element in with its kind's placeholder", () => {
+    renderPicker();
+    fireEvent.click(screen.getByTestId("story-ref-add-character"));
+    const avatar = screen
+      .getByTestId("story-ref-menu-character")
+      .querySelector(".story-ref-avatar");
+    expect(avatar?.getAttribute("src")).toBe("/story/element-character.svg");
+  });
 });

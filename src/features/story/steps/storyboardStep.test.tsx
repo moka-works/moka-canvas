@@ -973,9 +973,45 @@ describe("writing an episode's board", () => {
       .getByTestId("story-kf-content-0")
       .querySelector("[data-mention-name]");
     expect(chip?.className).toContain("is-undrawn");
-    // The reference stays on the list, with nothing to show for a picture yet.
+    // The reference stays on the list, standing in with its kind's placeholder
+    // until a drawing of it is made.
     const tile = screen.getByTestId("story-kf-ref-0-0");
-    expect(tile.textContent).toContain("旧车票");
+    const picture = tile.querySelector("img");
+    expect(picture?.getAttribute("src")).toBe("/story/element-prop.svg");
+    expect(picture?.getAttribute("alt")).toBe("旧车票");
+  });
+
+  it("stands an undrawn element of each kind in with its own placeholder", () => {
+    const moka = buildStoryMokaFile();
+    const storyHeld = moka.stories![0]!;
+    for (const element of storyHeld.elements ?? []) {
+      element.main = { takes: [] };
+      element.turnaround = { takes: [] };
+    }
+    storyHeld.chapters[0]!.acts[0]!.keyframes[0]!.content =
+      "`林`在`末班车车厢`里攥着`旧车票`。";
+    storyHeld.chapters[0]!.acts[0]!.keyframes[0]!.references = [
+      { elementId: ids.hero, name: "林" },
+      { elementId: ids.scene, name: "末班车车厢" },
+      { elementId: ids.prop, name: "旧车票" },
+    ];
+    openAtBoard(moka);
+    const sources = [0, 1, 2].map((at) =>
+      screen
+        .getByTestId(`story-kf-ref-0-${at}`)
+        .querySelector("img")
+        ?.getAttribute("src"),
+    );
+    expect(sources).toEqual([
+      "/story/element-character.svg",
+      "/story/element-scene.svg",
+      "/story/element-prop.svg",
+    ]);
+    // The stand-in is still a door: the inspector it opens is where the
+    // drawing is made.
+    expect(
+      (screen.getByTestId("story-kf-ref-0-0") as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it("writes the reference limit the reader sets beside the models", async () => {

@@ -648,7 +648,6 @@ export type StoryStepGap =
   | { kind: "chaptersUnwritten"; numbers: number[] }
   | { kind: "noElements" }
   | { kind: "elementsUndescribed"; names: string[] }
-  | { kind: "elementsUndrawn"; names: string[] }
   | { kind: "noActs" }
   | { kind: "actsWithoutShots"; count: number }
   | { kind: "framesMissing"; count: number }
@@ -683,31 +682,20 @@ export function stepGaps(
     }
     case "elements": {
       if (story.elements.length === 0) return [{ kind: "noElements" }];
-      const gaps: StoryStepGap[] = [];
       const undescribed = story.elements.filter(
         (element) => !elementDescribed(element),
       );
-      if (undescribed.length > 0) {
-        gaps.push({
-          kind: "elementsUndescribed",
-          names: undescribed.map((element) => element.name),
-        });
-      }
-      const undrawn = story.elements.flatMap((element) =>
-        elementForms(element)
-          .filter((form) =>
-            form === undefined ? elementDescribed(element) : true,
-          )
-          .filter((form) => !formDrawn(element, form))
-          .map((form) => formName(element, form)),
-      );
-      if (undrawn.length > 0) {
-        gaps.push({
-          kind: "elementsUndrawn",
-          names: undrawn,
-        });
-      }
-      return gaps;
+      // A picture is not a gap: a cast may be settled on its words alone, and
+      // the board stands the missing drawings in with a placeholder until the
+      // reader comes back to draw them. Only the words are owed here.
+      return undescribed.length === 0
+        ? []
+        : [
+            {
+              kind: "elementsUndescribed",
+              names: undescribed.map((element) => element.name),
+            },
+          ];
     }
     case "storyboard": {
       if (acts.length === 0) return [{ kind: "noActs" }];

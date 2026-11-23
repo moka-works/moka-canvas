@@ -19,7 +19,9 @@ import { SENTENCE, STORYTELLER, providerCalls } from "./mock-provider";
  *
  * The chapters are read once for the cast they hold; each of them is described
  * and drawn, and the step's own press — the only agreement the step has — is
- * what opens the board behind it, once every one of them has a picture.
+ * what opens the board behind it. Pictures are not owed by the press: a cast
+ * settled on its words opens the board with placeholders standing in for the
+ * drawings still to come.
  */
 
 /** The elements the server has written into the first story. */
@@ -203,11 +205,40 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
     await expect(page.getByTestId("story-elements-draw-all")).toHaveText(
       "Draw every missing picture (5)",
     );
+
+    // A picture is not what the step owes: with every element described the
+    // press settles the step at once, and the board behind it opens.
     await page.getByTestId("story-confirm-elements").click();
-    await expect(page.getByTestId("story-confirm-gaps-elements")).toContainText(
-      "5 elements have no picture",
-    );
-    await expect(page.getByTestId("story-step-storyboard")).toBeDisabled();
+    await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
+    await expect(page.getByTestId("story-step-storyboard")).toBeEnabled();
+
+    // The board is written with no picture drawn yet, and each reference it
+    // carries stands in with its own kind's placeholder: a character in a
+    // shot's row, a place in the act's cast.
+    await page.getByTestId("story-board-generate").click();
+    await expect(page.getByTestId("story-act-0")).toBeVisible({
+      timeout: 60_000,
+    });
+    const characterStandIn = page
+      .locator('.story-ref-thumb img[src="/story/element-character.svg"]')
+      .first();
+    await expect(characterStandIn).toBeVisible();
+    // The picture is really served, not merely named.
+    await expect
+      .poll(() =>
+        characterStandIn.evaluate(
+          (picture) => (picture as HTMLImageElement).naturalWidth,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await expect(
+      page.locator('.story-ref-avatar[src="/story/element-scene.svg"]').first(),
+    ).toBeVisible();
+
+    // Back on the cast, the pictures can still be drawn — and drawn now, they
+    // are what the step shows the next time it is read.
+    await page.getByTestId("story-step-elements").click();
+    await expect(page.getByTestId("story-step-body-elements")).toBeVisible();
 
     // Drawing them all includes the second coat as a separate generation.
     await page.getByTestId("story-elements-draw-all").click();
@@ -235,8 +266,8 @@ test("the chapters are read for their cast, drawn, and the step confirmed", asyn
       ),
     ).toBe(true);
 
-    // Every element described and drawn: the press settles the step and takes
-    // the reader on to the board, which is now a door.
+    // Every element described and drawn: the press reads the finished cast and
+    // takes the reader on to the board again.
     await page.getByTestId("story-confirm-elements").click();
     await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
     await expect(page.getByTestId("story-step-storyboard")).toBeEnabled();
