@@ -778,6 +778,8 @@
     "planActs": "先生成幕计划",
     "planActsHint": "先写出这一章有哪些幕、各幕承担什么，再写分镜",
     "planActsRunning": "正在生成幕计划",
+    "budget": "计划 {{planned}} / {{target}}（{{percent}}%）",
+    "budgetHint": "分镜的计划时长与本集目标时长",
     "sound_music": "音乐",
     "sound_sfx": "音效",
     "sound_ambience": "环境",

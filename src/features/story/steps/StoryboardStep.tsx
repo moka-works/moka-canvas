@@ -32,6 +32,7 @@ import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { modelNameOf, useModelStore } from "../../settings/modelStore";
+import { BudgetHint } from "../components/BudgetHint";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DrawCountButton } from "../components/DrawCountButton";
 import { OutlineRevisionDialog } from "../components/OutlineRevisionDialog";
@@ -955,6 +956,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
               duration: formatDuration(chapter.targetDurationMs),
             })}
           </span>
+          <BudgetHint chapter={chapter} />
           <span className="story-hint" data-testid="story-board-settled">
             {t("story:storyboard.settled", {
               done: completeActs,

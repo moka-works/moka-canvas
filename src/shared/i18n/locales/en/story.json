@@ -778,6 +778,8 @@
     "planActs": "Plan the acts first",
     "planActsHint": "Write the chapter's acts and their beats before boarding their shots",
     "planActsRunning": "Planning the acts",
+    "budget": "Planned {{planned}} / {{target}} ({{percent}}%)",
+    "budgetHint": "The board's own running time against the episode's target",
     "sound_music": "Music",
     "sound_sfx": "Sound",
     "sound_ambience": "Room tone",

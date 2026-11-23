@@ -29,6 +29,7 @@ import { useAppStore } from "../../editor/stores/appStore";
 import { boardCommands, readBoardAnswer, type BoardReading } from "./apply";
 import { checkBoard, type BoardCheck } from "./board";
 import { planStoryboard, planStoryboardRepair, videoCeiling } from "./plan";
+import { budgetProblem } from "./budget";
 
 /** How many times a chapter's board is asked for before the last answer stands. */
 const BOARD_ATTEMPTS = 3;
@@ -218,11 +219,13 @@ export async function runBoards(
     if (now === undefined) return { asked };
     const repairs = new Map<string, StoryJobItemDraft>();
     for (const [chapterId, { check, text }] of failed) {
+      const chapter = now.chapters.find((held) => held.id === chapterId);
+      const budget = chapter === undefined ? undefined : budgetProblem(chapter);
       const repair = planStoryboardRepair(
         now,
         chapterId,
         Array.from(text).slice(0, 20_000).join(""),
-        check.errors,
+        budget === undefined ? check.errors : [...check.errors, budget],
       );
       if (repair !== undefined) repairs.set(chapterId, repair);
     }

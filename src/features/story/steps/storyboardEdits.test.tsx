@@ -839,6 +839,13 @@ describe("the clock each act keeps", () => {
     return within(card(index)).queryAllByTestId("story-act-running");
   }
 
+  it("says how the board's plan stands against the episode's target", () => {
+    openAtBoard(withEveryFrame());
+    const hint = screen.getByTestId("story-board-budget");
+    expect(hint.textContent).toContain("Planned 00:05 / 01:00");
+    expect(hint.className).toContain("is-far");
+  });
+
   it("stands a batch's bar in the act it works in, and leaves the acts beside it alone", async () => {
     openAtBoard(withASecondAct());
     fireEvent.click(screen.getByTestId("story-act-draw-0"));
