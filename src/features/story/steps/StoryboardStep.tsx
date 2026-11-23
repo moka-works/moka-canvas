@@ -59,6 +59,7 @@ import {
   driftedFrameTargets,
   promptSnapshots,
 } from "../panels/promptDrift";
+import { planStaleRedraw } from "../panels/stalePlan";
 import {
   applyRevision,
   pendingRevision,
@@ -150,6 +151,9 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   } = usePromptRewrite();
   const [granularityTo, setGranularityTo] =
     useState<StoryShotGranularity | null>(null);
+  const [staleOpen, setStaleOpen] = useState(false);
+  const [staleRunning, setStaleRunning] = useState(false);
+  const staleStop = useRef(false);
   const [waves, setWaves] = useState<string[][]>([]);
   const [totalWaves, setTotalWaves] = useState(0);
   // The two questions a board whose outline has moved on asks: how it follows
@@ -191,6 +195,12 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   // this story is making right now, by the name the place is known by — and
   // whether it holds a slot or is still waiting for one.
   const places = busyPlaces(jobs);
+  // What a press would redraw to bring the board up to the telling: frames
+  // whose elements have moved on, and clips left behind by newer frames.
+  const stale = planStaleRedraw(story, new Set(places.keys()));
+  const staleTotal = stale.frames.length + stale.clips.length;
+  const staleElements = new Set(stale.frames.flatMap((frame) => frame.elements))
+    .size;
   /** Whether an episode's own board is being written just now. */
   const boarding = (chapterId: string): boolean =>
     places.has(jobKey({ kind: "storyboard", chapterId }));
@@ -552,6 +562,62 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     useClipChoiceStore.getState().mark(keys);
   };
 
+  /**
+   * Redraws what the telling has moved past, frames first and clips after.
+   *
+   * The clips are planned again from the document once the frames have landed:
+   * a clip is out of date because its frame is newer, so the frames that are
+   * drawn now are what decide which clips this press has to film. A stop is
+   * heard between waves; a wave already out finishes, since a provider does
+   * not give the minutes back.
+   */
+  const redrawStale = async () => {
+    staleStop.current = false;
+    setStaleRunning(true);
+    try {
+      const first = liveStory(story.id) ?? story;
+      const plan = planStaleRedraw(first, new Set(busyPlaces(jobs).keys()));
+      const frameRecords: string[] = [];
+      for (const wave of planKeyframeArtWaves(
+        first,
+        plan.frames.map(({ chapterId, actId, keyframeId }) => ({
+          chapterId,
+          actId,
+          keyframeId,
+        })),
+      )) {
+        if (staleStop.current) break;
+        const record = await useStoryJobStore
+          .getState()
+          .start(story.id, "keyframeArt", wave.items, wave.model);
+        if (record !== null) frameRecords.push(record.id);
+      }
+      await Promise.all(
+        frameRecords.map((id) => waitForJob(id).catch(() => undefined)),
+      );
+      if (staleStop.current) return;
+
+      const second = liveStory(story.id) ?? first;
+      const after = planStaleRedraw(
+        second,
+        new Set(busyPlaces(useStoryJobStore.getState().jobs).keys()),
+      );
+      const clipRecords: string[] = [];
+      for (const wave of planMissingVideoWaves(second, after.clips)) {
+        if (staleStop.current) break;
+        const record = await useStoryJobStore
+          .getState()
+          .start(story.id, wave.kind, wave.items, wave.model);
+        if (record !== null) clipRecords.push(record.id);
+      }
+      await Promise.all(
+        clipRecords.map((id) => waitForJob(id).catch(() => undefined)),
+      );
+    } finally {
+      setStaleRunning(false);
+    }
+  };
+
   /** One episode's chip, as the strip shows it open or folded. */
   const chapterChip = (held: StoryChapter, at: number) => {
     const state = boardState(held, story.shotGranularity);
@@ -629,6 +695,35 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
             })}
           </span>
           <div className="story-step-actions">
+            {staleTotal > 0 && (
+              <button
+                data-testid="story-board-redraw-stale"
+                disabled={bulkBusy || staleRunning}
+                onClick={() => setStaleOpen(true)}
+                type="button"
+              >
+                {t("story:storyboard.staleRedraw", { count: staleTotal })}
+              </button>
+            )}
+            {staleRunning && (
+              <span
+                className="story-hint"
+                data-testid="story-board-stale-running"
+              >
+                <span className="story-spin" />
+                {t("story:storyboard.staleRedrawRunning")}
+                <button
+                  className="link"
+                  data-testid="story-board-stale-stop"
+                  onClick={() => {
+                    staleStop.current = true;
+                  }}
+                  type="button"
+                >
+                  {t("story:storyboard.staleRedrawStop")}
+                </button>
+              </span>
+            )}
             {redrawable.length > 0 && (
               <DrawCountButton
                 count={imageCount}
@@ -1076,6 +1171,34 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           }}
           testId="regenerate-board"
           title={t("story:storyboard.regenerateTitle", { number: index + 1 })}
+        />
+      )}
+      {staleOpen && (
+        <ConfirmDialog
+          body={[
+            stale.frames.length > 0
+              ? t("story:storyboard.staleRedrawFrames", {
+                  count: stale.frames.length,
+                  elements: staleElements,
+                })
+              : "",
+            stale.clips.length > 0
+              ? t("story:storyboard.staleRedrawClips", {
+                  count: stale.clips.length,
+                })
+              : "",
+            t("story:storyboard.staleRedrawOrder"),
+          ]
+            .filter((line) => line !== "")
+            .join(" ")}
+          confirm={t("story:storyboard.staleRedrawConfirm")}
+          onCancel={() => setStaleOpen(false)}
+          onConfirm={() => {
+            setStaleOpen(false);
+            void redrawStale();
+          }}
+          testId="stale-redraw"
+          title={t("story:storyboard.staleRedrawTitle")}
         />
       )}
       {granularityTo !== null && (

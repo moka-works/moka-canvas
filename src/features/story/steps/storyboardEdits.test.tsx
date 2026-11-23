@@ -889,6 +889,41 @@ describe("the clock each act keeps", () => {
     );
   });
 
+  it("redraws the frames before the clips they leave behind", async () => {
+    const moka = withEveryFrame();
+    const hero = moka.stories![0]!.elements.find(
+      (element) => element.name === "林",
+    )!;
+    hero.turnaround = {
+      takes: [
+        ...(hero.turnaround?.takes ?? []),
+        {
+          assetIds: ["asset-hero-sheet-new"],
+          createdAt: "2027-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    openAtBoard(moka);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("story-board-redraw-stale")).toBeDefined(),
+    );
+    fireEvent.click(screen.getByTestId("story-board-redraw-stale"));
+    fireEvent.click(screen.getByTestId("stale-redraw-confirm"));
+
+    await waitFor(() =>
+      expect(starts.map((start) => start.kind)).toContain("keyframeArt"),
+    );
+    await comesBack(1);
+    // The frame that was just drawn is newer than the act's clip, which is
+    // what makes the clip the second wave's work.
+    await waitFor(
+      () =>
+        expect(starts.some((start) => start.kind === "actVideo")).toBe(true),
+      { timeout: 10_000 },
+    );
+  });
+
   it("keeps an episode's board bar over its acts, and off the episode beside it", async () => {
     // The second episode has no board: the header's ask writes one straight
     // away, and the bar it puts up belongs to the episode rather than to any
