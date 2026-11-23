@@ -907,6 +907,16 @@ fn story_tools() -> Vec<ToolSpec> {
             ("fullText", "boolean", "Return chapter, act and shot text whole"),
         ])),
         command("story.progress", "story", ToolRisk::Read, "Read which steps are ready, confirmed, and what is still missing.", schema(&["storyId"], &[])),
+        command("story.board_report", "story", ToolRisk::Read, "Read a chapter's board as a review sheet: acts, shots, durations, missing pictures, clips, voices and scores. Optionally scoped to one chapter or act.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Limit to one chapter"),
+            ("actId", "string", "Limit to one act"),
+        ])),
+        command("story.dubbing_report", "story", ToolRisk::Read, "Compare each spoken line's current reading with the shot it sits in: text length, shot length, overrun and missing readings.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Limit to one chapter"),
+            ("actId", "string", "Limit to one act"),
+        ])),
         command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent.", schema(&["storyId", "kind"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "outline, elements, actPlan, storyboard, elementArt, keyframeArt, actVideo, keyframeVideo, lineVoice, or music"),

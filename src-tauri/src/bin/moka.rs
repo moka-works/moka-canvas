@@ -17,9 +17,25 @@ use serde_json::{json, Value};
 
 const DEFAULT_SERVER: &str = "http://127.0.0.1:3000";
 
-/// The Agent Skill shipped with this binary. One file, embedded so `moka
-/// skills print` works from an installed package with no source tree.
-const SKILL: &str = include_str!("../../../skills/moka-canvas/SKILL.md");
+/// The Agent Skills shipped with this binary, embedded so `moka skills print`
+/// works from an installed package with no source tree.
+const SKILLS: [(&str, &str); 2] = [
+    (
+        "moka-canvas",
+        include_str!("../../../skills/moka-canvas/SKILL.md"),
+    ),
+    (
+        "moka-storyboard",
+        include_str!("../../../skills/moka-storyboard/SKILL.md"),
+    ),
+];
+
+fn skill_named(name: &str) -> Option<&'static str> {
+    SKILLS
+        .iter()
+        .find(|(held, _)| *held == name)
+        .map(|(_, content)| *content)
+}
 
 #[derive(Parser)]
 #[command(
@@ -99,9 +115,12 @@ enum Command {
 
 #[derive(Subcommand)]
 enum SkillsCommand {
-    /// Print the skill to stdout.
-    Print,
-    /// Write it under a directory an agent client reads.
+    /// Print one skill to stdout; `moka-canvas` when no name is given.
+    Print {
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Write every skill under a directory an agent client reads.
     Install {
         #[arg(long)]
         dir: String,
@@ -553,31 +572,68 @@ async fn run(cli: Cli) -> Result<()> {
     // The skill is a string in this binary; no server is involved.
     if let Command::Skills { command } = &cli.command {
         match command {
-            SkillsCommand::Print => {
+            SkillsCommand::Print { name } => {
+                let name = name.as_deref().unwrap_or("moka-canvas");
+                let Some(content) = skill_named(name) else {
+                    return Err(CliError::Usage(format!(
+                        "unknown skill '{name}'; available: {}",
+                        SKILLS
+                            .iter()
+                            .map(|(held, _)| *held)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                };
                 if json {
-                    print_value(&json!({"name": "moka-canvas", "content": SKILL}), true);
+                    print_value(&json!({"name": name, "content": content}), true);
                 } else {
-                    print!("{SKILL}");
+                    print!("{content}");
                 }
             }
             SkillsCommand::Install { dir, force } => {
-                let target = PathBuf::from(dir).join("moka-canvas").join("SKILL.md");
-                if target.exists() && !force {
+                let root = PathBuf::from(dir);
+                let targets: Vec<(&str, PathBuf)> = SKILLS
+                    .iter()
+                    .map(|(name, _)| (*name, root.join(name).join("SKILL.md")))
+                    .collect();
+                if let Some((_, target)) =
+                    targets.iter().find(|(_, target)| target.exists() && !force)
+                {
                     return Err(CliError::Usage(format!(
                         "{} already exists; pass --force to replace it",
                         target.display()
                     )));
                 }
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)
+                for (_, target) in &targets {
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|error| CliError::Usage(error.to_string()))?;
+                    }
+                    let content = skill_named(
+                        target
+                            .parent()
+                            .and_then(|parent| parent.file_name())
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default(),
+                    )
+                    .expect("every target was built from a shipped skill");
+                    std::fs::write(target, content)
                         .map_err(|error| CliError::Usage(error.to_string()))?;
                 }
-                std::fs::write(&target, SKILL)
-                    .map_err(|error| CliError::Usage(error.to_string()))?;
                 if json {
-                    print_value(&json!({"path": target}), true);
+                    print_value(
+                        &json!({
+                            "skills": targets
+                                .iter()
+                                .map(|(name, path)| json!({"name": name, "path": path}))
+                                .collect::<Vec<_>>()
+                        }),
+                        true,
+                    );
                 } else {
-                    println!("{}", target.display());
+                    for (_, target) in &targets {
+                        println!("{}", target.display());
+                    }
                 }
             }
         }

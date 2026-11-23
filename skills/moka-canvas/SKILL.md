@@ -166,6 +166,7 @@ moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.
 - Call `story.confirm_step` only when the user explicitly says to confirm/pass the step; a finished generation is not a confirmation.
 - Keep old takes unless the user asks to choose another; `set_slot` appends, it does not overwrite.
+- For a whole chapter — board, cast pictures, frames, clips, voices and score — use the `moka-storyboard` skill. It is the same tools in a batch workflow with reader checkpoints.
 
 ## 6. Changes, audits, sessions
 

@@ -759,6 +759,149 @@ async fn a_story_batch_can_be_planned_from_the_document() {
 }
 
 #[tokio::test]
+async fn a_board_and_its_dubbing_can_be_reviewed() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.replace_chapters",
+        json!({
+            "storyId": story_id,
+            "confirm": "replace-chapters",
+            "chapters": [{"title": "Before the freeze", "synopsis": "The lake closes.", "targetDurationMs": 4000}]
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let chapter_id = opened["moka"]["stories"][0]["chapters"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_act",
+        json!({"storyId": story_id, "chapterId": chapter_id, "title": "The shore", "summary": "Ahe walks out."}),
+    )
+    .await;
+    let opened = current(&app).await;
+    let act_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_keyframe",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "actId": act_id,
+            "keyframe": {
+                "title": "Edge",
+                "content": "Ahe at the edge.",
+                "durationMs": 4000,
+                "dialogue": [{"speaker": "Ahe", "text": "Quiet."}]
+            }
+        }),
+    )
+    .await;
+    call(
+        &app,
+        "story.update_act",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "actId": act_id,
+            "patch": {"sound": {"music": "low strings", "sfx": "", "ambience": ""}}
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let keyframe_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["keyframes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let line_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["keyframes"][0]
+        ["dialogue"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let report = call(
+        &app,
+        "story.board_report",
+        json!({"storyId": story_id, "chapterId": chapter_id}),
+    )
+    .await;
+    assert_eq!(report["data"]["totals"]["shots"], 1);
+    assert_eq!(report["data"]["totals"]["missingArt"], 1);
+    assert_eq!(report["data"]["totals"]["missingActVideo"], 1);
+    assert_eq!(report["data"]["totals"]["missingVoice"], 1);
+    assert_eq!(report["data"]["totals"]["missingMusic"], 1);
+
+    let audio = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/beep.wav"));
+    let audio_path = temp.path().join("line.wav");
+    std::fs::write(&audio_path, audio).unwrap();
+    let imported = call(
+        &app,
+        "asset.import_path",
+        json!({"paths": [audio_path.to_string_lossy()]}),
+    )
+    .await;
+    let audio_id = imported["assetsAdded"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.set_slot",
+        json!({
+            "storyId": story_id,
+            "target": {
+                "kind": "lineVoice",
+                "chapterId": chapter_id,
+                "actId": act_id,
+                "keyframeId": keyframe_id,
+                "lineId": line_id
+            },
+            "action": "append",
+            "assetIds": [audio_id]
+        }),
+    )
+    .await;
+
+    let board = call(
+        &app,
+        "story.board_report",
+        json!({"storyId": story_id, "chapterId": chapter_id}),
+    )
+    .await;
+    assert_eq!(board["data"]["totals"]["missingVoice"], 0);
+
+    let dubbing = call(
+        &app,
+        "story.dubbing_report",
+        json!({"storyId": story_id, "chapterId": chapter_id}),
+    )
+    .await;
+    assert_eq!(dubbing["data"]["totals"]["lines"], 1);
+    assert_eq!(dubbing["data"]["totals"]["missing"], 0);
+    assert!(dubbing["data"]["lines"][0]["textMs"].as_i64().unwrap() > 0);
+    assert_eq!(dubbing["data"]["lines"][0]["shotMs"], 4000);
+    assert_eq!(dubbing["data"]["lines"][0]["fits"], true);
+}
+
+#[tokio::test]
 async fn an_effect_is_idempotent_and_only_audited() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");

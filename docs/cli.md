@@ -5,7 +5,7 @@
 ## 安装与发现
 
 - 桌面安装包：Linux deb/rpm 安装到 `/usr/bin/moka`；Windows NSIS 把安装目录加入用户 PATH（卸载时恢复）；macOS 的合并 PKG 把应用内的 CLI 链接到 `/usr/local/bin/moka`。
-- 独立 CLI 包：`moka-cli-<version>-<平台>-<架构>.tar.gz`（Windows 为 `.zip`），内含二进制、`skills/moka-canvas/SKILL.md` 与 LICENSE。
+- 独立 CLI 包：`moka-cli-<version>-<平台>-<架构>.tar.gz`（Windows 为 `.zip`），内含二进制、`skills/moka-canvas/`、`skills/moka-storyboard/` 与 LICENSE。
 - Web 包：`bin/moka`。
 - AppImage 不修改宿主 PATH；需要命令行的机器请用独立 CLI 包。
 
@@ -114,8 +114,9 @@ Claude Code / Cursor 一类客户端的配置示例（按实际路径调整）�
 ## Agent Skill
 
 ```sh
-moka skills print
-moka skills install --dir ~/.claude/skills
+moka skills print                                  # moka-canvas
+moka skills print --name moka-storyboard           # the chapter autopilot
+moka skills install --dir ~/.claude/skills         # installs both
 ```
 
-`SKILL.md` 已在二进制内嵌，安装后无需源码树。它教第三方 Agent 先读后写、用 `--json`、不代替用户确认、目的地必须让用户选择，以及各类工具的基本流程。
+两份 `SKILL.md` 都在二进制内嵌，安装后无需源码树。`moka-canvas` 教第三方 Agent 先读后写、用 `--json`、不代替用户确认、目的地必须让用户选择，以及各类工具的基本流程。`moka-storyboard` 是单章批量制作流程：分镜、选角图、帧图、视频、配音与配乐，按批次停下来让用户在 UI 里审查；它依赖 `story.plan_job`、`story.board_report` 与 `story.dubbing_report`，并假定故事室保持打开，由应用把作业答案写回文档。

@@ -387,6 +387,8 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
         "story.set_slot" => set_slot(moka, &args),
         "story.update_voice" => update_voice(moka, &args),
         "story.confirm_step" => confirm_step(moka, &args),
+        "story.board_report" => board_report(moka, &args),
+        "story.dubbing_report" => dubbing_report(moka, &args),
         "story.assemble" => assemble(moka, &args),
         other => Err(ToolError::new(
             "TOOL_NOT_FOUND",
@@ -932,7 +934,19 @@ fn keyframe_from(
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| ToolError::validation(format!("dialogue is not valid: {error}")))?;
     }
+    // A line is known by an id because its reading is filed under one; a line
+    // written from a caller that has no id yet gets one here, before any voice
+    // take can be asked for against a name that would not exist.
+    ensure_line_ids(&mut keyframe.dialogue);
     Ok(keyframe)
+}
+
+fn ensure_line_ids(lines: &mut [crate::domain::story::StoryDialogueLine]) {
+    for line in lines {
+        if line.id.as_deref().is_none_or(|id| id.trim().is_empty()) {
+            line.id = Some(crate::domain::new_id());
+        }
+    }
 }
 
 fn keyframes(moka: &MokaFile, args: &Args<'_>, name: &str) -> Result<ToolOutcome, ToolError> {
@@ -1011,12 +1025,15 @@ fn update_keyframe(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, Tool
                 format!("shot {keyframe_id} does not exist"),
             )
         })?;
-    let patch: StoryKeyframePatch = serde_json::from_value(
+    let mut patch: StoryKeyframePatch = serde_json::from_value(
         args.raw("patch")
             .cloned()
             .ok_or_else(|| ToolError::validation("story.update_keyframe needs a patch"))?,
     )
     .map_err(|error| ToolError::validation(format!("patch is not valid: {error}")))?;
+    if let Some(dialogue) = &mut patch.dialogue {
+        ensure_line_ids(dialogue);
+    }
     Ok(ToolOutcome::write(
         format!("Updated shot {keyframe_id}"),
         json!({"keyframeId": keyframe_id}),
@@ -1503,6 +1520,434 @@ fn confirm_step(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolErr
             confirmed: true,
         }],
     ))
+}
+
+fn selected_acts<'a>(
+    story: &'a StoryDocument,
+    chapter_id: Option<&str>,
+    act_id: Option<&str>,
+) -> Result<Vec<(&'a StoryChapter, &'a StoryAct)>, ToolError> {
+    let mut selected = Vec::new();
+    let mut chapter_found = chapter_id.is_none();
+    for chapter in &story.chapters {
+        if let Some(id) = chapter_id {
+            if chapter.id != id {
+                continue;
+            }
+            chapter_found = true;
+        }
+        for act in &chapter.acts {
+            if let Some(id) = act_id {
+                if act.id != id {
+                    continue;
+                }
+            }
+            selected.push((chapter, act));
+        }
+    }
+    if !chapter_found {
+        return Err(ToolError::new(
+            "CHAPTER_NOT_FOUND",
+            format!("chapter {} does not exist", chapter_id.unwrap_or_default()),
+        ));
+    }
+    if act_id.is_some() && selected.is_empty() {
+        return Err(ToolError::new(
+            "ACT_NOT_FOUND",
+            format!("act {} does not exist", act_id.unwrap_or_default()),
+        ));
+    }
+    Ok(selected)
+}
+
+fn board_report(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let chapter_id = args.opt_str("chapterId");
+    let act_id = args.opt_str("actId");
+    let selected = selected_acts(story, chapter_id, act_id)?;
+
+    let mut chapter_order: Vec<&StoryChapter> = Vec::new();
+    for (chapter, _) in &selected {
+        if !chapter_order.iter().any(|held| held.id == chapter.id) {
+            chapter_order.push(chapter);
+        }
+    }
+
+    let mut acts = Vec::new();
+    let mut shots = Vec::new();
+    let mut missing_art = 0_usize;
+    let mut missing_shot_video = 0_usize;
+    let mut missing_voice = 0_usize;
+    let mut missing_music = 0_usize;
+    let mut missing_act_video = 0_usize;
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (chapter, act) in &selected {
+        used.extend(act.character_ids.iter().cloned());
+        used.extend(act.scene_id.iter().cloned());
+        used.extend(act.prop_ids.iter().cloned());
+        let planned_ms: i64 = act
+            .keyframes
+            .iter()
+            .map(|keyframe| keyframe.duration_ms)
+            .sum();
+        let per_shot = act.shot_granularity.unwrap_or(story.shot_granularity)
+            == crate::domain::story::StoryShotGranularity::Keyframe;
+        let has_act_video = !current_assets(&act.video).is_empty();
+        if !per_shot && !has_act_video {
+            missing_act_video += 1;
+        }
+        let mut act_missing_art = 0_usize;
+        let mut act_missing_video = 0_usize;
+        let mut act_missing_voice = 0_usize;
+        for keyframe in &act.keyframes {
+            let art = current_assets(&keyframe.art).first().cloned();
+            let video = current_assets(&keyframe.video).first().cloned();
+            let missing = art.is_none() && !keyframe.art_not_needed;
+            if missing {
+                act_missing_art += 1;
+            }
+            let missing_video = per_shot && video.is_none();
+            if missing_video {
+                act_missing_video += 1;
+            }
+            let spoken = keyframe
+                .dialogue
+                .iter()
+                .filter(|line| !line.text.trim().is_empty())
+                .count();
+            let voiced = keyframe
+                .dialogue
+                .iter()
+                .filter(|line| line_voice_exists(keyframe, line.id.as_deref()))
+                .count();
+            act_missing_voice += spoken.saturating_sub(voiced);
+            for name in mentioned_names(&keyframe.content) {
+                if let Some(element) = story.elements.iter().find(|element| element.name == name) {
+                    used.insert(element.id.clone());
+                }
+            }
+            let (content, content_truncated, content_length) =
+                shortened(&keyframe.content, 2_000, false);
+            shots.push(json!({
+                "id": keyframe.id,
+                "chapterId": chapter.id,
+                "actId": act.id,
+                "title": keyframe.title,
+                "shotSize": keyframe.shot_size,
+                "cameraMove": keyframe.camera_move,
+                "angle": keyframe.angle,
+                "filmRole": keyframe.film_role,
+                "durationMs": keyframe.duration_ms,
+                "content": content,
+                "contentTruncated": content_truncated,
+                "contentLength": content_length,
+                "art": art,
+                "video": video,
+                "missingArt": missing,
+                "missingVideo": missing_video,
+                "dialogueLines": spoken,
+                "voicedLines": voiced,
+                "missingVoice": spoken.saturating_sub(voiced),
+                "artNotNeeded": keyframe.art_not_needed,
+            }));
+        }
+        let sound = [
+            act.sound.music.trim(),
+            act.sound.sfx.trim(),
+            act.sound.ambience.as_deref().unwrap_or("").trim(),
+        ]
+        .into_iter()
+        .any(|part| !part.is_empty());
+        let has_music = act
+            .music
+            .as_ref()
+            .is_some_and(|slot| !current_assets(slot).is_empty());
+        if sound && !has_music {
+            missing_music += 1;
+        }
+        missing_art += act_missing_art;
+        missing_shot_video += act_missing_video;
+        missing_voice += act_missing_voice;
+        acts.push(json!({
+            "id": act.id,
+            "chapterId": chapter.id,
+            "title": act.title,
+            "summary": shortened(&act.summary, 2_000, false).0,
+            "shotCount": act.keyframes.len(),
+            "plannedMs": planned_ms,
+            "missingArt": act_missing_art,
+            "missingShotVideo": act_missing_video,
+            "missingVoice": act_missing_voice,
+            "missingMusic": sound && !has_music,
+            "actVideo": current_assets(&act.video).first().cloned(),
+            "music": act.music.as_ref().and_then(|slot| current_assets(slot).first().cloned()),
+            "transition": act.transition.is_some(),
+        }));
+    }
+
+    let chapters: Vec<Value> = chapter_order
+        .iter()
+        .map(|chapter| {
+            let acts = selected
+                .iter()
+                .filter(|(held, _)| held.id == chapter.id)
+                .map(|(_, act)| *act)
+                .collect::<Vec<_>>();
+            let planned_ms: i64 = acts
+                .iter()
+                .flat_map(|act| act.keyframes.iter())
+                .map(|keyframe| keyframe.duration_ms)
+                .sum();
+            json!({
+                "id": chapter.id,
+                "title": chapter.title,
+                "targetDurationMs": chapter.target_duration_ms,
+                "plannedMs": planned_ms,
+                "actCount": acts.len(),
+                "shotCount": acts.iter().map(|act| act.keyframes.len()).sum::<usize>(),
+                "confirmed": story.confirmed_steps,
+            })
+        })
+        .collect();
+
+    let target_ms: i64 = chapter_order
+        .iter()
+        .map(|chapter| chapter.target_duration_ms)
+        .sum();
+    let planned_ms: i64 = shots
+        .iter()
+        .filter_map(|shot| shot.get("durationMs").and_then(Value::as_i64))
+        .sum();
+
+    let mut warnings = Vec::new();
+    for chapter in &chapter_order {
+        if chapter.target_duration_ms > 0 {
+            let planned: i64 = selected
+                .iter()
+                .filter(|(held, _)| held.id == chapter.id)
+                .flat_map(|(_, act)| act.keyframes.iter())
+                .map(|keyframe| keyframe.duration_ms)
+                .sum();
+            let target = chapter.target_duration_ms;
+            if (planned - target).abs() * 100 > target * 15 {
+                warnings.push(format!(
+                    "{} is planned for {} against a target of {}",
+                    chapter.title,
+                    format_duration(planned),
+                    format_duration(target)
+                ));
+            }
+        }
+        if selected
+            .iter()
+            .filter(|(held, _)| held.id == chapter.id)
+            .all(|(_, act)| act.keyframes.is_empty())
+        {
+            warnings.push(format!("{} has no shots", chapter.title));
+        }
+    }
+    if missing_art > 0 {
+        warnings.push(format!("{missing_art} shots still need a picture"));
+    }
+    if missing_shot_video > 0 {
+        warnings.push(format!(
+            "{missing_shot_video} shots have no clip of their own"
+        ));
+    }
+    if missing_act_video > 0 {
+        warnings.push(format!("{missing_act_video} acts have no clip"));
+    }
+    if missing_voice > 0 {
+        warnings.push(format!("{missing_voice} spoken lines have no reading"));
+    }
+    if missing_music > 0 {
+        warnings.push(format!("{missing_music} acts have sound but no score"));
+    }
+    if !story
+        .confirmed_steps
+        .contains(&crate::domain::story::StoryStep::Storyboard)
+    {
+        warnings.push("the storyboard step is not confirmed".to_string());
+    }
+
+    let elements: Vec<Value> = story
+        .elements
+        .iter()
+        .filter(|element| {
+            chapter_id.is_none()
+                || used.contains(&element.id)
+                || chapter_order
+                    .iter()
+                    .any(|chapter| element.chapter_ids.contains(&chapter.id))
+        })
+        .map(|element| {
+            let main = current_assets(&element.main).first().cloned();
+            let turnaround = element
+                .turnaround
+                .as_ref()
+                .and_then(|slot| current_assets(slot).first().cloned());
+            json!({
+                "id": element.id,
+                "kind": element.kind,
+                "name": element.name,
+                "chapterIds": element.chapter_ids,
+                "main": main,
+                "turnaround": turnaround,
+                "complete": element.kind.as_str() != "character"
+                    || (main.is_some() && turnaround.is_some()),
+            })
+        })
+        .collect();
+
+    Ok(ToolOutcome::read(
+        format!("board report: {} acts, {} shots", acts.len(), shots.len()),
+        json!({
+            "storyId": story.id,
+            "chapters": chapters,
+            "acts": acts,
+            "shots": shots,
+            "elements": elements,
+            "totals": {
+                "chapters": chapter_order.len(),
+                "acts": acts.len(),
+                "shots": shots.len(),
+                "plannedMs": planned_ms,
+                "targetDurationMs": target_ms,
+                "missingArt": missing_art,
+                "missingShotVideo": missing_shot_video,
+                "missingActVideo": missing_act_video,
+                "missingVoice": missing_voice,
+                "missingMusic": missing_music,
+            },
+            "warnings": warnings,
+        }),
+    ))
+}
+
+fn dubbing_report(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let chapter_id = args.opt_str("chapterId");
+    let act_id = args.opt_str("actId");
+    let selected = selected_acts(story, chapter_id, act_id)?;
+    let mut lines = Vec::new();
+    let mut missing = 0_usize;
+    let mut overrun = 0_usize;
+    let mut total_overrun = 0_i64;
+    for (chapter, act) in &selected {
+        for keyframe in &act.keyframes {
+            for line in &keyframe.dialogue {
+                if line.text.trim().is_empty() {
+                    continue;
+                }
+                let voice = line.id.as_deref().and_then(|line_id| {
+                    keyframe
+                        .voices
+                        .as_ref()
+                        .and_then(|voices| voices.iter().find(|voice| voice.line_id == line_id))
+                });
+                let asset = voice
+                    .and_then(|voice| voice.slot.takes.last())
+                    .and_then(|take| take.asset_ids.first());
+                let text_ms = asset
+                    .and_then(|asset_id| moka.resources.find(asset_id))
+                    .and_then(|entry| entry.probe.as_ref())
+                    .and_then(|probe| probe.duration_ms);
+                let shot_ms = keyframe.duration_ms;
+                let over = text_ms.map(|ms| (ms - shot_ms).max(0)).unwrap_or(0);
+                let fits = text_ms.map(|ms| ms <= shot_ms);
+                if text_ms.is_none() {
+                    missing += 1;
+                }
+                if over > 0 {
+                    overrun += 1;
+                    total_overrun += over;
+                }
+                lines.push(json!({
+                    "chapterId": chapter.id,
+                    "actId": act.id,
+                    "keyframeId": keyframe.id,
+                    "lineId": line.id,
+                    "speaker": line.speaker,
+                    "text": shortened(&line.text, 500, false).0,
+                    "shotMs": shot_ms,
+                    "textMs": text_ms,
+                    "overrunMs": over,
+                    "fits": fits,
+                    "missing": text_ms.is_none(),
+                }));
+            }
+        }
+    }
+    let mut warnings = Vec::new();
+    if missing > 0 {
+        warnings.push(format!("{missing} spoken lines have no reading"));
+    }
+    if overrun > 0 {
+        warnings.push(format!(
+            "{overrun} lines run past their shot by {} in all",
+            format_duration(total_overrun)
+        ));
+    }
+    Ok(ToolOutcome::read(
+        format!("dubbing report: {} lines", lines.len()),
+        json!({
+            "storyId": story.id,
+            "lines": lines,
+            "totals": {
+                "lines": lines.len(),
+                "missing": missing,
+                "overrun": overrun,
+                "totalOverrunMs": total_overrun,
+            },
+            "warnings": warnings,
+        }),
+    ))
+}
+
+fn line_voice_exists(keyframe: &StoryKeyframe, line_id: Option<&str>) -> bool {
+    let Some(line_id) = line_id else {
+        return false;
+    };
+    keyframe.voices.as_ref().is_some_and(|voices| {
+        voices
+            .iter()
+            .any(|voice| voice.line_id == line_id && !current_assets(&voice.slot).is_empty())
+    })
+}
+
+fn mentioned_names(content: &str) -> Vec<String> {
+    let chars: Vec<char> = content.chars().collect();
+    let mut names = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        if chars[at] == '`' {
+            if let Some(close) = chars[at + 1..].iter().position(|ch| *ch == '`') {
+                let end = at + 1 + close;
+                let name: String = chars[at + 1..end].iter().collect();
+                let name = name.trim().to_string();
+                if !name.is_empty() {
+                    names.push(name);
+                }
+                at = end + 1;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    names
+}
+
+fn format_duration(ms: i64) -> String {
+    let total = (ms.max(0) as f64 / 1000.0).round() as i64;
+    let seconds = total % 60;
+    let minutes = (total / 60) % 60;
+    let hours = total / 3600;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
 }
 
 fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {

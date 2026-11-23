@@ -54,11 +54,13 @@ await copyFile(
   join(root, "src-tauri", "binaries", `moka-${triple}${extension}`),
   join(stage, `moka${extension}`),
 );
-await mkdir(join(stage, "skills", "moka-canvas"), { recursive: true });
-await copyFile(
-  join(root, "skills", "moka-canvas", "SKILL.md"),
-  join(stage, "skills", "moka-canvas", "SKILL.md"),
-);
+for (const skill of ["moka-canvas", "moka-storyboard"]) {
+  await mkdir(join(stage, "skills", skill), { recursive: true });
+  await copyFile(
+    join(root, "skills", skill, "SKILL.md"),
+    join(stage, "skills", skill, "SKILL.md"),
+  );
+}
 await copyFile(join(root, "LICENSE"), join(stage, "LICENSE"));
 await writeFile(
   join(stage, "README.txt"),
