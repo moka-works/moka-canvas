@@ -43,6 +43,7 @@ import storyChapter from "./story/chapter.tmpl?raw";
 import storyElements from "./story/elements.tmpl?raw";
 import storyMergeElements from "./story/merge-elements.tmpl?raw";
 import storyStoryboard from "./story/storyboard.tmpl?raw";
+import storyStoryboardRepair from "./story/storyboard-repair.tmpl?raw";
 import storyRevision from "./story/revise.tmpl?raw";
 import storyElementMain from "./story/element-main.tmpl?raw";
 import storyElementTurnaround from "./story/element-turnaround.tmpl?raw";
@@ -319,22 +320,24 @@ export function storyMergeElementsPrompt(input: {
  * telling's own words — because the board has to be written in names the cast
  * can be matched back to, and a name the model invented would match nothing.
  */
+export type StoryStoryboardPromptInput = StoryFacts & {
+  number: number;
+  chapter: { title: string; text: string };
+  targetDurationMs: number;
+  /** How long one clip may run, in seconds: the video model's own window. */
+  maxVideoSeconds: number;
+  elements: Array<{
+    kind: StoryElementKind;
+    name: string;
+    description: string;
+  }>;
+  shotSizes: readonly string[];
+  cameraMoves: readonly string[];
+  angles: readonly string[];
+};
+
 export function storyStoryboardPrompt(
-  input: StoryFacts & {
-    number: number;
-    chapter: { title: string; text: string };
-    targetDurationMs: number;
-    /** How long one clip may run, in seconds: the video model's own window. */
-    maxVideoSeconds: number;
-    elements: Array<{
-      kind: StoryElementKind;
-      name: string;
-      description: string;
-    }>;
-    shotSizes: readonly string[];
-    cameraMoves: readonly string[];
-    angles: readonly string[];
-  },
+  input: StoryStoryboardPromptInput,
 ): string {
   return [
     storyFactsPrompt(input),
@@ -343,6 +346,28 @@ export function storyStoryboardPrompt(
       elements: storyElementsList(input.elements),
       seconds: Math.round(input.targetDurationMs / 1000),
       maxShotSeconds: Math.min(MAX_KEYFRAME_MS / 1000, input.maxVideoSeconds),
+    }),
+  ].join("\n\n");
+}
+
+/**
+ * The same board asked again, with the reasons the answer could not be kept.
+ *
+ * The whole ask travels rather than only the differences: a model asked to fix
+ * a board is still writing a board, and the rules it forgot are the ones most
+ * likely to be forgotten again.
+ */
+export function storyStoryboardRepairPrompt(
+  input: StoryStoryboardPromptInput & {
+    previous: string;
+    problems: string[];
+  },
+): string {
+  return [
+    storyStoryboardPrompt(input),
+    render(storyStoryboardRepair, {
+      previous: input.previous,
+      problems: input.problems.map((problem) => `- ${problem}`).join("\n"),
     }),
   ].join("\n\n");
 }

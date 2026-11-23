@@ -176,6 +176,8 @@
     "targetGone": "{{label}} 已经不在这个故事里了",
     "storyGone": "这批作业要讲的故事已经不在了",
     "unreadableAnswer": "{{at}} 的回答读不出来；原话已留给你手动修正",
+    "boardRejected": "{{at}} 的分镜没有写入：{{reasons}}",
+    "boardFallback": "{{count}} 章分镜未被采用，已按章节原文写出基础分镜；绘图前请检查",
     "answerNotes": "{{at}} 的回答有几处没有读进来：{{notes}}",
     "mergeMissing": "合并落地时这些名字已不在元素里，合并后的描述没有写入：{{names}}",
     "failedWith": "{{total}} 项里有 {{failed}} 项没有回来：{{reason}}",

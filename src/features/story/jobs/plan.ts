@@ -88,12 +88,14 @@ import {
   storyOutlinePrompt,
   storyRevisionPrompt,
   storyStoryboardPrompt,
+  storyStoryboardRepairPrompt,
   storySystemPrompt,
   storyTransitionVideoPrompt,
   type StoryFacts,
   type StoryLook,
   type StoryRevisionAct,
   type StoryRevisionFrame,
+  type StoryStoryboardPromptInput,
 } from "../../../shared/prompts";
 import {
   castFor,
@@ -825,44 +827,81 @@ export function planElementMergeWaves(
   }));
 }
 
+/** What one chapter's board is asked, before the ask is shaped into an item. */
+function storyboardAsk(
+  story: StoryDocument,
+  chapterId: string,
+): { target: StoryTarget; input: StoryStoryboardPromptInput } | undefined {
+  const number = story.chapters.findIndex((held) => held.id === chapterId);
+  const chapter = story.chapters[number];
+  if (chapter === undefined) return undefined;
+  return {
+    target: { kind: "storyboard", chapterId },
+    input: {
+      ...factsOf(story),
+      number: number + 1,
+      chapter: {
+        title: chapter.title,
+        text: chapterWordsOf(chapter),
+      },
+      targetDurationMs: chapter.targetDurationMs,
+      maxVideoSeconds: videoCeiling(),
+      elements: story.elements.map((element) => ({
+        kind: element.kind,
+        name: element.name,
+        description: element.description,
+      })),
+      shotSizes: STORY_SHOT_SIZES,
+      cameraMoves: STORY_CAMERA_MOVES,
+      angles: STORY_CAMERA_ANGLES,
+    },
+  };
+}
+
 /** The board of one or more episodes, one ask each. */
 export function planStoryboard(
   story: StoryDocument,
   chapterIds: string[],
 ): StoryJobItemDraft[] {
-  const facts = factsOf(story);
   return chapterIds.flatMap((chapterId) => {
-    const number = story.chapters.findIndex((held) => held.id === chapterId);
-    const chapter = story.chapters[number];
-    if (chapter === undefined) return [];
-    const target: StoryTarget = { kind: "storyboard", chapterId };
+    const asked = storyboardAsk(story, chapterId);
+    if (asked === undefined) return [];
     return [
       {
-        id: jobKey(target),
-        target,
+        id: jobKey(asked.target),
+        target: asked.target,
         capability: "text",
         system: storySystemPrompt(),
-        prompt: storyStoryboardPrompt({
-          ...facts,
-          number: number + 1,
-          chapter: {
-            title: chapter.title,
-            text: chapterWordsOf(chapter),
-          },
-          targetDurationMs: chapter.targetDurationMs,
-          maxVideoSeconds: videoCeiling(),
-          elements: story.elements.map((element) => ({
-            kind: element.kind,
-            name: element.name,
-            description: element.description,
-          })),
-          shotSizes: STORY_SHOT_SIZES,
-          cameraMoves: STORY_CAMERA_MOVES,
-          angles: STORY_CAMERA_ANGLES,
-        }),
+        prompt: storyStoryboardPrompt(asked.input),
       },
     ];
   });
+}
+
+/**
+ * The same board asked again, with the reasons the first answer could not be
+ * kept. The place it is asked for does not change: the answer is still the
+ * board of that chapter.
+ */
+export function planStoryboardRepair(
+  story: StoryDocument,
+  chapterId: string,
+  previous: string,
+  problems: string[],
+): StoryJobItemDraft | undefined {
+  const asked = storyboardAsk(story, chapterId);
+  if (asked === undefined) return undefined;
+  return {
+    id: jobKey(asked.target),
+    target: asked.target,
+    capability: "text",
+    system: storySystemPrompt(),
+    prompt: storyStoryboardRepairPrompt({
+      ...asked.input,
+      previous,
+      problems,
+    }),
+  };
 }
 
 /**

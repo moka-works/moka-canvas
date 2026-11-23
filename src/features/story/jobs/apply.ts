@@ -68,6 +68,7 @@ import {
   type ElementReading,
   type ElementRepeat,
 } from "./plan";
+import { checkBoard, type BoardAnswer } from "./board";
 
 /** What the room knows about a batch that the record alone does not say. */
 export interface ApplyContext {
@@ -543,14 +544,16 @@ export function collectElementRepeats(
     );
 }
 
-/** What a board's answer said, as the reading of it came out. */
-export interface BoardReading {
-  drafts?: ActDraft[];
-  warnings: string[];
+/**
+ * What a board's answer said, as the reading of it came out.
+ *
+ * The answer as it was written travels beside the drafts because a board can
+ * lose an act or a shot in the reading, and a lost shot is exactly what the
+ * story may not quietly keep.
+ */
+export interface BoardReading extends BoardAnswer {
   /** The cells the reading chose a framing, a movement or an angle for. */
   guesses: StoryGuess[];
-  /** Why it could not be read, when it could not. */
-  error?: string;
 }
 
 /**
@@ -584,6 +587,7 @@ export function readBoardAnswer(
   return {
     drafts: parsed.value,
     warnings: parsed.warnings,
+    raw: read.value,
     guesses: parsed.value.flatMap((act) => act.guessed ?? []),
   };
 }
@@ -845,6 +849,31 @@ export function applyParsedActs(
   ];
 }
 
+/** A chapter's board and the outline it was written from, as one write. */
+export function boardCommands(
+  story: StoryDocument,
+  chapterId: string,
+  drafts: ActDraft[],
+): DocumentCommand[] {
+  const chapter = story.chapters.find((held) => held.id === chapterId);
+  if (chapter === undefined) return [];
+  const written = applyParsedActs(story, chapterId, drafts);
+  if (written.length === 0) return written;
+  // The board was written from the outline as it stands, so the chapter's
+  // board revision follows it. A proposal for the board it replaces is moot,
+  // and is settled where the reader rewrites the board.
+  return [
+    ...written,
+    {
+      type: "setStoryChapters",
+      storyId: story.id,
+      chapters: story.chapters.map((held) =>
+        held.id === chapter.id ? syncChapterBoard(held) : held,
+      ),
+    },
+  ];
+}
+
 /** What one piece of a batch asks the document to do, if anything. */
 function commandsFor(
   story: StoryDocument,
@@ -935,37 +964,32 @@ function commandsFor(
     }
     case "storyboard": {
       const { chapterId } = item.target;
-      const read = parseStoryJson(item.text ?? "");
       const chapter = story.chapters.find((held) => held.id === chapterId);
-      const parsed = read.ok
-        ? parseStoryboard(read.value, {
-            elements: story.elements,
-            targetDurationMs: chapter?.targetDurationMs ?? 0,
-            maxVideoSeconds: videoCeiling(),
-          })
-        : undefined;
-      if (parsed === undefined || !parsed.ok || chapter === undefined) {
+      if (chapter === undefined) {
         report.notes.push(
           i18n.t("story:jobs.unreadableAnswer", { at: item.id }),
         );
         return [];
       }
-      report.applied += 1;
-      const written = applyParsedActs(story, chapter.id, parsed.value);
+      const read = readBoardAnswer(story, item);
+      const check = checkBoard(story, chapter, read);
+      if (read.drafts === undefined || check.errors.length > 0) {
+        // The answer is kept on its record and asked about again with these
+        // differences; writing a board the story cannot use is worse than
+        // writing none.
+        report.skipped += 1;
+        report.notes.push(
+          i18n.t("story:jobs.boardRejected", {
+            at: item.id,
+            reasons: check.errors.join("; "),
+          }),
+        );
+        return [];
+      }
+      const written = boardCommands(story, chapter.id, read.drafts);
       if (written.length === 0) return written;
-      // The board was written from the outline as it stands, so the chapter's
-      // board revision follows it. A proposal for the board it replaces is
-      // moot, and is settled where the reader rewrites the board.
-      return [
-        ...written,
-        {
-          type: "setStoryChapters",
-          storyId: story.id,
-          chapters: story.chapters.map((held) =>
-            held.id === chapter.id ? syncChapterBoard(held) : held,
-          ),
-        },
-      ];
+      report.applied += 1;
+      return written;
     }
     default:
       return [];

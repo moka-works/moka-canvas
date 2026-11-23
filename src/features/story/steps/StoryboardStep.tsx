@@ -50,8 +50,8 @@ import {
   planKeyframeArtWaves,
   planMissingVideoWaves,
   planOutlineRevision,
-  planStoryboard,
 } from "../jobs/plan";
+import { runBoards } from "../jobs/boardRun";
 import { busyPlaces, mergePlaces, type PlaceBusy } from "../jobs/places";
 import {
   actVideoPromptDrifted,
@@ -274,11 +274,9 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
     const next = waves[0];
     if (next === undefined) return;
     starting.current = true;
-    void useStoryJobStore
-      .getState()
-      .start(story.id, "storyboard", planStoryboard(story, next))
-      .then((record) => {
-        setWaves((held) => (record === null ? [] : held.slice(1)));
+    void runBoards(story.id, next)
+      .then(({ asked }) => {
+        setWaves((held) => (asked ? held.slice(1) : []));
       })
       .finally(() => {
         starting.current = false;
@@ -331,7 +329,7 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   /** Boards these episodes. */
   const boardEpisodes = async (chapterIds: string[]) => {
     await settleRevisions(chapterIds);
-    await run(story.id, "storyboard", planStoryboard(story, chapterIds));
+    await runBoards(story.id, chapterIds);
   };
 
   const boardAll = async () => {

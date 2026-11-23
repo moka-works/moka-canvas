@@ -168,6 +168,10 @@ export function batchOf(
 export function answered(record: StoryJobRecord): StoryJobRecord {
   const partial = Object.keys(landed).length > 0;
   const items = record.items.map((item) => {
+    // A text answer is the answer: a batch asked for words that has none has
+    // not come home, and saying it did would have the room read an empty page.
+    const said = answers[item.id];
+    if (item.capability === "text" && said === undefined) return item;
     // A video's take carries its batch in the name: two takes of one place are
     // two answers, and apply would read the second as the first kept again
     // without it. A drawing is kept by a set of its own and needs no such mark.
@@ -185,7 +189,7 @@ export function answered(record: StoryJobRecord): StoryJobRecord {
       ...item,
       status: "succeeded" as const,
       assetIds: files,
-      ...(answers[item.id] !== undefined ? { text: answers[item.id] } : {}),
+      ...(said !== undefined ? { text: said } : {}),
     };
   });
   // A batch still owing a piece is still out, which is what a look at it says

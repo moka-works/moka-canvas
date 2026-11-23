@@ -599,6 +599,51 @@ describe("writing a batch's answers into the story", () => {
     expect(chapter?.acts[0].keyframes[0].content).toBe("周抬起头。");
   });
 
+  it("does not write a board spoken with more lines than one shot keeps", () => {
+    const report = applyJobResults(
+      record("storyboard", [
+        item({
+          id: `storyboard:${ids.chapterSecond}`,
+          target: { kind: "storyboard", chapterId: ids.chapterSecond },
+          capability: "text",
+          text: JSON.stringify({
+            acts: [
+              {
+                title: "第 1 幕 车厢",
+                summary: "车厢比站台更暗。",
+                characters: ["周"],
+                scene: "末班车车厢",
+                props: [],
+                sound: { music: "", sfx: "" },
+                keyframes: [
+                  {
+                    shotSize: "wide",
+                    cameraMove: "static",
+                    angle: "eyeLevel",
+                    content: "`周`抬起头。",
+                    durationMs: 2000,
+                    dialogue: Array.from({ length: 13 }, (_, at) => ({
+                      speaker: "周",
+                      text: `第 ${at + 1} 句。`,
+                    })),
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      ]),
+    );
+
+    expect(report.applied).toBe(0);
+    expect(report.skipped).toBe(1);
+    expect(report.notes.join(" ")).toContain("13 lines");
+    const chapter = story().chapters.find(
+      (each) => each.id === ids.chapterSecond,
+    );
+    expect(chapter?.acts).toHaveLength(0);
+  });
+
   it("keeps a board's place and speakers in the shots that must carry them", () => {
     const report = applyJobResults(
       record("storyboard", [

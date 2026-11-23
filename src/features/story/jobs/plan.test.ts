@@ -34,6 +34,7 @@ import {
   planOutline,
   planOutlineRevision,
   planStoryboard,
+  planStoryboardRepair,
   settledRoleFrames,
   voiceParamsFor,
   type ElementRepeat,
@@ -500,6 +501,24 @@ describe("planning the words", () => {
 
   it("asks for no board of a chapter the story does not have", () => {
     expect(planStoryboard(story(), ["chapter-gone"])).toEqual([]);
+  });
+
+  it("asks again for the same board with what was wrong", () => {
+    const repair = planStoryboardRepair(
+      story(),
+      ids.chapterFirst,
+      "the first answer",
+      ["act 2 was boarded with no shots"],
+    );
+
+    expect(repair?.id).toBe(`storyboard:${ids.chapterFirst}`);
+    expect(repair?.target).toEqual({
+      kind: "storyboard",
+      chapterId: ids.chapterFirst,
+    });
+    expect(repair?.prompt).toContain("Your previous answer could not be used");
+    expect(repair?.prompt).toContain("the first answer");
+    expect(repair?.prompt).toContain("act 2 was boarded with no shots");
   });
 
   it("plans a revision only while the outline is ahead of the board", () => {

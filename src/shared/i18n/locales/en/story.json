@@ -176,6 +176,8 @@
     "targetGone": "{{label}} is no longer in the story",
     "storyGone": "The story this batch was told for is gone",
     "unreadableAnswer": "The answer to {{at}} could not be read; it is kept for you to fix",
+    "boardRejected": "The board of {{at}} was not written: {{reasons}}",
+    "boardFallback": "{{count}} boards could not be accepted and were written from the chapter's own words; check them before drawing",
     "answerNotes": "{{at}} came back with something left unread: {{notes}}",
     "mergeMissing": "These names were no longer in the cast when the merge landed, and their descriptions were left out: {{names}}",
     "failedWith": "{{failed}} of {{total}} pieces did not come back: {{reason}}",
