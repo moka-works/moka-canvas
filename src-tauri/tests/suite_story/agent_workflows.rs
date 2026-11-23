@@ -514,6 +514,251 @@ async fn a_story_read_can_be_scoped_and_whole() {
 }
 
 #[tokio::test]
+async fn a_story_batch_can_be_planned_from_the_document() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice.", "genre": "drama", "style": "cold realism"}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.replace_chapters",
+        json!({
+            "storyId": story_id,
+            "confirm": "replace-chapters",
+            "chapters": [{"title": "Before the freeze", "synopsis": "The lake closes.", "targetDurationMs": 60000}]
+        }),
+    )
+    .await;
+    call(
+        &app,
+        "story.add_element",
+        json!({
+            "storyId": story_id,
+            "element": {"kind": "character", "name": "Ahe", "description": "The keeper."}
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let chapter_id = opened["moka"]["stories"][0]["chapters"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let element_id = opened["moka"]["stories"][0]["elements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_act",
+        json!({"storyId": story_id, "chapterId": chapter_id, "title": "The shore", "summary": "Ahe walks out."}),
+    )
+    .await;
+    let opened = current(&app).await;
+    let act_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_keyframe",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "actId": act_id,
+            "keyframe": {
+                "title": "Edge",
+                "content": "`Ahe` at the edge.",
+                "durationMs": 4000,
+                "dialogue": [{"speaker": "Ahe", "text": "Quiet."}]
+            }
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let keyframe_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["keyframes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.update_act",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "actId": act_id,
+            "patch": {"sound": {"music": "low strings", "sfx": "wind", "ambience": "lake"}}
+        }),
+    )
+    .await;
+
+    let picture = temp.path().join("lake.png");
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([30, 90, 160, 255]))
+        .save(&picture)
+        .unwrap();
+    let imported = call(
+        &app,
+        "asset.import_path",
+        json!({"paths": [picture.to_string_lossy()]}),
+    )
+    .await;
+    let asset_id = imported["assetsAdded"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.set_slot",
+        json!({
+            "storyId": story_id,
+            "target": {"kind": "element", "elementId": element_id, "view": "main"},
+            "action": "append",
+            "assetIds": [asset_id.clone()]
+        }),
+    )
+    .await;
+    call(
+        &app,
+        "story.set_slot",
+        json!({
+            "storyId": story_id,
+            "target": {"kind": "keyframe", "chapterId": chapter_id, "actId": act_id, "keyframeId": keyframe_id},
+            "action": "append",
+            "assetIds": [asset_id.clone()]
+        }),
+    )
+    .await;
+
+    let board = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "storyboard",
+            "chapterId": chapter_id,
+            "model": "scribe",
+            "videoModel": "video-1"
+        }),
+    )
+    .await;
+    assert_eq!(board["data"]["waves"][0]["model"], "scribe");
+    let item = &board["data"]["waves"][0]["items"][0];
+    assert_eq!(item["target"]["kind"], "storyboard");
+    assert_eq!(item["capability"], "text");
+    let prompt = item["prompt"].as_str().unwrap();
+    assert!(prompt.contains("The lake closes."));
+    assert!(prompt.contains("Ahe (character) — The keeper."));
+
+    let art = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "keyframeArt", "chapterId": chapter_id}),
+    )
+    .await;
+    assert_eq!(art["data"]["items"].as_array().unwrap().len(), 0);
+
+    let art = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "keyframeArt",
+            "chapterId": chapter_id,
+            "includeExisting": true
+        }),
+    )
+    .await;
+    let item = &art["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "keyframeArt");
+    assert_eq!(item["inputs"][0]["assetId"], asset_id);
+    assert!(
+        item["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("1. Ahe — The keeper."),
+        "{}",
+        item["prompt"]
+    );
+
+    let clips = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "actVideo", "chapterId": chapter_id, "model": "video-1"}),
+    )
+    .await;
+    let item = &clips["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "actVideo");
+    assert_eq!(item["inputs"][0]["role"], "firstFrame");
+    assert!(
+        item["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("At 0s, camera static: Ahe at the edge."),
+        "{}",
+        item["prompt"]
+    );
+
+    let shots = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "keyframeVideo", "chapterId": chapter_id}),
+    )
+    .await;
+    let item = &shots["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "keyframeVideo");
+    assert!(item["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("The shot, from \"Edge\""));
+
+    let lines = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "lineVoice", "chapterId": chapter_id}),
+    )
+    .await;
+    let item = &lines["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "lineVoice");
+    assert_eq!(item["prompt"], "Quiet.");
+    assert_eq!(item["capability"], "speech");
+
+    let music = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "music", "chapterId": chapter_id}),
+    )
+    .await;
+    let item = &music["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "music");
+    assert!(item["prompt"].as_str().unwrap().contains("low strings"));
+
+    let forms = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "elementArt",
+            "chapterId": chapter_id,
+            "elementIds": [element_id],
+            "views": ["turnaround"]
+        }),
+    )
+    .await;
+    let item = &forms["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "elementArt");
+    assert_eq!(item["target"]["view"], "turnaround");
+    assert_eq!(item["inputs"][0]["assetId"], asset_id);
+}
+
+#[tokio::test]
 async fn an_effect_is_idempotent_and_only_audited() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");

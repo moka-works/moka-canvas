@@ -917,7 +917,7 @@ describe("a batch coming back", () => {
     expect(told()).toHaveLength(1);
   });
 
-  it("stops asking when nothing is running any more", async () => {
+  it("keeps a slow look after a batch settles", async () => {
     serving({ "/api/v1/projects/current/story/jobs": [job()] });
     await useStoryJobStore.getState().load(ids.story);
     await vi.advanceTimersByTimeAsync(1600);
@@ -927,11 +927,29 @@ describe("a batch coming back", () => {
     serving({ "/api/v1/projects/current/story/jobs": [answered()] });
     await vi.advanceTimersByTimeAsync(3200);
 
-    // The list says the batch is done, so the room stops asking about it.
+    // The list says the batch is done: the fast look stops, and a slow one
+    // stays out for work another client may start.
     expect(useStoryJobStore.getState().jobs[0].status).toBe("succeeded");
     const after = calls.length;
     await vi.advanceTimersByTimeAsync(5000);
     expect(calls.length).toBe(after);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls.length).toBeGreaterThan(after);
+  });
+
+  it("finds a batch another client started while the room was open", async () => {
+    serving({ "/api/v1/projects/current/story/jobs": [] });
+    await useStoryJobStore.getState().load(ids.story);
+    expect(useStoryJobStore.getState().jobs).toHaveLength(0);
+
+    // Nothing in this window asked for it: the CLI did.
+    serving({ "/api/v1/projects/current/story/jobs": [answered()] });
+    await vi.advanceTimersByTimeAsync(10_100);
+
+    expect(useStoryJobStore.getState().jobs.map((held) => held.id)).toEqual([
+      "job-1",
+    ]);
+    expect(useStoryJobStore.getState().jobs[0].status).toBe("succeeded");
   });
 
   it("lets go of a batch the look no longer carries", async () => {

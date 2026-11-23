@@ -150,6 +150,7 @@ moka tools call story.get --input '{"storyId":"st_1","include":["brief","chapter
 moka tools call story.get --input '{"storyId":"st_1","chapterId":"ch_2","fullText":true,"include":["chapters","storyboard"]}' --json
 moka tools call story.get --input '{"storyId":"st_1","include":["slots"]}' --json
 moka tools call story.progress --input '{"storyId":"st_1","step":"storyboard"}' --json
+moka tools call story.plan_job --input '{"storyId":"st_1","kind":"storyboard","chapterId":"ch_1"}' --json
 moka tools call story.add_keyframe --input ./keyframe.json --json
 moka tools call story.start_job --input ./job.json --json
 moka tasks get storyJob <id> --json
@@ -159,6 +160,7 @@ moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard
 
 - Text is shortened to 2000 characters unless `fullText` is true; `synopsisLength`/`contentLength` and the `*Truncated` flags say whether anything was left out. Use `chapterId`/`actId` to read one part of a long story.
 - `include:["slots"]` returns every place's current files, take count and pending set. Use it before planning media.
+- `story.plan_job` builds the next batch from the document itself: the same prompts the room uses, the targets still missing work, their reference pictures and their models, grouped into `waves`. It spends nothing and writes nothing; start each wave with `story.start_job` (pass the wave's `model`). Kinds: `outline`, `elements`, `actPlan`, `storyboard`, `elementArt`, `keyframeArt`, `actVideo`, `keyframeVideo`, `lineVoice`, `music`. Use `includeExisting` to plan a redraw of a place that already has a current take.
 - `story.start_job` is `spend`; confirm before starting. `model` and `parallel` are optional; without `model` the capability's default answers.
 - **Someone must apply a job's answer exactly once.** If the Moka app has the story room loaded, it lists the story's jobs and writes unread answers into the document with its own parsers (including reference recognition for pictures). In that case do **not** also call `set_slot` or `replace_*`, or the answer lands twice. If no app is open, read `task.get` and apply it yourself: `story.set_slot` (media) or `story.add_* / story.update_* / story.replace_*` (text), with the same care as any other write.
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.

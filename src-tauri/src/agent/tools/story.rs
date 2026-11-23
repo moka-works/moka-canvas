@@ -1712,7 +1712,7 @@ pub async fn effect(
                     .collect()
             })
             .unwrap_or_default();
-        parsed.push(crate::story::StoryJobItem::queued(
+        let mut queued = crate::story::StoryJobItem::queued(
             item.get("id")
                 .and_then(Value::as_str)
                 .map(str::to_string)
@@ -1725,7 +1725,20 @@ pub async fn effect(
                 .map(str::to_string),
             inputs,
             item.get("params").cloned().unwrap_or_else(|| json!({})),
-        ));
+        );
+        // The name a drawing is filed under, and the set it belongs to, are
+        // the client's own words about the piece rather than its request; a
+        // planner that fills them must not have them dropped on the way in.
+        queued.name = item.get("name").and_then(Value::as_str).map(str::to_string);
+        queued.copies = item
+            .get("copies")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
+        queued.set_id = item
+            .get("setId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        parsed.push(queued);
     }
     let model = args.opt_str("model").unwrap_or("").to_string();
     let parallel = args

@@ -100,12 +100,16 @@ pub async fn command(
                         "capability": model.category,
                         "protocol": model.protocol.wire_name(),
                         "enabled": model.enabled,
+                        "maxVideoSeconds": model.max_video_seconds,
+                        "maxTokens": model.max_tokens,
+                        "reasoningEffort": model.reasoning_effort,
+                        "temperature": model.temperature,
                     })
                 })
                 .collect();
             Ok(ToolOutcome::read(
                 format!("{} configured models", models.len()),
-                json!({"models": models}),
+                json!({"models": models, "defaults": snapshot.defaults}),
             ))
         }
         "project.list_recent" => list_recent(state).await,

@@ -70,6 +70,9 @@ export function StoryPage() {
   const storyId = story?.id ?? null;
   useEffect(() => {
     void useStoryJobStore.getState().load(storyId);
+    // A look belongs to the room that asked for it: leaving the room stops it
+    // until the next one loads, without forgetting what this one read.
+    return () => useStoryJobStore.getState().stopWatching();
   }, [storyId]);
 
   const pendingLeave = useStoryStore((state) => state.pendingLeave);

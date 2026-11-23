@@ -75,6 +75,16 @@ import { useStoryStore } from "./storyStore";
 /** How often a batch that is running is looked at. It runs for minutes. */
 export const POLL_MS = 1500;
 
+/**
+ * How often a room with nothing running looks for work started elsewhere.
+ *
+ * An agent outside the app starts batches through the CLI and never tells the
+ * room it did. A slow look is what lets those answers land in the room without
+ * the reader having to leave and come back; it is slow because nothing is on
+ * fire and the list is otherwise the same every time.
+ */
+export const IDLE_POLL_MS = 10_000;
+
 // A fast batch can finish before its sibling waves have been started.
 const startingArtSets = new Set<string>();
 
@@ -337,6 +347,8 @@ interface StoryJobState {
    * stops offering it as something waiting to be looked at.
    */
   markRevisionRead: (id: string) => Promise<void>;
+  /** Stops the slow or fast look without forgetting the batches read so far. */
+  stopWatching: () => void;
   reset: () => void;
 }
 
@@ -432,7 +444,7 @@ function watching(records: StoryJobRecord[]): void {
  */
 let handingOver = new Set<string>();
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * The trouble a look last reported, so that a look which keeps failing at the
@@ -799,9 +811,17 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
     }
   };
 
+  const schedulePoll = (delay: number): void => {
+    if (pollTimer !== null) clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => {
+      pollTimer = null;
+      void pollOnce();
+    }, delay);
+  };
+
   const pollOnce = async (): Promise<void> => {
-    const { storyId, jobs } = get();
-    if (storyId === null || !jobs.some((job) => isRunning(job.status))) {
+    const { storyId } = get();
+    if (storyId === null) {
       stopPolling();
       return;
     }
@@ -825,17 +845,19 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
       // answers that are never coming.
       sayLookProblem(problem);
     }
-    if (!get().jobs.some((job) => isRunning(job.status))) stopPolling();
+    // A room that has been left while the look was out has nothing to schedule.
+    if (get().storyId !== storyId) return;
+    const running = get().jobs.some((job) => isRunning(job.status));
+    schedulePoll(running ? POLL_MS : IDLE_POLL_MS);
   };
 
   const startPolling = (): void => {
-    if (pollTimer !== null) return;
-    pollTimer = setInterval(() => void pollOnce(), POLL_MS);
+    schedulePoll(POLL_MS);
   };
 
   const stopPolling = (): void => {
     if (pollTimer === null) return;
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = null;
   };
 
@@ -870,8 +892,9 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         watching(read);
         set({ jobs: read, error: null });
         await readAnswers(read);
-        if (read.some((record) => isRunning(record.status))) startPolling();
-        else stopPolling();
+        // Even a room with nothing running keeps a slow look out for work an
+        // agent started elsewhere; a running batch is looked at at the fast pace.
+        startPolling();
       } catch (problem) {
         set({
           error: problem instanceof Error ? problem.message : String(problem),
@@ -1003,6 +1026,10 @@ export const useStoryJobStore = create<StoryJobState>()((set, get) => {
         // as read is offered again, which is better than a proposal lost.
         sayLookProblem(problem);
       }
+    },
+
+    stopWatching() {
+      stopPolling();
     },
 
     reset() {

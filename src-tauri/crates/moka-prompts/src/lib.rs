@@ -35,12 +35,53 @@ pub enum Prompt {
     /// One tip of the subject, as the phrase [`Prompt::Tilt`] lists it. Carries
     /// `degrees` and `way`.
     TiltTip,
+    /// The standing instruction every written story answer is given.
+    StorySystem,
+    /// The shape of a telling — aspect, genre, style, running time — every
+    /// story ask begins with.
+    StoryFacts,
+    /// A premise written as chapters.
+    StoryOutline,
+    /// The characters, places and things a telling is made of.
+    StoryElements,
+    /// A chapter's acts planned before their shots.
+    StoryActPlan,
+    /// A chapter boarded as acts and shots.
+    StoryStoryboard,
+    /// One still frame of a board, drawn from its words and cast.
+    StoryKeyframe,
+    /// One act filmed, from the frames or words its shots carry.
+    StoryActVideo,
+    /// One shot filmed from its own frame.
+    StoryKeyframeVideo,
+    /// The music and sound under one act.
+    StoryActMusic,
+    /// A character, place or thing drawn on its own.
+    StoryElementMain,
+    /// Four views of one character on one sheet.
+    StoryElementTurnaround,
 }
 
 impl Prompt {
     /// Every template there is, so a startup check walks all of them rather than
     /// the ones somebody remembered to list.
-    pub const ALL: [Prompt; 3] = [Prompt::Tilt, Prompt::TiltTurn, Prompt::TiltTip];
+    pub const ALL: [Prompt; 15] = [
+        Prompt::Tilt,
+        Prompt::TiltTurn,
+        Prompt::TiltTip,
+        Prompt::StorySystem,
+        Prompt::StoryFacts,
+        Prompt::StoryOutline,
+        Prompt::StoryElements,
+        Prompt::StoryActPlan,
+        Prompt::StoryStoryboard,
+        Prompt::StoryKeyframe,
+        Prompt::StoryActVideo,
+        Prompt::StoryKeyframeVideo,
+        Prompt::StoryActMusic,
+        Prompt::StoryElementMain,
+        Prompt::StoryElementTurnaround,
+    ];
 
     /// The name this template is registered under, which is also its path under
     /// `prompts/` without the suffix.
@@ -49,6 +90,18 @@ impl Prompt {
             Self::Tilt => "imaging/tilt",
             Self::TiltTurn => "imaging/tilt-turn",
             Self::TiltTip => "imaging/tilt-tip",
+            Self::StorySystem => "story/system",
+            Self::StoryFacts => "story/facts",
+            Self::StoryOutline => "story/outline",
+            Self::StoryElements => "story/elements",
+            Self::StoryActPlan => "story/act-plan",
+            Self::StoryStoryboard => "story/storyboard",
+            Self::StoryKeyframe => "story/keyframe",
+            Self::StoryActVideo => "story/act-video",
+            Self::StoryKeyframeVideo => "story/keyframe-video",
+            Self::StoryActMusic => "story/act-music",
+            Self::StoryElementMain => "story/element-main",
+            Self::StoryElementTurnaround => "story/element-turnaround",
         }
     }
 
@@ -62,6 +115,41 @@ impl Prompt {
             Self::Tilt => include_str!("../../../prompts/imaging/tilt.tmpl"),
             Self::TiltTurn => include_str!("../../../prompts/imaging/tilt-turn.tmpl"),
             Self::TiltTip => include_str!("../../../prompts/imaging/tilt-tip.tmpl"),
+            // The story prompts are the web client's own files: one copy of
+            // each, so an ask made from the CLI and one made in the room are
+            // the same words by construction.
+            Self::StorySystem => {
+                include_str!("../../../../src/shared/prompts/story/system.tmpl")
+            }
+            Self::StoryFacts => include_str!("../../../../src/shared/prompts/story/facts.tmpl"),
+            Self::StoryOutline => include_str!("../../../../src/shared/prompts/story/outline.tmpl"),
+            Self::StoryElements => {
+                include_str!("../../../../src/shared/prompts/story/elements.tmpl")
+            }
+            Self::StoryActPlan => {
+                include_str!("../../../../src/shared/prompts/story/act-plan.tmpl")
+            }
+            Self::StoryStoryboard => {
+                include_str!("../../../../src/shared/prompts/story/storyboard.tmpl")
+            }
+            Self::StoryKeyframe => {
+                include_str!("../../../../src/shared/prompts/story/keyframe.tmpl")
+            }
+            Self::StoryActVideo => {
+                include_str!("../../../../src/shared/prompts/story/act-video.tmpl")
+            }
+            Self::StoryKeyframeVideo => {
+                include_str!("../../../../src/shared/prompts/story/keyframe-video.tmpl")
+            }
+            Self::StoryActMusic => {
+                include_str!("../../../../src/shared/prompts/story/act-music.tmpl")
+            }
+            Self::StoryElementMain => {
+                include_str!("../../../../src/shared/prompts/story/element-main.tmpl")
+            }
+            Self::StoryElementTurnaround => {
+                include_str!("../../../../src/shared/prompts/story/element-turnaround.tmpl")
+            }
         };
         text.strip_suffix('\n').unwrap_or(text)
     }

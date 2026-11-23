@@ -10,6 +10,7 @@ pub mod canvas;
 pub mod clip;
 pub mod core;
 pub mod story;
+pub mod story_plan;
 
 use std::path::Path;
 
@@ -261,6 +262,7 @@ pub async fn run_command(
         | "asset.place_in_canvas"
         | "asset.place_in_timeline"
         | "asset.place_in_story" => assets::command(state, root, moka, name, input).await,
+        "story.plan_job" => story_plan::command(state, moka, input).await,
         name if name.starts_with("story.") => story::command(moka, name, input).await,
         other => Err(ToolError::new(
             "TOOL_NOT_FOUND",
