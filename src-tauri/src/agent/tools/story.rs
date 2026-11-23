@@ -10,9 +10,9 @@ use serde_json::{json, Value};
 
 use crate::api::{ApiState, ProjectSession};
 use crate::domain::story::{
-    StoryActPatch, StoryBriefPatch, StoryDocument, StoryEdit, StoryEditClip, StoryElement,
-    StoryElementPatch, StoryKeyframePatch, StorySlot, StorySlotTarget, StoryTake,
-    StoryVoiceProfile, REFERENCE_IMAGES_MAX, STORY_SCHEMA_VERSION,
+    StoryAct, StoryActPatch, StoryBriefPatch, StoryChapter, StoryDocument, StoryEdit,
+    StoryEditClip, StoryElement, StoryElementPatch, StoryKeyframe, StoryKeyframePatch, StorySlot,
+    StorySlotTarget, StoryTake, StoryVoiceProfile, REFERENCE_IMAGES_MAX, STORY_SCHEMA_VERSION,
 };
 use crate::domain::{
     now_iso, DocumentCommand, MokaFile, TimelineClip, TimelineDocument, TimelineSettings,
@@ -52,6 +52,69 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
             let include: Vec<String> = args.opt_strings("include");
             let wants =
                 |section: &str| include.is_empty() || include.iter().any(|item| item == section);
+            // Slots are deliberately explicit: they carry every take of every
+            // place, which is a large answer a reader who only wants the board
+            // should not pay for.
+            let wants_slots = include.iter().any(|item| item == "slots");
+            let full_text = args.opt_bool("fullText", false);
+            let limit = args.opt_i64("limit").map(|value| value.max(0) as usize);
+            let chapter_filter = args.opt_str("chapterId").map(str::to_string);
+            let act_filter = args.opt_str("actId").map(str::to_string);
+
+            let chapters: Vec<&StoryChapter> = match chapter_filter.as_deref() {
+                Some(id) => story
+                    .chapters
+                    .iter()
+                    .filter(|chapter| chapter.id == id)
+                    .collect(),
+                None => story.chapters.iter().collect(),
+            };
+            if chapter_filter.is_some() && chapters.is_empty() {
+                return Err(ToolError::new(
+                    "CHAPTER_NOT_FOUND",
+                    format!(
+                        "chapter {} does not exist",
+                        chapter_filter.as_deref().unwrap_or_default()
+                    ),
+                ));
+            }
+            if let Some(id) = act_filter.as_deref() {
+                if !chapters
+                    .iter()
+                    .any(|chapter| chapter.acts.iter().any(|act| act.id == id))
+                {
+                    return Err(ToolError::new(
+                        "ACT_NOT_FOUND",
+                        format!("act {id} does not exist"),
+                    ));
+                }
+            }
+
+            let mut selected: Vec<(&StoryChapter, &StoryAct)> = Vec::new();
+            for chapter in &chapters {
+                for act in &chapter.acts {
+                    if act_filter.as_deref().is_some_and(|id| act.id != id) {
+                        continue;
+                    }
+                    selected.push((chapter, act));
+                }
+            }
+            let acts_truncated = limit.is_some_and(|limit| selected.len() > limit);
+            if let Some(limit) = limit {
+                selected.truncate(limit);
+            }
+
+            let mut keyframes: Vec<(&StoryChapter, &StoryAct, &StoryKeyframe)> = Vec::new();
+            for (chapter, act) in &selected {
+                for keyframe in &act.keyframes {
+                    keyframes.push((*chapter, *act, keyframe));
+                }
+            }
+            let keyframes_truncated = limit.is_some_and(|limit| keyframes.len() > limit);
+            if let Some(limit) = limit {
+                keyframes.truncate(limit);
+            }
+
             let mut data = json!({
                 "story": {
                     "id": story.id,
@@ -59,65 +122,121 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
                     "shotGranularity": story.shot_granularity,
                     "maxReferenceImages": story.max_reference_images,
                     "confirmedSteps": story.confirmed_steps,
+                    "chapterCount": story.chapters.len(),
                 },
             });
             if wants("brief") {
                 data["brief"] = json!(story.brief);
             }
             if wants("chapters") {
-                data["chapters"] = json!(story
-                    .chapters
+                data["chapters"] = json!(chapters
                     .iter()
-                    .map(|chapter| json!({
-                        "id": chapter.id,
-                        "title": chapter.title,
-                        "synopsis": shorten(&chapter.synopsis, 2_000),
-                        "targetDurationMs": chapter.target_duration_ms,
-                        "actCount": chapter.acts.len(),
-                    }))
-                    .collect::<Vec<_>>());
-            }
-            if wants("elements") {
-                data["elements"] = json!(story.elements);
-            }
-            if wants("storyboard") {
-                data["acts"] = json!(story
-                    .chapters
-                    .iter()
-                    .flat_map(|chapter| chapter.acts.iter().map(move |act| json!({
-                        "id": act.id,
-                        "chapterId": chapter.id,
-                        "title": act.title,
-                        "summary": shorten(&act.summary, 2_000),
-                        "keyframeCount": act.keyframes.len(),
-                        "videoTakes": act.video.takes.len(),
-                        "voiceTakes": act.voice.as_ref().map(|voice| voice.takes.len()).unwrap_or(0),
-                        "musicTakes": act.music.as_ref().map(|music| music.takes.len()).unwrap_or(0),
-                    })))
-                    .collect::<Vec<_>>());
-                data["keyframes"] = json!(story
-                    .chapters
-                    .iter()
-                    .flat_map(|chapter| {
-                        chapter.acts.iter().flat_map(move |act| {
-                            act.keyframes.iter().map(move |keyframe| json!({
-                                "id": keyframe.id,
-                                "actId": act.id,
-                                "title": keyframe.title,
-                                "shotSize": keyframe.shot_size,
-                                "cameraMove": keyframe.camera_move,
-                                "angle": keyframe.angle,
-                                "durationMs": keyframe.duration_ms,
-                                "content": shorten(&keyframe.content, 2_000),
-                                "motion": keyframe.motion.as_deref().map(|motion| shorten(motion, 2_000)),
-                                "dialogue": keyframe.dialogue,
-                                "artTakes": keyframe.art.takes.len(),
-                                "videoTakes": keyframe.video.takes.len(),
-                                "currentArt": keyframe.art.takes.last().and_then(|take| take.asset_ids.first()),
-                            }))
+                    .map(|chapter| {
+                        let (synopsis, truncated, length) =
+                            shortened(&chapter.synopsis, 2_000, full_text);
+                        json!({
+                            "id": chapter.id,
+                            "title": chapter.title,
+                            "synopsis": synopsis,
+                            "synopsisTruncated": truncated,
+                            "synopsisLength": length,
+                            "targetDurationMs": chapter.target_duration_ms,
+                            "actCount": chapter.acts.len(),
+                            "revision": chapter.revision,
+                            "boardRevision": chapter.board_revision,
+                            "outlineLocked": chapter.outline_locked,
                         })
                     })
                     .collect::<Vec<_>>());
+            }
+            if wants("elements") {
+                data["elements"] = elements_with_current(story);
+            }
+            if wants("storyboard") {
+                data["acts"] = json!(selected
+                    .iter()
+                    .map(|(chapter, act)| {
+                        let (summary, truncated, length) =
+                            shortened(&act.summary, 2_000, full_text);
+                        json!({
+                            "id": act.id,
+                            "chapterId": chapter.id,
+                            "title": act.title,
+                            "summary": summary,
+                            "summaryTruncated": truncated,
+                            "summaryLength": length,
+                            "plan": act.plan,
+                            "characterIds": act.character_ids,
+                            "sceneId": act.scene_id,
+                            "propIds": act.prop_ids,
+                            "sound": act.sound,
+                            "transition": act.transition,
+                            "shotGranularity": act.shot_granularity,
+                            "videoModel": act.video_model,
+                            "keyframeCount": act.keyframes.len(),
+                            "plannedMs": act
+                                .keyframes
+                                .iter()
+                                .map(|keyframe| keyframe.duration_ms)
+                                .sum::<i64>(),
+                            "video": slot_summary(&act.video),
+                            "voice": act.voice.as_ref().map(slot_summary),
+                            "music": act.music.as_ref().map(slot_summary),
+                        })
+                    })
+                    .collect::<Vec<_>>());
+                data["actsTruncated"] = json!(acts_truncated);
+                data["keyframes"] = json!(keyframes
+                    .iter()
+                    .map(|(chapter, act, keyframe)| {
+                        let (content, content_truncated, content_length) =
+                            shortened(&keyframe.content, 2_000, full_text);
+                        let (motion, motion_truncated, motion_length) = match &keyframe.motion {
+                            Some(motion) => {
+                                let (text, truncated, length) = shortened(motion, 2_000, full_text);
+                                (Some(text), truncated, Some(length))
+                            }
+                            None => (None, false, None),
+                        };
+                        json!({
+                            "id": keyframe.id,
+                            "chapterId": chapter.id,
+                            "actId": act.id,
+                            "title": keyframe.title,
+                            "shotSize": keyframe.shot_size,
+                            "cameraMove": keyframe.camera_move,
+                            "angle": keyframe.angle,
+                            "filmRole": keyframe.film_role,
+                            "durationMs": keyframe.duration_ms,
+                            "content": content,
+                            "contentTruncated": content_truncated,
+                            "contentLength": content_length,
+                            "motion": motion,
+                            "motionTruncated": motion_truncated,
+                            "motionLength": motion_length,
+                            "dialogue": keyframe.dialogue,
+                            "artNotNeeded": keyframe.art_not_needed,
+                            "references": keyframe.references,
+                            "variantChoices": keyframe.variant_choices,
+                            "imageModel": keyframe.image_model,
+                            "art": slot_summary(&keyframe.art),
+                            "video": slot_summary(&keyframe.video),
+                            "lineVoices": keyframe.voices.as_ref().map(|voices| {
+                                voices
+                                    .iter()
+                                    .map(|voice| json!({
+                                        "lineId": voice.line_id,
+                                        "slot": slot_summary(&voice.slot),
+                                    }))
+                                    .collect::<Vec<_>>()
+                            }),
+                        })
+                    })
+                    .collect::<Vec<_>>());
+                data["keyframesTruncated"] = json!(keyframes_truncated);
+            }
+            if wants_slots {
+                data["slots"] = json!(slots_of(story, &selected));
             }
             if wants("progress") {
                 let (ready, gaps) = readiness(story);
@@ -276,12 +395,181 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
     }
 }
 
-fn shorten(text: &str, limit: usize) -> String {
-    let mut value: String = text.chars().take(limit).collect();
-    if text.chars().count() > limit {
+/// A text field as it is returned, with enough metadata for a caller to know
+/// whether it is looking at the whole thing.
+fn shortened(text: &str, limit: usize, full: bool) -> (String, bool, usize) {
+    let length = text.chars().count();
+    if full || length <= limit {
+        (text.to_string(), false, length)
+    } else {
+        let mut value: String = text.chars().take(limit).collect();
         value.push('…');
+        (value, true, length)
+    }
+}
+
+/// The files of a slot's current take: the last take is the one in force.
+fn current_assets(slot: &StorySlot) -> Vec<String> {
+    slot.takes
+        .last()
+        .map(|take| take.asset_ids.clone())
+        .unwrap_or_default()
+}
+
+/// A slot as a caller planning an ask reads it: how many takes it holds, the
+/// files the current one carries, and whether a set is still waiting to be
+/// chosen between.
+fn slot_summary(slot: &StorySlot) -> Value {
+    json!({
+        "takes": slot.takes.len(),
+        "current": current_assets(slot),
+        "pending": slot.pending.as_ref().map(|pending| json!({
+            "jobId": pending.job_id,
+            "count": pending.count,
+            "takes": pending.takes.len(),
+        })),
+    })
+}
+
+/// The cast with each element's current pictures lifted out of its slots, so a
+/// caller does not have to know that a drawing is the last take's first file.
+fn elements_with_current(story: &StoryDocument) -> Value {
+    let mut value = serde_json::to_value(&story.elements).unwrap_or_else(|_| json!([]));
+    if let Value::Array(items) = &mut value {
+        for (at, element) in story.elements.iter().enumerate() {
+            let Some(item) = items.get_mut(at) else {
+                continue;
+            };
+            item["currentMain"] = json!(current_assets(&element.main));
+            item["mainTakes"] = json!(element.main.takes.len());
+            item["currentTurnaround"] = json!(element
+                .turnaround
+                .as_ref()
+                .map(current_assets)
+                .unwrap_or_default());
+            item["turnaroundTakes"] = json!(element
+                .turnaround
+                .as_ref()
+                .map(|slot| slot.takes.len())
+                .unwrap_or(0));
+            if let (Some(variants), Some(Value::Array(forms))) =
+                (&element.variants, item.get_mut("variants"))
+            {
+                for (form_at, form) in variants.iter().enumerate() {
+                    let Some(entry) = forms.get_mut(form_at) else {
+                        continue;
+                    };
+                    entry["currentMain"] = json!(current_assets(&form.main));
+                    entry["mainTakes"] = json!(form.main.takes.len());
+                    entry["currentTurnaround"] = json!(form
+                        .turnaround
+                        .as_ref()
+                        .map(current_assets)
+                        .unwrap_or_default());
+                    entry["turnaroundTakes"] = json!(form
+                        .turnaround
+                        .as_ref()
+                        .map(|slot| slot.takes.len())
+                        .unwrap_or(0));
+                }
+            }
+        }
     }
     value
+}
+
+/// Every place a picture, a clip, a voice or a score is kept, as one list.
+fn slots_of(story: &StoryDocument, selected: &[(&StoryChapter, &StoryAct)]) -> Vec<Value> {
+    let mut slots = Vec::new();
+    for element in &story.elements {
+        slots.push(json!({
+            "kind": "elementMain",
+            "elementId": element.id,
+            "view": "main",
+            "slot": slot_summary(&element.main),
+        }));
+        if let Some(turnaround) = &element.turnaround {
+            slots.push(json!({
+                "kind": "elementTurnaround",
+                "elementId": element.id,
+                "view": "turnaround",
+                "slot": slot_summary(turnaround),
+            }));
+        }
+        if let Some(forms) = &element.variants {
+            for form in forms {
+                slots.push(json!({
+                    "kind": "elementMain",
+                    "elementId": element.id,
+                    "variantId": form.id,
+                    "view": "main",
+                    "slot": slot_summary(&form.main),
+                }));
+                if let Some(turnaround) = &form.turnaround {
+                    slots.push(json!({
+                        "kind": "elementTurnaround",
+                        "elementId": element.id,
+                        "variantId": form.id,
+                        "view": "turnaround",
+                        "slot": slot_summary(turnaround),
+                    }));
+                }
+            }
+        }
+    }
+    for (chapter, act) in selected {
+        slots.push(json!({
+            "kind": "actVideo",
+            "chapterId": chapter.id,
+            "actId": act.id,
+            "slot": slot_summary(&act.video),
+        }));
+        if let Some(voice) = &act.voice {
+            slots.push(json!({
+                "kind": "actVoice",
+                "chapterId": chapter.id,
+                "actId": act.id,
+                "slot": slot_summary(voice),
+            }));
+        }
+        if let Some(music) = &act.music {
+            slots.push(json!({
+                "kind": "actMusic",
+                "chapterId": chapter.id,
+                "actId": act.id,
+                "slot": slot_summary(music),
+            }));
+        }
+        for keyframe in &act.keyframes {
+            slots.push(json!({
+                "kind": "keyframeArt",
+                "chapterId": chapter.id,
+                "actId": act.id,
+                "keyframeId": keyframe.id,
+                "slot": slot_summary(&keyframe.art),
+            }));
+            slots.push(json!({
+                "kind": "keyframeVideo",
+                "chapterId": chapter.id,
+                "actId": act.id,
+                "keyframeId": keyframe.id,
+                "slot": slot_summary(&keyframe.video),
+            }));
+            if let Some(voices) = &keyframe.voices {
+                for voice in voices {
+                    slots.push(json!({
+                        "kind": "lineVoice",
+                        "chapterId": chapter.id,
+                        "actId": act.id,
+                        "keyframeId": keyframe.id,
+                        "lineId": voice.line_id,
+                        "slot": slot_summary(&voice.slot),
+                    }));
+                }
+            }
+        }
+    }
+    slots
 }
 
 fn parse_word<T: serde::de::DeserializeOwned + super::super::super::domain::story::WordEnum>(
@@ -1440,16 +1728,13 @@ pub async fn effect(
         ));
     }
     let model = args.opt_str("model").unwrap_or("").to_string();
+    let parallel = args
+        .opt_i64("parallel")
+        .map(|value| value.max(1) as usize)
+        .unwrap_or(crate::story::DEFAULT_PARALLEL_ITEMS);
     let job = state
         .story_jobs
-        .start(
-            &session.0,
-            story_id,
-            kind,
-            model,
-            crate::story::DEFAULT_PARALLEL_ITEMS,
-            parsed,
-        )
+        .start(&session.0, story_id, kind, model, parallel, parsed)
         .await?;
     Ok(ToolOutcome {
         summary: format!("Started a story job with {} items", items.len()),

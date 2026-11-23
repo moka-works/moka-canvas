@@ -146,7 +146,9 @@ moka tools call asset.delete --input '{"assetIds":["a_1"],"confirm":"delete-asse
 ### Story
 
 ```bash
-moka tools call story.get --input '{"storyId":"st_1","include":["storyboard","elements","progress"]}' --json
+moka tools call story.get --input '{"storyId":"st_1","include":["brief","chapters","elements","storyboard","progress"]}' --json
+moka tools call story.get --input '{"storyId":"st_1","chapterId":"ch_2","fullText":true,"include":["chapters","storyboard"]}' --json
+moka tools call story.get --input '{"storyId":"st_1","include":["slots"]}' --json
 moka tools call story.progress --input '{"storyId":"st_1","step":"storyboard"}' --json
 moka tools call story.add_keyframe --input ./keyframe.json --json
 moka tools call story.start_job --input ./job.json --json
@@ -155,8 +157,10 @@ moka tools call story.set_slot --input ./slot.json --json
 moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard"}' --json
 ```
 
-- `story.start_job` is `spend`; confirm before starting.
-- Job results are not written into the story automatically. Read `task.get` results, then use `story.set_slot` (media) or `story.add_* / story.update_* / story.replace_*` (text), with the same care as any other write.
+- Text is shortened to 2000 characters unless `fullText` is true; `synopsisLength`/`contentLength` and the `*Truncated` flags say whether anything was left out. Use `chapterId`/`actId` to read one part of a long story.
+- `include:["slots"]` returns every place's current files, take count and pending set. Use it before planning media.
+- `story.start_job` is `spend`; confirm before starting. `model` and `parallel` are optional; without `model` the capability's default answers.
+- **Someone must apply a job's answer exactly once.** If the Moka app has the story room loaded, it lists the story's jobs and writes unread answers into the document with its own parsers (including reference recognition for pictures). In that case do **not** also call `set_slot` or `replace_*`, or the answer lands twice. If no app is open, read `task.get` and apply it yourself: `story.set_slot` (media) or `story.add_* / story.update_* / story.replace_*` (text), with the same care as any other write.
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.
 - Call `story.confirm_step` only when the user explicitly says to confirm/pass the step; a finished generation is not a confirmation.
 - Keep old takes unless the user asks to choose another; `set_slot` appends, it does not overwrite.

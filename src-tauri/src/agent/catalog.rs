@@ -898,12 +898,13 @@ fn asset_tools() -> Vec<ToolSpec> {
 fn story_tools() -> Vec<ToolSpec> {
     vec![
         command("story.list", "story", ToolRisk::Read, "List stories with their current step and counts.", schema(&[], &[])),
-        command("story.get", "story", ToolRisk::Read, "Read a story's brief, chapters, elements, acts, keyframes, slots, and progress. Long text is shortened.", schema(&["storyId"], &[
+        command("story.get", "story", ToolRisk::Read, "Read a story's brief, chapters, elements, acts, keyframes, slots, and progress. Text is shortened to 2000 characters unless fullText is set; include \"slots\" to read every take.", schema(&["storyId"], &[
             ("storyId", "string", "Story id"),
             ("include", "array", "brief, chapters, elements, storyboard, slots, progress"),
             ("chapterId", "string", "Limit to one chapter"),
             ("actId", "string", "Limit to one act"),
-            ("limit", "integer", "Page size"),
+            ("limit", "integer", "Maximum acts and keyframes returned; omitted means all"),
+            ("fullText", "boolean", "Return chapter, act and shot text whole"),
         ])),
         command("story.progress", "story", ToolRisk::Read, "Read which steps are ready, confirmed, and what is still missing.", schema(&["storyId"], &[])),
         command("story.create", "story", ToolRisk::Write, "Create a story with an optional brief.", schema(&["name"], &[
@@ -1012,17 +1013,18 @@ fn story_tools() -> Vec<ToolSpec> {
             ("keyframeId", "string", "Shot id"),
             ("confirm", "string", "Must be non-empty"),
         ])),
-        command("story.set_slot", "story", ToolRisk::Write, "Add, select, or clear takes on a story slot. Existing takes are kept unless the action says otherwise.", schema(&["storyId", "target", "action"], &[
+        command("story.set_slot", "story", ToolRisk::Write, "Add, select, or drop takes on a story slot. Existing takes are kept unless the action says otherwise.", schema(&["storyId", "target", "action"], &[
             ("storyId", "string", "Story id"),
             ("target", "object", "Story slot target"),
-            ("action", "string", "append, select, or clear"),
-            ("assetIds", "array", "Takes to append"),
-            ("takeId", "string", "Take to select or clear"),
+            ("action", "string", "append, select, or drop"),
+            ("assetIds", "array", "Files of the take to append"),
+            ("assetId", "string", "Asset to select, for action select"),
+            ("takeIndex", "integer", "Take index to select or drop"),
+            ("makeCurrent", "boolean", "Whether an appended take becomes current, default true"),
         ])),
-        command("story.confirm_step", "story", ToolRisk::Write, "Confirm or unconfirm a story step. Only call when the user explicitly asks to confirm; gaps are refused.", schema(&["storyId", "step"], &[
+        command("story.confirm_step", "story", ToolRisk::Write, "Confirm a story step. Only call when the user explicitly asks to confirm; gaps are refused. Steps cannot be unconfirmed through this tool.", schema(&["storyId", "step"], &[
             ("storyId", "string", "Story id"),
             ("step", "string", "idea, outline, elements, storyboard, or edit"),
-            ("confirmed", "boolean", "Default true"),
         ])),
         command("story.assemble", "story", ToolRisk::Write, "Assemble a story into a timeline.", schema(&["storyId"], &[
             ("storyId", "string", "Story id"),
@@ -1031,7 +1033,9 @@ fn story_tools() -> Vec<ToolSpec> {
         effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait.", schema(&["storyId", "kind", "items"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "Job kind"),
-            ("items", "array", "Targets to generate"),
+            ("items", "array", "Targets to generate: id, target, capability, prompt, optional system, inputs, params"),
+            ("model", "string", "Configured model id; omitted asks the capability's default"),
+            ("parallel", "integer", "How many pieces may be in flight at once"),
         ])),
     ]
 }
