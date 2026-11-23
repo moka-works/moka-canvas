@@ -18,6 +18,8 @@ export type CanvasVideoInputRole = "firstFrame" | "lastFrame" | "reference";
 export interface CanvasVideoInput {
   kind: CanvasVideoInputKind;
   role: CanvasVideoInputRole;
+  /** 1-based place among the media of its own kind, in travel order. */
+  position?: number;
   name: string;
   /** What it shows or says, where the canvas knows. */
   description?: string;

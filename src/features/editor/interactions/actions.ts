@@ -75,6 +75,8 @@ import {
   settleBeforeFiling,
   useProjectStore,
 } from "../stores/projectStore";
+import { useModelStore } from "../../settings/modelStore";
+import { MASK_PORT, imageNodeTakesMask } from "../modelCapabilities";
 import { TOOL_LABELS } from "../stores/toolPrefs";
 import { execute } from "../commands/execute";
 import {
@@ -98,6 +100,24 @@ import { askSavePath, fileSafeName } from "../launcher/savePath";
 
 function toastError(message: string) {
   useAppStore.getState().pushToast("error", message);
+}
+
+/**
+ * Refuses a mask wire the node's own model cannot take.
+ *
+ * The mask port is not a second picture on these models: a mask that arrives
+ * there is read as one more reference, and every picture after it is numbered
+ * one off. The port is therefore not offered, and this is the refusal that
+ * catches a connection made by anything that skipped the canvas.
+ */
+function maskPortRefused(canvas: CanvasDocument, target: PortRef): boolean {
+  if (target.portId !== MASK_PORT) return false;
+  const node = findNode(canvas, target.nodeId);
+  if (node === undefined) return false;
+  const { view, protocols } = useModelStore.getState();
+  if (imageNodeTakesMask(node, view, protocols)) return false;
+  toastError(i18n.t("editor:interactions.maskNotTaken"));
+  return true;
 }
 
 /**
@@ -807,6 +827,7 @@ export function equalizeNodes(axis: SizeAxis) {
 export function connectPorts(source: PortRef, target: PortRef) {
   const canvas = activeCanvas();
   if (!canvas) return;
+  if (maskPortRefused(canvas, target)) return;
   const result = validateEdgeCandidate(canvas, source, target);
   const commands: DocumentCommand[] = [];
   if (!result.ok) {
@@ -924,6 +945,7 @@ export function moveInput(edgeId: EdgeId, portId: string) {
   const edge = canvas.edges.find((entry) => entry.id === edgeId);
   if (!edge || edge.target.portId === portId) return;
   const target: PortRef = { nodeId: edge.target.nodeId, portId };
+  if (maskPortRefused(canvas, target)) return;
   const result = validateEdgeCandidate(canvas, edge.source, target);
   if (!result.ok && result.code !== "CARDINALITY_VIOLATION") {
     toastError(result.message);
@@ -964,6 +986,11 @@ export function pickSourceCandidates(
   target: PortRef,
 ): Set<NodeId> {
   const candidates = new Set<NodeId>();
+  const targetNode = findNode(canvas, target.nodeId);
+  if (target.portId === MASK_PORT && targetNode !== undefined) {
+    const { view, protocols } = useModelStore.getState();
+    if (!imageNodeTakesMask(targetNode, view, protocols)) return candidates;
+  }
   for (const node of canvas.nodes) {
     if (node.id === target.nodeId || node.kind === "group") continue;
     for (const port of node.ports) {
@@ -990,6 +1017,14 @@ export function resolveInputPick(sourceNodeId: NodeId) {
   if (!canvas || !pick) return;
   const sourceNode = findNode(canvas, sourceNodeId);
   if (!sourceNode) return;
+  const targetNode = findNode(canvas, pick.nodeId);
+  if (pick.portId === MASK_PORT && targetNode !== undefined) {
+    const { view, protocols } = useModelStore.getState();
+    if (!imageNodeTakesMask(targetNode, view, protocols)) {
+      toastError(i18n.t("editor:interactions.maskNotTaken"));
+      return;
+    }
+  }
   for (const port of sourceNode.ports) {
     if (port.direction !== "output") continue;
     const result = validateEdgeCandidate(
@@ -1875,9 +1910,6 @@ export async function applyPictureTool(
   return made;
 }
 
-/** The port a mask is fed through, and the only one that carries it as one. */
-const MASK_PORT = "mask";
-
 export interface RepaintAsk {
   nodeId: NodeId;
   /** The picture the region was marked on, which is the one left as it is. */
@@ -1911,6 +1943,11 @@ export async function fileRepaint(ask: RepaintAsk): Promise<NodeId | null> {
   const canvas = activeCanvas();
   const subject = canvas ? findNode(canvas, ask.nodeId) : undefined;
   if (!canvas || !subject) return null;
+  const models = useModelStore.getState();
+  if (!imageNodeTakesMask(subject, models.view, models.protocols)) {
+    toastError(i18n.t("editor:interactions.maskNotTaken"));
+    return null;
+  }
   const sink = subject.ports.find((port) => port.id === MASK_PORT);
   if (!sink) return null;
 

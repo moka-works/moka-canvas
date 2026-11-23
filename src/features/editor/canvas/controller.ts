@@ -31,6 +31,7 @@ import {
 import { i18n } from "../../../shared/i18n";
 import type { ActiveGesture, PortRef, Selection } from "../stores/editorStore";
 import type { NodeRunView } from "../stores/runStore";
+import { MASK_PORT } from "../modelCapabilities";
 import {
   centerOn,
   clampZoom,
@@ -141,6 +142,10 @@ export interface SceneState {
   resources: ReadonlyMap<AssetId, ResourceEntry>;
   /** Self-check issue reason per asset id (missing/changed/empty). */
   issues: ReadonlyMap<AssetId, "missing" | "changed" | "empty">;
+  /** Image nodes whose mask port is not shown for the model that draws them. */
+  maskHidden: ReadonlySet<NodeId>;
+  /** Image nodes whose model takes no mask, so no new mask wire may land. */
+  maskBlocked: ReadonlySet<NodeId>;
   /** Inspector input-replace pick mode; candidates are the allowed sources. */
   pick: {
     nodeId: NodeId;
@@ -227,6 +232,8 @@ export class LeaferEditorController {
   private lastShowMinimap = true;
   private lastTheme: CanvasThemeName | null = null;
   private lastGroups = new Map<NodeId, NodeId[]>();
+  /** Image nodes whose model takes no mask; no new mask wire may land. */
+  private maskBlocked: ReadonlySet<NodeId> = new Set();
 
   private grid = new GridBackground();
   private world = new Group({ data: { role: "world" } });
@@ -356,6 +363,7 @@ export class LeaferEditorController {
 
   render(scene: SceneState) {
     this.stats.renders += 1;
+    this.maskBlocked = scene.maskBlocked;
     if (!this.leafer) return;
 
     if (scene.canvasId !== this.canvasId) {
@@ -408,21 +416,23 @@ export class LeaferEditorController {
       let view = this.nodeViews.get(node.id);
       const media = mediaInfoForNode(node, scene.resources, scene.issues);
       const signature = mediaSignature(media);
+      const hideMask = scene.maskHidden.has(node.id);
       if (!view) {
-        view = createNodeView(node, visual, media);
+        view = createNodeView(node, visual, media, hideMask);
         this.nodeLayer.add(view.group);
         this.nodeViews.set(node.id, view);
         this.stats.nodeCreates += 1;
       } else if (
         view.node !== node ||
         view.media.signature !== signature ||
+        view.hideMask !== hideMask ||
         view.visual.selected !== visual.selected ||
         view.visual.hovered !== visual.hovered ||
         view.visual.lowDetail !== visual.lowDetail ||
         view.visual.dimmed !== visual.dimmed ||
         !sameRun(view.visual.run, visual.run)
       ) {
-        updateNodeView(view, node, visual, media);
+        updateNodeView(view, node, visual, media, hideMask);
         this.stats.nodeUpdates += 1;
       }
       view.visual = visual;
@@ -1540,10 +1550,13 @@ export class LeaferEditorController {
     const result: PortRef[] = [];
     for (const [nodeId, view] of this.nodeViews) {
       if (nodeId === source.nodeId) continue;
-      for (const port of view.node.ports) {
+      for (const [portId, port] of view.ports) {
         if (port.direction !== "input") continue;
-        if (port.dataTypes.some((t) => sourcePort.dataTypes.includes(t))) {
-          result.push({ nodeId, portId: port.id });
+        if (portId === MASK_PORT && this.maskBlocked.has(nodeId)) continue;
+        if (
+          port.dataTypes.some((type) => sourcePort.dataTypes.includes(type))
+        ) {
+          result.push({ nodeId, portId });
         }
       }
     }

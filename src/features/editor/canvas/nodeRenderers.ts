@@ -80,6 +80,8 @@ export interface NodeView {
   title: Text;
   summary: Text;
   ports: Map<string, PortView>;
+  /** Whether the mask input is left off the card for this model. */
+  hideMask: boolean;
   node: WorkflowNode;
   visual: NodeVisualState;
   /** Run-status dot in the header corner; null while no run covers the node. */
@@ -365,6 +367,7 @@ export function createNodeView(
   node: WorkflowNode,
   visual: NodeVisualState,
   media: MediaCardInfo | null = null,
+  hideMask = false,
 ): NodeView {
   const accentColor = canvasTheme.kindAccent[node.kind];
   const group = new Group({
@@ -435,6 +438,7 @@ export function createNodeView(
     title,
     summary,
     ports: new Map(),
+    hideMask,
     node,
     visual,
     statusDot: null,
@@ -445,13 +449,13 @@ export function createNodeView(
     media: { signature: "", thumb: null, badge: null, bars: [] },
   };
   syncMedia(view, node, media);
-  syncPorts(view, node);
+  syncPorts(view, node, hideMask);
   applyVisual(view, visual);
   return view;
 }
 
-function syncPorts(view: NodeView, node: WorkflowNode) {
-  const next = layoutPorts(node);
+function syncPorts(view: NodeView, node: WorkflowNode, hideMask: boolean) {
+  const next = layoutPorts(node, hideMask);
   for (const [portId, port] of next) {
     const existing = view.ports.get(portId);
     if (existing) {
@@ -982,11 +986,14 @@ export function updateNodeView(
   node: WorkflowNode,
   visual: NodeVisualState,
   media: MediaCardInfo | null = null,
+  hideMask = false,
 ): boolean {
   const portsChanged =
     view.node.bounds.width !== node.bounds.width ||
-    view.node.ports !== node.ports;
+    view.node.ports !== node.ports ||
+    view.hideMask !== hideMask;
   view.node = node;
+  view.hideMask = hideMask;
   view.group.set({ x: node.bounds.x, y: node.bounds.y });
   view.frame.set({ width: node.bounds.width, height: node.bounds.height });
   view.accent.set({ height: node.bounds.height });
@@ -1002,7 +1009,7 @@ export function updateNodeView(
   });
   syncMedia(view, node, media);
   layoutMedia(view, node.bounds);
-  syncPorts(view, node);
+  syncPorts(view, node, hideMask);
   applyVisual(view, visual);
   return portsChanged || view.visual.lowDetail !== visual.lowDetail;
 }
@@ -1041,10 +1048,13 @@ export function previewNodeBounds(
     height: bounds.height - NODE_HEADER_HEIGHT - 20,
   });
   layoutMedia(view, bounds);
-  const laidOut = layoutPorts({
-    ...view.node,
-    bounds,
-  });
+  const laidOut = layoutPorts(
+    {
+      ...view.node,
+      bounds,
+    },
+    view.hideMask,
+  );
   for (const [portId, port] of view.ports) {
     const next = laidOut.get(portId);
     if (!next) continue;

@@ -24,7 +24,10 @@ import {
   videoPromptRewriteAsk,
   videoPromptRewriteSystem,
 } from "../../shared/prompts";
-import type { ImagePromptContext } from "../../shared/prompts/image/promptContext";
+import type {
+  ImagePromptContext,
+  ImagePromptReference,
+} from "../../shared/prompts/image/promptContext";
 import type {
   CanvasVideoInput,
   CanvasVideoInputKind,
@@ -211,8 +214,11 @@ function sourceKind(
     case "image":
       return "image";
     case "video":
-    case "director":
       return "video";
+    case "director":
+      // A director reaches a clip through its picture outputs; its direction
+      // is words on the prompt port and is not numbered as media.
+      return "image";
     case "audio":
       return "audio";
     default:
@@ -285,6 +291,129 @@ function numberParam(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/** The file a source hands along, when that file is a picture. */
+function pictureAssetId(
+  source: WorkflowNode,
+  sourcePort: string | undefined,
+  resources: ReadonlyMap<AssetId, ResourceEntry>,
+): AssetId | undefined {
+  const assetId = sourceAssetId(source, sourcePort);
+  if (assetId === undefined) return undefined;
+  const entry = resources.get(assetId);
+  if (entry !== undefined) {
+    return (entry.mime ?? "").startsWith("image/") ? assetId : undefined;
+  }
+  return source.kind === "image" || source.kind === "director"
+    ? assetId
+    : undefined;
+}
+
+/**
+ * The material a canvas image node's rewrite is told about.
+ *
+ * Only the pictures the ask will actually travel with count, in the order the
+ * server gathers them: the wiring under the upstream mode, the list kept by
+ * hand, or the nodes the prompt names. A text card, a mask, and a source the
+ * node mode ignores are not reference pictures, and listing them would make the
+ * rewrite number the pictures differently from the provider.
+ */
+export function canvasImagePromptContext(input: {
+  canvas: CanvasDocument;
+  node: WorkflowNode;
+  spec: GenerationSpec;
+  resources: ReadonlyMap<AssetId, ResourceEntry>;
+  inputMode: GenerationInputMode;
+  prompt: string;
+}): ImagePromptContext {
+  const found = new Map<
+    string,
+    { source: WorkflowNode; port?: string; token?: string }
+  >();
+  const add = (
+    source: WorkflowNode,
+    sourcePort: string | undefined,
+    token?: string,
+    preferText = false,
+  ) => {
+    // A node picked by hand or named in the words contributes its words first
+    // and its picture only when it has none, exactly as the server resolves it.
+    if (preferText && sourceText(source) !== undefined) return;
+    if (pictureAssetId(source, sourcePort, input.resources) === undefined)
+      return;
+    // A director read from two outputs gives two pictures, and the server
+    // keeps them apart by the port they left from.
+    const key =
+      source.kind === "director"
+        ? `${source.id}:${sourcePort ?? ""}`
+        : source.id;
+    const previous = found.get(key);
+    if (previous !== undefined) {
+      if (previous.token === undefined && token !== undefined) {
+        previous.token = token;
+      }
+      return;
+    }
+    found.set(key, {
+      source,
+      ...(sourcePort === undefined ? {} : { port: sourcePort }),
+      ...(token === undefined ? {} : { token }),
+    });
+  };
+
+  if (input.inputMode === "upstream") {
+    for (const edge of input.canvas.edges) {
+      if (edge.target.nodeId !== input.node.id) continue;
+      // A prompt edge carries words, and a mask is not a reference picture.
+      if (edge.target.portId !== "images") continue;
+      for (const source of materialSources(input.canvas, edge.source.nodeId)) {
+        add(source, edge.source.portId);
+      }
+    }
+  } else if (input.inputMode === "manual") {
+    for (const nodeId of input.spec.referenceNodeIds) {
+      for (const source of materialSources(input.canvas, nodeId)) {
+        add(source, undefined, undefined, true);
+      }
+    }
+  } else {
+    for (const nodeId of mentionNodeIds(input.prompt)) {
+      for (const source of materialSources(input.canvas, nodeId)) {
+        add(source, undefined, mentionToken(nodeId), true);
+      }
+    }
+  }
+
+  const references: ImagePromptReference[] = [...found.values()].map(
+    ({ source, port, token }, at) => {
+      const assetId = pictureAssetId(source, port, input.resources);
+      const entry =
+        assetId === undefined ? undefined : input.resources.get(assetId);
+      const said = entry?.keyword?.trim() || entry?.note?.trim();
+      const description =
+        source.kind === "director"
+          ? port === "blocking"
+            ? "blocking reference"
+            : "frame"
+          : said === undefined || said === ""
+            ? source.kind
+            : said;
+      return {
+        position: at + 1,
+        name: source.title,
+        description,
+        ...(token === undefined ? {} : { token }),
+      };
+    },
+  );
+  const size = input.spec.params.size;
+  return {
+    kind: "canvas",
+    mode: references.length > 0 ? "edit" : "generate",
+    ...(typeof size === "string" && size.trim() !== "" ? { aspect: size } : {}),
+    references,
+  };
+}
+
 /**
  * The material a canvas video node's rewrite is told about.
  *
@@ -308,29 +437,45 @@ export function canvasVideoPromptContext(input: {
     role: CanvasVideoInputRole,
     sourcePort?: string,
     token?: string,
+    preferText = false,
   ) => {
     const assetId = sourceAssetId(source, sourcePort);
     const entry =
       assetId === undefined ? undefined : input.resources.get(assetId);
-    const kind = sourceKind(source, entry);
+    // A node picked by hand or named in the words contributes its words first
+    // and its media only when it has none, exactly as the server resolves it.
+    const text = preferText ? sourceText(source) : undefined;
+    const kind = text !== undefined ? "text" : sourceKind(source, entry);
     if (kind === undefined) return;
     if (kind !== "text" && assetId === undefined) return;
-    const description = sourceDescription(source, sourcePort, entry);
+    const description =
+      text !== undefined
+        ? text.split("\n", 1)[0]
+        : sourceDescription(source, sourcePort, entry);
     if (kind === "text" && description === undefined) return;
-    const previous = inputs.get(source.id);
+    const previous = inputs.get(
+      source.kind === "director"
+        ? `${source.id}:${sourcePort ?? ""}`
+        : source.id,
+    );
     if (previous !== undefined) {
       if (previous.token === undefined && token !== undefined) {
         previous.token = token;
       }
       return;
     }
-    inputs.set(source.id, {
-      kind,
-      role,
-      name: source.title,
-      ...(description === undefined ? {} : { description }),
-      ...(token === undefined ? {} : { token }),
-    });
+    inputs.set(
+      source.kind === "director"
+        ? `${source.id}:${sourcePort ?? ""}`
+        : source.id,
+      {
+        kind,
+        role,
+        name: source.title,
+        ...(description === undefined ? {} : { description }),
+        ...(token === undefined ? {} : { token }),
+      },
+    );
   };
 
   if (input.inputMode === "upstream") {
@@ -345,13 +490,13 @@ export function canvasVideoPromptContext(input: {
   } else if (input.inputMode === "manual") {
     for (const nodeId of input.spec.referenceNodeIds) {
       for (const source of materialSources(input.canvas, nodeId)) {
-        add(source, "reference");
+        add(source, "reference", undefined, undefined, true);
       }
     }
   } else {
     for (const nodeId of mentionNodeIds(input.prompt)) {
       for (const source of materialSources(input.canvas, nodeId)) {
-        add(source, "reference", undefined, mentionToken(nodeId));
+        add(source, "reference", undefined, mentionToken(nodeId), true);
       }
     }
   }
@@ -368,6 +513,15 @@ export function canvasVideoPromptContext(input: {
     for (const entry of material) {
       if (entry.kind === "image") entry.role = "reference";
     }
+  }
+  // Media is numbered within its own kind, in the order it travels: images,
+  // videos, and audio each count from one, as the contracts do.
+  const counted = new Map<CanvasVideoInputKind, number>();
+  for (const entry of material) {
+    if (entry.kind === "text") continue;
+    const next = (counted.get(entry.kind) ?? 0) + 1;
+    counted.set(entry.kind, next);
+    entry.position = next;
   }
   return {
     kind: "canvas",

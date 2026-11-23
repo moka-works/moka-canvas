@@ -917,6 +917,10 @@ describe("story prompts", () => {
     expect(system).toContain("Write the body in English.");
     expect(system).toContain("Keep every spoken line exactly as written");
     expect(system).toContain("Keep every node token written as `@[node:...]`");
+    expect(system).toContain(
+      "the opening frame, the closing frame, or a reference",
+    );
+    expect(system).toContain("tie every person, place, or thing it carries");
     expect(system).toContain("Output the rewritten prompt alone");
     expect(system.endsWith("\n")).toBe(false);
   });
@@ -962,6 +966,7 @@ describe("story prompts", () => {
           {
             kind: "image",
             role: "firstFrame",
+            position: 1,
             name: "Opening",
             description: "a lantern over a quiet lake",
             token: "@[node:plate]",
@@ -971,6 +976,7 @@ describe("story prompts", () => {
     });
     expect(prompt).toContain("Film @[node:plate] as the opening frame.");
     expect(prompt).toContain('"role": "firstFrame"');
+    expect(prompt).toContain('"position": 1');
     expect(prompt).toContain('"token": "@[node:plate]"');
     expect(prompt).not.toContain("{{");
   });
@@ -981,6 +987,8 @@ describe("story prompts", () => {
     );
     expect(system).toContain("Describe the frame as a photograph.");
     expect(system).toContain("Keep every node token written as `@[node:...]`");
+    expect(system).toContain("listed in the order they are attached");
+    expect(system).toContain("tie it to that reference by its name");
     expect(system).toContain("Output the rewritten prompt alone");
     expect(system.endsWith("\n")).toBe(false);
   });
@@ -992,10 +1000,11 @@ describe("story prompts", () => {
         kind: "canvas",
         mode: "generate",
         aspect: "16:9",
-        references: [{ name: "林", token: "@[node:a]" }],
+        references: [{ position: 1, name: "林", token: "@[node:a]" }],
       },
     });
     expect(prompt).toContain("Paint @[node:a] beside @[node:b].");
+    expect(prompt).toContain('"position": 1');
     expect(prompt).toContain('"token": "@[node:a]"');
     expect(prompt).not.toContain("{{");
   });

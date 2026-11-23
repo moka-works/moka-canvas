@@ -957,12 +957,30 @@ describe("saying whether the region can be held to", () => {
     [
       "wanImageDraft",
       "dialog-error",
-      "It travels as a second picture beside the words",
+      "This model has no field of its own for a mask",
     ],
   ])("says it for the model that will be asked", async (which, kind, said) => {
     protocol = which;
     const dialog = await openRepaint();
     expect(saidIn(dialog, kind)).toContain(said);
+  });
+
+  it("does not file a mask for a model that takes none", async () => {
+    protocol = "bailianImage";
+    const dialog = await openRepaint();
+    await paint(sheetOf(dialog), [
+      [10, 10],
+      [60, 40],
+    ]);
+    say(dialog, "A stone jetty running out into the water");
+
+    expect(saidIn(dialog, "dialog-error")).toContain("cannot be filed for it");
+    expect(fileButton(dialog)).toHaveProperty("disabled", true);
+
+    await act(async () => {
+      fireEvent.submit(dialog);
+    });
+    expect(filed).toEqual([]);
   });
 
   it("says so when no model has been chosen at all", async () => {

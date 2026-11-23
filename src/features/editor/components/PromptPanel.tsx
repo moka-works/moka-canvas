@@ -24,15 +24,16 @@ import {
   type WorkflowNode,
 } from "../../../shared/domain";
 import { i18n } from "../../../shared/i18n";
-import type { ImagePromptContext } from "../../../shared/prompts/image/promptContext";
 import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { ModelPicker } from "../../settings/ModelPicker";
 import { modelOptionsFor, useModelStore } from "../../settings/modelStore";
+import { imageNodeTakesMask } from "../modelCapabilities";
 import { worldToClient } from "../canvas/canvasControl";
 import { buildIssueIndex, buildResourceIndex } from "../canvas/mediaCards";
-import { mentionChoices, mentionToken } from "../canvas/mentions";
+import { mentionChoices } from "../canvas/mentions";
 import {
+  canvasImagePromptContext,
   canvasImagePromptRewrite,
   canvasVideoPromptContext,
   canvasVideoPromptRewrite,
@@ -461,35 +462,14 @@ export function PromptPanel() {
       : asked === "video"
         ? canvasVideoPromptRewrite(view, protocols, spec.model || null)
         : null;
-  const mentioned = mentionNodeIds(prompt);
-  const referenceIds = [
-    ...new Set([
-      ...mentioned,
-      ...spec.referenceNodeIds,
-      ...wired.map((edge) => edge.source.nodeId),
-    ]),
-  ];
-  const imageContext: ImagePromptContext = {
-    kind: "canvas",
-    mode: mode === "edit" ? "edit" : "generate",
-    ...(typeof spec.params.size === "string" && spec.params.size.trim() !== ""
-      ? { aspect: spec.params.size }
-      : {}),
-    references: referenceIds.flatMap((id) => {
-      const source = findNode(canvas, id);
-      if (source === undefined) return [];
-      const token = mentioned.includes(id) ? mentionToken(id) : undefined;
-      // A node wired in only to carry words is not a reference picture.
-      if (token === undefined && !holdsAnImage(source, resources)) return [];
-      return [
-        {
-          name: source.title,
-          description: source.kind,
-          ...(token === undefined ? {} : { token }),
-        },
-      ];
-    }),
-  };
+  const imageContext = canvasImagePromptContext({
+    canvas,
+    node,
+    spec,
+    resources,
+    inputMode,
+    prompt,
+  });
   const videoContext =
     asked === "video"
       ? canvasVideoPromptContext({
@@ -1087,6 +1067,7 @@ export function PromptPanel() {
               canvas={canvas}
               issues={issues}
               key={`refs-${node.id}`}
+              maskAllowed={imageNodeTakesMask(node, view, protocols)}
               node={node}
               onCut={(edge) => disconnectEdge(edge.id)}
               onFind={locate}

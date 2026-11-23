@@ -38,7 +38,11 @@ export function keyframeArtPromptContext(
     mode: cast.length > 0 ? "reference" : "generate",
     aspect: story.brief.aspect,
     style: story.brief.style,
-    references: cast.map(({ name, description }) => ({ name, description })),
+    references: cast.map(({ name, description }, at) => ({
+      position: at + 1,
+      name,
+      description,
+    })),
     frame: {
       chapter: chapter.title,
       act: act.summary,
@@ -63,6 +67,26 @@ export function elementArtPromptContext(
   if (variantId !== undefined && form === undefined) return null;
   const name = formName(element, form);
   const description = formDescription(element, form);
+  // A main picture follows the card it names as its reference; a turnaround
+  // is drawn from the same form's own main picture, so that picture is the
+  // element itself. Naming the wrong one would tell the rewrite a different
+  // subject than the one the picture actually shows.
+  const reference =
+    view === "turnaround" ? undefined : (form?.reference ?? element.reference);
+  const referenced =
+    reference?.kind === "element"
+      ? elementOf(story, reference.elementId)
+      : undefined;
+  const referencedForm =
+    referenced === undefined || reference?.kind !== "element"
+      ? undefined
+      : elementForm(referenced, reference?.variantId);
+  const referenceName =
+    referenced === undefined ? name : formName(referenced, referencedForm);
+  const referenceDescription =
+    referenced === undefined
+      ? description
+      : formDescription(referenced, referencedForm);
   const planned = planElementArt(story, [
     {
       elementId,
@@ -76,7 +100,15 @@ export function elementArtPromptContext(
     mode: carriesPicture ? "reference" : "generate",
     aspect: view === "turnaround" ? "16:9" : formAspect(story, element, form),
     style: story.brief.style,
-    references: carriesPicture ? [{ name, description }] : [],
+    references: carriesPicture
+      ? [
+          {
+            position: 1,
+            name: referenceName,
+            description: referenceDescription,
+          },
+        ]
+      : [],
     element: {
       kind: element.kind,
       name,

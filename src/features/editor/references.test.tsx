@@ -142,11 +142,13 @@ function Bar({
   inputMode = "upstream",
   node = TARGET,
   referenceNodeIds = [],
+  maskAllowed = true,
 }: {
   canvas?: CanvasDocument;
   inputMode?: GenerationInputMode;
   node?: WorkflowNode;
   referenceNodeIds?: NodeId[];
+  maskAllowed?: boolean;
 }) {
   const stored = (node.data as { generation?: GenerationSpec }).generation;
   if (!stored) throw new Error("a node with a panel has a spec");
@@ -154,6 +156,7 @@ function Bar({
     <ReferenceBar
       canvas={canvas}
       issues={ISSUES}
+      maskAllowed={maskAllowed}
       node={node}
       onCut={cut}
       onFind={find}
@@ -260,6 +263,14 @@ describe("what is wired in", () => {
       expect.objectContaining({ id: "e-picture" }),
       "mask",
     );
+  });
+
+  it("does not offer a mask to a model that takes none", () => {
+    render(<Bar maskAllowed={false} />);
+    const [, picture] = rows();
+    expect(
+      within(picture).queryByRole("button", { name: "Use Plate as the mask" }),
+    ).toBeNull();
   });
 
   it("offers a picture as either frame of a shot", () => {

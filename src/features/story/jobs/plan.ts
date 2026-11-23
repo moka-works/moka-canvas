@@ -1650,6 +1650,7 @@ export function planActVideos(
           ? []
           : [
               {
+                title: keyframe.title,
                 content: stripStoryMentions(keyframe.content),
                 assetId: take.assetIds[0],
               },
@@ -1712,6 +1713,15 @@ export function planActVideos(
             ...(references ? { referenceCount: held.length } : {}),
           },
           shots: shotsFor(piece.keyframes, piece.seconds),
+          ...(references
+            ? {
+                referencePictures: held.map((frame, at) => ({
+                  position: at + 1,
+                  name: frame.title,
+                  description: frame.content,
+                })),
+              }
+            : {}),
           cast: castFor(story, act.characterIds, lines),
           dialogue: piece.keyframes.flatMap((keyframe, shot) =>
             linesFor(story, refs, keyframe.dialogue).map((line) => ({

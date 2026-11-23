@@ -684,7 +684,7 @@
     "becomesPlaceholder": "A stone jetty running out into the water",
     "noModel": "No model is chosen yet, so which one this is asked through will decide whether the region can be held to",
     "hasMaskField": "This model has a field of its own for a mask, so what changes stays inside the marking",
-    "noMaskField": "This model has no field of its own for a mask. It travels as a second picture beside the words, so what changes may not stay inside the marking — say which part of the picture is meant in the words as well.",
+    "noMaskField": "This model has no field of its own for a mask, so a marked region cannot be filed for it. Say the change in the prompt instead, or choose a model that takes a mask.",
     "filing": "Filing…",
     "fileMask": "File the mask"
   },
@@ -816,6 +816,7 @@
     "connected": "Connected {{from}} to {{to}}",
     "connectedNodeFallback": "node",
     "connectionRejected": "Connection rejected: {{message}}",
+    "maskNotTaken": "This model has no field for a mask, so a marked region cannot be wired into it. Say the change in the prompt instead, or choose a model that takes a mask.",
     "disconnectedInput": "Disconnected input",
     "movedTo": "Moved to {{label}}",
     "noCompatibleOutput": "That node has no compatible output",

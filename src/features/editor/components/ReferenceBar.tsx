@@ -45,7 +45,11 @@ interface Arrival {
  * The inputs of `node` that hold one thing and could take what `source` gives:
  * the mask of a picture being painted over, the frames a shot is built between.
  */
-function movesFor(node: WorkflowNode, source: WorkflowNode): PortDefinition[] {
+function movesFor(
+  node: WorkflowNode,
+  source: WorkflowNode,
+  maskAllowed: boolean,
+): PortDefinition[] {
   const gives = source.ports
     .filter((port) => port.direction === "output")
     .flatMap((port) => port.dataTypes);
@@ -53,6 +57,7 @@ function movesFor(node: WorkflowNode, source: WorkflowNode): PortDefinition[] {
     (port) =>
       port.direction === "input" &&
       port.cardinality === "one" &&
+      !(port.id === "mask" && !maskAllowed) &&
       port.dataTypes.some((type) => gives.includes(type)),
   );
 }
@@ -68,6 +73,7 @@ function arrivalsAt(
   node: WorkflowNode,
   resources: ReadonlyMap<AssetId, ResourceEntry>,
   issues: ReadonlyMap<AssetId, MediaState>,
+  maskAllowed: boolean,
 ): Arrival[] {
   const found: Arrival[] = [];
   for (const edge of canvas.edges) {
@@ -84,7 +90,7 @@ function arrivalsAt(
         source.ports.find((port) => port.id === edge.source.portId)?.label ??
         edge.source.portId,
       media: mediaInfoForNode(source, resources, issues, edge.source.portId),
-      moves: movesFor(node, source).filter(
+      moves: movesFor(node, source, maskAllowed).filter(
         (port) => port.id !== edge.target.portId,
       ),
     });
@@ -107,6 +113,8 @@ export interface ReferenceBarProps {
   node: WorkflowNode;
   resources: ReadonlyMap<AssetId, ResourceEntry>;
   spec: GenerationSpec;
+  /** Whether this node's model takes a mask; absent leaves the bar permissive. */
+  maskAllowed?: boolean;
   /** Takes a wired-in arrival out, which is one edge and one step of history. */
   onCut: (edge: WorkflowEdge) => void;
   /** Brings a node into view on the canvas. */
@@ -139,6 +147,7 @@ export function ReferenceBar({
   node,
   resources,
   spec,
+  maskAllowed = true,
   onCut,
   onFind,
   onMove,
@@ -150,7 +159,7 @@ export function ReferenceBar({
   const [dragged, setDragged] = useState<number | null>(null);
   const [hovered, setHovered] = useState(false);
 
-  const arrivals = arrivalsAt(canvas, node, resources, issues);
+  const arrivals = arrivalsAt(canvas, node, resources, issues, maskAllowed);
   const pointed = spec.referenceNodeIds;
 
   // Where the prompt's own pointing decides, a dropped asset would be wired in

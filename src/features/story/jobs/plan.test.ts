@@ -1196,6 +1196,20 @@ describe("planning the clips", () => {
       references: true,
       referenceCount: 2,
     });
+    // The pictures travel in the order the shots are cut, and each is named
+    // with the words it stands for, so a rewrite can bind a subject to one.
+    expect(items[0].promptContext?.referencePictures).toEqual([
+      {
+        position: 1,
+        name: expect.any(String),
+        description: expect.any(String),
+      },
+      {
+        position: 2,
+        name: expect.any(String),
+        description: expect.any(String),
+      },
+    ]);
     // It carries when each shot opens and which shot says which line, so a
     // rewrite can keep the timing and the mouths in step.
     expect(items[0].promptContext?.shots?.map((shot) => shot.start)).toEqual([

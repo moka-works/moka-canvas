@@ -49,6 +49,14 @@ export interface PromptContextShot {
   seconds?: number;
 }
 
+/** One picture that travels as a reference, in the place it is attached. */
+export interface PromptContextPicture {
+  /** 1-based place among the reference pictures, in travel order. */
+  position: number;
+  name?: string;
+  description: string;
+}
+
 /** What the clip is: an act filmed whole, one shot, or a bridge between acts. */
 export interface StoryPromptContext {
   kind: "act" | "shot" | "transition";
@@ -64,6 +72,8 @@ export interface StoryPromptContext {
     referenceCount?: number;
   };
   shots: PromptContextShot[];
+  /** The pictures that travel as references, in the order they are attached. */
+  referencePictures?: PromptContextPicture[];
   /** How a bridge moves from one act to the next. */
   transition?: { from: string; to: string; move: string };
   cast: PromptContextCast[];

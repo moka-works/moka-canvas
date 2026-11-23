@@ -11,6 +11,8 @@ import type { StoryElementKind } from "../../domain/types";
 
 /** One picture the ask travels with, as the material names it. */
 export interface ImagePromptReference {
+  /** 1-based place among the pictures the model receives, in travel order. */
+  position: number;
   name: string;
   description?: string;
   /** The canvas node token this picture stands for, where there is one. */

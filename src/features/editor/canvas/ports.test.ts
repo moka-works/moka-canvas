@@ -44,4 +44,17 @@ describe("layoutPorts", () => {
       expect(y + PORT_RADIUS).toBeLessThanOrEqual(node.bounds.height);
     }
   });
+
+  it("leaves the mask off a picture whose model takes none", () => {
+    const node = createNode("image", { x: 0, y: 0 });
+    const shown = layoutPorts(node);
+    const hidden = layoutPorts(node, true);
+    expect(shown.has("mask")).toBe(true);
+    expect(hidden.has("mask")).toBe(false);
+    expect(hidden.has("images")).toBe(true);
+    // The remaining dots close ranks rather than leaving the column open.
+    expect(
+      [...hidden.values()].filter((port) => port.local.x === 0),
+    ).toHaveLength(2);
+  });
 });

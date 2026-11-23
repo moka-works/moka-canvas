@@ -684,7 +684,7 @@
     "becomesPlaceholder": "一道伸入水中的石堤",
     "noModel": "还没有选择模型，用哪个模型发问将决定区域能否被严格遵守",
     "hasMaskField": "该模型有专门的蒙版字段，因此变化会限制在标记范围内",
-    "noMaskField": "该模型没有专门的蒙版字段。蒙版会作为第二张图片随文字一同提交，因此变化不一定限制在标记范围内——请在文字中一并说明指的是图片的哪个部分。",
+    "noMaskField": "该模型没有专门的蒙版字段，无法为它归档标记区域。请在提示词中描述改动，或改选支持蒙版的模型。",
     "filing": "归档中…",
     "fileMask": "归档蒙版"
   },
@@ -816,6 +816,7 @@
     "connected": "已连接 {{from}} 到 {{to}}",
     "connectedNodeFallback": "节点",
     "connectionRejected": "连接被拒绝：{{message}}",
+    "maskNotTaken": "该模型没有蒙版字段，无法把标记区域接入它。请在提示词中描述改动，或改选支持蒙版的模型。",
     "disconnectedInput": "已断开输入",
     "movedTo": "已移动到{{label}}",
     "noCompatibleOutput": "该节点没有兼容的输出",

@@ -20,7 +20,8 @@ import {
   type MarkTool,
   type Size,
 } from "../canvas/repaint";
-import { useModelStore, protocolFeatures } from "../../settings/modelStore";
+import { useModelStore } from "../../settings/modelStore";
+import { imageNodeTakesMask } from "../modelCapabilities";
 import { fileRepaint } from "../interactions/actions";
 import { useEditorStore } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
@@ -39,6 +40,13 @@ function askOf(moka: MokaFile | null, nodeId: string): GenerationSpec | null {
     (node?.data as { generation?: GenerationSpec } | undefined)?.generation ??
     null
   );
+}
+
+/** The node a repaint is being filed for, wherever on the document it sits. */
+function nodeOf(moka: MokaFile | null, nodeId: string) {
+  return moka?.canvas
+    .flatMap((entry) => entry.nodes)
+    .find((entry) => entry.id === nodeId);
 }
 
 /**
@@ -168,6 +176,25 @@ export function RepaintDialog() {
   if (!entry) return null;
 
   const close = () => useEditorStore.getState().closePictureTool();
+  // Whether the model this will be asked through can take a mask at all. The
+  // port is not offered for one that cannot, so a marking filed here would be
+  // an edge to a port the card does not show; the dialog says so instead of
+  // letting the reader paint something that cannot be used.
+  const reference =
+    askOf(moka, painting.nodeId)?.model || view?.defaults.image || null;
+  const protocol =
+    (reference !== null
+      ? view?.models.find((model) => model.id === reference)?.protocol
+      : null) ?? null;
+  const node = nodeOf(moka, painting.nodeId);
+  const takesMask =
+    node !== undefined && imageNodeTakesMask(node, view, protocols);
+  const blocked =
+    takesMask === true
+      ? null
+      : protocol === null
+        ? t("editor:repaint.noModel")
+        : t("editor:repaint.noMaskField");
   const marked = marks.some(drawn);
   const refusal = unread
     ? t("editor:repaint.unreadable")
@@ -199,6 +226,7 @@ export function RepaintDialog() {
   };
 
   const press = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (blocked !== null) return;
     const at = pointOf(event);
     if (!at) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -214,6 +242,7 @@ export function RepaintDialog() {
   };
 
   const drag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (blocked !== null) return;
     if (!draft || draft.tool === "outline") return;
     const at = pointOf(event);
     if (!at) return;
@@ -238,13 +267,14 @@ export function RepaintDialog() {
   };
 
   const letGo = () => {
+    if (blocked !== null) return;
     if (!draft || draft.tool === "outline") return;
     if (drawn(draft)) setMarks((state) => [...state, draft]);
     setDraft(null);
   };
 
   const submit = async () => {
-    if (busy || refusal || !size) return;
+    if (busy || refusal || blocked !== null || !size) return;
     setBusy(true);
     setFailed(null);
     try {
@@ -284,22 +314,8 @@ export function RepaintDialog() {
     }
   };
 
-  /**
-   * Whether the model this will be asked through can take a mask at all.
-   *
-   * Said before the painting rather than after the run: a protocol with no field
-   * of its own for a mask still sends one, as a second picture beside the words,
-   * and a reader who does not know that will read a change outside the region as
-   * the program ignoring them.
-   */
-  const reference =
-    askOf(moka, painting.nodeId)?.model || view?.defaults.image || null;
-  const protocol =
-    (reference !== null
-      ? view?.models.find((model) => model.id === reference)?.protocol
-      : null) ?? null;
-  const takesMask =
-    protocol !== null && protocolFeatures(protocols, protocol).mask === true;
+  /** What the note under the picture says about the model's mask field. */
+  const takesMaskNotice = blocked ?? t("editor:repaint.hasMaskField");
 
   return (
     <div className="dialog-backdrop" onClick={close} role="presentation">
@@ -444,11 +460,7 @@ export function RepaintDialog() {
             takesMask || protocol === null ? "dialog-note" : "dialog-error"
           }
         >
-          {protocol === null
-            ? t("editor:repaint.noModel")
-            : takesMask
-              ? t("editor:repaint.hasMaskField")
-              : t("editor:repaint.noMaskField")}
+          {takesMaskNotice}
         </p>
 
         {failed && <p className="dialog-error">{failed}</p>}
@@ -461,8 +473,8 @@ export function RepaintDialog() {
           <button
             autoFocus
             className="primary"
-            disabled={busy || refusal !== null}
-            title={refusal ?? undefined}
+            disabled={busy || refusal !== null || blocked !== null}
+            title={blocked ?? refusal ?? undefined}
             type="submit"
           >
             {busy ? t("editor:repaint.filing") : t("editor:repaint.fileMask")}

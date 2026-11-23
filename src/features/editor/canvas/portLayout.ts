@@ -1,9 +1,10 @@
 import type { Ellipse } from "leafer-ui";
-import type { Point, WorkflowNode } from "../../../shared/domain";
+import type { DataType, Point, WorkflowNode } from "../../../shared/domain";
 import { NODE_HEADER_HEIGHT, PORT_RADIUS, PORT_SPACING } from "./theme";
 
 export interface PortView {
   direction: "input" | "output";
+  dataTypes: readonly DataType[];
   dot: Ellipse;
   /** Local anchor point inside the node group. */
   local: Point;
@@ -25,10 +26,24 @@ function columnSpacing(count: number, height: number): number {
 /**
  * Input dots on the left edge, output dots on the right, both top-aligned.
  * Dots are attached by the renderer; the placeholders keep the view uniform.
+ *
+ * `hideMask` leaves the mask input off the card for a picture whose model does
+ * not take one. The port stays in the document: a wire already there keeps its
+ * place, and the node's own shape does not depend on which model draws it.
  */
-export function layoutPorts(node: WorkflowNode): Map<string, PortView> {
+export function layoutPorts(
+  node: WorkflowNode,
+  hideMask = false,
+): Map<string, PortView> {
+  const shown = (port: WorkflowNode["ports"][number]) =>
+    !(hideMask && port.id === "mask");
   const columns = [
-    { x: 0, ports: node.ports.filter((port) => port.direction === "input") },
+    {
+      x: 0,
+      ports: node.ports.filter(
+        (port) => port.direction === "input" && shown(port),
+      ),
+    },
     {
       x: node.bounds.width,
       ports: node.ports.filter((port) => port.direction === "output"),
@@ -40,6 +55,7 @@ export function layoutPorts(node: WorkflowNode): Map<string, PortView> {
     column.ports.forEach((port, index) => {
       layout.set(port.id, {
         direction: port.direction,
+        dataTypes: port.dataTypes,
         dot: null as unknown as Ellipse,
         local: { x: column.x, y: COLUMN_TOP + index * spacing },
       });

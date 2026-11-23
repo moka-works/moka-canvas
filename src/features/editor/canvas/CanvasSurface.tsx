@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { CanvasDocument } from "../../../shared/domain";
+import type { CanvasDocument, NodeId } from "../../../shared/domain";
 import { i18n } from "../../../shared/i18n";
 import type {
   ControllerCallbacks,
@@ -23,6 +23,8 @@ import { useEditorStore, type ContextMenuTarget } from "../stores/editorStore";
 import { openDirector } from "../../director/stores/directorStore";
 import { useProjectStore } from "../stores/projectStore";
 import { nodeRunViews, useRunStore } from "../stores/runStore";
+import { useModelStore } from "../../settings/modelStore";
+import { MASK_PORT, imageNodeTakesMask } from "../modelCapabilities";
 import { buildIssueIndex, buildResourceIndex } from "./mediaCards";
 
 /** How often words arriving from a run may redraw the scene, at the most. */
@@ -195,6 +197,20 @@ export function CanvasSurface() {
         }
         const camera = editor.camera ?? canvas.viewport;
         const { moka, selfCheck } = useProjectStore.getState();
+        const models = useModelStore.getState();
+        const wornMasks = new Set(
+          canvas.edges
+            .filter((edge) => edge.target.portId === MASK_PORT)
+            .map((edge) => edge.target.nodeId),
+        );
+        const maskHidden = new Set<NodeId>();
+        const maskBlocked = new Set<NodeId>();
+        for (const node of canvas.nodes) {
+          if (node.kind !== "image") continue;
+          const takes = imageNodeTakesMask(node, models.view, models.protocols);
+          if (!takes) maskBlocked.add(node.id);
+          if (!takes && !wornMasks.has(node.id)) maskHidden.add(node.id);
+        }
         instance.render({
           canvasId: canvas.id,
           camera,
@@ -209,6 +225,8 @@ export function CanvasSurface() {
           theme: useAppearance.getState().theme,
           resources: moka ? buildResourceIndex(moka) : new Map(),
           issues: buildIssueIndex(selfCheck),
+          maskHidden,
+          maskBlocked,
           pick: editor.inputPick
             ? {
                 ...editor.inputPick,
@@ -227,11 +245,13 @@ export function CanvasSurface() {
       const unsubscribeEditor = useEditorStore.subscribe(push);
       const unsubscribeRuns = useRunStore.subscribe(words.fire);
       const unsubscribeAppearance = useAppearance.subscribe(push);
+      const unsubscribeModels = useModelStore.subscribe(push);
       unsubscribe = () => {
         unsubscribeProject();
         unsubscribeEditor();
         unsubscribeRuns();
         unsubscribeAppearance();
+        unsubscribeModels();
         words.stop();
       };
       push();

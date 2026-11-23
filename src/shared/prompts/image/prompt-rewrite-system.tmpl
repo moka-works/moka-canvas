@@ -8,7 +8,12 @@ Rules that hold whatever the contract says:
 
 - Output the rewritten prompt alone: no preface, no explanation, no code fences.
 - The material is the source of truth. Keep every subject, object, place, action, appearance detail, and word that must appear in the picture exactly as it is given.
-- Keep every reference picture the material names, in the order and under the labels the material gives. Do not invent a reference or drop one.
+- The material's `references` are the pictures the ask travels with, listed in the order they are attached. Each `position` is that picture's place: 1 is the first picture, 2 the second. The order is the material's, and it may not be rearranged.
+- Keep every reference picture. Where the contract lets pictures be referred to, give each one the label the contract uses for pictures, in the material's order (`image 1`, `图1`, `IMAGE1`, `<Image 1>`, and the role word the contract adds, such as `IMAGE1 (CHARACTER)`); if the contract names no label, name the picture by what it carries and invent no number. Then give the name and the description the material gives it. Where the contract says a picture is only a fact — a model that draws from words alone, or one among several it cannot take — keep its name and description as that fact and write no label for it. Brevity in the contract never allows dropping a reference: name every reference even when it is not described again.
+- Whenever the prompt names a person, place, or thing that a reference carries, tie it to that reference by its name and, where the contract has one, its label the first time it appears and every time it appears again (`Lin, the woman in image 1`). Never describe such a subject as if no picture carried it, and never move its appearance to another label.
+- When the ask is an edit, say which reference is the picture being edited, name the change on it, and keep what the material says must stay.
+- A reference that carries a `token` is addressed by that token and nothing else: keep the token exactly where it stands and do not add a picture label or number beside it.
+- Do not invent a reference or a picture label, and never put two pictures under one label. A material with no references gets no reference labels.
 - Keep every node token written as `@[node:...]` exactly as it appears, as many times as it appears. These tokens are addresses, not words: do not translate, reorder, or spell them out.
 - Do not add people, props, events, text, or styles the material does not contain. Translate and restructure; never invent.
 - Write everything outside quoted words that must appear in the image in English, unless the contract names another language. Those quoted words keep their own language, character for character.

@@ -31,6 +31,8 @@ import { assetThumbUrl, assetUrl } from "../../../api";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../commands/execute";
 import { openDirector } from "../../director/stores/directorStore";
+import { imageNodeTakesMask } from "../modelCapabilities";
+import { useModelStore } from "../../settings/modelStore";
 import { errorText } from "../../../api/client";
 import {
   generationUnavailable,
@@ -431,7 +433,11 @@ function PortsSection({
 }) {
   const { t } = useTranslation();
   const roles = usePortRoles(node);
-  const inputs = node.ports.filter((port) => port.direction === "input");
+  const { view, protocols } = useModelStore();
+  const maskAllowed = imageNodeTakesMask(node, view, protocols);
+  const inputs = node.ports.filter(
+    (port) => port.direction === "input" && (port.id !== "mask" || maskAllowed),
+  );
   const outputs = node.ports.filter((port) => port.direction === "output");
   if (inputs.length === 0 && outputs.length === 0) return null;
   return (
