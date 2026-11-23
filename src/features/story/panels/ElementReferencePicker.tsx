@@ -10,6 +10,7 @@ import {
   type StoryPictureReference,
 } from "../../../shared/domain";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 import { filePictureFromComputer } from "./elementPictures";
 
 /** How wide a tile's picture is asked for: a few hundred pixels at most. */
@@ -119,9 +120,13 @@ export function ElementReferencePicker({
                           type="button"
                         >
                           {take === undefined ? (
-                            <span className="story-pick-empty">
-                              {t("story:elements.referenceUndrawn")}
-                            </span>
+                            <img
+                              alt={held.name}
+                              className="story-placeholder"
+                              decoding="async"
+                              loading="lazy"
+                              src={elementPlaceholderUrl(held.kind)}
+                            />
                           ) : (
                             <img
                               alt={held.name}

@@ -224,7 +224,7 @@ describe("storyProgress", () => {
     expect(storyProgress(story).elements.state).toBe("ready");
   });
 
-  it("counts every form of an element and waits for each to be drawn", () => {
+  it("counts every form of an element, and settles on the words alone", () => {
     const story = createStory("新的故事", { idea: "一句话" });
     story.elements = [
       {
@@ -248,9 +248,9 @@ describe("storyProgress", () => {
       done: 1,
       total: 2,
     });
-    expect(stepGaps(story, "elements")).toEqual([
-      { kind: "elementsUndrawn", names: ["林 · 老年"] },
-    ]);
+    // A drawing still to come is counted but never blocks the step: the board
+    // stands the form in with a placeholder until it is drawn.
+    expect(stepGaps(story, "elements")).toEqual([]);
 
     const form = story.elements[0].variants![0];
     form.main = { takes: [take(ids.partnerMain)] };
@@ -361,7 +361,7 @@ describe("what a step is still waiting for", () => {
     ]);
   });
 
-  it("lists the elements that have no words, and those that have no drawing", () => {
+  it("lists the elements that have no words, and settles without their drawings", () => {
     const story = createStory("新的故事", { idea: "一句话" });
     expect(stepGaps(story, "elements")).toEqual([{ kind: "noElements" }]);
     story.elements = [
@@ -375,8 +375,12 @@ describe("what a step is still waiting for", () => {
     ];
     expect(stepGaps(story, "elements")).toEqual([
       { kind: "elementsUndescribed", names: ["林"] },
-      { kind: "elementsUndrawn", names: ["旧车票"] },
     ]);
+
+    story.elements[0].description = "四十岁上下。";
+    // Words are what the step owes; the undrawn ticket no longer holds it.
+    expect(stepGaps(story, "elements")).toEqual([]);
+    expect(stepComplete(story, "elements")).toBe(true);
   });
 
   it("counts the acts with nothing in them, the frames missing and the clips missing", () => {

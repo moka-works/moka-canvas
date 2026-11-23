@@ -100,7 +100,6 @@
     "gapChapters": "还有 {{count}} 章的标题或内容没有写好（第 {{list}} 章）",
     "gapNoElements": "还没有角色、场景或物品：先从章节里识别一遍，或自己添加",
     "gapUndescribed": "还有 {{count}} 个元素没有描述：{{list}}",
-    "gapUndrawn": "还有 {{count}} 个元素没有图片：{{list}}",
     "gapNoActs": "还没有任何分镜：先生成某一集的分镜，或自己加一幕",
     "gapNoShots": "还有 {{count}} 幕没有镜头：每一幕至少要写一个镜头",
     "gapFrames": "还有 {{count}} 格没有出图",

@@ -8,7 +8,9 @@ import {
   formName,
   referenceTake,
   type StoryDocument,
+  type StoryElementKind,
 } from "../../../shared/domain";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 
 /** How wide a tile's picture is asked for: a few hundred pixels at most. */
 const PICK_THUMB_WIDTH = 320;
@@ -99,6 +101,7 @@ export function StoryElementPicker({
               <ElementTile
                 elementId={element.id}
                 key={`${element.id}:${variant?.id ?? ""}`}
+                kind={element.kind}
                 name={formName(element, variant)}
                 onChoose={() =>
                   onChoose(element.id, variant?.id, formName(element, variant))
@@ -122,16 +125,17 @@ export function StoryElementPicker({
 /** One drawing of one form, as a tile that may be carried with a shot. */
 function ElementTile({
   elementId,
+  kind,
   name,
   picture,
   onChoose,
 }: {
   elementId: string;
+  kind: StoryElementKind;
   name: string;
   picture: string | undefined;
   onChoose: () => void;
 }) {
-  const { t } = useTranslation();
   return (
     <button
       className="story-pick"
@@ -140,9 +144,13 @@ function ElementTile({
       type="button"
     >
       {picture === undefined ? (
-        <span className="story-pick-empty">
-          {t("story:elements.referenceUndrawn")}
-        </span>
+        <img
+          alt={name}
+          className="story-placeholder"
+          decoding="async"
+          loading="lazy"
+          src={elementPlaceholderUrl(kind)}
+        />
       ) : (
         <img
           alt={name}

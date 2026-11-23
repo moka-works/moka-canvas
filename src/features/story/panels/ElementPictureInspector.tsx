@@ -10,6 +10,7 @@ import {
   targetKey,
 } from "../../../shared/domain";
 import type { StoryDocument, StoryElement } from "../../../shared/domain/types";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 import { jobKey } from "../jobs/plan";
 import { busyPlaces, placeText } from "../jobs/places";
 import { useStoryJobs } from "../stores/storyJobStore";
@@ -189,6 +190,12 @@ export function ElementPictureInspector({
           <div className="story-inspector-stage">
             {take === undefined ? (
               <div className="story-slot-empty story-inspector-empty">
+                <img
+                  alt={element.name}
+                  className="story-placeholder story-inspector-placeholder"
+                  decoding="async"
+                  src={elementPlaceholderUrl(element.kind)}
+                />
                 <span>{t("story:inspector.noArt")}</span>
                 <span className="story-hint">
                   {t("story:inspector.emptyHint")}

@@ -38,6 +38,7 @@ import { DrawCountButton } from "../components/DrawCountButton";
 import { StoryModelPicks } from "../components/StoryModelPicks";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 import { ElementCard } from "../panels/ElementCard";
 import { ElementDraftDialog } from "../panels/ElementDraftDialog";
 import { addElementToStory } from "../panels/elementDraft";
@@ -1175,7 +1176,13 @@ function OrderList({
             <span className="story-sort-index">{at + 1}</span>
             <span className="story-sort-thumb">
               {take === undefined ? (
-                <span className="story-sort-none">—</span>
+                <img
+                  alt=""
+                  className="story-placeholder"
+                  decoding="async"
+                  loading="lazy"
+                  src={elementPlaceholderUrl(element.kind)}
+                />
               ) : (
                 <img
                   alt=""

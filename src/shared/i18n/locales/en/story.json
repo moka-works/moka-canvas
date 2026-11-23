@@ -100,7 +100,6 @@
     "gapChapters": "{{count}} chapters still have no title or text (chapter {{list}})",
     "gapNoElements": "Nothing has been found to tell it with yet: read the chapters, or add an element yourself",
     "gapUndescribed": "{{count}} elements have no description: {{list}}",
-    "gapUndrawn": "{{count}} elements have no picture: {{list}}",
     "gapNoActs": "There is no board yet: write one episode's board, or add an act yourself",
     "gapNoShots": "{{count}} acts have no shots: every act needs at least one",
     "gapFrames": "{{count}} shots have no frame drawn yet",

@@ -145,11 +145,6 @@ function gapLine(
         count: gap.names.length,
         list: gap.names,
       });
-    case "elementsUndrawn":
-      return t("story:confirm.gapUndrawn", {
-        count: gap.names.length,
-        list: gap.names,
-      });
     case "noActs":
       return t("story:confirm.gapNoActs");
     case "actsWithoutShots":

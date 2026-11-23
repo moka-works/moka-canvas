@@ -7927,13 +7927,6 @@ body.is-dragging-split {
   width: 100%;
 }
 
-.story-sort-none {
-  color: var(--muted);
-  font-size: 10px;
-  padding: 2px;
-  text-align: center;
-}
-
 .story-sort-kind {
   color: var(--muted);
   font-size: 11px;
@@ -8068,16 +8061,6 @@ body.is-dragging-split {
   font-size: 12px;
   font-weight: 500;
   margin: 0;
-}
-
-.story-pick-empty {
-  align-items: center;
-  background: var(--canvas);
-  color: var(--muted);
-  display: flex;
-  font-size: 12px;
-  justify-content: center;
-  min-height: 120px;
 }
 
 .story-reference-upload {
@@ -8927,6 +8910,11 @@ button > .story-spin {
   width: 100%;
 }
 
+.story-inspector-stage img.story-inspector-placeholder {
+  max-height: 160px;
+  max-width: 160px;
+}
+
 .story-inspector-side {
   align-content: start;
   display: grid;
@@ -9514,9 +9502,9 @@ button > .story-spin {
   width: 20px;
 }
 
-.story-ref-avatar.is-empty {
-  background: var(--surface);
-  border: 1px dashed var(--stroke);
+/* The fixed picture an element without a drawing of its own stands in by. */
+.story-placeholder {
+  opacity: 0.7;
 }
 
 .story-ref-choice-name {

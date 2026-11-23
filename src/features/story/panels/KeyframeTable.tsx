@@ -63,6 +63,7 @@ import {
 import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
+import { elementPlaceholderUrl } from "../elementPlaceholder";
 import { useStoryWavesRun } from "../stores/storyJobStore";
 import { secondsOf } from "./takes";
 import { KeyframeContentField, type MentionKind } from "./KeyframeContentField";
@@ -1247,6 +1248,9 @@ function KeyframePromptCell({
             reference.elementId === undefined
               ? undefined
               : elementOf(story, reference.elementId);
+          // An element whose own drawing is still to come stays pressable: the
+          // inspector it opens is where that drawing gets made.
+          const opens = assetId !== undefined || element !== undefined;
           return (
             <span
               className="story-ref-item"
@@ -1261,22 +1265,29 @@ function KeyframePromptCell({
                 )}
                 className="story-ref-thumb"
                 data-testid={`story-kf-ref-${index}-${at}`}
-                disabled={assetId === undefined}
+                disabled={!opens}
                 onClick={() => {
-                  if (assetId === undefined) return;
-                  if (element === undefined) setZoomed(assetId);
-                  else setInspectingId(element.id);
+                  if (element !== undefined) setInspectingId(element.id);
+                  else if (assetId !== undefined) setZoomed(assetId);
                 }}
                 title={label}
                 type="button"
               >
-                {assetId === undefined ? (
-                  <span className="story-ref-missing">{label}</span>
-                ) : (
+                {assetId !== undefined ? (
                   <img
                     alt={label}
                     src={assetThumbUrl(assetId, REF_THUMB_WIDTH)}
                   />
+                ) : element !== undefined ? (
+                  <img
+                    alt={label}
+                    className="story-placeholder"
+                    decoding="async"
+                    loading="lazy"
+                    src={elementPlaceholderUrl(element.kind)}
+                  />
+                ) : (
+                  <span className="story-ref-missing">{label}</span>
                 )}
               </button>
               <button
