@@ -1889,6 +1889,15 @@ pub async fn get_ui_preferences(
     Ok(Json(state.metadata.ui_preferences().await?))
 }
 
+/// The room an outside caller asked this window to stand on, if one is due.
+///
+/// Read once and taken: a focus is an instruction to move, not a setting the
+/// window returns to every time it looks.
+pub async fn take_ui_focus(State(state): State<ApiState>) -> Json<serde_json::Value> {
+    let mut held = state.focus.lock().await;
+    Json(held.take().unwrap_or(serde_json::Value::Null))
+}
+
 /// Applies what one window changed and answers with the merged whole.
 pub async fn patch_ui_preferences(
     State(state): State<ApiState>,

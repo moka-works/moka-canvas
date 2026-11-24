@@ -10,7 +10,8 @@
     "stepComing": "This step is not built yet",
     "historyBoundary": "Story",
     "saveConflict": "The project was changed somewhere else; reload before leaving",
-    "saveFailed": "The project could not be saved; staying here"
+    "saveFailed": "The project could not be saved; staying here",
+    "externalChange": "The project changed in another window; its newer version was loaded"
   },
   "topBar": {
     "exportFilm": "Export the film…"

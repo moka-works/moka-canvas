@@ -10,7 +10,8 @@
     "stepComing": "这一步还在建设中",
     "historyBoundary": "故事",
     "saveConflict": "项目已在别处被修改；刷新后再离开",
-    "saveFailed": "项目未能保存；先留在这里"
+    "saveFailed": "项目未能保存；先留在这里",
+    "externalChange": "项目已在另一处修改，已载入较新的版本"
   },
   "topBar": {
     "exportFilm": "导出成片…"

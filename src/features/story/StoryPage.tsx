@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { historyBoundary } from "../editor/commands/execute";
+import { projectsApi } from "../../api";
 import { PanelUnfold } from "../editor/components/PanelFold";
 import { PanelResizer } from "../editor/components/PanelResizer";
 import { panelWidthStyle } from "../editor/components/panelWidthVars";
@@ -74,6 +75,93 @@ export function StoryPage() {
     // until the next one loads, without forgetting what this one read.
     return () => useStoryJobStore.getState().stopWatching();
   }, [storyId]);
+
+  // An agent editing the document directly saves on the server, where this
+  // room cannot see it; its own work is only ever in its own copy. Read the
+  // server's revision while the room is idle and adopt a newer one, so a
+  // change made beside the reader appears rather than becoming a save conflict
+  // on their next keystroke.
+  useEffect(() => {
+    if (!projectId || storyId === null) return;
+    let stopped = false;
+    let reading = false;
+    const look = async () => {
+      if (stopped || reading) return;
+      const held = useProjectStore.getState();
+      if (
+        !held.moka ||
+        held.pending.length > 0 ||
+        held.saveStatus !== "saved"
+      ) {
+        return;
+      }
+      reading = true;
+      try {
+        const opened = await projectsApi.current();
+        if (stopped) return;
+        const local = useProjectStore.getState();
+        if (
+          local.moka !== null &&
+          opened.moka.metadata.revision > local.moka.metadata.revision &&
+          local.pending.length === 0 &&
+          local.saveStatus === "saved"
+        ) {
+          const adopted = await local.reload();
+          if (adopted) {
+            useAppStore
+              .getState()
+              .pushToast("info", i18n.t("story:page.externalChange"));
+          }
+        }
+      } catch {
+        // A server that cannot be read is said by the work that needs it; a
+        // look that failed is simply tried again.
+      } finally {
+        reading = false;
+      }
+    };
+    const timer = window.setInterval(() => void look(), 12_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [projectId, storyId]);
+
+  // The other half of `story.focus`: an outside caller leaves a move here and
+  // the open room takes it once. A focus names only places the room already
+  // knows; anything else is left for the reader.
+  useEffect(() => {
+    if (!projectOpen) return;
+    let stopped = false;
+    const look = async () => {
+      try {
+        const focus = await projectsApi.takeFocus();
+        if (stopped || focus === null || focus.room !== "story") return;
+        if (focus.storyId !== undefined) {
+          useStoryStore.getState().select(focus.storyId);
+        }
+        if (focus.chapterId !== undefined) {
+          useStoryStore.getState().openChapter(focus.chapterId);
+        }
+        if (
+          focus.step === "idea" ||
+          focus.step === "outline" ||
+          focus.step === "elements" ||
+          focus.step === "storyboard" ||
+          focus.step === "edit"
+        ) {
+          useStoryStore.getState().goStep(focus.step);
+        }
+      } catch {
+        // A room that cannot read a focus simply stays where it is.
+      }
+    };
+    const timer = window.setInterval(() => void look(), 4_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [projectOpen]);
 
   const pendingLeave = useStoryStore((state) => state.pendingLeave);
   const [leavingHome, setLeavingHome] = useState(false);

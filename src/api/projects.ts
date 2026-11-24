@@ -28,6 +28,17 @@ export interface SaveResult {
   updatedAt: string;
 }
 
+/** A move an outside caller asked the open story room to make, read once. */
+export interface UiFocus {
+  room: string;
+  storyId?: string;
+  step?: string;
+  chapterId?: string;
+  actId?: string;
+  keyframeId?: string;
+  elementId?: string;
+}
+
 export interface RecentProject {
   id: string;
   name: string;
@@ -82,6 +93,10 @@ export const projectsApi = {
     return http.request<OpenProjectResult>("/api/v1/projects/current", {
       signal,
     });
+  },
+
+  takeFocus(): Promise<UiFocus | null> {
+    return http.request<UiFocus | null>("/api/v1/ui/focus");
   },
 
   selfCheck(signal?: AbortSignal): Promise<SelfCheckStatus> {

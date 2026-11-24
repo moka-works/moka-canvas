@@ -49,6 +49,9 @@ pub struct ApiState {
     /// Answers from tasks that are not otherwise readable after they settle,
     /// such as a recognition result an agent later writes onto a timeline.
     pub agent_tasks: Arc<tokio::sync::Mutex<std::collections::HashMap<String, serde_json::Value>>>,
+    /// A room an outside caller asked the window to stand on, taken by the
+    /// window that reads it.
+    pub focus: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     /// Root directory of the models tree: one directory per converter, each
     /// carrying its own `model.json`.
     converter_root: PathBuf,
@@ -143,6 +146,7 @@ impl ApiState {
             exports: Arc::new(ExportRegistry::new()),
             agent_sessions: Arc::new(crate::agent::sessions::AgentSessionStore::new()),
             agent_tasks: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            focus: Arc::new(tokio::sync::Mutex::new(None)),
             converter_root,
             nodes_root,
         }
@@ -532,6 +536,7 @@ fn ui_router() -> axum::Router<ApiState> {
                 .patch(routes::patch_ui_preferences)
                 .delete(routes::reset_ui_preferences),
         )
+        .route("/api/v1/ui/focus", get(routes::take_ui_focus))
         .route_layer(DefaultBodyLimit::max(MAX_UI_BODY_BYTES))
 }
 
