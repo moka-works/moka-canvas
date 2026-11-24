@@ -24,6 +24,7 @@ import { assetThumbUrl, assetUrl } from "../../../api/assets";
 import {
   ACT_PLAN_MAX,
   MAX_ELEMENTS_PER_STORY,
+  SHOT_SIZE_LABELS,
 } from "../../../shared/domain/constants";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -771,6 +772,33 @@ export function ActCard({
               </label>
             ))}
           </div>
+
+          {act.keyframes.length > 0 && (
+            <div
+              aria-label={t("story:storyboard.rhythm", {
+                count: act.keyframes.length,
+                seconds: Math.round((plannedMs / 1000) * 10) / 10,
+              })}
+              className="story-act-rhythm"
+              data-testid={`story-act-rhythm-${index}`}
+              role="img"
+            >
+              {act.keyframes.map((keyframe, at) => (
+                <span
+                  className="story-act-rhythm-seat"
+                  data-shot-size={keyframe.shotSize}
+                  data-testid={`story-act-rhythm-seat-${index}-${at}`}
+                  key={keyframe.id}
+                  style={{ flexGrow: keyframe.durationMs }}
+                  title={t("story:storyboard.rhythmSeat", {
+                    at: at + 1,
+                    size: t(SHOT_SIZE_LABELS[keyframe.shotSize]),
+                    seconds: Math.round((keyframe.durationMs / 1000) * 10) / 10,
+                  })}
+                />
+              ))}
+            </div>
+          )}
 
           <KeyframeTable
             act={act}

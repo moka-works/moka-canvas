@@ -452,7 +452,11 @@ function KeyframeRow({
 
   return (
     <>
-      <tr data-testid={`story-kf-${index}`}>
+      <tr
+        className="story-kf-row"
+        data-shot-size={keyframe.shotSize}
+        data-testid={`story-kf-${index}`}
+      >
         <td className="story-col-index">
           <span className="story-kf-number">{at}</span>
           {/*

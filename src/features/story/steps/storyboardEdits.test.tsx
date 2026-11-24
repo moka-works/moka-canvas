@@ -78,6 +78,26 @@ describe("editing an episode's board", () => {
     );
   });
 
+  it("shows the episode's acts and shots, and a rhythm bar a shot wide", async () => {
+    openAtBoard(withEveryFrame());
+    expect(screen.getByTestId("story-board-counts").textContent).toBe(
+      "Acts 1 · Shots 2",
+    );
+    const seats = screen.getAllByTestId(/^story-act-rhythm-seat-0-/);
+    expect(seats).toHaveLength(2);
+    expect(seats[0]?.getAttribute("data-shot-size")).toBe("wide");
+    expect((seats[0] as HTMLElement).style.flexGrow).toBe("2000");
+    expect((seats[1] as HTMLElement).style.flexGrow).toBe("3000");
+
+    // The bar follows the framing the reader gives the shot.
+    fireEvent.change(screen.getByTestId("story-kf-size-0"), {
+      target: { value: "close" },
+    });
+    await waitFor(() =>
+      expect(seats[0]?.getAttribute("data-shot-size")).toBe("close"),
+    );
+  });
+
   it("marks the cells whose framing the answer never really gave", async () => {
     openAtBoard(boarded(), 1);
     answers[`storyboard:${story().chapters[1]!.id}`] = boardAnswer("遥遥远景");

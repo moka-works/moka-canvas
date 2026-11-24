@@ -951,6 +951,18 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
               title: chapter.title,
             })}
           </span>
+          <span
+            className="story-hint story-board-counts"
+            data-testid="story-board-counts"
+          >
+            {t("story:storyboard.chapterCounts", {
+              acts: chapter.acts.length,
+              shots: chapter.acts.reduce(
+                (sum, act) => sum + act.keyframes.length,
+                0,
+              ),
+            })}
+          </span>
           <span className="story-count" data-testid="story-board-target">
             {t("story:storyboard.target", {
               duration: formatDuration(chapter.targetDurationMs),
