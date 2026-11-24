@@ -13,6 +13,7 @@ import {
   assemblyCommands,
   assemblyDigest,
   assemblySummary,
+  chapterStartMs,
   planAssembly,
 } from "./assembly";
 
@@ -115,6 +116,15 @@ describe("planAssembly", () => {
     expect(plan.units.map((unit) => unit.durationMs)).toEqual([5_000, 4_000]);
     expect(plan.totalPlannedMs).toBe(9_000);
     expect(plan.warnings).toEqual([]);
+  });
+
+  it("names where each episode opens on the cut", () => {
+    const moka = filmed({ secondAct: true });
+    const plan = planAssembly(story(moka), moka);
+
+    expect(chapterStartMs(plan, 1)).toBe(0);
+    expect(chapterStartMs(plan, 2)).toBe(5_000);
+    expect(chapterStartMs(plan, 3)).toBeUndefined();
   });
 
   it("lays down only the window a take was cut to", () => {

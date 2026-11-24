@@ -484,6 +484,29 @@ describe("the film of a telling", () => {
     );
   });
 
+  it("adds a cover for the open episode and opens the cut on it", async () => {
+    openAtEdit(filmed());
+    fireEvent.click(screen.getByTestId("story-film-add-cover"));
+
+    await waitFor(() => expect(useAppStore.getState().phase).toBe("clip"));
+    const timelineId = story().edit.timelineId;
+    expect(useClipStore.getState().activeTimelineId).toBe(timelineId);
+    const timeline = timelines().find((held) => held.id === timelineId);
+    const covering = (timeline?.clips ?? []).filter((clip) =>
+      clip.label?.startsWith("Cover"),
+    );
+    // A picture and its title, both at the start of the episode.
+    expect(covering).toHaveLength(2);
+    const text = covering.find((clip) => clip.kind === "text");
+    const picture = covering.find((clip) => clip.assetId !== undefined);
+    expect(text).toBeDefined();
+    expect(picture).toBeDefined();
+    expect(text?.startMs).toBe(0);
+    expect(picture?.startMs).toBe(0);
+    expect(useClipStore.getState().playheadMs).toBe(0);
+    expect(useClipStore.getState().selection.clipIds).toEqual([text!.id]);
+  });
+
   it("has nothing to confirm, and one link that lays the clips out", async () => {
     openAtEdit(filmed());
     // The step is the assembly: there is no confirm button to press, and the

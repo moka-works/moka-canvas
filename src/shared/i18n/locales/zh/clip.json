@@ -236,6 +236,9 @@
     "end": "片尾",
     "cover": "封面"
   },
+  "cover": {
+    "noTrack": "时间线没有多余的轨道可以放封面"
+  },
   "timelineArea": {
     "emptyHint": "把素材拖到轨道上开始剪辑",
     "emptyTitle": "这里还没有内容",

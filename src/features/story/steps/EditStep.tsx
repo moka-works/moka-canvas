@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { currentTake } from "../../../shared/domain";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
+import { execute } from "../../editor/commands/execute";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useModelStore } from "../../settings/modelStore";
+import { coverCommands } from "../../clip/cover";
+import { useClipStore } from "../../clip/stores/clipStore";
+import { presetById } from "../../clip/textStyles";
 import {
+  assemblyDigest,
   assemblySummary,
+  chapterStartMs,
   planAssembly,
   type AssemblyPlan,
   type AssemblyWarning,
@@ -22,6 +29,31 @@ import { useStoryStore } from "../stores/storyStore";
 
 /** How many warnings are listed before the rest are counted. */
 const WARNINGS_SHOWN = 5;
+
+/**
+ * The picture a cover opens on: the episode's first drawn frame, or the first
+ * clip it filmed, when no frame was drawn for it.
+ */
+function coverAsset(
+  story: StoryDocument,
+  plan: AssemblyPlan,
+  chapterIndex: number,
+): string | undefined {
+  const chapter = story.chapters[chapterIndex];
+  const act = chapter?.acts.find(
+    (held) =>
+      held.transition === undefined &&
+      held.keyframes.some((frame) => currentTake(frame.art) !== undefined),
+  );
+  const frame = act?.keyframes.find(
+    (held) => currentTake(held.art) !== undefined,
+  );
+  const art =
+    frame === undefined ? undefined : currentTake(frame.art)?.assetIds[0];
+  if (art !== undefined) return art;
+  return plan.units.find((unit) => unit.chapterIndex === chapterIndex + 1)
+    ?.assetId;
+}
 
 /**
  * The fifth step: a telling's clips laid end to end, rendered, and handed over.
@@ -38,6 +70,13 @@ export function EditStep({ story }: { story: StoryDocument }) {
   const [withSubtitles, setWithSubtitles] = useState(true);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [covering, setCovering] = useState(false);
+  const openChapterId = useStoryStore((state) => state.openChapterId);
+  const chapterAt = story.chapters.findIndex(
+    (held) => held.id === openChapterId,
+  );
+  const chapterIndex = chapterAt < 0 ? 0 : chapterAt;
+  const chapter = story.chapters[chapterIndex];
 
   const plan: AssemblyPlan =
     moka === null
@@ -61,6 +100,16 @@ export function EditStep({ story }: { story: StoryDocument }) {
   const timeline = (moka?.timelines ?? []).find(
     (held) => held.id === story.edit.timelineId,
   );
+  // Whether the timeline is behind the telling, read the same way the film
+  // card reads it: a telling never assembled is behind by definition.
+  const behind =
+    moka === null ||
+    assemblyDigest(story, moka, plan, {
+      withSubtitles,
+      ...(story.edit.timelineId === undefined
+        ? {}
+        : { timelineId: story.edit.timelineId }),
+    }) !== story.edit.assembledDigest;
   const spoken = story.chapters
     .flatMap((chapter) => chapter.acts)
     .flatMap((act) => act.keyframes)
@@ -124,6 +173,117 @@ export function EditStep({ story }: { story: StoryDocument }) {
     void assemble();
   };
 
+  /**
+   * Lays a cover at the start of the open episode and opens the cutting room
+   * on it. The picture under the title is the episode's first drawn frame (or
+   * its first clip); a telling whose assembly is behind is assembled first,
+   * unless that would rearrange clips the reader added by hand.
+   */
+  const addCover = async () => {
+    if (chapter === undefined || covering) return;
+    const chapterNumber = chapterIndex + 1;
+    if (!plan.units.some((unit) => unit.chapterIndex === chapterNumber)) {
+      useAppStore.getState().pushToast("info", t("story:edit.coverNoFootage"));
+      return;
+    }
+    setCovering(true);
+    try {
+      if (timeline === undefined || behind) {
+        if (foreign > 0) {
+          useAppStore
+            .getState()
+            .pushToast("error", t("story:edit.coverForeign"));
+          return;
+        }
+        await assembleStory(story.id, { withSubtitles });
+      }
+      const liveMoka = useProjectStore.getState().moka;
+      const live =
+        liveMoka === null
+          ? undefined
+          : (liveMoka.stories ?? []).find((held) => held.id === story.id);
+      const liveTimeline =
+        liveMoka === null || live?.edit.timelineId === undefined
+          ? undefined
+          : (liveMoka.timelines ?? []).find(
+              (held) => held.id === live.edit.timelineId,
+            );
+      if (
+        liveMoka === null ||
+        live === undefined ||
+        liveTimeline === undefined
+      ) {
+        useAppStore.getState().pushToast("error", t("story:edit.noTimeline"));
+        return;
+      }
+      const livePlan = planAssembly(live, liveMoka);
+      const startMs = chapterStartMs(livePlan, chapterNumber);
+      if (startMs === undefined) {
+        useAppStore
+          .getState()
+          .pushToast("info", t("story:edit.coverNoFootage"));
+        return;
+      }
+      const assetId = coverAsset(live, livePlan, chapterIndex);
+      const resource =
+        assetId === undefined ? undefined : findResource(liveMoka, assetId);
+      if (resource === undefined) {
+        useAppStore
+          .getState()
+          .pushToast("info", t("story:edit.coverNoPicture"));
+      }
+      const style = presetById("cover")?.style;
+      if (style === undefined) return;
+      const cover = coverCommands(liveTimeline, {
+        startMs,
+        title: chapter.title,
+        label: t("story:edit.coverLabel", { title: chapter.title }),
+        style,
+        ...(resource === undefined ? {} : { resource }),
+      });
+      if (cover.error !== undefined) {
+        useAppStore.getState().pushToast("error", cover.error);
+        return;
+      }
+      if (execute(i18n.t("story:history.addCover"), cover.commands) === null) {
+        useAppStore
+          .getState()
+          .pushToast("error", i18n.t("story:page.saveConflict"));
+        return;
+      }
+      await useProjectStore.getState().flush();
+      const after = useProjectStore.getState();
+      if (after.pending.length > 0 || after.saveStatus === "conflicted") {
+        useAppStore
+          .getState()
+          .pushToast(
+            "error",
+            after.saveStatus === "conflicted"
+              ? i18n.t("story:page.saveConflict")
+              : (after.saveError ?? i18n.t("story:page.saveFailed")),
+          );
+        return;
+      }
+      const clips = useClipStore.getState();
+      clips.setActiveTimeline(liveTimeline.id);
+      clips.setPlayhead(startMs);
+      clips.select({ clipIds: [cover.textClipId], transitionId: null });
+      useAppStore.getState().setPhase("clip");
+      useAppStore.getState().pushToast("success", t("story:edit.coverAdded"));
+    } catch (problem) {
+      useAppStore
+        .getState()
+        .pushToast(
+          "error",
+          problem instanceof Error ? problem.message : String(problem),
+          undefined,
+          problem instanceof AssembleTrouble ? problem.detail : undefined,
+        );
+    } finally {
+      setCovering(false);
+    }
+  };
+
   return (
     <div className="story-step-scroll" data-testid="story-step-edit-body">
       <div className="story-step-wide">
@@ -151,6 +311,20 @@ export function EditStep({ story }: { story: StoryDocument }) {
           <p className="story-hint">
             {spoken ? t("story:edit.subtitlesNote") : t("story:edit.noLines")}
           </p>
+
+          <div className="story-step-actions">
+            <button
+              data-testid="story-film-add-cover"
+              disabled={busy || covering}
+              onClick={() => void addCover()}
+              title={chapter?.title}
+              type="button"
+            >
+              {covering
+                ? t("story:edit.addCoverBusy")
+                : t("story:edit.addCover")}
+            </button>
+          </div>
 
           {sounded && (
             <p className="story-hint" data-testid="story-assembly-sound">

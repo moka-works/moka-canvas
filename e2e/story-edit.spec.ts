@@ -28,7 +28,13 @@ test.describe.configure({ timeout: 90_000 });
 async function persistedTimeline(page: Page): Promise<{
   name: string;
   isTheStories: boolean;
-  clips: Array<{ kind: string; startMs: number; durationMs: number }>;
+  clips: Array<{
+    kind: string;
+    startMs: number;
+    durationMs: number;
+    label: string;
+    fontSize?: number;
+  }>;
 }> {
   return page.evaluate(async () => {
     const response = await fetch("/api/v1/projects/current");
@@ -38,7 +44,13 @@ async function persistedTimeline(page: Page): Promise<{
         timelines?: {
           id?: string;
           name?: string;
-          clips?: { kind?: string; startMs?: number; durationMs?: number }[];
+          clips?: {
+            kind?: string;
+            startMs?: number;
+            durationMs?: number;
+            label?: string;
+            text?: { style?: { fontSize?: number } };
+          }[];
         }[];
       };
     };
@@ -53,6 +65,10 @@ async function persistedTimeline(page: Page): Promise<{
         kind: clip.kind ?? "",
         startMs: clip.startMs ?? 0,
         durationMs: clip.durationMs ?? 0,
+        label: clip.label ?? "",
+        ...(clip.text?.style?.fontSize === undefined
+          ? {}
+          : { fontSize: clip.text.style.fontSize }),
       })),
     };
   });
@@ -197,11 +213,22 @@ test("a telling is assembled into one timeline and handed to the cutting room", 
     // can happen is worth asking.
     await expect(page.getByTestId("path-browser")).toHaveCount(0);
 
-    // And the cutting room opens on that same timeline.
-    await page.getByTestId("story-film-open").click();
+    // A cover for the open episode: a picture and its title at the episode's
+    // start, laid by the story room and opened in the cutting room.
+    await page.getByTestId("story-film-add-cover").click();
     await expect(page.getByTestId("clip-page")).toBeVisible({
       timeout: 10_000,
     });
+    const covered = await persistedTimeline(page);
+    const coverClips = covered.clips.filter((clip) =>
+      clip.label.startsWith("Cover"),
+    );
+    expect(coverClips.map((clip) => clip.kind).sort()).toEqual([
+      "text",
+      "video",
+    ]);
+    expect(coverClips.every((clip) => clip.startMs === 0)).toBe(true);
+    expect(coverClips.find((clip) => clip.kind === "text")?.fontSize).toBe(96);
     await expect(
       page
         .getByRole("tablist", { name: "Timelines" })

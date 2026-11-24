@@ -353,6 +353,14 @@ export function planAssembly(
   };
 }
 
+/** Where an episode opens on the assembled timeline, when it holds a unit. */
+export function chapterStartMs(
+  plan: AssemblyPlan,
+  chapterIndex: number,
+): number | undefined {
+  return plan.units.find((unit) => unit.chapterIndex === chapterIndex)?.startMs;
+}
+
 /**
  * What assembling writes, as the one batch of commands it is.
  *

@@ -236,6 +236,9 @@
     "end": "End",
     "cover": "Cover"
   },
+  "cover": {
+    "noTrack": "The timeline has no room for another cover row"
+  },
   "timelineArea": {
     "emptyHint": "Drop media on a track to build the cut",
     "emptyTitle": "Nothing here yet",
