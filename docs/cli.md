@@ -22,6 +22,23 @@ moka doctor
 
 `doctor` 会打印找到的服务器、版本、当前项目与目录版本/工具数。找不到服务器时退出码为 3。
 
+## 登录（服务器启用鉴权时）
+
+Web 部署在 `config/moka.yaml` 里配置了 `server.auth` 后，未登录的 CLI 调用会收到 `403 AUTH_REQUIRED`。登录一次即可，会话保存在元数据目录的 `cli-sessions.json`（0600），其后的命令自动携带：
+
+```sh
+moka login --username moka                  # 密码从终端读取
+MOKA_PASSWORD='…' moka login --username moka
+moka login --username moka --password '…'   # 会进入 shell 历史，不推荐
+moka doctor                                 # access: signed in as moka
+moka logout                                 # 结束该服务器上的登录
+```
+
+- `MOKA_USERNAME` 可替代 `--username`；密码依次取 `--password`、`MOKA_PASSWORD`、终端输入。
+- 登录哪台服务器由 `--server` 或 `MOKA_SERVER` 决定；不同服务器各存一份会话。
+- 服务器未配置 `server.auth` 时，`moka login` 会说明无需登录。
+- 服务端改密码后旧会话立即失效，再执行一次 `moka login` 即可。
+
 ## 选择项目
 
 ```sh
@@ -80,12 +97,12 @@ moka --project ./lake audit list
 
 ## 退出码
 
-| 码  | 含义                                         |
-| --- | -------------------------------------------- |
-| 0   | 成功                                         |
-| 1   | 服务器拒绝（problem code 与消息写在 stderr） |
-| 2   | 用法错误或本地输入不合法                     |
-| 3   | 找不到 / 连不上服务器                        |
+| 码  | 含义                                          |
+| --- | --------------------------------------------- |
+| 0   | 成功                                          |
+| 1   | 服务器拒绝（problem code 与消息写在 stderr）  |
+| 2   | 用法错误或本地输入不合法                      |
+| 3   | 找不到 / 连不上服务器，或登录信息无法写入本地 |
 
 ## MCP
 
@@ -96,6 +113,7 @@ moka --project ./lake mcp serve
 - stdio、一行一条 JSON-RPC；实现 `initialize`、`tools/list`、`tools/call`、`ping`。
 - 只暴露 `both + external` 工具；工具名中的 `.` 换成 `_`。
 - 默认只读。写操作加 `--allow-write`，付费加 `--allow-spend`，删除/替换加 `--allow-destructive`，导出加 `--allow-export`。
+- 服务器启用鉴权时先执行 `moka login`；`mcp serve` 与每次工具调用一样携带保存的会话。
 - `tools/call` 的返回是文本化的工具响应；失败时 `isError: true`，正文保留 problem code 与消息。
 
 Claude Code / Cursor 一类客户端的配置示例（按实际路径调整）：

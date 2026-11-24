@@ -63,9 +63,11 @@ configuration does not turn the window into a login.
   cookie. Neither reports a filesystem path: the recording and metadata
   directories are named by deployment configuration and logs, not by a public
   liveness answer.
-- **The CLI has no cookie jar.** `moka` works against a local desktop server
-  and against a web deployment only while `server.auth` is empty. Use the
-  desktop app or an ungated deployment for scripted work.
+- **The CLI signs in with `moka login`.** It keeps the session cookie in
+  `<metadata.dir>/cli-sessions.json` (`0600`, one entry per server) and sends it
+  on every call; `moka logout` ends the session on the server and removes the
+  local record. A password given with `--password` lands in the shell history,
+  so `MOKA_PASSWORD` or the terminal prompt is the better way in.
 
 ## API keys
 

@@ -67,8 +67,10 @@ clear in this untracked file, so keep it readable by its owner alone
 (`chmod 600`). The server speaks plain HTTP: the cookie crosses the network in
 the clear, so a deployment other people can reach belongs behind a TLS reverse
 proxy. There is no rate limit beyond a 300 ms pause on a failed attempt. The
-desktop app ignores the section entirely. A server that ends up listening on
-something other than loopback says so in a warning at startup.
+desktop app ignores the section entirely; the CLI signs in once with
+`moka login` and keeps the session beside the metadata directory (see
+[cli.md](cli.md)). A server that ends up listening on something other than
+loopback says so in a warning at startup.
 
 ## Metadata directory
 

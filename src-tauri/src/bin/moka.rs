@@ -3,8 +3,11 @@
 //!
 //! It is a client and nothing more. Discovery finds a running local server; a
 //! project is named with `--project`; a tool call is the same HTTP route the
-//! interface calls. The exit code says what happened: 0 done, 1 refused by the
-//! server, 2 a bad invocation, 3 the server could not be reached.
+//! interface calls, and a server that asks for an account is opened with
+//! `moka login`, whose session is kept beside the metadata directory. The exit
+//! code says what happened: 0 done, 1 refused by the server, 2 a bad
+//! invocation, 3 the server could not be reached or the sign-in could not be
+//! kept.
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -13,9 +16,14 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use moka_canvas::metadata::paths;
 use reqwest::{Method, StatusCode};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const DEFAULT_SERVER: &str = "http://127.0.0.1:3000";
+
+/// Where the sign-ins this CLI was asked to keep are written, under the same
+/// directory the server's runtime note is looked for in.
+const LOGINS_FILE: &str = "cli-sessions.json";
 
 /// The Agent Skills shipped with this binary, embedded so `moka skills print`
 /// works from an installed package with no source tree.
@@ -69,8 +77,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Find the running server and say where it is.
+    /// Find the running server and say where it is, including whether it
+    /// asks for an account.
     Doctor,
+    /// Sign in to a server that asks for an account, and keep the session for
+    /// the calls that follow.
+    Login {
+        /// The account name. Read from MOKA_USERNAME, then stdin, when absent.
+        #[arg(long)]
+        username: Option<String>,
+        /// The password. Read from MOKA_PASSWORD, then stdin, when absent, so
+        /// it need not stand in the shell history.
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// End the sign-in kept for this server.
+    Logout,
     /// The tool catalog.
     Tools {
         #[command(subcommand)]
@@ -255,6 +277,7 @@ enum McpCommand {
 enum CliError {
     Usage(String),
     Transport(String),
+    Storage(String),
     Refused {
         code: String,
         message: String,
@@ -266,7 +289,7 @@ impl CliError {
     fn exit_code(&self) -> i32 {
         match self {
             Self::Usage(_) => 2,
-            Self::Transport(_) => 3,
+            Self::Transport(_) | Self::Storage(_) => 3,
             Self::Refused { .. } => 1,
         }
     }
@@ -275,6 +298,10 @@ impl CliError {
         match self {
             Self::Usage(message) => format!("usage: {message}"),
             Self::Transport(message) => format!("cannot reach the local server: {message}"),
+            Self::Storage(message) => format!("the sign-in could not be kept: {message}"),
+            Self::Refused { code, message, .. } if code == "AUTH_REQUIRED" => {
+                format!("{code}: {message}; run `moka login`")
+            }
             Self::Refused { code, message, .. } => format!("{code}: {message}"),
         }
     }
@@ -286,28 +313,38 @@ struct Client {
     http: reqwest::Client,
     base: String,
     project: Option<String>,
+    /// The session a sign-in left for this server, when one was kept.
+    cookie: Option<String>,
     yes: bool,
     verbose: bool,
 }
 
 impl Client {
     async fn connect(cli: &Cli) -> Result<Self> {
-        let base = discover(cli.server.clone()).await?;
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|error| CliError::Transport(error.to_string()))?;
-        let mut client = Self {
-            http,
-            base,
-            project: None,
-            yes: cli.yes,
-            verbose: cli.verbose,
-        };
+        let mut client = Self::bare(cli).await?;
         if let Some(named) = &cli.project {
             client.project = Some(client.open_project(named).await?);
         }
         Ok(client)
+    }
+
+    /// The address and the kept sign-in, without opening a project: a login
+    /// has to work before anything a project needs is readable.
+    async fn bare(cli: &Cli) -> Result<Self> {
+        let base = discover(cli.server.clone()).await?;
+        let cookie = stored_login(&base).map(|login| login.cookie);
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|error| CliError::Transport(error.to_string()))?;
+        Ok(Self {
+            http,
+            base,
+            project: None,
+            cookie,
+            yes: cli.yes,
+            verbose: cli.verbose,
+        })
     }
 
     async fn open_project(&self, named: &str) -> Result<String> {
@@ -342,6 +379,9 @@ impl Client {
         let mut request = self.http.request(method, format!("{}{path}", self.base));
         if let Some(project) = &self.project {
             request = request.header("x-moka-project", project);
+        }
+        if let Some(cookie) = &self.cookie {
+            request = request.header(reqwest::header::COOKIE, cookie);
         }
         if let Some(body) = body {
             request = request.json(&body);
@@ -437,8 +477,11 @@ async fn discover(flag: Option<String>) -> Result<String> {
         .map_err(|error| CliError::Transport(error.to_string()))?;
     for candidate in &candidates {
         let base = candidate.trim_end_matches('/').to_string();
+        // The liveness answer is public even when the server asks for an
+        // account; the configuration route is not, so probing it would make a
+        // gated server look absent.
         if probe
-            .get(format!("{base}/api/v1/config"))
+            .get(format!("{base}/api/health"))
             .send()
             .await
             .map(|response| response.status().is_success())
@@ -461,6 +504,224 @@ fn runtime_note() -> Option<String> {
     let raw = std::fs::read_to_string(root.join("runtime.json")).ok()?;
     let note: Value = serde_json::from_str(&raw).ok()?;
     note.get("url").and_then(Value::as_str).map(str::to_string)
+}
+
+/// One sign-in kept for one server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredLogin {
+    username: String,
+    /// The `moka_session=…` pair alone, as it came in `Set-Cookie`.
+    cookie: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredLogins {
+    version: u32,
+    #[serde(default)]
+    servers: std::collections::BTreeMap<String, StoredLogin>,
+}
+
+/// Where the kept sign-ins live: the metadata directory, or the platform
+/// default when no override names one. Same machine, same owner, one file.
+fn logins_path() -> Option<PathBuf> {
+    match std::env::var("MOKA_METADATA_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir).join(LOGINS_FILE)),
+        _ => paths::platform_default()
+            .ok()
+            .map(|root| root.join(paths::DIR_NAME).join(LOGINS_FILE)),
+    }
+}
+
+fn read_logins() -> StoredLogins {
+    let Some(path) = logins_path() else {
+        return StoredLogins {
+            version: 1,
+            servers: Default::default(),
+        };
+    };
+    std::fs::read(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<StoredLogins>(&raw).ok())
+        .filter(|logins| logins.version == 1)
+        .unwrap_or(StoredLogins {
+            version: 1,
+            servers: Default::default(),
+        })
+}
+
+fn stored_login(base: &str) -> Option<StoredLogin> {
+    read_logins().servers.remove(base)
+}
+
+fn keep_login(base: &str, login: StoredLogin) -> Result<()> {
+    let path =
+        logins_path().ok_or_else(|| CliError::Storage("no application data directory".into()))?;
+    let root = path
+        .parent()
+        .ok_or_else(|| CliError::Storage(format!("{} has no directory", path.display())))?;
+    std::fs::create_dir_all(root).map_err(|error| CliError::Storage(error.to_string()))?;
+    let mut logins = read_logins();
+    logins.version = 1;
+    logins.servers.insert(base.to_string(), login);
+    write_logins(root, &path, &logins)
+}
+
+fn forget_login(base: &str) -> Result<()> {
+    let Some(path) = logins_path() else {
+        return Ok(());
+    };
+    let Some(root) = path.parent() else {
+        return Ok(());
+    };
+    let mut logins = read_logins();
+    if logins.servers.remove(base).is_none() {
+        return Ok(());
+    }
+    write_logins(root, &path, &logins)
+}
+
+fn write_logins(
+    root: &std::path::Path,
+    path: &std::path::Path,
+    logins: &StoredLogins,
+) -> Result<()> {
+    let bytes =
+        serde_json::to_vec_pretty(logins).map_err(|error| CliError::Storage(error.to_string()))?;
+    moka_canvas::metadata::fs::atomic_write(
+        root,
+        path,
+        &bytes,
+        moka_canvas::metadata::fs::SECRET_MODE,
+    )
+    .map_err(|error| CliError::Storage(format!("{}: {error}", path.display())))
+}
+
+/// Reads one answer off the terminal, after naming what is wanted.
+///
+/// The name goes to stderr so that a piped answer and the command's own output
+/// do not run into each other.
+fn prompt(label: &str) -> Result<String> {
+    eprint!("{label}");
+    std::io::stderr()
+        .flush()
+        .map_err(|error| CliError::Usage(error.to_string()))?;
+    let mut line = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .map_err(|error| CliError::Usage(error.to_string()))?;
+    Ok(line.trim_end_matches(['\n', '\r']).to_string())
+}
+
+fn failure_status(status: StatusCode, value: &Value) -> CliError {
+    CliError::Refused {
+        code: value
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("INTERNAL")
+            .to_string(),
+        message: value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("the request was refused")
+            .to_string(),
+        status: status.as_u16(),
+    }
+}
+
+fn http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| CliError::Transport(error.to_string()))
+}
+
+async fn login(
+    flag: Option<String>,
+    json: bool,
+    username: Option<String>,
+    password: Option<String>,
+) -> Result<()> {
+    let base = discover(flag).await?;
+    let username = match username.filter(|name| !name.trim().is_empty()) {
+        Some(name) => name,
+        None => match std::env::var("MOKA_USERNAME") {
+            Ok(name) if !name.trim().is_empty() => name,
+            _ => prompt("Username: ")?,
+        },
+    };
+    let password = match password {
+        Some(password) => password,
+        None => match std::env::var("MOKA_PASSWORD") {
+            Ok(password) if !password.is_empty() => password,
+            _ => prompt("Password: ")?,
+        },
+    };
+
+    let response = http_client()?
+        .post(format!("{base}/api/auth/login"))
+        .json(&json!({ "username": username, "password": password }))
+        .send()
+        .await
+        .map_err(|error| CliError::Transport(error.to_string()))?;
+    let status = response.status();
+    if status == StatusCode::NO_CONTENT {
+        let cookie = response
+            .headers()
+            .get(reqwest::header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                CliError::Transport("the server signed in without a session cookie".into())
+            })?;
+        keep_login(
+            &base,
+            StoredLogin {
+                username: username.clone(),
+                cookie,
+            },
+        )?;
+        if json {
+            print_value(&json!({ "server": base, "username": username }), true);
+        } else {
+            println!("Signed in to {base} as {username}");
+        }
+        return Ok(());
+    }
+    let value: Value = response
+        .json()
+        .await
+        .unwrap_or_else(|_| json!({"code": "INTERNAL", "message": "the request was refused"}));
+    if value.get("code").and_then(Value::as_str) == Some("AUTH_NOT_CONFIGURED") {
+        if json {
+            print_value(&json!({ "server": base, "required": false }), true);
+        } else {
+            println!("{base} does not ask for an account; there is nothing to sign in to");
+        }
+        return Ok(());
+    }
+    Err(failure_status(status, &value))
+}
+
+async fn logout(flag: Option<String>, json: bool) -> Result<()> {
+    let base = discover(flag).await?;
+    if let Some(login) = stored_login(&base) {
+        // Best-effort on the server: the local record goes either way, so a
+        // session the server has already forgotten is not left behind here.
+        let _ = http_client()?
+            .post(format!("{base}/api/auth/logout"))
+            .header(reqwest::header::COOKIE, login.cookie)
+            .send()
+            .await;
+    }
+    forget_login(&base)?;
+    if json {
+        print_value(&json!({ "server": base, "signedOut": true }), true);
+    } else {
+        println!("Signed out of {base}");
+    }
+    Ok(())
 }
 
 fn print_value(value: &Value, json: bool) {
@@ -639,11 +900,31 @@ async fn run(cli: Cli) -> Result<()> {
         }
         return Ok(());
     }
+    if let Command::Login { username, password } = &cli.command {
+        return login(cli.server.clone(), json, username.clone(), password.clone()).await;
+    }
+    if matches!(&cli.command, Command::Logout) {
+        return logout(cli.server.clone(), json).await;
+    }
     let mut client = Client::connect(&cli).await?;
     match cli.command {
+        Command::Login { .. } | Command::Logout => {
+            unreachable!("handled before a client is built")
+        }
         Command::Doctor => {
-            let config = client.get("/api/v1/config").await?;
-            let capabilities = client.get("/api/v1/agent/capabilities").await?;
+            // Asked first: a server that wants an account refuses everything
+            // else, and "which door is this" is still worth answering.
+            let session = client.get("/api/auth/session").await.unwrap_or(Value::Null);
+            let gated = session.get("required").and_then(Value::as_bool) == Some(true);
+            let authenticated = session.get("authenticated").and_then(Value::as_bool) == Some(true);
+            let (config, capabilities) = if gated && !authenticated {
+                (Value::Null, Value::Null)
+            } else {
+                (
+                    client.get("/api/v1/config").await?,
+                    client.get("/api/v1/agent/capabilities").await?,
+                )
+            };
             let report = json!({
                 "cli": env!("CARGO_PKG_VERSION"),
                 "executable": std::env::current_exe().ok().map(|path| path.display().to_string()),
@@ -653,6 +934,7 @@ async fn run(cli: Cli) -> Result<()> {
                 "catalogVersion": capabilities.get("catalogVersion"),
                 "catalogHash": capabilities.get("catalogHash"),
                 "toolCount": capabilities.get("toolCount"),
+                "auth": session,
             });
             if json {
                 print_value(&report, true);
@@ -675,6 +957,18 @@ async fn run(cli: Cli) -> Result<()> {
                     report["catalogVersion"].as_str().unwrap_or("unknown"),
                     report["toolCount"].as_u64().unwrap_or(0)
                 );
+                if report["auth"]["required"].as_bool().unwrap_or(false) {
+                    if report["auth"]["authenticated"].as_bool().unwrap_or(false) {
+                        println!(
+                            "access: signed in as {}",
+                            report["auth"]["username"].as_str().unwrap_or("")
+                        );
+                    } else {
+                        println!("access: account required; run `moka login`");
+                    }
+                } else {
+                    println!("access: open");
+                }
             }
         }
         Command::Tools { command } => match command {
@@ -1117,6 +1411,7 @@ async fn serve_mcp(client: Client, policy: McpPolicy) -> Result<()> {
                             http: client.http.clone(),
                             base: client.base.clone(),
                             project: client.project.clone(),
+                            cookie: client.cookie.clone(),
                             yes: true,
                             verbose: client.verbose,
                         };
