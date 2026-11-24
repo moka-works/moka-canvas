@@ -170,7 +170,12 @@ impl LocalServer {
         if !address.ip().is_loopback() {
             tracing::warn!(
                 target: "moka::server",
-                "listening on {address}, which is not loopback: anything that can reach this port can read and write every project this process can open, and nothing in front of these routes asks who is calling (see docs/security.md)"
+                "listening on {address}, which is not loopback: {} (see docs/security.md)",
+                if state.auth.is_some() {
+                    "the login page guards every route, and the session cookie crosses the network in the clear unless a TLS proxy stands in front"
+                } else {
+                    "nothing in front of these routes asks who is calling, so anything that can reach this port can read and write every project this process can open; set server.auth to ask for an account"
+                }
             );
         }
         // A CLI on this machine finds the server without a flag: the note
@@ -265,6 +270,7 @@ pub fn router(state: ApiState) -> Router {
     let max_body = state.config.server.max_upload_bytes as usize;
     let index = static_dir.join("index.html");
     let static_service = ServeDir::new(static_dir).fallback(ServeFile::new(index));
+    let auth_state = state.clone();
 
     Router::new()
         .route("/api/health", get(health))
@@ -273,6 +279,12 @@ pub fn router(state: ApiState) -> Router {
         .merge(crate::api::router())
         .fallback_service(static_service)
         .layer(middleware::from_fn(cache_static))
+        // Inside the request log so a refusal is written down, outside the
+        // static cache so it covers the page and every route alike.
+        .layer(middleware::from_fn_with_state(
+            auth_state,
+            crate::api::auth::require_auth,
+        ))
         .layer(middleware::from_fn(log_api_request))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -292,13 +304,11 @@ async fn health(State(state): State<ApiState>) -> impl IntoResponse {
     let documents = serde_json::to_value(&info.documents).unwrap_or_default();
     // Said out loud because a recording is the one diagnostic that changes what
     // the application keeps, and a reader who does not know it is on cannot weigh
-    // what is on the disk in the application data directory. The directory is a
-    // path and not a credential; the credentials inside it are always masked.
+    // what is on the disk in the application data directory. Only whether it is
+    // on travels: this answer is public, and a filesystem path is not something
+    // a probe needs.
     let recording = match crate::generate::debug::active() {
-        Some(settings) => json!({
-            "enabled": true,
-            "dir": settings.dir.to_string_lossy(),
-        }),
+        Some(_) => json!({ "enabled": true }),
         None => json!({ "enabled": false }),
     };
     Json(json!({
@@ -306,7 +316,6 @@ async fn health(State(state): State<ApiState>) -> impl IntoResponse {
         "llmDebug": recording,
         "metadata": {
             "store": serde_json::to_value(info.store).unwrap_or_default(),
-            "root": info.root.to_string_lossy(),
             "schemaVersion": info.schema_version,
             "secretStorage": serde_json::to_value(info.secret_storage).unwrap_or_default(),
             "ok": ok,

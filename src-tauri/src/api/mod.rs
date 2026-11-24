@@ -14,6 +14,7 @@ use axum::http::request::Parts;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub mod auth;
 pub mod dto;
 pub mod filesystem;
 pub mod problem;
@@ -23,6 +24,9 @@ pub mod routes;
 pub struct ApiState {
     pub mode: RuntimeMode,
     pub config: Arc<AppConfig>,
+    /// Who this deployment asks for, when it asks at all. Absent on a desktop
+    /// window and on a web deployment whose configuration names no account.
+    pub auth: Option<Arc<auth::Auth>>,
     /// Every project this process holds open. A request that names one is
     /// answered about that project; a request that names none is answered
     /// about the last one opened, which is what a lone window always meant.
@@ -79,13 +83,12 @@ impl ApiState {
             .parent()
             .map(|p| p.join("nodes"))
             .unwrap_or_else(|| PathBuf::from("nodes"));
-        Ok(Self::with_metadata(
-            config,
-            mode,
-            metadata,
-            converter_root,
-            nodes_root,
-        ))
+        // Rebuilt here rather than in `with_metadata` alone because the gate's
+        // sessions are kept in the metadata directory, and this is where that
+        // directory is known.
+        let mut state = Self::with_metadata(config, mode, metadata, converter_root, nodes_root);
+        state.auth = auth::Auth::open(&state.config.server.auth, mode, Some(root));
+        Ok(state)
     }
 
     pub fn with_metadata(
@@ -132,6 +135,9 @@ impl ApiState {
         );
         let story_jobs =
             StoryJobManager::new(provider, config.story.clone(), Some(Arc::clone(&frames)));
+        // In memory alone until `new` gives it the metadata directory; a test
+        // that builds a state directly still gets the same gate.
+        let auth = auth::Auth::open(&config.server.auth, mode, None);
         Self {
             mode,
             store,
@@ -139,6 +145,7 @@ impl ApiState {
             models,
             gateway,
             config,
+            auth,
             runs,
             story_jobs,
             clip_probe,
@@ -443,6 +450,7 @@ pub fn router() -> axum::Router<ApiState> {
             post(routes::agent_change_undo),
         )
         .route("/api/v1/agent/audit", get(routes::agent_audit))
+        .merge(auth::router())
 }
 
 /// A generation request carries a prompt and references to assets already in

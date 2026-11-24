@@ -3,6 +3,14 @@
   "starting": "正在启动 {{name}}…",
   "bootFailed": "{{name}} 无法启动",
   "unknownError": "未知错误",
+  "login": {
+    "title": "登录 {{name}}",
+    "subtitle": "此服务器要求输入配置中的账号密码，登录后才能查看项目和使用其它功能。",
+    "username": "用户名",
+    "password": "密码",
+    "submit": "登录",
+    "signingIn": "正在登录…"
+  },
   "tagline": "本地优先的视频工作流，让每个人成为自己的导演",
   "recentProjects": "最近项目",
   "loading": "加载中…",

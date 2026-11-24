@@ -13,6 +13,17 @@ server:
   bind: "127.0.0.1:3000"
   staticDir: "./dist"
   maxUploadBytes: 2147483648
+  # Who may use this deployment. Both empty — the default — serves everyone,
+  # which is what a loopback server means. Setting both asks for them on the
+  # page and on every API call: a browser without a session cookie is sent to
+  # the login page, and anything else under /api answers 403. A half-written
+  # pair is refused at startup. The password is stored in the clear: this file
+  # is not committed, and it should be readable by its owner alone
+  # (chmod 600). /api/health and /api/ready stay public for probes. The desktop
+  # app ignores this section.
+  auth:
+    username: ""
+    password: ""
 projects:
   maxMokaFileBytes: 33554432
 metadata:

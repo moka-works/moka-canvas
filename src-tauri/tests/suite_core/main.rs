@@ -1,6 +1,7 @@
 //! Document, storage and API surface tests.
 
 mod api;
+mod auth;
 mod contract;
 mod director;
 mod limits;

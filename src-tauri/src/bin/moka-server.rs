@@ -103,6 +103,12 @@ anything able to read that directory can read."
     }
     let metadata_root = validate_startup(&config, RuntimeMode::Web, None)?;
 
+    if config.server.auth.is_enabled() {
+        println!(
+            "Access is gated by server.auth: sign in as {}",
+            config.server.auth.username
+        );
+    }
     let server = LocalServer::start(config, RuntimeMode::Web, &metadata_root).await?;
     println!("Moka Canvas is available at {}", server.display_url());
     tokio::signal::ctrl_c().await?;

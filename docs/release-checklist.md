@@ -393,10 +393,11 @@ Configuration, recent projects, model configurations, and encrypted credentials
 live in the platform application-data directory, never in the program tree. See
 [security.md](security.md) and [deployment.md](deployment.md).
 
-1. Record the path from `GET /api/health` (`metadata.root`). It is
-   reported with the home directory replaced by a literal `$HOME`;
-   expand it and confirm it is the OS application-data location for
-   that platform, not the install directory.
+1. Confirm the metadata directory is the OS application-data location for
+   that platform, not the install directory: it is the `metadata.dir` setting
+   when one is written, and the platform default otherwise. `/api/health` no
+   longer reports the path, so read it from the configuration or the startup
+   log.
 2. Confirm no metadata file landed in the program tree: nothing named
    `meta.json`, `recent-projects.json`, `models.json`, `ui.json`,
    `secrets.json`, or `master.key` under the repository `data/`,

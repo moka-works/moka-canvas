@@ -129,6 +129,63 @@ h2 {
   max-width: 420px;
 }
 
+/* Sign-in */
+
+.login-screen {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 380px;
+  padding: 28px;
+  width: 100%;
+}
+
+.login-card h1 {
+  font-size: 1.15rem;
+  margin-bottom: 0;
+}
+
+.login-card > p {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 0;
+}
+
+.login-field {
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.login-failure {
+  color: var(--danger);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.login-failure p {
+  color: var(--muted);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Launcher */
 
 .launcher {

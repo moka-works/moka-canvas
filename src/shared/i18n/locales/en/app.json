@@ -3,6 +3,14 @@
   "starting": "Starting {{name}}…",
   "bootFailed": "{{name}} could not start",
   "unknownError": "Unknown error",
+  "login": {
+    "title": "Sign in to {{name}}",
+    "subtitle": "This server asks for the account named in its configuration. Projects and settings are served only after signing in.",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "signingIn": "Signing in…"
+  },
   "tagline": "Local-first video workflow boards, direct your own story fluidly",
   "recentProjects": "Recent projects",
   "loading": "Loading…",

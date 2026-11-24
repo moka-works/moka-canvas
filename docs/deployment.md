@@ -45,11 +45,30 @@ inside a configuration file resolve against the working directory.
 `--host` and `--port` each name one part of the address and each beats the
 configuration file for that part alone, so `--host 0.0.0.0` listens on every
 interface and `--port 9000` moves the port without moving the address. Exposing
-the server on another interface means accepting that there is no authentication
-layer: anyone who can reach the port can read and write every project the
-process can open. A server that ends up listening on something other than
-loopback says so in a warning at startup. Put it behind a reverse proxy that
-handles identity if you need that at all.
+the server on another interface means deciding who may use it. `server.auth`
+names one account:
+
+```yaml
+server:
+  auth:
+    username: "moka"
+    password: "a long passphrase"
+```
+
+With both set, a browser without a session cookie is sent to `/login`, and
+every route under `/api/` except the sign-in routes and the two probes answers
+`403 AUTH_REQUIRED` until it has one. The cookie is `moka_session`, `HttpOnly`,
+`SameSite=Lax`, and lasts seven days; sessions are kept in the metadata
+directory (`auth-sessions.json`, `0600`) so a restart does not sign everyone
+out, and changing the password ends the sessions issued under the old one.
+Both values empty — the default — serves everyone, as before; a half-written
+pair fails startup with `CONFIG_AUTH_INCOMPLETE`. The password is stored in the
+clear in this untracked file, so keep it readable by its owner alone
+(`chmod 600`). The server speaks plain HTTP: the cookie crosses the network in
+the clear, so a deployment other people can reach belongs behind a TLS reverse
+proxy. There is no rate limit beyond a 300 ms pause on a failed attempt. The
+desktop app ignores the section entirely. A server that ends up listening on
+something other than loopback says so in a warning at startup.
 
 ## Metadata directory
 
@@ -281,9 +300,12 @@ The two sound capabilities are configured apart: the `speech` default reads a te
 
 ## Probes
 
-| Endpoint          | Status     | Purpose                                                                                                                                                                                                                    |
-| ----------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health` | always 200 | Liveness plus metadata diagnostics: store kind, redacted root, schema version, secret-storage tier, and per-document size, revision, and corruption flags. `ok` is false when any document was reset from a damaged state. |
-| `GET /api/ready`  | 200 or 503 | Readiness: the static asset directory exists, a full write probe against the metadata directory succeeded, and any open project directory still exists. The body lists each check.                                         |
+| Endpoint          | Status     | Purpose                                                                                                                                                                                                                                            |
+| ----------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health` | always 200 | Liveness plus metadata diagnostics: store kind, schema version, secret-storage tier, whether provider-call recording is on, and per-document size, revision, and corruption flags. `ok` is false when any document was reset from a damaged state. |
+| `GET /api/ready`  | 200 or 503 | Readiness: the static asset directory exists, a full write probe against the metadata directory succeeded, and any open project directory still exists. The body lists each check.                                                                 |
 
-Neither endpoint reports paths verbatim or any credential material.
+Both stay reachable without a sign-in even when `server.auth` is set, and
+neither reports a filesystem path or any credential material. The sign-in
+routes are `POST /api/auth/login`, `POST /api/auth/logout`, and
+`GET /api/auth/session`.

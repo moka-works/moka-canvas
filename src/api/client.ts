@@ -84,6 +84,25 @@ export function isConfigurationCode(code: string | undefined): boolean {
   );
 }
 
+/** Whether a refusal has already sent this window to the sign-in page. */
+let signingIn = false;
+
+/**
+ * Sends a window that has lost its session to the sign-in route.
+ *
+ * A page still open when the server stops trusting its cookie — the account
+ * was changed, or the sessions were cleared — would otherwise collect the
+ * failure of every request it makes. One move is made rather than one per
+ * request, and the page it was on is where the sign-in returns to.
+ */
+function redirectToSignIn(): void {
+  if (signingIn || typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  signingIn = true;
+  const next = `${window.location.pathname}${window.location.search}`;
+  window.location.replace(`/login?next=${encodeURIComponent(next)}`);
+}
+
 /**
  * Whether the reader can fix this in Settings rather than by asking again.
  *
@@ -279,12 +298,14 @@ export async function readProblem(
       typeof problem.code === "string" &&
       typeof problem.message === "string"
     ) {
-      return new ApiError({
+      const error = new ApiError({
         code: problem.code,
         message: problem.message,
         status: response.status,
         details: problem.details,
       });
+      if (error.code === "AUTH_REQUIRED") redirectToSignIn();
+      return error;
     }
   } catch {
     // No body to read, which leaves the status as the whole of what is known.
@@ -322,6 +343,7 @@ function requestWithProgress<T>(
       }
       try {
         const problem = JSON.parse(xhr.responseText) as ProblemBody;
+        if (problem.code === "AUTH_REQUIRED") redirectToSignIn();
         reject(new ApiError({ ...problem, status: xhr.status }));
       } catch {
         reject(

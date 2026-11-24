@@ -3,6 +3,11 @@ server:
   bind: "127.0.0.1:0"
   staticDir: "${resourceDir}/web"
   maxUploadBytes: 2147483648
+  # Always empty here: the desktop window is gated by the operating system,
+  # and an override that wrote a password is ignored at load time.
+  auth:
+    username: ""
+    password: ""
 projects:
   maxMokaFileBytes: 33554432
 metadata:

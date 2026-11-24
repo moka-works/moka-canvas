@@ -26,6 +26,47 @@ project directory.
 Override the location with `MOKA_METADATA_DIR` (see
 [deployment.md](deployment.md)).
 
+## Web access control
+
+A web deployment is open until `config/moka.yaml` names an account:
+
+```yaml
+server:
+  auth:
+    username: "moka"
+    password: "a long passphrase"
+```
+
+Both values or neither: a half-written pair fails startup with
+`CONFIG_AUTH_INCOMPLETE`. With both set, a browser arriving at any page without
+a session cookie is redirected to `/login`, and every route under `/api/`
+except the sign-in routes and the two probes answers `403 AUTH_REQUIRED`. The
+desktop app is never gated this way: it ignores the section, and a copied web
+configuration does not turn the window into a login.
+
+- **The password is plaintext.** It sits in the same untracked file as the
+  rest of the deployment's settings, so keep that file readable by its owner
+  alone (`chmod 600`) and never commit it.
+- **The cookie** is `moka_session`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and
+  lasts seven days. It carries no `Secure` flag because the server speaks
+  plain HTTP: the cookie crosses the network in the clear, so anything beyond
+  a trusted network belongs behind a TLS reverse proxy.
+- **Sessions outlive a restart.** They are kept in
+  `<metadata.dir>/auth-sessions.json` (`0600`), written through the same atomic
+  write path as every metadata document. Each record carries a digest of the
+  credentials it was issued under, so changing the password ends them; signing
+  out ends the one session it was asked about.
+- **What is not built:** no rate limiting beyond a 300 ms pause on a failed
+  attempt, no lockout, no account store beyond the one pair. A login page is
+  not a substitute for keeping the port off a network that should not reach it.
+- **The probes stay public.** `/api/health` and `/api/ready` answer without a
+  cookie. Neither reports a filesystem path: the recording and metadata
+  directories are named by deployment configuration and logs, not by a public
+  liveness answer.
+- **The CLI has no cookie jar.** `moka` works against a local desktop server
+  and against a web deployment only while `server.auth` is empty. Use the
+  desktop app or an ungated deployment for scripted work.
+
 ## API keys
 
 A provider API key is written to disk only as ciphertext:
@@ -191,10 +232,11 @@ The protections that apply:
   after the answer is already in hand, and a disk that will not take one is
   complained about in the log rather than handed back to whoever asked.
 
-`/api/health` reports whether recording is on and where it is writing, so that
-somebody who did not switch it on can find out that it is. Turn it off by
-removing the setting, and delete the directory: nothing cleans it up, and a long
-run with large media in the answers can write gigabytes.
+`/api/health` reports whether recording is on, so that somebody who did not
+switch it on can find out that it is; the directory it writes to is named in
+the configuration and the log rather than in the public liveness answer. Turn
+it off by removing the setting, and delete the directory: nothing cleans it up,
+and a long run with large media in the answers can write gigabytes.
 
 Enable it three ways, in descending order of precedence: `moka-server
 --llm-debug`, the environment (`MOKA_LLM_DEBUG=1`), and the configuration file
@@ -230,10 +272,11 @@ What narrows it:
 What it does cost is worth stating plainly, because it is the one part of this
 API that describes the machine rather than the work: a caller who can reach the
 port can enumerate directory names across the filesystem the process can read.
-That is the same trust the rest of the API already asks for — there is no
-authentication layer, and whoever reaches the port can open any project the
-process can open (see [deployment.md](deployment.md)) — but it is a wider answer
-than any other route gives, which is why it is the one route the desktop runtime
+That is the same trust the rest of the API already asks for — unless
+`server.auth` names an account, whoever reaches the port can open any project
+the process can open (see [deployment.md](deployment.md) and
+[Web access control](#web-access-control)) — but it is a wider answer than any
+other route gives, which is why it is the one route the desktop runtime
 refuses. Keep the server on loopback, or put identity in front of it.
 
 ## Writing files

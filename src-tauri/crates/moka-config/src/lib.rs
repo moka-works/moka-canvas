@@ -21,13 +21,49 @@ pub const FILE_STORE: &str = "file";
 /// rather than what one machine wants.
 pub const DEFAULT_CONFIG_PATH: &str = "config/moka.yaml";
 
+/// Who may use a web deployment.
+///
+/// Both empty is the default and means nobody is asked: every request is
+/// served, as it always was. Both set means a browser is sent to the login
+/// page and every other API call is refused until it holds a session cookie.
+/// One of the two is a mistake rather than a password nobody can type, and is
+/// refused at startup.
+///
+/// The password is written here in the clear. This section belongs in
+/// `config/moka.yaml`, which no deployment commits, and that file should be
+/// readable by its owner alone. The desktop app never asks for a password,
+/// whatever this says.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthConfig {
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+impl AuthConfig {
+    /// Nothing written: the server answers everyone.
+    pub fn is_empty(&self) -> bool {
+        self.username.is_empty() && self.password.is_empty()
+    }
+
+    /// Both written: the server asks for them. A half-written pair never
+    /// reaches here, because [`settle`] refuses it first.
+    pub fn is_enabled(&self) -> bool {
+        !self.username.is_empty() && !self.password.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ServerConfig {
     pub bind: String,
     pub static_dir: PathBuf,
     #[serde(default = "default_max_upload_bytes")]
     pub max_upload_bytes: u64,
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 impl Default for ServerConfig {
@@ -36,6 +72,7 @@ impl Default for ServerConfig {
             bind: default_bind().to_string(),
             static_dir: PathBuf::from(default_static_dir()),
             max_upload_bytes: default_max_upload_bytes(),
+            auth: AuthConfig::default(),
         }
     }
 }
@@ -570,8 +607,7 @@ impl AppConfig {
             .enabled_executors
             .iter()
             .filter(|key| {
-                key.as_str() != PROVIDER_EXECUTOR_KEY
-                    && key.as_str() != EXTENSION_EXECUTOR_KEY
+                key.as_str() != PROVIDER_EXECUTOR_KEY && key.as_str() != EXTENSION_EXECUTOR_KEY
             })
             .cloned()
             .collect()
@@ -602,6 +638,8 @@ pub enum ConfigError {
     MetadataStoreUnsupported(String),
     #[error("metadata master key is unavailable: {0}")]
     MetadataKeyMissing(String),
+    #[error("server.auth needs both a username and a password, or neither")]
+    AuthIncomplete,
 }
 
 impl ConfigError {
@@ -614,6 +652,7 @@ impl ConfigError {
             Self::MetadataDirInvalid(_) => "CONFIG_METADATA_DIR_INVALID",
             Self::MetadataStoreUnsupported(_) => "CONFIG_METADATA_STORE_UNSUPPORTED",
             Self::MetadataKeyMissing(_) => "CONFIG_METADATA_KEY_MISSING",
+            Self::AuthIncomplete => "CONFIG_AUTH_INCOMPLETE",
         }
     }
 }
@@ -695,13 +734,23 @@ pub fn load_native_config(
     // An error here is about what the reader wrote, so it names their file: a
     // refusal that says only "invalid type" leaves them hunting the build's
     // document, which they cannot see.
-    let config: AppConfig = serde_yaml::from_value(merged).map_err(|error| {
+    let mut config: AppConfig = serde_yaml::from_value(merged).map_err(|error| {
         let message = match &source {
             Some(path) => format!("{}: {error}", path.display()),
             None => error.to_string(),
         };
         ConfigError::InvalidYaml(message)
     })?;
+    // The desktop window is the machine's own reader, and the operating system
+    // already decides who may open it. A password here would gate nothing the
+    // desktop can be reached through, so it is ignored rather than honoured;
+    // a copy of a web deployment's file does not turn the window into a login.
+    if !config.server.auth.is_empty() {
+        tracing::warn!(
+            "server.auth is ignored by the desktop app: access is decided by the operating system"
+        );
+        config.server.auth = AuthConfig::default();
+    }
     settle(config)
 }
 
@@ -815,6 +864,12 @@ fn settle(config: AppConfig) -> Result<AppConfig, ConfigError> {
     if config.version != 1 {
         return Err(ConfigError::UnsupportedVersion(config.version));
     }
+    // Neither or both. A username with no password is not a gate anybody can
+    // open, and starting with one is how a deployment believes it is protected
+    // when it is not.
+    if !config.server.auth.is_empty() && !config.server.auth.is_enabled() {
+        return Err(ConfigError::AuthIncomplete);
+    }
     Ok(config)
 }
 
@@ -854,6 +909,7 @@ pub fn parse_test_config(root: &Path) -> AppConfig {
             bind: "127.0.0.1:0".into(),
             static_dir,
             max_upload_bytes: default_max_upload_bytes(),
+            auth: AuthConfig::default(),
         },
         projects: ProjectsConfig {
             max_moka_file_bytes: default_max_moka_file_bytes(),
@@ -1067,6 +1123,78 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let error = native_with_override(root.path(), "version: 2\n").unwrap_err();
         assert_eq!(error.code(), "CONFIG_VERSION_UNSUPPORTED");
+    }
+
+    #[test]
+    fn a_half_written_auth_pair_is_refused() {
+        let document = r#"
+version: 1
+server:
+  bind: "127.0.0.1:3000"
+  staticDir: "./dist"
+  auth:
+    username: "moka"
+projects: {}
+public:
+  productName: "Moka Canvas"
+"#;
+        let error = parse_config(document).unwrap_err();
+        assert_eq!(error.code(), "CONFIG_AUTH_INCOMPLETE");
+        assert!(
+            error.to_string().contains("username"),
+            "the refusal must name what is missing: {error}"
+        );
+    }
+
+    #[test]
+    fn both_halves_of_a_web_login_are_read_and_enable_the_gate() {
+        let document = r#"
+version: 1
+server:
+  bind: "127.0.0.1:3000"
+  staticDir: "./dist"
+  auth:
+    username: "moka"
+    password: "correct horse"
+projects: {}
+public:
+  productName: "Moka Canvas"
+"#;
+        let config = parse_config(document).expect("a complete pair parses");
+        assert!(config.server.auth.is_enabled());
+        assert_eq!(config.server.auth.username, "moka");
+        assert_eq!(config.server.auth.password, "correct horse");
+    }
+
+    #[test]
+    fn a_misspelt_key_in_the_server_section_is_refused_rather_than_ignored() {
+        // An `auth` that parsed as nothing would leave a deployment that
+        // believes it is gated answering everyone.
+        let document = r#"
+version: 1
+server:
+  bind: "127.0.0.1:3000"
+  staticDir: "./dist"
+  auht:
+    username: "moka"
+    password: "correct horse"
+projects: {}
+public:
+  productName: "Moka Canvas"
+"#;
+        let error = parse_config(document).unwrap_err();
+        assert_eq!(error.code(), "CONFIG_INVALID");
+    }
+
+    #[test]
+    fn a_desktop_override_cannot_turn_on_a_password() {
+        let root = tempfile::tempdir().unwrap();
+        let config = native_with_override(
+            root.path(),
+            "server:\n  auth:\n    username: \"moka\"\n    password: \"secret\"\n",
+        )
+        .expect("the desktop ignores the section rather than failing over it");
+        assert!(config.server.auth.is_empty());
     }
 
     #[test]
@@ -1374,8 +1502,8 @@ clip:
 
     #[test]
     fn rejects_an_unsupported_version() {
-        let raw =
-            include_str!("../../../../config/moka.example.yaml").replace("version: 1", "version: 9");
+        let raw = include_str!("../../../../config/moka.example.yaml")
+            .replace("version: 1", "version: 9");
         let error = parse_config(&raw).unwrap_err();
         assert!(matches!(error, ConfigError::UnsupportedVersion(9)));
     }
