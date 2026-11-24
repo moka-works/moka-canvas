@@ -34,6 +34,7 @@ import {
   styleApplyPatches,
 } from "../interactions/textActions";
 import { useClipStore } from "../stores/clipStore";
+import { TEXT_STYLE_PRESET_LABELS, TEXT_STYLE_PRESETS } from "../textStyles";
 import {
   formatTimecode,
   frameAligned,
@@ -447,11 +448,39 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
     );
   };
 
+  /** Gives every chosen text clip one whole style, leaving its words alone. */
+  const applyTextPreset = (style: TextClipStyle) => {
+    if (!timeline || textClips.length === 0) return;
+    const patches = styleApplyPatches(textClips, style);
+    if (patches.length === 0) return;
+    execute(
+      t(
+        textClips.length === 1
+          ? "clip:history.editTextClip"
+          : "clip:history.editTextClips",
+      ),
+      patchCommands(timeline.id, patches),
+    );
+  };
+
   return (
     <div className="clip-inspector-body" data-testid="clip-fields">
       {textClips.length > 0 && (
         <section className="inspector-section">
           <h3>{t("clip:clipFields.textSection")}</h3>
+          <div className="clip-text-presets" data-testid="clip-text-presets">
+            {TEXT_STYLE_PRESETS.map((preset) => (
+              <button
+                className="link"
+                data-testid={`clip-text-preset-${preset.id}`}
+                key={preset.id}
+                onClick={() => applyTextPreset(preset.style)}
+                type="button"
+              >
+                {t(TEXT_STYLE_PRESET_LABELS[preset.id])}
+              </button>
+            ))}
+          </div>
           <TextFields
             mixed={mixedStyle}
             onChange={changeText}

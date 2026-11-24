@@ -196,9 +196,11 @@ function isColour(pixel: number[], wanted: number[], tolerance: number) {
 }
 
 /** A text clip's own style, as the server has the document written down. */
-async function persistedTextStyle(
-  page: Page,
-): Promise<{ strokeWidth?: number; strokeColor?: string } | null> {
+async function persistedTextStyle(page: Page): Promise<{
+  fontSize?: number;
+  strokeWidth?: number;
+  strokeColor?: string;
+} | null> {
   return page.evaluate(async () => {
     const response = await fetch("/api/v1/projects/current");
     const body = (await response.json()) as {
@@ -207,7 +209,11 @@ async function persistedTextStyle(
           clips?: {
             kind?: string;
             text?: {
-              style?: { strokeWidth?: number; strokeColor?: string };
+              style?: {
+                fontSize?: number;
+                strokeWidth?: number;
+                strokeColor?: string;
+              };
             };
           }[];
         }[];
@@ -595,6 +601,36 @@ test("a stroke width and colour are one command each, and survive the save", asy
     .poll(async () => (await persistedTextStyle(page))?.strokeColor)
     .toBe("#000000");
   expect((await persistedTextStyle(page))?.strokeWidth).toBe(4);
+
+  forgetHome(home);
+});
+
+test("a style preset fills the look and leaves the words, in one step", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Text Preset");
+  await textPage(page);
+  await addText(page, "Cover words", 6);
+  await cueRows(page).first().click();
+  const [clip] = await drawnSpans(page, 1);
+
+  await page.getByTestId("clip-text-preset-cover").click();
+  await expect
+    .poll(async () => (await persistedTextStyle(page))?.fontSize)
+    .toBe(96);
+  expect((await persistedTextStyle(page))?.strokeWidth).toBe(6);
+  await expect(
+    inspectorFields(page).getByTestId("clip-text-content"),
+  ).toHaveValue("Cover words");
+
+  // The whole look is one step of history: one undo puts the born style back.
+  await cueRows(page).first().click();
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => (await persistedTextStyle(page))?.fontSize)
+    .toBe(48);
+  expect((await persistedTextStyle(page))?.strokeWidth).toBe(0);
+  expect(clip.id).toBeDefined();
 
   forgetHome(home);
 });

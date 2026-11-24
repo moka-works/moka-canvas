@@ -5513,6 +5513,18 @@ body.is-dragging-split {
   overflow-y: auto;
 }
 
+/* One press fills a text clip's whole look; the words stay as they are. */
+.clip-text-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.clip-text-presets button {
+  font-size: 12px;
+}
+
 .clip-inspector-fields {
   display: grid;
   gap: 10px;

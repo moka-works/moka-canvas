@@ -16,7 +16,7 @@ import { useHistoryStore, isBoundary } from "../../editor/stores/historyStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useClipStore } from "../stores/clipStore";
 import { setTrackFlag } from "./clipActions";
-import { TEXT_STYLE_PRESETS } from "../textStyles";
+import { presetById, TEXT_STYLE_PRESETS } from "../textStyles";
 import { frameAligned } from "../timeline/timecode";
 import {
   MAX_SUBTITLE_FILE_BYTES,
@@ -184,13 +184,17 @@ describe("clamps the form works inside", () => {
   });
 });
 
-describe("the four style presets", () => {
-  it("holds all four, each a complete and legal style", () => {
+describe("the style presets", () => {
+  it("holds every preset, each a complete and legal style", () => {
     expect(TEXT_STYLE_PRESETS.map((preset) => preset.label)).toEqual([
       "Basic",
       "Title",
       "Lower third",
       "Caption",
+      "Chapter",
+      "Quote",
+      "End",
+      "Cover",
     ]);
     for (const preset of TEXT_STYLE_PRESETS) {
       const fields = preset.style;
@@ -212,6 +216,13 @@ describe("the four style presets", () => {
 
   it("leaves Basic exactly what a clip is born with", () => {
     expect(TEXT_STYLE_PRESETS[0].style).toEqual(defaultTextStyle());
+  });
+
+  it("keeps the cover large enough to read over a picture", () => {
+    const cover = presetById("cover")!;
+    expect(cover.style.fontSize).toBe(96);
+    expect(cover.style.strokeWidth).toBe(6);
+    expect(cover.durationMs).toBe(2_500);
   });
 });
 

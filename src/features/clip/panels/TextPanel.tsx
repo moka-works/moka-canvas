@@ -23,9 +23,9 @@ import { useTranscribeStore } from "../stores/transcribeStore";
 import { cueOfClip, serializeSrt } from "../subtitles/srt";
 import { sourceClip } from "../subtitles/transcribe";
 import {
+  TEXT_STYLE_PRESET_LABELS,
   TEXT_STYLE_PRESETS,
   presetById,
-  type TextStylePresetId,
 } from "../textStyles";
 import { formatTimecode } from "../timeline/timecode";
 
@@ -54,14 +54,6 @@ import { formatTimecode } from "../timeline/timecode";
  * a chosen clip is the inspector's job, and two forms over one clip would
  * take turns overwriting each other.
  */
-
-/** What the picker calls each preset of the four the page offers. */
-const PRESET_LABELS: Record<TextStylePresetId, string> = {
-  basic: "clip:textPresets.basic",
-  title: "clip:textPresets.title",
-  lowerThird: "clip:textPresets.lowerThird",
-  caption: "clip:textPresets.caption",
-};
 
 /**
  * The languages a recording can be said to be in, by the code a recognizer
@@ -229,7 +221,7 @@ export function TextPanel() {
         >
           {TEXT_STYLE_PRESETS.map((preset) => (
             <option key={preset.id} value={preset.id}>
-              {t(PRESET_LABELS[preset.id])}
+              {t(TEXT_STYLE_PRESET_LABELS[preset.id])}
             </option>
           ))}
         </select>

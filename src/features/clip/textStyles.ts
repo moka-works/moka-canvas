@@ -12,21 +12,51 @@ import { defaultTextStyle, type TextClipStyle } from "../../shared/domain";
  * Pure data: nothing here touches a document.
  */
 
-export type TextStylePresetId = "basic" | "title" | "lowerThird" | "caption";
+export type TextStylePresetId =
+  | "basic"
+  | "title"
+  | "lowerThird"
+  | "caption"
+  | "chapter"
+  | "quote"
+  | "end"
+  | "cover";
 
 export interface TextStylePreset {
   id: TextStylePresetId;
   /** What the picker calls the preset. */
   label: string;
+  /** The catalogue entry the interface names it by. */
+  labelKey: string;
   style: TextClipStyle;
+  /** How long a card of this style wants to be, where it is a card. */
+  durationMs?: number;
 }
 
+/** The catalogue addresses of the presets' names. */
+export const TEXT_STYLE_PRESET_LABELS: Record<TextStylePresetId, string> = {
+  basic: "clip:textPresets.basic",
+  title: "clip:textPresets.title",
+  lowerThird: "clip:textPresets.lowerThird",
+  caption: "clip:textPresets.caption",
+  chapter: "clip:textPresets.chapter",
+  quote: "clip:textPresets.quote",
+  end: "clip:textPresets.end",
+  cover: "clip:textPresets.cover",
+};
+
 export const TEXT_STYLE_PRESETS: readonly TextStylePreset[] = [
-  { id: "basic", label: "Basic", style: defaultTextStyle() },
   {
-    // A title: large, bold, and centred in the frame.
+    id: "basic",
+    label: "Basic",
+    labelKey: TEXT_STYLE_PRESET_LABELS.basic,
+    style: defaultTextStyle(),
+  },
+  {
+    // A title: large, bold, and set at the foot of the frame.
     id: "title",
     label: "Title",
+    labelKey: TEXT_STYLE_PRESET_LABELS.title,
     style: { ...defaultTextStyle(), fontSize: 96, bold: true },
   },
   {
@@ -34,6 +64,7 @@ export const TEXT_STYLE_PRESETS: readonly TextStylePreset[] = [
     // reads over anything.
     id: "lowerThird",
     label: "Lower third",
+    labelKey: TEXT_STYLE_PRESET_LABELS.lowerThird,
     style: {
       ...defaultTextStyle(),
       fontSize: 56,
@@ -47,6 +78,7 @@ export const TEXT_STYLE_PRESETS: readonly TextStylePreset[] = [
     // black outline — the shape subtitles arrive in.
     id: "caption",
     label: "Caption",
+    labelKey: TEXT_STYLE_PRESET_LABELS.caption,
     style: {
       ...defaultTextStyle(),
       fontSize: 48,
@@ -54,6 +86,64 @@ export const TEXT_STYLE_PRESETS: readonly TextStylePreset[] = [
       strokeWidth: 4,
       strokeColor: "#000000",
     },
+  },
+  {
+    // The name of an episode, held in the middle of the frame.
+    id: "chapter",
+    label: "Chapter",
+    labelKey: TEXT_STYLE_PRESET_LABELS.chapter,
+    style: {
+      ...defaultTextStyle(),
+      fontSize: 80,
+      bold: true,
+      position: "center",
+      strokeWidth: 4,
+      strokeColor: "#000000",
+    },
+  },
+  {
+    // A line quoted over the picture, softened by an italic face.
+    id: "quote",
+    label: "Quote",
+    labelKey: TEXT_STYLE_PRESET_LABELS.quote,
+    style: {
+      ...defaultTextStyle(),
+      fontSize: 64,
+      italic: true,
+      position: "center",
+      strokeWidth: 3,
+      strokeColor: "#000000",
+    },
+  },
+  {
+    // The last words of a film, centred like a chapter's name.
+    id: "end",
+    label: "End",
+    labelKey: TEXT_STYLE_PRESET_LABELS.end,
+    style: {
+      ...defaultTextStyle(),
+      fontSize: 72,
+      bold: true,
+      position: "center",
+      strokeWidth: 4,
+      strokeColor: "#000000",
+    },
+  },
+  {
+    // A cover's title: the largest words in the film, held at the foot of the
+    // picture and made readable over any background by a heavy outline.
+    id: "cover",
+    label: "Cover",
+    labelKey: TEXT_STYLE_PRESET_LABELS.cover,
+    style: {
+      ...defaultTextStyle(),
+      fontSize: 96,
+      bold: true,
+      position: "bottom",
+      strokeWidth: 6,
+      strokeColor: "#000000",
+    },
+    durationMs: 2_500,
   },
 ];
 

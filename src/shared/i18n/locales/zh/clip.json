@@ -230,7 +230,11 @@
     "basic": "基础",
     "caption": "说明文字",
     "lowerThird": "下三分之一",
-    "title": "标题"
+    "title": "标题",
+    "chapter": "集标题",
+    "quote": "引语",
+    "end": "片尾",
+    "cover": "封面"
   },
   "timelineArea": {
     "emptyHint": "把素材拖到轨道上开始剪辑",

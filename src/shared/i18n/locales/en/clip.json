@@ -230,7 +230,11 @@
     "basic": "Basic",
     "caption": "Caption",
     "lowerThird": "Lower third",
-    "title": "Title"
+    "title": "Title",
+    "chapter": "Chapter",
+    "quote": "Quote",
+    "end": "End",
+    "cover": "Cover"
   },
   "timelineArea": {
     "emptyHint": "Drop media on a track to build the cut",
