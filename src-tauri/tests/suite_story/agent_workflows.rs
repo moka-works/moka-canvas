@@ -1218,3 +1218,86 @@ async fn a_board_can_be_checked_and_revised_after_the_outline_moves() {
         .unwrap()
         .contains("The lake opens again."));
 }
+
+#[tokio::test]
+async fn a_story_is_imported_as_a_wired_canvas_and_its_prompts_can_be_written() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.replace_chapters",
+        json!({
+            "storyId": story_id,
+            "confirm": "replace",
+            "chapters": [{"title": "One", "synopsis": "The lake closes."}]
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let chapter_id = opened["moka"]["stories"][0]["chapters"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_act",
+        json!({"storyId": story_id, "chapterId": chapter_id, "title": "Shore"}),
+    )
+    .await;
+    let opened = current(&app).await;
+    let act_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.add_keyframe",
+        json!({
+            "storyId": story_id, "chapterId": chapter_id, "actId": act_id,
+            "keyframe": {"title": "Edge", "content": "Ahe at the edge."}
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let keyframe_id = opened["moka"]["stories"][0]["chapters"][0]["acts"][0]["keyframes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let imported = call(
+        &app,
+        "story.import_canvas",
+        json!({"storyId": story_id, "name": "Lake cards"}),
+    )
+    .await;
+    assert!(imported["data"]["nodes"].as_u64().unwrap() >= 4);
+    assert!(imported["data"]["edges"].as_u64().unwrap() >= 3);
+
+    let ask = format!("keyframe:{chapter_id}:{act_id}:{keyframe_id}");
+    call(
+        &app,
+        "story.set_prompt",
+        json!({
+            "storyId": story_id,
+            "kind": "image",
+            "prompts": {ask.clone(): {"prompt": "Ahe, painted in one flat colour.", "auto": "Ahe at the edge."}}
+        }),
+    )
+    .await;
+    let read = call(&app, "story.get", json!({"storyId": story_id})).await;
+    assert_eq!(
+        read["data"]["story"]["imagePromptOverrides"][&ask]["prompt"],
+        "Ahe, painted in one flat colour."
+    );
+}

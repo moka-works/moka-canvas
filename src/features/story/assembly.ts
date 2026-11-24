@@ -792,13 +792,13 @@ export function assemblyCarries(
  */
 export function assemblyDigest(
   story: StoryDocument,
-  moka: MokaFile,
+  _moka: MokaFile,
   plan: AssemblyPlan,
   options: { withSubtitles: boolean; timelineId?: string },
 ): string {
   const size = timelineSizeForAspect(story.brief.aspect);
   const rows = [
-    "assembly:v1",
+    "assembly:v2",
     `timeline:${options.timelineId ?? "new"}`,
     `frame:${size.width}x${size.height}@${ASSEMBLY_FPS}`,
     `subtitles:${options.withSubtitles ? "on" : "off"}`,
@@ -808,30 +808,42 @@ export function assemblyDigest(
       `unit:${unit.actId}:${unit.keyframeId ?? ""}:${unit.startMs}:${unit.durationMs}:${unit.assetId}`,
     );
   }
-  // The readings, which are the plan's own arithmetic read a second time: the
-  // same windows, the same speeds, the same files, said as text.
-  const dubbing = planDubbing(
-    story,
-    plan.units,
-    (assetId) => findResource(moka, assetId)?.probe?.durationMs,
-  );
-  for (const cue of dubbing.cues) {
-    rows.push(
-      `voice:${cue.actId}:${cue.keyframeId}:${cue.lineId}:${cue.startMs}:${cue.durationMs}:${cue.speed}:${cue.assetId}`,
-    );
-  }
-  for (const cue of soundCues(story, plan)) {
-    rows.push(
-      `${cue.kind}:${cue.actId}::${cue.startMs}:${cue.take.assetIds[0]}`,
-    );
-  }
-  if (options.withSubtitles) {
-    // The words are the captions' own; the row only needs where each of them
-    // begins and how long it holds, which is what the captions decide.
-    for (const line of captions(story, plan, dubbing.cues, "digest")) {
-      rows.push(
-        `caption:${line.actId}:${line.clip.startMs}:${line.clip.durationMs}:${line.clip.text?.content ?? ""}`,
+  for (const chapter of story.chapters) {
+    for (const act of chapter.acts) {
+      const perLine = act.keyframes.some((keyframe) =>
+        keyframe.dialogue.some(
+          (line) => voiceTakeOf(keyframe, line.id) !== undefined,
+        ),
       );
+      if (perLine) {
+        for (const keyframe of act.keyframes) {
+          for (const line of keyframe.dialogue) {
+            const assetId = takeFile(
+              currentTake(
+                voiceTakeOf(keyframe, line.id)?.slot ?? emptyStorySlot(),
+              ),
+            );
+            if (assetId !== undefined) {
+              rows.push(`voice:${act.id}:${keyframe.id}:${line.id}:${assetId}`);
+            }
+          }
+        }
+      } else {
+        const assetId = takeFile(currentTake(act.voice ?? emptyStorySlot()));
+        if (assetId !== undefined) rows.push(`voice:${act.id}:::${assetId}`);
+      }
+      const music = takeFile(currentTake(act.music ?? emptyStorySlot()));
+      if (music !== undefined) rows.push(`music:${act.id}::${music}`);
+      if (options.withSubtitles) {
+        for (const keyframe of act.keyframes) {
+          for (const line of keyframe.dialogue) {
+            if (line.text.trim() === "") continue;
+            rows.push(
+              `caption:${act.id}:${keyframe.id}:${line.id ?? ""}:${line.text}`,
+            );
+          }
+        }
+      }
     }
   }
   return fnv1a(rows.join("\n"));

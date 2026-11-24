@@ -919,7 +919,7 @@ fn story_tools() -> Vec<ToolSpec> {
         ])),
         command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent.", schema(&["storyId", "kind"], &[
             ("storyId", "string", "Story id"),
-            ("kind", "string", "outline (whole story, or chapterId for one chapter), elements, mergeElements, actPlan, storyboard, continuity, outlineRevision, elementArt, keyframeArt, actVideo, keyframeVideo, lineVoice, voice, or music"),
+            ("kind", "string", "outline (whole story, or chapterId for one chapter), elements, mergeElements, actPlan, storyboard, continuity, outlineRevision, elementArt, keyframeArt, pictureEdit, actVideo, keyframeVideo, lineVoice, voice, or music"),
             ("chapterId", "string", "Chapter to plan, where the kind is chapter-scoped"),
             ("actId", "string", "One act of the chapter"),
             ("keyframeIds", "array", "One or more shots of the chapter"),
@@ -930,6 +930,9 @@ fn story_tools() -> Vec<ToolSpec> {
             ("videoModel", "string", "Video model whose clip window the storyboard is planned against"),
             ("includeExisting", "boolean", "Plan places that already have a current take too"),
             ("groups", "array", "For mergeElements: readings grouped by kind and name"),
+            ("instruction", "string", "For pictureEdit: what should change"),
+            ("maskAssetId", "string", "For pictureEdit: a white-on-black mask of the region that may change"),
+            ("variantId", "string", "For pictureEdit: the element form to edit"),
         ])),
         command("story.create", "story", ToolRisk::Write, "Create a story with an optional brief.", schema(&["name"], &[
             ("name", "string", "Story name"),
@@ -1090,19 +1093,31 @@ fn story_tools() -> Vec<ToolSpec> {
             ("storyId", "string", "Story id"),
             ("name", "string", "Canvas name; the story's name by default"),
         ])),
+        command("story.set_prompt", "story", ToolRisk::Write, "Write hand-written picture or clip prompts, keyed by the ask id plan_job returns. A null clears one.", schema(&["storyId", "kind", "prompts"], &[
+            ("storyId", "string", "Story id"),
+            ("kind", "string", "image or video"),
+            ("prompts", "object", "Map of ask id to {prompt, auto} or null"),
+        ])),
         command("story.assemble", "story", ToolRisk::Write, "Assemble a story into a timeline: pictures or clips, line readings, whole-act voice and score, optionally subtitles.", schema(&["storyId"], &[
             ("storyId", "string", "Story id"),
             ("timelineId", "string", "Existing timeline, or a new one when omitted"),
             ("timelineName", "string", "Name for a new timeline"),
             ("withSubtitles", "boolean", "Lay each spoken line on a text track"),
         ])),
-        effect("story.focus", "story", ToolRisk::Read, "Ask an open story room to move to a story, step and chapter. The window reads it once.", schema(&["storyId"], &[
-            ("storyId", "string", "Story id"),
+        effect("story.focus", "story", ToolRisk::Read, "Ask the open window to move to a room and a place there. The window reads it once.", schema(&[], &[
+            ("room", "string", "story (default), canvas, clip, assets, or director"),
+            ("storyId", "string", "Story id, for the story room"),
             ("step", "string", "idea, outline, elements, storyboard, or edit"),
             ("chapterId", "string", "Chapter to open"),
             ("actId", "string", "Act to open"),
             ("keyframeId", "string", "Shot to open"),
             ("elementId", "string", "Element to open"),
+            ("canvasId", "string", "Canvas to open"),
+            ("nodeIds", "array", "Nodes to select"),
+            ("timelineId", "string", "Timeline to open"),
+            ("clipIds", "array", "Clips to select"),
+            ("playheadMs", "integer", "Playhead position"),
+            ("assetId", "string", "Asset to select"),
         ])),
         effect("story.list_jobs", "story", ToolRisk::Read, "List story batches, newest first, with status and unread mark. Set answers to include item texts and assets.", schema(&[], &[
             ("storyId", "string", "Only this story's batches"),

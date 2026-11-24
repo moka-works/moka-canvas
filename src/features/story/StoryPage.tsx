@@ -127,42 +127,6 @@ export function StoryPage() {
     };
   }, [projectId, storyId]);
 
-  // The other half of `story.focus`: an outside caller leaves a move here and
-  // the open room takes it once. A focus names only places the room already
-  // knows; anything else is left for the reader.
-  useEffect(() => {
-    if (!projectOpen) return;
-    let stopped = false;
-    const look = async () => {
-      try {
-        const focus = await projectsApi.takeFocus();
-        if (stopped || focus === null || focus.room !== "story") return;
-        if (focus.storyId !== undefined) {
-          useStoryStore.getState().select(focus.storyId);
-        }
-        if (focus.chapterId !== undefined) {
-          useStoryStore.getState().openChapter(focus.chapterId);
-        }
-        if (
-          focus.step === "idea" ||
-          focus.step === "outline" ||
-          focus.step === "elements" ||
-          focus.step === "storyboard" ||
-          focus.step === "edit"
-        ) {
-          useStoryStore.getState().goStep(focus.step);
-        }
-      } catch {
-        // A room that cannot read a focus simply stays where it is.
-      }
-    };
-    const timer = window.setInterval(() => void look(), 4_000);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
-  }, [projectOpen]);
-
   const pendingLeave = useStoryStore((state) => state.pendingLeave);
   const [leavingHome, setLeavingHome] = useState(false);
   const [leavingTo, setLeavingTo] = useState<

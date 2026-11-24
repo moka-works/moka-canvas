@@ -6,9 +6,11 @@
 //! that waits. Verification tools compute readiness from the content itself;
 //! there is no second, tool-local definition of what a step still needs.
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::api::{ApiState, ProjectSession};
+use crate::domain::commands::make_node;
 use crate::domain::story::{
     StoryAct, StoryActPatch, StoryBriefPatch, StoryChapter, StoryDocument, StoryEdit,
     StoryEditClip, StoryElement, StoryElementPatch, StoryKeyframe, StoryKeyframePatch, StorySlot,
@@ -18,6 +20,7 @@ use crate::domain::{
     now_iso, DocumentCommand, MokaFile, TimelineClip, TimelineDocument, TimelineSettings,
     TimelineTrack, TrackKind,
 };
+use crate::generate::{Cancel, DeltaSink, GenerateRequest};
 use crate::project::ProjectStore;
 
 use super::super::error::ToolError;
@@ -399,6 +402,8 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
         "story.board_report" => board_report(moka, &args),
         "story.dubbing_report" => dubbing_report(moka, &args),
         "story.assemble" => assemble(moka, &args),
+        "story.import_canvas" => import_canvas(moka, &args),
+        "story.set_prompt" => set_prompt(moka, &args),
         other => Err(ToolError::new(
             "TOOL_NOT_FOUND",
             format!("tool {other} is not a story command"),
@@ -2302,12 +2307,258 @@ fn format_duration(ms: i64) -> String {
     }
 }
 
+fn set_prompt(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    use crate::domain::story::StoryPromptOverride;
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let kind = args.req_str("kind")?;
+    let raw = args
+        .raw("prompts")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ToolError::validation("story.set_prompt needs a prompts object"))?;
+    let mut prompts = std::collections::BTreeMap::new();
+    for (ask_id, value) in raw {
+        if value.is_null() {
+            prompts.insert(ask_id.clone(), None);
+            continue;
+        }
+        let prompt = value
+            .get("prompt")
+            .and_then(Value::as_str)
+            .or_else(|| value.as_str())
+            .map(str::trim)
+            .filter(|prompt| !prompt.is_empty())
+            .ok_or_else(|| ToolError::validation(format!("prompt {ask_id} has no words")))?;
+        let auto = value
+            .get("auto")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        prompts.insert(
+            ask_id.clone(),
+            Some(StoryPromptOverride {
+                prompt: prompt.to_string(),
+                auto,
+            }),
+        );
+    }
+    let command = match kind {
+        "image" => DocumentCommand::SetStoryImagePromptOverrides {
+            story_id: story.id.clone(),
+            prompts,
+        },
+        "video" => DocumentCommand::SetStoryVideoPromptOverrides {
+            story_id: story.id.clone(),
+            prompts,
+        },
+        other => {
+            return Err(ToolError::validation(format!(
+                "prompt kind '{other}' is image or video"
+            )))
+        }
+    };
+    Ok(ToolOutcome::write(
+        format!("Wrote {kind} prompts"),
+        json!({"storyId": story.id, "kind": kind}),
+        vec![command],
+    ))
+}
+
+fn import_canvas(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    use crate::domain::NodeKind;
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let name = args.opt_str("name").unwrap_or(&story.name).to_string();
+    let mut canvas = crate::domain::CanvasDocument::empty(crate::domain::new_id(), name.clone());
+    let mut premise_at = 0.0;
+    let premise = if story.brief.idea.trim().is_empty() {
+        None
+    } else {
+        Some(card(
+            &mut canvas,
+            0.0,
+            &mut premise_at,
+            NodeKind::Text,
+            "Premise".into(),
+            Some(story.brief.idea.clone()),
+            None,
+        ))
+    };
+    let mut element_at = 0.0;
+    for element in &story.elements {
+        let text = card(
+            &mut canvas,
+            1.0,
+            &mut element_at,
+            NodeKind::Text,
+            element.name.clone(),
+            Some(element.description.clone()),
+            None,
+        );
+        if let Some(asset_id) = current_assets(&element.main).first().cloned() {
+            let image = card(
+                &mut canvas,
+                2.0,
+                &mut element_at,
+                NodeKind::Image,
+                element.name.clone(),
+                None,
+                Some(asset_id),
+            );
+            connect(&mut canvas, &text, &image);
+        }
+        if let Some(turnaround) = element
+            .turnaround
+            .as_ref()
+            .and_then(|slot| current_assets(slot).first().cloned())
+        {
+            let image = card(
+                &mut canvas,
+                2.0,
+                &mut element_at,
+                NodeKind::Image,
+                format!("{} turn-around", element.name),
+                None,
+                Some(turnaround),
+            );
+            connect(&mut canvas, &text, &image);
+        }
+    }
+    let mut chapter_at = 0.0;
+    for (chapter_index, chapter) in story.chapters.iter().enumerate() {
+        let chapter_card = card(
+            &mut canvas,
+            3.0,
+            &mut chapter_at,
+            NodeKind::Text,
+            format!("{} {}", chapter_index + 1, chapter.title),
+            Some(chapter.synopsis.clone()),
+            None,
+        );
+        if let Some(premise) = &premise {
+            connect(&mut canvas, premise, &chapter_card);
+        }
+        let mut act_at = chapter_at;
+        for act in &chapter.acts {
+            let act_card = card(
+                &mut canvas,
+                4.0,
+                &mut act_at,
+                NodeKind::Text,
+                act.title.clone(),
+                Some(act.summary.clone()),
+                None,
+            );
+            connect(&mut canvas, &chapter_card, &act_card);
+            if act.transition.is_none() {
+                let mut shot_at = act_at;
+                for keyframe in &act.keyframes {
+                    let shot_card = card(
+                        &mut canvas,
+                        5.0,
+                        &mut shot_at,
+                        NodeKind::Text,
+                        keyframe.title.clone(),
+                        Some(keyframe.content.clone()),
+                        None,
+                    );
+                    connect(&mut canvas, &act_card, &shot_card);
+                    if let Some(asset_id) = current_assets(&keyframe.art).first().cloned() {
+                        let image = card(
+                            &mut canvas,
+                            6.0,
+                            &mut shot_at,
+                            NodeKind::Image,
+                            keyframe.title.clone(),
+                            None,
+                            Some(asset_id),
+                        );
+                        connect(&mut canvas, &shot_card, &image);
+                    }
+                    if let Some(asset_id) = current_assets(&keyframe.video).first().cloned() {
+                        let video = card(
+                            &mut canvas,
+                            7.0,
+                            &mut shot_at,
+                            NodeKind::Video,
+                            keyframe.title.clone(),
+                            None,
+                            Some(asset_id),
+                        );
+                        connect(&mut canvas, &shot_card, &video);
+                    }
+                }
+            }
+            if let Some(asset_id) = current_assets(&act.video).first().cloned() {
+                let video = card(
+                    &mut canvas,
+                    7.0,
+                    &mut act_at,
+                    NodeKind::Video,
+                    act.title.clone(),
+                    None,
+                    Some(asset_id),
+                );
+                connect(&mut canvas, &act_card, &video);
+            }
+        }
+        chapter_at = chapter_at.max(act_at);
+    }
+    let canvas_id = canvas.id.clone();
+    Ok(ToolOutcome::write(
+        format!("Imported the story into canvas {name}"),
+        json!({"canvasId": canvas_id, "nodes": canvas.nodes.len(), "edges": canvas.edges.len()}),
+        vec![DocumentCommand::AddCanvas {
+            canvas,
+            index: None,
+        }],
+    ))
+}
+
+fn card(
+    canvas: &mut crate::domain::CanvasDocument,
+    column: f64,
+    at: &mut f64,
+    kind: crate::domain::NodeKind,
+    title: String,
+    content: Option<String>,
+    asset_id: Option<String>,
+) -> String {
+    let mut node = make_node(kind, title, column * 400.0, *at);
+    node.data.content = content;
+    node.data.asset_id = asset_id;
+    let id = node.id.clone();
+    canvas.nodes.push(node);
+    *at += 260.0;
+    id
+}
+
+fn connect(canvas: &mut crate::domain::CanvasDocument, from: &str, to: &str) {
+    let source = crate::domain::EdgeEndpoint {
+        node_id: from.to_string(),
+        port_id: "out".into(),
+    };
+    let target = crate::domain::EdgeEndpoint {
+        node_id: to.to_string(),
+        port_id: "prompt".into(),
+    };
+    if crate::domain::validate::validate_edge_candidate(canvas, &source, &target).is_err() {
+        return;
+    }
+    canvas.edges.push(crate::domain::WorkflowEdge {
+        id: crate::domain::new_id(),
+        source,
+        target,
+        created_at: now_iso(),
+    });
+}
+
 fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
     let story = super::story_of(moka, args.req_str("storyId")?)?;
     let timeline_id = args.opt_str("timelineId").map(str::to_string);
     let timeline_name = args.opt_str("timelineName").unwrap_or("Story").to_string();
     let with_subtitles = args.opt_bool("withSubtitles", false);
     let settings = timeline_settings(story);
+    let frame_width = settings.width;
+    let frame_height = settings.height;
     let now = now_iso();
     let video_track = crate::domain::new_id();
     let mut tracks: Vec<TimelineTrack> = vec![TimelineTrack {
@@ -2321,6 +2572,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
     }];
     let mut clips: Vec<TimelineClip> = Vec::new();
     let mut edit_clips: Vec<StoryEditClip> = Vec::new();
+    let mut digest_units: Vec<(String, Option<String>, i64, i64, String)> = Vec::new();
     let mut starts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     let mut shots: std::collections::HashMap<String, (i64, i64)> = std::collections::HashMap::new();
     let mut cursor = 0_i64;
@@ -2336,6 +2588,13 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                         (unit.start_ms, unit.duration_ms),
                     );
                 }
+                digest_units.push((
+                    act.id.clone(),
+                    unit.keyframe_id.clone(),
+                    unit.start_ms,
+                    unit.duration_ms,
+                    unit.asset_id.clone(),
+                ));
                 let clip_id = crate::domain::new_id();
                 edit_clips.push(StoryEditClip {
                     act_id: act.id.clone(),
@@ -2640,6 +2899,78 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         }
     };
 
+    let mut digest_rows = vec![
+        "assembly:v2".to_string(),
+        format!("timeline:{timeline_id}"),
+        format!("frame:{frame_width}x{frame_height}@30"),
+        format!("subtitles:{}", if with_subtitles { "on" } else { "off" }),
+    ];
+    for (act_id, keyframe_id, start, duration, asset_id) in &digest_units {
+        digest_rows.push(format!(
+            "unit:{act_id}:{}:{start}:{duration}:{asset_id}",
+            keyframe_id.as_deref().unwrap_or_default()
+        ));
+    }
+    for chapter in &story.chapters {
+        for act in &chapter.acts {
+            let per_line = act.keyframes.iter().any(|keyframe| {
+                keyframe
+                    .voices
+                    .as_ref()
+                    .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
+            });
+            if per_line {
+                for keyframe in &act.keyframes {
+                    for voice in keyframe.voices.as_deref().unwrap_or_default() {
+                        if let Some(asset_id) = voice
+                            .slot
+                            .takes
+                            .last()
+                            .and_then(|take| take.asset_ids.first())
+                        {
+                            digest_rows.push(format!(
+                                "voice:{}:{}:{}:{asset_id}",
+                                act.id, keyframe.id, voice.line_id
+                            ));
+                        }
+                    }
+                }
+            } else if let Some(asset_id) = act
+                .voice
+                .as_ref()
+                .and_then(|slot| slot.takes.last())
+                .and_then(|take| take.asset_ids.first())
+            {
+                digest_rows.push(format!("voice:{}:::{asset_id}", act.id));
+            }
+            if let Some(asset_id) = act
+                .music
+                .as_ref()
+                .and_then(|slot| slot.takes.last())
+                .and_then(|take| take.asset_ids.first())
+            {
+                digest_rows.push(format!("music:{}::{asset_id}", act.id));
+            }
+            if with_subtitles {
+                for keyframe in &act.keyframes {
+                    for line in &keyframe.dialogue {
+                        if line.text.trim().is_empty() {
+                            continue;
+                        }
+                        digest_rows.push(format!(
+                            "caption:{}:{}:{}:{}",
+                            act.id,
+                            keyframe.id,
+                            line.id.as_deref().unwrap_or_default(),
+                            line.text
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    let digest = assembly_digest(&digest_rows);
+
     let edit = StoryEdit {
         timeline_id: Some(timeline_id.clone()),
         clip_by_act: Some(edit_clips),
@@ -2650,7 +2981,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         patch: crate::domain::story::StoryEditPatch {
             timeline_id: Some(Some(timeline_id.clone())),
             clip_by_act: Some(Some(edit.clip_by_act.clone().unwrap_or_default())),
-            assembled_digest: None,
+            assembled_digest: Some(Some(digest.clone())),
         },
     });
     Ok(ToolOutcome::write(
@@ -2662,6 +2993,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             "timelineId": timeline_id,
             "clips": edit.clip_by_act.as_ref().map(Vec::len).unwrap_or(0),
             "withSubtitles": with_subtitles,
+            "digest": digest,
         }),
         commands,
     ))
@@ -2867,6 +3199,15 @@ fn text_clip(
             },
         }),
     }
+}
+
+fn assembly_digest(rows: &[String]) -> String {
+    let mut hash = 0x811c_9dc5_u32;
+    for unit in rows.join("\n").encode_utf16() {
+        hash ^= unit as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    format!("{hash:08x}")
 }
 
 fn timeline_settings(story: &StoryDocument) -> TimelineSettings {

@@ -9,6 +9,9 @@ import { Toasts } from "./features/editor/components/Toasts";
 import { LauncherPage } from "./features/editor/launcher/LauncherPage";
 import { SavePathHost } from "./features/editor/launcher/SavePathHost";
 import { useAppStore } from "./features/editor/stores/appStore";
+import { focus as focusRoom } from "./features/assistant/agent/appTools";
+import { projectsApi } from "./api";
+import { useProjectStore } from "./features/editor/stores/projectStore";
 import { SettingsDialog } from "./features/settings/SettingsDialog";
 import { useModelStore } from "./features/settings/modelStore";
 import { UpdateStartupCheck } from "./features/update/UpdateStartupCheck";
@@ -59,6 +62,34 @@ export default function App() {
     const suppress = (event: MouseEvent) => event.preventDefault();
     document.addEventListener("contextmenu", suppress);
     return () => document.removeEventListener("contextmenu", suppress);
+  }, []);
+
+  // A move an outside caller asked for is taken by whichever room is open.
+  // The request is read once, so a focus that arrives while no project is open
+  // is dropped rather than replayed into the next one.
+  useEffect(() => {
+    let stopped = false;
+    let reading = false;
+    const look = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const focus = await projectsApi.takeFocus();
+        if (stopped || focus === null) return;
+        if (useProjectStore.getState().moka === null) return;
+        focusRoom(focus as unknown as Record<string, unknown>);
+      } catch {
+        // A server that cannot be read has nothing to move.
+      } finally {
+        reading = false;
+      }
+    };
+    void look();
+    const timer = window.setInterval(() => void look(), 4_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   // Apart from boot on purpose: model configuration is something the app

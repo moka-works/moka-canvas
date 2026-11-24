@@ -51,6 +51,9 @@ pub async fn command(
         .opt_i64("count")
         .unwrap_or(1)
         .clamp(1, MAX_IMAGES_PER_ASK as i64) as usize;
+    let instruction = args.opt_str("instruction").map(str::to_string);
+    let mask_asset = args.opt_str("maskAssetId").map(str::to_string);
+    let variant_id = args.opt_str("variantId").map(str::to_string);
 
     let mut warnings = Vec::new();
     let mut planned = match kind.as_str() {
@@ -82,6 +85,18 @@ pub async fn command(
         "outlineRevision" => plan_outline_revision(
             story,
             require_chapter(&chapter_id, "outlineRevision")?,
+            &model,
+        )?,
+        "pictureEdit" => plan_picture_edit(
+            story,
+            chapter_id.as_deref(),
+            act_id.as_deref(),
+            &keyframe_ids,
+            &element_ids,
+            &views,
+            variant_id.as_deref(),
+            instruction.as_deref(),
+            mask_asset.as_deref(),
             &model,
         )?,
         "elementArt" => plan_element_art(
@@ -774,6 +789,169 @@ fn plan_act_plan(
 // -----------------------------------------------------------------------------
 // The pictures of a cast and of a board
 // -----------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn plan_picture_edit(
+    story: &StoryDocument,
+    chapter_id: Option<&str>,
+    act_id: Option<&str>,
+    keyframe_ids: &[String],
+    element_ids: &[String],
+    views: &[String],
+    variant_id: Option<&str>,
+    instruction: Option<&str>,
+    mask_asset: Option<&str>,
+    model: &str,
+) -> Result<Vec<Planned>, ToolError> {
+    let instruction = instruction
+        .map(str::trim)
+        .filter(|instruction| !instruction.is_empty())
+        .ok_or_else(|| ToolError::validation("pictureEdit needs an instruction"))?;
+    let look = format!(
+        "The film's look: {}. No text, no lettering, no watermark, no frame around the picture.",
+        story.brief.style
+    );
+    let masked = |lines: &mut Vec<String>| {
+        if mask_asset.is_some() {
+            lines.push("The second picture is a black-and-white mask: white marks the region to change and black the region to keep.".to_string());
+        }
+    };
+    if !element_ids.is_empty() {
+        let element_id = &element_ids[0];
+        let element = story
+            .elements
+            .iter()
+            .find(|element| &element.id == element_id)
+            .ok_or_else(|| {
+                ToolError::new(
+                    "ELEMENT_NOT_FOUND",
+                    format!("element {element_id} does not exist"),
+                )
+            })?;
+        let look_of = element_look(element, variant_id).ok_or_else(|| {
+            ToolError::validation(format!("element {element_id} has no such form"))
+        })?;
+        let view = views.first().map(String::as_str).unwrap_or("main");
+        let slot = if view == "turnaround" {
+            look_of.turnaround
+        } else {
+            Some(look_of.main)
+        };
+        let Some(source) = slot.and_then(current_asset) else {
+            return Err(ToolError::new(
+                "STEP_GAPS",
+                format!("{} has no picture to edit", look_of.name),
+            ));
+        };
+        let target = match variant_id {
+            Some(variant_id) => json!({
+                "kind": "elementArt",
+                "elementId": element.id,
+                "view": view,
+                "variantId": variant_id,
+            }),
+            None => json!({
+                "kind": "elementArt",
+                "elementId": element.id,
+                "view": view,
+            }),
+        };
+        let id = match variant_id {
+            Some(variant_id) => format!("element:{}:{}:{}", view, element.id, variant_id),
+            None => format!("element:{}:{}", view, element.id),
+        };
+        let noun = match element.kind.as_str() {
+            "character" => "character",
+            "scene" => "place",
+            _ => "thing",
+        };
+        let name = match variant_id.and_then(|id| {
+            element
+                .variants
+                .as_ref()
+                .and_then(|forms| forms.iter().find(|form| form.id == id))
+        }) {
+            Some(form) => format!("{} ({})", element.name, form.name),
+            None => element.name.clone(),
+        };
+        let mut lines = vec![
+            format!("Edit the reference picture of the {noun} \u{201c}{name}\u{201d} from the attached picture. Keep everything else unchanged \u{2014} the same face, hair, clothes, body and look; change only what the instruction says."),
+            look,
+        ];
+        masked(&mut lines);
+        let aspect = look_of.ratio.unwrap_or(story.brief.aspect);
+        let mut inputs = vec![json!({"role": "reference", "assetId": source})];
+        if let Some(mask) = mask_asset {
+            inputs.push(json!({"role": "mask", "assetId": mask}));
+        }
+        return Ok(vec![Planned {
+            model: none_if_empty(model).or_else(|| look_of.image_model.map(str::to_string)),
+            value: job_item(
+                &id,
+                target,
+                "image",
+                format!("{instruction}\n{}", lines.join("\n")),
+                None,
+                inputs,
+                json!({"size": image_size(aspect.as_str(), view == "turnaround")}),
+                None,
+                None,
+                None,
+            ),
+        }]);
+    }
+    let chapter_id = chapter_id
+        .ok_or_else(|| ToolError::validation("pictureEdit needs a chapterId or an elementId"))?;
+    let chapter = chapter_of(story, chapter_id)?;
+    let keyframe = chapter
+        .acts
+        .iter()
+        .filter(|act| act_id.is_none_or(|id| act.id == id))
+        .flat_map(|act| act.keyframes.iter().map(move |keyframe| (act, keyframe)))
+        .find(|(_, keyframe)| {
+            keyframe_ids.is_empty() || keyframe_ids.iter().any(|id| id == &keyframe.id)
+        })
+        .ok_or_else(|| ToolError::new("KEYFRAME_NOT_FOUND", "no such shot to edit"))?;
+    let Some(source) = current_asset(&keyframe.1.art) else {
+        return Err(ToolError::new(
+            "STEP_GAPS",
+            "that shot has no picture to edit",
+        ));
+    };
+    let mut lines = vec![
+        "Edit this shot's frame from the attached picture. Keep the composition, the framing and the people, the place and the things exactly as they are; change only what the instruction says.".to_string(),
+        format!("This shot: {}. {look}", keyframe.1.content),
+    ];
+    masked(&mut lines);
+    let mut inputs = vec![json!({"role": "reference", "assetId": source})];
+    if let Some(mask) = mask_asset {
+        inputs.push(json!({"role": "mask", "assetId": mask}));
+    }
+    let id = format!(
+        "keyframe:{}:{}:{}",
+        chapter.id, keyframe.0.id, keyframe.1.id
+    );
+    Ok(vec![Planned {
+        model: none_if_empty(model).or_else(|| keyframe.1.image_model.clone()),
+        value: job_item(
+            &id,
+            json!({
+                "kind": "keyframeArt",
+                "chapterId": chapter.id,
+                "actId": keyframe.0.id,
+                "keyframeId": keyframe.1.id,
+            }),
+            "image",
+            format!("{instruction}\n{}", lines.join("\n")),
+            None,
+            inputs,
+            json!({"size": image_size(story.brief.aspect.as_str(), false)}),
+            Some(keyframe.1.title.clone()),
+            None,
+            None,
+        ),
+    }])
+}
 
 #[allow(clippy::too_many_arguments)]
 fn plan_element_art(

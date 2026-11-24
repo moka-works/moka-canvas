@@ -1,5 +1,6 @@
 import { ApiError, assetsApi, type AgentRoom } from "../../../api";
 import { exportCanvasImage } from "../../editor/interactions/actions";
+import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useEditorStore } from "../../editor/stores/editorStore";
 import { useClipStore } from "../../clip/stores/clipStore";
@@ -198,7 +199,7 @@ async function importFiles(
   };
 }
 
-function focus(input: Record<string, unknown>): AppToolAnswer {
+export function focus(input: Record<string, unknown>): AppToolAnswer {
   const room = typeof input.room === "string" ? input.room : null;
   const strings = (key: string): string[] =>
     Array.isArray(input[key])
@@ -207,6 +208,11 @@ function focus(input: Record<string, unknown>): AppToolAnswer {
   const text = (key: string): string | null =>
     typeof input[key] === "string" ? (input[key] as string) : null;
 
+  if (room === "canvas") useAppStore.getState().setPhase("editing");
+  if (room === "clip") useAppStore.getState().setPhase("clip");
+  if (room === "assets") useAppStore.getState().setPhase("assets");
+  if (room === "story") useAppStore.getState().setPhase("story");
+  if (room === "director") useAppStore.getState().setPhase("director");
   const canvasId = text("canvasId");
   if (canvasId) useProjectStore.getState().switchCanvas(canvasId);
   if (room === "canvas") {
