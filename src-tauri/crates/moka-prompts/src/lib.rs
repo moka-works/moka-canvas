@@ -44,10 +44,20 @@ pub enum Prompt {
     StoryOutline,
     /// The characters, places and things a telling is made of.
     StoryElements,
+    /// One chapter written again in its place in the telling.
+    StoryChapter,
     /// A chapter's acts planned before their shots.
     StoryActPlan,
     /// A chapter boarded as acts and shots.
     StoryStoryboard,
+    /// A board checked for staging that runs on across shots.
+    StoryContinuity,
+    /// A board revised from a newer outline.
+    StoryRevision,
+    /// A bridge filmed between two neighbouring clips.
+    StoryTransitionVideo,
+    /// The readings of one element's appearances reconciled.
+    StoryMergeElements,
     /// One still frame of a board, drawn from its words and cast.
     StoryKeyframe,
     /// One act filmed, from the frames or words its shots carry.
@@ -65,7 +75,7 @@ pub enum Prompt {
 impl Prompt {
     /// Every template there is, so a startup check walks all of them rather than
     /// the ones somebody remembered to list.
-    pub const ALL: [Prompt; 15] = [
+    pub const ALL: [Prompt; 20] = [
         Prompt::Tilt,
         Prompt::TiltTurn,
         Prompt::TiltTip,
@@ -73,8 +83,13 @@ impl Prompt {
         Prompt::StoryFacts,
         Prompt::StoryOutline,
         Prompt::StoryElements,
+        Prompt::StoryChapter,
         Prompt::StoryActPlan,
         Prompt::StoryStoryboard,
+        Prompt::StoryContinuity,
+        Prompt::StoryRevision,
+        Prompt::StoryTransitionVideo,
+        Prompt::StoryMergeElements,
         Prompt::StoryKeyframe,
         Prompt::StoryActVideo,
         Prompt::StoryKeyframeVideo,
@@ -94,8 +109,13 @@ impl Prompt {
             Self::StoryFacts => "story/facts",
             Self::StoryOutline => "story/outline",
             Self::StoryElements => "story/elements",
+            Self::StoryChapter => "story/chapter",
             Self::StoryActPlan => "story/act-plan",
             Self::StoryStoryboard => "story/storyboard",
+            Self::StoryContinuity => "story/continuity",
+            Self::StoryRevision => "story/revise",
+            Self::StoryTransitionVideo => "story/transition-video",
+            Self::StoryMergeElements => "story/merge-elements",
             Self::StoryKeyframe => "story/keyframe",
             Self::StoryActVideo => "story/act-video",
             Self::StoryKeyframeVideo => "story/keyframe-video",
@@ -126,11 +146,26 @@ impl Prompt {
             Self::StoryElements => {
                 include_str!("../../../../src/shared/prompts/story/elements.tmpl")
             }
+            Self::StoryChapter => {
+                include_str!("../../../../src/shared/prompts/story/chapter.tmpl")
+            }
             Self::StoryActPlan => {
                 include_str!("../../../../src/shared/prompts/story/act-plan.tmpl")
             }
             Self::StoryStoryboard => {
                 include_str!("../../../../src/shared/prompts/story/storyboard.tmpl")
+            }
+            Self::StoryContinuity => {
+                include_str!("../../../../src/shared/prompts/story/continuity.tmpl")
+            }
+            Self::StoryRevision => {
+                include_str!("../../../../src/shared/prompts/story/revise.tmpl")
+            }
+            Self::StoryTransitionVideo => {
+                include_str!("../../../../src/shared/prompts/story/transition-video.tmpl")
+            }
+            Self::StoryMergeElements => {
+                include_str!("../../../../src/shared/prompts/story/merge-elements.tmpl")
             }
             Self::StoryKeyframe => {
                 include_str!("../../../../src/shared/prompts/story/keyframe.tmpl")

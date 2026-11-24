@@ -11,8 +11,9 @@ use serde_json::{json, Value};
 
 use crate::api::ApiState;
 use crate::domain::story::{
-    StoryAct, StoryAspect, StoryChapter, StoryDocument, StoryElement, StoryKeyframe,
-    StoryPictureReference, StorySlot, StoryVoiceProfile, MAX_IMAGES_PER_ASK, MAX_KEYFRAME_MS,
+    StoryAct, StoryAspect, StoryChapter, StoryDocument, StoryElement, StoryFilmRole, StoryKeyframe,
+    StoryPictureReference, StoryShotGranularity, StorySlot, StoryVoiceProfile, MAX_IMAGES_PER_ASK,
+    MAX_KEYFRAME_MS,
 };
 use crate::domain::MokaFile;
 use crate::prompts::{self, Prompt};
@@ -53,8 +54,12 @@ pub async fn command(
 
     let mut warnings = Vec::new();
     let mut planned = match kind.as_str() {
-        "outline" => plan_outline(story)?,
+        "outline" => match chapter_id.as_deref() {
+            Some(chapter_id) => plan_chapter_outline(story, chapter_id, &model)?,
+            None => plan_outline(story)?,
+        },
         "elements" => plan_elements(story)?,
+        "mergeElements" => plan_merge_elements(story, args.raw("groups").cloned())?,
         "storyboard" => {
             plan_storyboard(
                 state,
@@ -69,6 +74,14 @@ pub async fn command(
             story,
             require_chapter(&chapter_id, "actPlan")?,
             act_id.as_deref(),
+            &model,
+        )?,
+        "continuity" => {
+            plan_continuity(story, require_chapter(&chapter_id, "continuity")?, &model)?
+        }
+        "outlineRevision" => plan_outline_revision(
+            story,
+            require_chapter(&chapter_id, "outlineRevision")?,
             &model,
         )?,
         "elementArt" => plan_element_art(
@@ -124,6 +137,13 @@ pub async fn command(
             &model,
             &mut warnings,
         ),
+        "voice" => plan_act_voice(
+            story,
+            require_chapter(&chapter_id, "voice")?,
+            act_id.as_deref(),
+            include_existing,
+            &model,
+        ),
         "music" => plan_music(
             story,
             require_chapter(&chapter_id, "music")?,
@@ -142,11 +162,16 @@ pub async fn command(
     let total = planned.len();
     let flat: Vec<Value> = planned.iter().map(|item| item.value.clone()).collect();
     let waves = group_waves(&mut planned);
+    let job_kind = match kind.as_str() {
+        "mergeElements" => "elements",
+        _ => kind.as_str(),
+    };
     Ok(ToolOutcome::read(
         format!("planned {total} {kind} items"),
         json!({
             "storyId": story.id,
-            "kind": kind,
+            "kind": job_kind,
+            "plan": kind,
             "chapterId": chapter_id,
             "items": flat,
             "waves": waves,
@@ -217,6 +242,383 @@ fn plan_elements(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
             json!({"kind": "elements"}),
             "text",
             prompt,
+            Some(system_prompt()?),
+            Vec::new(),
+            json!({}),
+            None,
+            None,
+            None,
+        ),
+    }])
+}
+
+fn chapter_index(story: &StoryDocument, chapter_id: &str) -> Result<usize, ToolError> {
+    story
+        .chapters
+        .iter()
+        .position(|chapter| chapter.id == chapter_id)
+        .ok_or_else(|| {
+            ToolError::new(
+                "CHAPTER_NOT_FOUND",
+                format!("chapter {chapter_id} does not exist"),
+            )
+        })
+}
+
+fn chapter_revision(chapter: &StoryChapter) -> u32 {
+    chapter.revision.max(1)
+}
+
+fn chapter_board_revision(chapter: &StoryChapter) -> u32 {
+    chapter.board_revision.unwrap_or(chapter_revision(chapter))
+}
+
+fn chapter_outline_ahead(chapter: &StoryChapter) -> bool {
+    chapter_board_revision(chapter) < chapter_revision(chapter)
+}
+
+/// FNV-1a over UTF-16 code units, the same reading the room writes into a
+/// continuity ask's id.
+fn fnv1a(text: &str) -> String {
+    let mut hash = 0x811c_9dc5_u32;
+    for unit in text.encode_utf16() {
+        hash ^= unit as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    format!("{hash:08x}")
+}
+
+fn continuity_fingerprint(chapter: &StoryChapter) -> String {
+    let mut rows = Vec::new();
+    for act in &chapter.acts {
+        if act.transition.is_some() {
+            continue;
+        }
+        rows.push(format!(
+            "act:{}:{}:{}:{}:{}",
+            act.id,
+            act.title,
+            act.scene_id.as_deref().unwrap_or_default(),
+            act.character_ids.join(","),
+            act.prop_ids.join(","),
+        ));
+        for keyframe in &act.keyframes {
+            rows.push(format!(
+                "shot:{}:{}:{}:{}:{}:{}:{}",
+                keyframe.id,
+                keyframe.shot_size.as_str(),
+                keyframe.camera_move.as_str(),
+                keyframe.angle.as_str(),
+                keyframe.duration_ms,
+                keyframe.content,
+                keyframe.motion.as_deref().unwrap_or_default(),
+            ));
+            for line in &keyframe.dialogue {
+                rows.push(format!(
+                    "line:{}:{}:{}",
+                    line.id.as_deref().unwrap_or_default(),
+                    line.speaker,
+                    line.text
+                ));
+            }
+        }
+    }
+    fnv1a(&rows.join("\n"))
+}
+
+fn continuity_board(story: &StoryDocument, chapter: &StoryChapter) -> String {
+    chapter
+        .acts
+        .iter()
+        .filter(|act| act.transition.is_none())
+        .enumerate()
+        .map(|(at, act)| {
+            let cast = act
+                .character_ids
+                .iter()
+                .filter_map(|id| story.elements.iter().find(|element| &element.id == id))
+                .map(|element| element.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let place = act
+                .scene_id
+                .as_deref()
+                .and_then(|id| story.elements.iter().find(|element| element.id == id))
+                .map(|element| element.name.as_str())
+                .unwrap_or("—");
+            let shots = act
+                .keyframes
+                .iter()
+                .enumerate()
+                .map(|(shot_at, keyframe)| {
+                    let lines = keyframe
+                        .dialogue
+                        .iter()
+                        .map(|line| format!("    line ({}): {}", line.speaker, line.text))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!(
+                        "  Shot {} — id: {} — {}/{}/{}, {} ms\n    content: {}{}{}",
+                        shot_at + 1,
+                        keyframe.id,
+                        keyframe.shot_size.as_str(),
+                        keyframe.camera_move.as_str(),
+                        keyframe.angle.as_str(),
+                        keyframe.duration_ms,
+                        keyframe.content,
+                        keyframe
+                            .motion
+                            .as_deref()
+                            .filter(|motion| !motion.is_empty())
+                            .map(|motion| format!("\n    motion: {motion}"))
+                            .unwrap_or_default(),
+                        if lines.is_empty() {
+                            String::new()
+                        } else {
+                            format!("\n{lines}")
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "Act {} — id: {} — “{}”\n  place: {}; cast: {}\n{}",
+                at + 1,
+                act.id,
+                act.title,
+                place,
+                if cast.is_empty() { "—" } else { &cast },
+                shots
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn plan_chapter_outline(
+    story: &StoryDocument,
+    chapter_id: &str,
+    model: &str,
+) -> Result<Vec<Planned>, ToolError> {
+    let index = chapter_index(story, chapter_id)?;
+    let chapter = &story.chapters[index];
+    let around = |at: usize| {
+        story.chapters.get(at).map(|held| {
+            json!({
+                "number": at + 1,
+                "title": held.title,
+                "text": held.synopsis.chars().take(1200).collect::<String>(),
+            })
+        })
+    };
+    let mut context = json!({
+        "idea": story.brief.idea,
+        "chapters": story.chapters.len(),
+        "number": index + 1,
+        "current": {
+            "title": chapter.title,
+            "text": chapter.synopsis.chars().take(1200).collect::<String>(),
+        },
+    });
+    if index > 0 {
+        context["previous"] = around(index - 1).unwrap_or(Value::Null);
+    }
+    if index + 1 < story.chapters.len() {
+        context["next"] = around(index + 1).unwrap_or(Value::Null);
+    }
+    Ok(vec![Planned {
+        model: none_if_empty(model),
+        value: job_item(
+            &format!("outline:rewrite:{}", index + 1),
+            json!({"kind": "outline"}),
+            "text",
+            render(Prompt::StoryChapter, context)?,
+            Some(system_prompt()?),
+            Vec::new(),
+            json!({}),
+            None,
+            None,
+            None,
+        ),
+    }])
+}
+
+fn plan_continuity(
+    story: &StoryDocument,
+    chapter_id: &str,
+    model: &str,
+) -> Result<Vec<Planned>, ToolError> {
+    let index = chapter_index(story, chapter_id)?;
+    let chapter = &story.chapters[index];
+    if chapter
+        .acts
+        .iter()
+        .all(|act| act.transition.is_some() || act.keyframes.is_empty())
+    {
+        return Ok(Vec::new());
+    }
+    let mut context = json!({
+        "number": index + 1,
+        "chapter": {"title": chapter.title, "text": chapter.synopsis},
+        "board": continuity_board(story, chapter),
+        "shotSizes": ["extremeClose", "close", "mediumClose", "medium", "mediumFull", "full", "wide", "extremeWide"],
+        "cameraMoves": ["static", "handheld", "pushIn", "pullOut", "panLeft", "panRight", "tiltUp", "tiltDown", "trackLeft", "trackRight", "arc", "craneUp", "zoomIn", "zoomOut"],
+        "angles": ["eyeLevel", "high", "low", "overhead", "dutch", "overTheShoulder", "pointOfView"],
+    });
+    context["__facts"] = json!(facts_prompt(story)?);
+    let prompt = join_prompts(&[
+        facts_prompt(story)?,
+        render(Prompt::StoryContinuity, context)?,
+    ]);
+    let stamp = format!(
+        "{}:{}",
+        chapter_revision(chapter),
+        continuity_fingerprint(chapter)
+    );
+    Ok(vec![Planned {
+        model: none_if_empty(model),
+        value: job_item(
+            &format!("continuity:{chapter_id}:{stamp}"),
+            json!({"kind": "continuity", "chapterId": chapter_id}),
+            "text",
+            prompt,
+            Some(system_prompt()?),
+            Vec::new(),
+            json!({}),
+            None,
+            None,
+            None,
+        ),
+    }])
+}
+
+fn revision_made(
+    story: &StoryDocument,
+    chapter_id: &str,
+    act_id: &str,
+    keyframe: &StoryKeyframe,
+) -> String {
+    let mut made = Vec::new();
+    if current_asset(&keyframe.art).is_some() {
+        made.push("frame drawn");
+    }
+    if current_asset(&keyframe.video).is_some() {
+        made.push("shot filmed");
+    }
+    if keyframe.voices.as_ref().is_some_and(|voices| {
+        voices
+            .iter()
+            .any(|voice| current_asset(&voice.slot).is_some())
+    }) {
+        made.push("line read aloud");
+    }
+    let shot_id = format!("keyframeVideo:{}:{}:{}", chapter_id, act_id, keyframe.id);
+    if video_prompt_override(story, &shot_id).is_some() {
+        made.push("hand-written video prompt");
+    }
+    if made.is_empty() {
+        "nothing yet".to_string()
+    } else {
+        made.join(", ")
+    }
+}
+
+fn revision_acts(story: &StoryDocument, chapter: &StoryChapter) -> Value {
+    json!(chapter
+        .acts
+        .iter()
+        .filter(|act| act.transition.is_none())
+        .map(|act| json!({
+            "id": act.id,
+            "title": act.title,
+            "summary": act.summary,
+            "frames": act.keyframes.iter().map(|keyframe| {
+                let mut frame = json!({
+                    "id": keyframe.id,
+                    "title": keyframe.title,
+                    "shotSize": keyframe.shot_size.as_str(),
+                    "cameraMove": keyframe.camera_move.as_str(),
+                    "angle": keyframe.angle.as_str(),
+                    "durationMs": keyframe.duration_ms,
+                    "content": keyframe.content,
+                    "dialogue": keyframe.dialogue,
+                    "made": revision_made(story, &chapter.id, &act.id, keyframe),
+                });
+                if let Some(motion) = keyframe
+                    .motion
+                    .as_deref()
+                    .filter(|motion| !motion.trim().is_empty())
+                {
+                    frame["motion"] = json!(motion);
+                }
+                frame
+            }).collect::<Vec<_>>(),
+        }))
+        .collect::<Vec<_>>())
+}
+
+fn plan_outline_revision(
+    story: &StoryDocument,
+    chapter_id: &str,
+    model: &str,
+) -> Result<Vec<Planned>, ToolError> {
+    let index = chapter_index(story, chapter_id)?;
+    let chapter = &story.chapters[index];
+    if !chapter_outline_ahead(chapter) {
+        return Ok(Vec::new());
+    }
+    let Some(before) = chapter.board_outline.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let prompt = join_prompts(&[
+        facts_prompt(story)?,
+        render(
+            Prompt::StoryRevision,
+            json!({
+                "number": index + 1,
+                "before": {"title": before.title, "text": before.synopsis},
+                "after": {"title": chapter.title, "text": chapter.synopsis},
+                "seconds": (chapter.target_duration_ms / 1000).max(1),
+                "elements": elements_list(story),
+                "acts": revision_acts(story, chapter),
+                "shotSizes": ["extremeClose", "close", "mediumClose", "medium", "mediumFull", "full", "wide", "extremeWide"],
+                "cameraMoves": ["static", "handheld", "pushIn", "pullOut", "panLeft", "panRight", "tiltUp", "tiltDown", "trackLeft", "trackRight", "arc", "craneUp", "zoomIn", "zoomOut"],
+                "angles": ["eyeLevel", "high", "low", "overhead", "dutch", "overTheShoulder", "pointOfView"],
+            }),
+        )?,
+    ]);
+    Ok(vec![Planned {
+        model: none_if_empty(model),
+        value: job_item(
+            &format!("outlineRevision:{chapter_id}:{}", chapter_revision(chapter)),
+            json!({"kind": "outlineRevision", "chapterId": chapter_id}),
+            "text",
+            prompt,
+            Some(system_prompt()?),
+            Vec::new(),
+            json!({}),
+            None,
+            None,
+            None,
+        ),
+    }])
+}
+
+fn plan_merge_elements(
+    _story: &StoryDocument,
+    groups: Option<Value>,
+) -> Result<Vec<Planned>, ToolError> {
+    let groups = groups
+        .and_then(|value| value.as_array().cloned())
+        .filter(|groups| !groups.is_empty())
+        .ok_or_else(|| ToolError::validation("mergeElements needs a non-empty groups list"))?;
+    Ok(vec![Planned {
+        model: None,
+        value: job_item(
+            "elements:merge",
+            json!({"kind": "elements"}),
+            "text",
+            render(Prompt::StoryMergeElements, json!({"groups": groups}))?,
             Some(system_prompt()?),
             Vec::new(),
             json!({}),
@@ -628,15 +1030,73 @@ async fn plan_act_videos(
 ) -> Result<Vec<Planned>, ToolError> {
     let chapter = chapter_of(story, chapter_id)?;
     let mut planned = Vec::new();
-    for act in &chapter.acts {
+    for (index, act) in chapter.acts.iter().enumerate() {
         if act_id.is_some_and(|id| act.id != id) {
             continue;
         }
-        if act.transition.is_some() {
-            warnings.push(format!(
-                "{} is a bridge between acts; film its neighbours first",
-                act.title
-            ));
+        let ceiling_model = none_if_empty(model).or_else(|| act.video_model.clone());
+        let ceiling = video_ceiling(state, ceiling_model.as_deref().unwrap_or_default()).await;
+        let item_model = none_if_empty(model).or_else(|| {
+            act.video_model
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+        });
+        if let Some(transition) = &act.transition {
+            if current_asset(&act.video).is_some() && !include_existing {
+                continue;
+            }
+            let Some(from) = neighbour_video(story, chapter, index, Edge::End) else {
+                warnings.push(format!(
+                    "{} is a bridge whose previous act has no clip yet",
+                    act.title
+                ));
+                continue;
+            };
+            let Some(to) = neighbour_video(story, chapter, index + 1, Edge::Start) else {
+                warnings.push(format!(
+                    "{} is a bridge whose next act has no clip yet",
+                    act.title
+                ));
+                continue;
+            };
+            let seconds = clamp_seconds(transition.duration_ms, ceiling);
+            let base = format!("actVideo:{}:{}", chapter.id, act.id);
+            let prompt = match video_prompt_override(story, &base) {
+                Some(prompt) => prompt.to_string(),
+                None => render(
+                    Prompt::StoryTransitionVideo,
+                    json!({
+                        "seconds": seconds,
+                        "aspect": story.brief.aspect.as_str(),
+                        "style": story.brief.style,
+                        "from": strip_mentions(&from.content),
+                        "to": strip_mentions(&to.content),
+                        "move": transition.prompt,
+                    }),
+                )?,
+            };
+            planned.push(Planned {
+                model: item_model,
+                value: job_item(
+                    &base,
+                    json!({"kind": "actVideo", "chapterId": chapter.id, "actId": act.id}),
+                    "video",
+                    prompt,
+                    None,
+                    vec![
+                        json!({"role": "firstFrame", "assetId": from.asset_id, "frame": "last"}),
+                        json!({"role": "lastFrame", "assetId": to.asset_id, "frame": "first"}),
+                    ],
+                    json!({
+                        "seconds": seconds,
+                        "ratio": story.brief.aspect.as_str(),
+                        "mode": "auto",
+                    }),
+                    Some(act.title.clone()),
+                    None,
+                    None,
+                ),
+            });
             continue;
         }
         if current_asset(&act.video).is_some() && !include_existing {
@@ -646,29 +1106,28 @@ async fn plan_act_videos(
             warnings.push(format!("{} has no shots to film", act.title));
             continue;
         }
-        let ceiling_model = none_if_empty(model).or_else(|| act.video_model.clone());
-        let ceiling = video_ceiling(state, ceiling_model.as_deref().unwrap_or_default()).await;
         let pieces = act_pieces(act, ceiling, &act.title, warnings);
         if pieces.is_empty() {
             continue;
         }
         let total = pieces.len();
-        let item_model = none_if_empty(model).or_else(|| {
-            act.video_model
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-        });
         for (at, piece) in pieces.into_iter().enumerate() {
+            let mode = match piece.kind {
+                PieceKind::Words => "words",
+                PieceKind::Reference => "references",
+                PieceKind::Frame | PieceKind::Pair => "frames",
+            };
             let mut context = json!({
                 "aspect": story.brief.aspect.as_str(),
                 "style": story.brief.style,
                 "title": act.title,
                 "summary": act.summary,
                 "seconds": piece.seconds,
-                "shots": piece.shots,
-                "hasDialogue": piece.has_dialogue,
-                "words": piece.words,
-                "references": piece.references,
+                "shots": piece.prompt_shots(),
+                "hasDialogue": piece.has_dialogue(),
+                "words": piece.kind == PieceKind::Words,
+                "references": piece.kind == PieceKind::Reference,
+                "mode": mode,
             });
             if total > 1 {
                 context["part"] = json!(at + 1);
@@ -692,11 +1151,11 @@ async fn plan_act_videos(
                     "video",
                     prompt,
                     None,
-                    piece.inputs,
+                    piece.inputs.clone(),
                     json!({
                         "seconds": piece.seconds,
                         "ratio": story.brief.aspect.as_str(),
-                        "mode": if piece.references { "reference" } else { "auto" },
+                        "mode": if piece.kind == PieceKind::Reference { "reference" } else { "auto" },
                     }),
                     Some(act.title.clone()),
                     None,
@@ -706,6 +1165,71 @@ async fn plan_act_videos(
         }
     }
     Ok(planned)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Start,
+    End,
+}
+
+struct NeighbourVideo {
+    asset_id: String,
+    content: String,
+}
+
+fn neighbour_video(
+    story: &StoryDocument,
+    chapter: &StoryChapter,
+    index: usize,
+    edge: Edge,
+) -> Option<NeighbourVideo> {
+    let act = chapter.acts.get(index)?;
+    if act.transition.is_some() {
+        return None;
+    }
+    let per_shot =
+        act.shot_granularity.unwrap_or(story.shot_granularity) == StoryShotGranularity::Keyframe;
+    if per_shot {
+        let mut frames: Vec<&StoryKeyframe> = act.keyframes.iter().collect();
+        if edge == Edge::End {
+            frames.reverse();
+        }
+        for frame in frames {
+            let Some(take) = frame.video.takes.last() else {
+                continue;
+            };
+            let asset_id = match edge {
+                Edge::Start => take.asset_ids.first(),
+                Edge::End => take.asset_ids.last(),
+            };
+            if let Some(asset_id) = asset_id {
+                return Some(NeighbourVideo {
+                    asset_id: asset_id.clone(),
+                    content: frame.content.clone(),
+                });
+            }
+        }
+        return None;
+    }
+    let take = act.video.takes.last()?;
+    let asset_id = match edge {
+        Edge::Start => take.asset_ids.first(),
+        Edge::End => take.asset_ids.last(),
+    }?;
+    let mut frames: Vec<&StoryKeyframe> = act.keyframes.iter().collect();
+    if edge == Edge::End {
+        frames.reverse();
+    }
+    let content = frames
+        .iter()
+        .find(|frame| !frame.content.trim().is_empty())
+        .map(|frame| frame.content.clone())
+        .unwrap_or_else(|| act.summary.clone());
+    Some(NeighbourVideo {
+        asset_id: asset_id.clone(),
+        content,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -801,20 +1325,115 @@ async fn plan_keyframe_videos(
     Ok(planned)
 }
 
-struct Piece {
-    seconds: u32,
-    shots: Vec<Value>,
-    inputs: Vec<Value>,
-    has_dialogue: bool,
-    words: bool,
-    references: bool,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PieceKind {
+    Words,
+    Frame,
+    Pair,
+    Reference,
 }
 
-fn act_pieces(act: &StoryAct, ceiling: u32, title: &str, warnings: &mut Vec<String>) -> Vec<Piece> {
-    let mut pieces = Vec::new();
-    let mut current: Vec<&StoryKeyframe> = Vec::new();
-    let mut current_ms = 0_i64;
-    let ceiling_ms = ceiling as i64 * 1000;
+struct Piece<'a> {
+    keyframes: Vec<&'a StoryKeyframe>,
+    seconds: u32,
+    kind: PieceKind,
+    inputs: Vec<Value>,
+}
+
+impl Piece<'_> {
+    fn has_dialogue(&self) -> bool {
+        self.keyframes
+            .iter()
+            .any(|keyframe| !spoken_lines(&keyframe.dialogue).is_empty())
+    }
+
+    fn prompt_shots(&self) -> Vec<Value> {
+        let mut held = 0_i64;
+        self.keyframes
+            .iter()
+            .map(|keyframe| {
+                let start = (held as f64 / 100.0).round() / 10.0;
+                held += keyframe.duration_ms;
+                let start = start.min(self.seconds as f64);
+                let tenths = (start * 10.0).round() as i64;
+                let at = if tenths % 10 == 0 {
+                    json!(tenths / 10)
+                } else {
+                    json!(tenths as f64 / 10.0)
+                };
+                json!({
+                    "at": at,
+                    "content": strip_mentions(&keyframe.content),
+                    "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
+                    "move": keyframe.camera_move.as_str(),
+                    "dialogue": spoken_lines(&keyframe.dialogue),
+                })
+            })
+            .collect()
+    }
+}
+
+fn has_picture(keyframe: &StoryKeyframe) -> bool {
+    current_asset(&keyframe.art).is_some()
+}
+
+fn next_pictured(shots: &[&StoryKeyframe], from: usize) -> Option<usize> {
+    (from..shots.len()).find(|at| has_picture(shots[*at]))
+}
+
+fn opens_own_piece(shots: &[&StoryKeyframe], at: usize) -> bool {
+    if !has_picture(shots[at]) {
+        return false;
+    }
+    match shots[at].film_role {
+        StoryFilmRole::FirstFrame => true,
+        StoryFilmRole::FirstLastFrame => next_pictured(shots, at + 1).is_some(),
+        StoryFilmRole::Reference => false,
+    }
+}
+
+fn piece_of<'a>(kind: PieceKind, shots: Vec<&'a StoryKeyframe>, seconds: u32) -> Piece<'a> {
+    let pictured: Vec<String> = shots
+        .iter()
+        .filter_map(|keyframe| current_asset(&keyframe.art))
+        .collect();
+    let inputs = match kind {
+        PieceKind::Words => Vec::new(),
+        PieceKind::Reference => pictured
+            .iter()
+            .map(|asset_id| json!({"role": "reference", "assetId": asset_id}))
+            .collect(),
+        PieceKind::Frame => pictured
+            .first()
+            .map(|asset_id| vec![json!({"role": "firstFrame", "assetId": asset_id})])
+            .unwrap_or_default(),
+        PieceKind::Pair => {
+            let mut inputs = pictured
+                .first()
+                .map(|asset_id| vec![json!({"role": "firstFrame", "assetId": asset_id})])
+                .unwrap_or_default();
+            if pictured.len() > 1 {
+                if let Some(last) = pictured.last() {
+                    inputs.push(json!({"role": "lastFrame", "assetId": last}));
+                }
+            }
+            inputs
+        }
+    };
+    Piece {
+        keyframes: shots,
+        seconds,
+        kind,
+        inputs,
+    }
+}
+
+fn act_pieces<'a>(
+    act: &'a StoryAct,
+    ceiling: u32,
+    title: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<Piece<'a>> {
     for keyframe in &act.keyframes {
         if current_asset(&keyframe.art).is_none() && !keyframe.art_not_needed {
             warnings.push(format!(
@@ -823,73 +1442,90 @@ fn act_pieces(act: &StoryAct, ceiling: u32, title: &str, warnings: &mut Vec<Stri
             ));
             return Vec::new();
         }
-        if !current.is_empty() && current_ms + keyframe.duration_ms > ceiling_ms {
-            pieces.push(piece_of(&current, ceiling));
-            current.clear();
-            current_ms = 0;
-        }
-        current.push(keyframe);
-        current_ms += keyframe.duration_ms;
     }
-    if !current.is_empty() {
-        pieces.push(piece_of(&current, ceiling));
+    let shots: Vec<&StoryKeyframe> = act
+        .keyframes
+        .iter()
+        .filter(|keyframe| current_asset(&keyframe.art).is_some() || keyframe.art_not_needed)
+        .collect();
+    let mut pieces = Vec::new();
+    let mut at = 0_usize;
+    while at < shots.len() {
+        if !has_picture(shots[at]) {
+            let next = next_pictured(&shots, at);
+            if next.is_none() || opens_own_piece(&shots, next.unwrap()) {
+                let mut end = at;
+                let mut ms = 0_i64;
+                while end < shots.len() && !has_picture(shots[end]) {
+                    ms += shots[end].duration_ms;
+                    end += 1;
+                }
+                pieces.push(piece_of(
+                    PieceKind::Words,
+                    shots[at..end].to_vec(),
+                    clamp_seconds(ms, ceiling),
+                ));
+                at = end;
+                continue;
+            }
+        }
+        let role = shots[at].film_role;
+        let tail = if role == StoryFilmRole::FirstLastFrame {
+            next_pictured(&shots, at + 1)
+        } else {
+            None
+        };
+        if let Some(tail) = tail {
+            let closing = next_pictured(&shots, tail + 1).is_none();
+            let inner = shots[at..=tail].to_vec();
+            let ms: i64 = inner.iter().map(|keyframe| keyframe.duration_ms).sum();
+            let seconds = clamp_seconds(
+                ms - if closing { 0 } else { shots[tail].duration_ms },
+                ceiling,
+            );
+            pieces.push(piece_of(PieceKind::Pair, inner, seconds));
+            at = if closing { tail + 1 } else { tail };
+            continue;
+        }
+        if role == StoryFilmRole::FirstFrame {
+            let mut end = at + 1;
+            while end < shots.len() && !has_picture(shots[end]) {
+                end += 1;
+            }
+            let inner = shots[at..end].to_vec();
+            let ms: i64 = inner.iter().map(|keyframe| keyframe.duration_ms).sum();
+            pieces.push(piece_of(
+                PieceKind::Frame,
+                inner,
+                clamp_seconds(ms, ceiling),
+            ));
+            at = end;
+            continue;
+        }
+        let mut run = Vec::new();
+        let mut run_ms = 0_i64;
+        while at < shots.len() {
+            let held = shots[at];
+            if !run.is_empty() && has_picture(held) && opens_own_piece(&shots, at) {
+                break;
+            }
+            if run_ms > 0 && run_ms + held.duration_ms > ceiling as i64 * 1000 {
+                break;
+            }
+            run.push(held);
+            run_ms += held.duration_ms;
+            at += 1;
+        }
+        let kind = if run.iter().any(|keyframe| has_picture(keyframe)) {
+            PieceKind::Reference
+        } else {
+            PieceKind::Words
+        };
+        pieces.push(piece_of(kind, run, clamp_seconds(run_ms, ceiling)));
     }
     pieces
 }
 
-fn piece_of(shots: &[&StoryKeyframe], ceiling: u32) -> Piece {
-    let ms: i64 = shots.iter().map(|keyframe| keyframe.duration_ms).sum();
-    let pictured: Vec<String> = shots
-        .iter()
-        .filter_map(|keyframe| current_asset(&keyframe.art))
-        .collect();
-    let words = pictured.is_empty();
-    let references = pictured.len() > 1;
-    let mut at = 0_f64;
-    let prompt_shots: Vec<Value> = shots
-        .iter()
-        .map(|keyframe| {
-            let start = at;
-            at += keyframe.duration_ms as f64 / 1000.0;
-            let tenths = (start * 10.0).round() as i64;
-            let at = if tenths % 10 == 0 {
-                json!(tenths / 10)
-            } else {
-                json!(tenths as f64 / 10.0)
-            };
-            json!({
-                "at": at,
-                "content": strip_mentions(&keyframe.content),
-                "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
-                "move": keyframe.camera_move.as_str(),
-                "dialogue": spoken_lines(&keyframe.dialogue),
-            })
-        })
-        .collect();
-    let has_dialogue = shots
-        .iter()
-        .any(|keyframe| !spoken_lines(&keyframe.dialogue).is_empty());
-    let inputs = if words {
-        Vec::new()
-    } else if references {
-        pictured
-            .into_iter()
-            .map(|asset_id| json!({"role": "reference", "assetId": asset_id}))
-            .collect()
-    } else {
-        vec![json!({"role": "firstFrame", "assetId": pictured[0]})]
-    };
-    Piece {
-        seconds: clamp_seconds(ms, ceiling),
-        shots: prompt_shots,
-        inputs,
-        has_dialogue,
-        words,
-        references,
-    }
-}
-
-// -----------------------------------------------------------------------------
 // The sound of an act
 // -----------------------------------------------------------------------------
 
@@ -986,6 +1622,88 @@ fn plan_line_voices(
                 });
             }
         }
+    }
+    planned
+}
+
+fn plan_act_voice(
+    story: &StoryDocument,
+    chapter_id: &str,
+    act_id: Option<&str>,
+    include_existing: bool,
+    model: &str,
+) -> Vec<Planned> {
+    let Ok(chapter) = chapter_of(story, chapter_id) else {
+        return Vec::new();
+    };
+    let voice = story.narrator.clone().unwrap_or_default();
+    let mut planned = Vec::new();
+    for act in &chapter.acts {
+        if act_id.is_some_and(|id| act.id != id) {
+            continue;
+        }
+        if act
+            .voice
+            .as_ref()
+            .is_some_and(|slot| current_asset(slot).is_some())
+            && !include_existing
+        {
+            continue;
+        }
+        let words: Vec<&str> = act
+            .keyframes
+            .iter()
+            .flat_map(|keyframe| keyframe.dialogue.iter())
+            .map(|line| line.text.trim())
+            .filter(|line| !line.is_empty())
+            .collect();
+        if words.is_empty() {
+            continue;
+        }
+        let item_model = none_if_empty(model).or_else(|| none_if_empty(&voice.model));
+        let mut params = json!({});
+        if let Some(reference) = &voice.reference_asset_id {
+            params["referenceAssetId"] = json!(reference);
+        } else if !voice.voice.trim().is_empty() {
+            params["voice"] = json!(voice.voice);
+        }
+        if let Some(rate) = voice.rate {
+            params["rate"] = json!(rate);
+        }
+        if let Some(pitch) = voice.pitch {
+            params["pitch"] = json!(pitch);
+        }
+        let instructions = [
+            act.summary.trim(),
+            voice.instructions.as_deref().unwrap_or(""),
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+        if !instructions.is_empty() {
+            params["instructions"] = json!(instructions);
+        }
+        let inputs = voice
+            .reference_asset_id
+            .as_ref()
+            .map(|asset_id| vec![json!({"role": "reference", "assetId": asset_id})])
+            .unwrap_or_default();
+        planned.push(Planned {
+            model: item_model,
+            value: job_item(
+                &format!("actVoice:{}:{}", chapter.id, act.id),
+                json!({"kind": "voice", "chapterId": chapter.id, "actId": act.id}),
+                "speech",
+                words.join("\n"),
+                None,
+                inputs,
+                params,
+                Some(act.title.clone()),
+                None,
+                None,
+            ),
+        });
     }
     planned
 }

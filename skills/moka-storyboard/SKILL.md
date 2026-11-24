@@ -169,6 +169,8 @@ frames that have a current picture and shots marked as needing none. If a frame
 names someone with no picture, the planner warns; draw that element first rather
 than accepting a frame with the wrong face.
 
+Before drawing, the room may hold hand-written prompt overrides; `plan_job` now reads them, so a frame the reader edited is asked for in their words. A bridge is filmed only once both neighbours have clips: `plan_job kind:"actVideo"` reports the one it cannot film yet.
+
 Read `story.board_report` again. **Checkpoint 2 — the frames.** Show the shots
 still missing a picture, the cast still incomplete, and the total count. Ask for
 one of: approve all frames, redraw the listed shots (ids), or stop. To redraw:
@@ -261,21 +263,21 @@ film the report describes.
 
 ## 8. What this skill does not do
 
-These are places where the room still leads and an outside agent cannot yet
-stand in for it. Say so rather than pretending the run covers them:
+These are places where the room still leads:
 
 - splitting a manuscript into chapters (the outline step's split);
-- the staging/continuity check across shots, and repairing a board from a newer
-  outline (the room's own review and revision jobs);
 - importing a canvas or a timeline into a story;
-- laying voice, score and subtitles into the cut (the Edit step's assembly —
-  the CLI's `story.assemble` lays the picture only);
-- moving the reader's window to a story, step or selection (`view.focus` is an
-  in-app tool).
+- drawing a mask for a local repaint.
 
-Use the room for those, or ask the reader to do that one action. Everything
-before and after them — the board, the cast pictures, the frames, the clips,
-the lines, the score and their review sheets — is covered here.
+The staging check and outline revision are now plannable (`kind:"continuity"`
+and `kind:"outlineRevision"`); an outline revision answer is still a proposal
+the reader settles in its preview, never a patch this skill writes. Use
+`story.focus` to ask an open room to move to a story, step and chapter; it is a
+request, not a guarantee. `story.import_canvas` lays the telling's cards on a
+canvas without the room's wiring.
+
+Everything else — the board, the cast pictures, the frames, the clips, the
+lines, the score, the review sheets and the assembled cut — is covered here.
 
 ## 9. When to stop and ask
 

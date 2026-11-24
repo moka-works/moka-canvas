@@ -712,7 +712,7 @@ async fn a_story_batch_can_be_planned_from_the_document() {
     .await;
     let item = &clips["data"]["items"][0];
     assert_eq!(item["target"]["kind"], "actVideo");
-    assert_eq!(item["inputs"][0]["role"], "firstFrame");
+    assert_eq!(item["inputs"][0]["role"], "reference");
     assert!(
         item["prompt"]
             .as_str()
@@ -1054,4 +1054,167 @@ async fn a_story_batch_is_refused_before_a_provider_is_asked() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "VALIDATION_FAILED");
     assert!(body["details"]["issues"].as_array().unwrap().len() > 0);
+}
+
+#[tokio::test]
+async fn a_chapter_and_its_acts_can_be_restructured() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    let first = call(
+        &app,
+        "story.add_chapter",
+        json!({"storyId": story_id, "chapter": {"title": "One", "synopsis": "Ice."}}),
+    )
+    .await;
+    let first_id = first["data"]["chapterId"].as_str().unwrap().to_string();
+    let second = call(
+        &app,
+        "story.add_chapter",
+        json!({"storyId": story_id, "chapter": {"title": "Two", "synopsis": "Thaw."}}),
+    )
+    .await;
+    let second_id = second["data"]["chapterId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.move_chapter",
+        json!({"storyId": story_id, "chapterId": second_id, "toIndex": 0}),
+    )
+    .await;
+    call(
+        &app,
+        "story.update_chapter",
+        json!({"storyId": story_id, "chapterId": first_id, "patch": {"outlineLocked": true}}),
+    )
+    .await;
+    let added = call(
+        &app,
+        "story.add_act",
+        json!({
+            "storyId": story_id,
+            "chapterId": first_id,
+            "act": {
+                "title": "Bridge",
+                "transition": {"prompt": "Snow crosses the lens.", "durationMs": 1500}
+            }
+        }),
+    )
+    .await;
+    assert_eq!(added["data"]["acts"], 1);
+    let opened = current(&app).await;
+    let chapter = &opened["moka"]["stories"][0]["chapters"][0];
+    assert_eq!(chapter["id"], second_id);
+    let chapters = opened["moka"]["stories"][0]["chapters"].as_array().unwrap();
+    let one = chapters
+        .iter()
+        .find(|held| held["id"] == first_id.as_str())
+        .unwrap();
+    assert_eq!(one["outlineLocked"], true);
+    assert_eq!(one["acts"][0]["transition"]["durationMs"], 1500);
+    call(
+        &app,
+        "story.remove_chapter",
+        json!({"storyId": story_id, "chapterId": second_id, "confirm": "remove"}),
+    )
+    .await;
+    let opened = current(&app).await;
+    assert_eq!(
+        opened["moka"]["stories"][0]["chapters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_board_can_be_checked_and_revised_after_the_outline_moves() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.replace_chapters",
+        json!({
+            "storyId": story_id,
+            "confirm": "replace",
+            "chapters": [{"title": "One", "synopsis": "The lake closes."}]
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let chapter_id = opened["moka"]["stories"][0]["chapters"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    call(
+        &app,
+        "story.replace_acts",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "confirm": "replace",
+            "acts": [{"title": "Shore", "summary": "Ahe walks out.", "keyframes": [{
+                "title": "Edge", "content": "Ahe at the edge.", "durationMs": 4000
+            }]}]
+        }),
+    )
+    .await;
+    let continuity = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "continuity", "chapterId": chapter_id}),
+    )
+    .await;
+    assert_eq!(
+        continuity["data"]["items"][0]["target"]["kind"],
+        "continuity"
+    );
+    assert!(continuity["data"]["items"][0]["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("Ahe at the edge."));
+
+    call(
+        &app,
+        "story.update_chapter",
+        json!({
+            "storyId": story_id,
+            "chapterId": chapter_id,
+            "patch": {"synopsis": "The lake opens again."}
+        }),
+    )
+    .await;
+    let revision = call(
+        &app,
+        "story.plan_job",
+        json!({"storyId": story_id, "kind": "outlineRevision", "chapterId": chapter_id}),
+    )
+    .await;
+    let item = &revision["data"]["items"][0];
+    assert_eq!(item["target"]["kind"], "outlineRevision");
+    assert!(item["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("The lake opens again."));
 }

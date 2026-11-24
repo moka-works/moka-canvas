@@ -377,6 +377,9 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
         "story.replace_chapters" | "story.update_chapter" => {
             chapters(moka, &args, name == "story.replace_chapters")
         }
+        "story.add_chapter" | "story.remove_chapter" | "story.move_chapter" => {
+            chapter_ops(moka, &args, name)
+        }
         "story.replace_acts" | "story.add_act" | "story.remove_act" | "story.move_act" => {
             acts(moka, &args, name)
         }
@@ -384,6 +387,7 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
         "story.replace_keyframes" | "story.add_keyframe" | "story.remove_keyframe" => {
             keyframes(moka, &args, name)
         }
+        "story.move_keyframe" | "story.duplicate_keyframe" => keyframe_ops(moka, &args, name),
         "story.update_keyframe" => update_keyframe(moka, &args),
         "story.replace_elements" | "story.add_element" | "story.remove_element" => {
             elements(moka, &args, name)
@@ -638,6 +642,20 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
         if let Some(duration) = patch.get("targetDurationMs").and_then(Value::as_i64) {
             chapter.target_duration_ms = duration;
         }
+        if let Some(locked) = patch.get("outlineLocked").and_then(Value::as_bool) {
+            chapter.outline_locked = locked;
+        }
+        // New words are a revision, exactly as they are when the room confirms
+        // an edit: a board built from the old outline has to know it moved.
+        let before = story
+            .chapters
+            .iter()
+            .find(|held| held.id == chapter.id)
+            .cloned()
+            .unwrap_or_else(|| chapter.clone());
+        if before.title != chapter.title || before.synopsis != chapter.synopsis {
+            *chapter = crate::domain::story::revise_chapter(&before, chapter);
+        }
         return Ok(ToolOutcome::write(
             format!("Updated chapter {}", chapter.title),
             json!({"chapterId": chapter.id}),
@@ -677,6 +695,9 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
         if let Some(duration) = entry.get("targetDurationMs").and_then(Value::as_i64) {
             chapter.target_duration_ms = duration;
         }
+        if let Some(locked) = entry.get("outlineLocked").and_then(Value::as_bool) {
+            chapter.outline_locked = locked;
+        }
         // New outline words are a revision: the board is told it no longer
         // stands on the outline it was written from.
         if let Some(held) = existing {
@@ -692,6 +713,149 @@ fn chapters(moka: &MokaFile, args: &Args<'_>, replace: bool) -> Result<ToolOutco
         vec![DocumentCommand::SetStoryChapters {
             story_id: story.id.clone(),
             chapters: next,
+        }],
+    ))
+}
+
+fn chapter_ops(moka: &MokaFile, args: &Args<'_>, name: &str) -> Result<ToolOutcome, ToolError> {
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let mut chapters = story.chapters.clone();
+    match name {
+        "story.add_chapter" => {
+            let value = args.raw("chapter").cloned().unwrap_or_else(|| json!({}));
+            let mut chapter = crate::domain::story::StoryChapter {
+                id: value
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(crate::domain::new_id),
+                title: String::new(),
+                synopsis: String::new(),
+                target_duration_ms: 60_000,
+                acts: Vec::new(),
+                revision: 1,
+                board_revision: None,
+                board_outline: None,
+                outline_locked: false,
+            };
+            if let Some(title) = value.get("title").and_then(Value::as_str) {
+                chapter.title = title.to_string();
+            }
+            if let Some(synopsis) = value.get("synopsis").and_then(Value::as_str) {
+                chapter.synopsis = synopsis.to_string();
+            }
+            if let Some(duration) = value.get("targetDurationMs").and_then(Value::as_i64) {
+                chapter.target_duration_ms = duration;
+            }
+            if let Some(locked) = value.get("outlineLocked").and_then(Value::as_bool) {
+                chapter.outline_locked = locked;
+            }
+            let index = args
+                .opt_i64("index")
+                .map(|index| (index.max(0) as usize).min(chapters.len()))
+                .unwrap_or(chapters.len());
+            let id = chapter.id.clone();
+            chapters.insert(index, chapter);
+            Ok(ToolOutcome::write(
+                format!("Added chapter at {index}"),
+                json!({"chapterId": id, "chapters": chapters.len()}),
+                vec![DocumentCommand::SetStoryChapters {
+                    story_id: story.id.clone(),
+                    chapters,
+                }],
+            ))
+        }
+        "story.remove_chapter" => {
+            args.confirmed()?;
+            let id = args.req_str("chapterId")?;
+            let index = chapters
+                .iter()
+                .position(|chapter| chapter.id == id)
+                .ok_or_else(|| {
+                    ToolError::new("CHAPTER_NOT_FOUND", format!("chapter {id} does not exist"))
+                })?;
+            chapters.remove(index);
+            Ok(ToolOutcome::write(
+                format!("Removed chapter at {index}"),
+                json!({"chapterId": id, "chapters": chapters.len()}),
+                vec![DocumentCommand::SetStoryChapters {
+                    story_id: story.id.clone(),
+                    chapters,
+                }],
+            ))
+        }
+        _ => {
+            let id = args.req_str("chapterId")?;
+            let from = chapters
+                .iter()
+                .position(|chapter| chapter.id == id)
+                .ok_or_else(|| {
+                    ToolError::new("CHAPTER_NOT_FOUND", format!("chapter {id} does not exist"))
+                })?;
+            let to = args.req_i64("toIndex")?;
+            let chapter = chapters.remove(from);
+            let to = (to.max(0) as usize).min(chapters.len());
+            chapters.insert(to, chapter);
+            Ok(ToolOutcome::write(
+                format!("Moved chapter to {to}"),
+                json!({"chapterId": id, "chapters": chapters.len()}),
+                vec![DocumentCommand::SetStoryChapters {
+                    story_id: story.id.clone(),
+                    chapters,
+                }],
+            ))
+        }
+    }
+}
+
+fn keyframe_ops(moka: &MokaFile, args: &Args<'_>, name: &str) -> Result<ToolOutcome, ToolError> {
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let chapter = chapter_of(story, args.req_str("chapterId")?)?;
+    let act_id = args.req_str("actId")?;
+    let keyframe_id = args.req_str("keyframeId")?;
+    let mut acts = chapter.acts.clone();
+    let act = acts
+        .iter_mut()
+        .find(|act| act.id == act_id)
+        .ok_or_else(|| ToolError::new("ACT_NOT_FOUND", format!("act {act_id} does not exist")))?;
+    let index = act
+        .keyframes
+        .iter()
+        .position(|keyframe| keyframe.id == keyframe_id)
+        .ok_or_else(|| {
+            ToolError::new(
+                "KEYFRAME_NOT_FOUND",
+                format!("shot {keyframe_id} does not exist"),
+            )
+        })?;
+    if name == "story.move_keyframe" {
+        let to = args.req_i64("toIndex")?;
+        let keyframe = act.keyframes.remove(index);
+        let to = (to.max(0) as usize).min(act.keyframes.len());
+        act.keyframes.insert(to, keyframe);
+    } else {
+        let copy = act.keyframes[index].clone();
+        let mut copied = copy;
+        copied.id = crate::domain::new_id();
+        copied.title = format!("#{}", index + 2);
+        for line in &mut copied.dialogue {
+            line.id = Some(crate::domain::new_id());
+        }
+        copied.voices = None;
+        let at = args
+            .opt_i64("index")
+            .map(|at| (at.max(0) as usize).min(act.keyframes.len()))
+            .unwrap_or(index + 1);
+        act.keyframes.insert(at, copied);
+    }
+    let count = act.keyframes.len();
+    Ok(ToolOutcome::write(
+        format!("{name}: {count} shots"),
+        json!({"actId": act_id, "keyframes": count}),
+        vec![DocumentCommand::SetStoryActs {
+            story_id: story.id.clone(),
+            chapter_id: chapter.id.clone(),
+            acts,
         }],
     ))
 }
@@ -759,6 +923,27 @@ fn act_from(
         act.sound = serde_json::from_value(sound.clone())
             .map_err(|error| ToolError::validation(format!("sound is not valid: {error}")))?;
     }
+    if let Some(plan) = value.get("plan") {
+        act.plan = plan
+            .as_str()
+            .map(str::to_string)
+            .filter(|plan| !plan.trim().is_empty());
+    }
+    if let Some(granularity) = value.get("shotGranularity") {
+        act.shot_granularity = serde_json::from_value(granularity.clone()).map_err(|error| {
+            ToolError::validation(format!("shotGranularity is not valid: {error}"))
+        })?;
+    }
+    if let Some(model) = value.get("videoModel") {
+        act.video_model = model
+            .as_str()
+            .map(str::to_string)
+            .filter(|model| !model.trim().is_empty());
+    }
+    if let Some(transition) = value.get("transition") {
+        act.transition = serde_json::from_value(transition.clone())
+            .map_err(|error| ToolError::validation(format!("transition is not valid: {error}")))?;
+    }
     if let Some(keyframes) = value.get("keyframes").and_then(Value::as_array) {
         act.keyframes = keyframes
             .iter()
@@ -802,13 +987,13 @@ fn acts(moka: &MokaFile, args: &Args<'_>, name: &str) -> Result<ToolOutcome, Too
                 .collect::<Result<Vec<_>, _>>()?;
         }
         "story.add_act" => {
-            let act = act_from(
-                &json!({
+            let value = args.raw("act").cloned().unwrap_or_else(|| {
+                json!({
                     "title": args.opt_str("title").unwrap_or("Act"),
                     "summary": args.opt_str("summary").unwrap_or_default(),
-                }),
-                None,
-            )?;
+                })
+            });
+            let act = act_from(&value, None)?;
             let index = args
                 .opt_i64("index")
                 .map(|index| (index.max(0) as usize).min(acts.len()))
@@ -918,6 +1103,27 @@ fn keyframe_from(
     }
     if let Some(word) = value.get("angle").and_then(Value::as_str) {
         keyframe.angle = parse_word(word)?;
+    }
+    if let Some(word) = value.get("filmRole").and_then(Value::as_str) {
+        keyframe.film_role = parse_word(word)?;
+    }
+    if let Some(needed) = value.get("artNotNeeded").and_then(Value::as_bool) {
+        keyframe.art_not_needed = needed;
+    }
+    if let Some(choices) = value.get("variantChoices") {
+        keyframe.variant_choices = serde_json::from_value(choices.clone()).map_err(|error| {
+            ToolError::validation(format!("variantChoices is not valid: {error}"))
+        })?;
+    }
+    if let Some(model) = value.get("imageModel") {
+        keyframe.image_model = model
+            .as_str()
+            .map(str::to_string)
+            .filter(|model| !model.trim().is_empty());
+    }
+    if let Some(references) = value.get("references") {
+        keyframe.references = serde_json::from_value(references.clone())
+            .map_err(|error| ToolError::validation(format!("references is not valid: {error}")))?;
     }
     if let Some(content) = value.get("content").and_then(Value::as_str) {
         keyframe.content = content.to_string();
@@ -1086,6 +1292,28 @@ fn element_from(value: &Value, existing: Option<&StoryElement>) -> Result<StoryE
             .filter_map(Value::as_str)
             .map(str::to_string)
             .collect();
+    }
+    if let Some(voice) = value.get("voice") {
+        element.voice = serde_json::from_value(voice.clone())
+            .map_err(|error| ToolError::validation(format!("voice is not valid: {error}")))?;
+    }
+    if let Some(model) = value.get("imageModel") {
+        element.image_model = model
+            .as_str()
+            .map(str::to_string)
+            .filter(|model| !model.trim().is_empty());
+    }
+    if let Some(ratio) = value.get("ratio") {
+        element.ratio = serde_json::from_value(ratio.clone())
+            .map_err(|error| ToolError::validation(format!("ratio is not valid: {error}")))?;
+    }
+    if let Some(variants) = value.get("variants") {
+        element.variants = serde_json::from_value(variants.clone())
+            .map_err(|error| ToolError::validation(format!("variants is not valid: {error}")))?;
+    }
+    if let Some(reference) = value.get("reference") {
+        element.reference = serde_json::from_value(reference.clone())
+            .map_err(|error| ToolError::validation(format!("reference is not valid: {error}")))?;
     }
     Ok(element)
 }
@@ -2077,64 +2305,51 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
     let story = super::story_of(moka, args.req_str("storyId")?)?;
     let timeline_id = args.opt_str("timelineId").map(str::to_string);
     let timeline_name = args.opt_str("timelineName").unwrap_or("Story").to_string();
+    let with_subtitles = args.opt_bool("withSubtitles", false);
     let settings = timeline_settings(story);
+    let now = now_iso();
+    let video_track = crate::domain::new_id();
+    let mut tracks: Vec<TimelineTrack> = vec![TimelineTrack {
+        id: video_track.clone(),
+        kind: TrackKind::Video,
+        name: "V1".into(),
+        muted: false,
+        hidden: false,
+        locked: false,
+        created_at: now.clone(),
+    }];
     let mut clips: Vec<TimelineClip> = Vec::new();
     let mut edit_clips: Vec<StoryEditClip> = Vec::new();
+    let mut starts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut shots: std::collections::HashMap<String, (i64, i64)> = std::collections::HashMap::new();
     let mut cursor = 0_i64;
-    let now = now_iso();
-    let track_id = crate::domain::new_id();
+
     for chapter in &story.chapters {
         for act in &chapter.acts {
-            let current = act
-                .video
-                .takes
-                .last()
-                .and_then(|take| take.asset_ids.first())
-                .cloned();
-            let shots: Vec<(Option<String>, Option<String>, i64)> = if act.keyframes.is_empty() {
-                vec![(None, current, 4_000)]
-            } else {
-                act.keyframes
-                    .iter()
-                    .map(|keyframe| {
-                        (
-                            Some(keyframe.id.clone()),
-                            keyframe
-                                .video
-                                .takes
-                                .last()
-                                .and_then(|take| take.asset_ids.first())
-                                .cloned()
-                                .or_else(|| {
-                                    keyframe
-                                        .art
-                                        .takes
-                                        .last()
-                                        .and_then(|take| take.asset_ids.first())
-                                        .cloned()
-                                }),
-                            keyframe.duration_ms,
-                        )
-                    })
-                    .collect()
-            };
-            for (keyframe_id, asset_id, duration) in shots {
-                let Some(asset_id) = asset_id else { continue };
+            starts.entry(act.id.clone()).or_insert(cursor);
+            let units = assembly_units(act, &story.shot_granularity, moka, cursor);
+            for unit in units {
+                if let Some(keyframe_id) = &unit.keyframe_id {
+                    shots.insert(
+                        format!("{}:{}", act.id, keyframe_id),
+                        (unit.start_ms, unit.duration_ms),
+                    );
+                }
                 let clip_id = crate::domain::new_id();
                 edit_clips.push(StoryEditClip {
                     act_id: act.id.clone(),
-                    keyframe_id,
+                    keyframe_id: unit.keyframe_id.clone(),
                     clip_id: clip_id.clone(),
                 });
                 clips.push(TimelineClip {
                     id: clip_id,
-                    track_id: track_id.clone(),
+                    track_id: video_track.clone(),
                     kind: TrackKind::Video,
                     label: act.title.clone(),
-                    start_ms: cursor,
-                    duration_ms: duration.max(100),
-                    in_point_ms: 0,
-                    out_point_ms: duration.max(100),
+                    start_ms: unit.start_ms,
+                    duration_ms: unit.duration_ms.max(100),
+                    in_point_ms: unit.in_point_ms,
+                    out_point_ms: unit.out_point_ms,
                     speed: 1.0,
                     volume: 1.0,
                     fade_in_ms: 0,
@@ -2143,12 +2358,12 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                     opacity: 1.0,
                     created_at: now.clone(),
                     updated_at: now.clone(),
-                    asset_id: Some(asset_id),
+                    asset_id: Some(unit.asset_id),
                     adjust: None,
                     filter: None,
                     text: None,
                 });
-                cursor += duration.max(100);
+                cursor = cursor.max(unit.start_ms + unit.duration_ms);
             }
         }
     }
@@ -2158,10 +2373,200 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             "there is nothing with a picture or a shot to assemble",
         ));
     }
+
+    let voice_rows = story.chapters.iter().any(|chapter| {
+        chapter.acts.iter().any(|act| {
+            act.voice
+                .as_ref()
+                .is_some_and(|slot| !slot.takes.is_empty())
+                || act.keyframes.iter().any(|keyframe| {
+                    keyframe.voices.as_ref().is_some_and(|voices| {
+                        voices.iter().any(|voice| !voice.slot.takes.is_empty())
+                    })
+                })
+        })
+    });
+    let music_rows = story.chapters.iter().any(|chapter| {
+        chapter.acts.iter().any(|act| {
+            act.music
+                .as_ref()
+                .is_some_and(|slot| !slot.takes.is_empty())
+        })
+    });
+    let voice_track = voice_rows.then(|| crate::domain::new_id());
+    let music_track = music_rows.then(|| crate::domain::new_id());
+    if let Some(track_id) = &voice_track {
+        tracks.push(audio_track(track_id, "Voice", &now));
+    }
+    if let Some(track_id) = &music_track {
+        tracks.push(audio_track(track_id, "Music", &now));
+    }
+
+    for chapter in &story.chapters {
+        for act in &chapter.acts {
+            let Some(act_start) = starts.get(&act.id).copied() else {
+                continue;
+            };
+            let per_line = act.keyframes.iter().any(|keyframe| {
+                keyframe
+                    .voices
+                    .as_ref()
+                    .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
+            });
+            if let Some(track_id) = &voice_track {
+                if per_line {
+                    for keyframe in &act.keyframes {
+                        let window = shots
+                            .get(&format!("{}:{}", act.id, keyframe.id))
+                            .copied()
+                            .unwrap_or((act_start, keyframe.duration_ms));
+                        let voices = keyframe.voices.as_deref().unwrap_or_default();
+                        for voice in voices {
+                            let Some(take) = voice.slot.takes.last() else {
+                                continue;
+                            };
+                            for asset_id in &take.asset_ids {
+                                if moka.resources.find(asset_id).is_none() {
+                                    continue;
+                                }
+                                let duration = resource_duration(moka, asset_id)
+                                    .unwrap_or(window.1)
+                                    .max(100);
+                                clips
+                                    .push(audio_clip(track_id, asset_id, window.0, duration, &now));
+                                edit_clips.push(StoryEditClip {
+                                    act_id: act.id.clone(),
+                                    keyframe_id: Some(keyframe.id.clone()),
+                                    clip_id: clips.last().unwrap().id.clone(),
+                                });
+                            }
+                        }
+                    }
+                } else if let Some(take) = act.voice.as_ref().and_then(|slot| slot.takes.last()) {
+                    for asset_id in &take.asset_ids {
+                        if moka.resources.find(asset_id).is_none() {
+                            continue;
+                        }
+                        let duration =
+                            resource_duration(moka, asset_id).unwrap_or(act_duration(act));
+                        clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
+                        edit_clips.push(StoryEditClip {
+                            act_id: act.id.clone(),
+                            keyframe_id: Some(String::new()),
+                            clip_id: clips.last().unwrap().id.clone(),
+                        });
+                    }
+                }
+            }
+            if let Some(track_id) = &music_track {
+                if let Some(take) = act.music.as_ref().and_then(|slot| slot.takes.last()) {
+                    for asset_id in &take.asset_ids {
+                        if moka.resources.find(asset_id).is_none() {
+                            continue;
+                        }
+                        let duration =
+                            resource_duration(moka, asset_id).unwrap_or(act_duration(act));
+                        clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
+                        edit_clips.push(StoryEditClip {
+                            act_id: act.id.clone(),
+                            keyframe_id: Some(String::new()),
+                            clip_id: clips.last().unwrap().id.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if with_subtitles {
+        let text_track = crate::domain::new_id();
+        tracks.push(TimelineTrack {
+            id: text_track.clone(),
+            kind: TrackKind::Text,
+            name: "Subtitles".into(),
+            muted: false,
+            hidden: false,
+            locked: false,
+            created_at: now.clone(),
+        });
+        for chapter in &story.chapters {
+            for act in &chapter.acts {
+                let Some(act_start) = starts.get(&act.id).copied() else {
+                    continue;
+                };
+                for keyframe in &act.keyframes {
+                    let lines: Vec<_> = keyframe
+                        .dialogue
+                        .iter()
+                        .filter(|line| !line.text.trim().is_empty())
+                        .collect();
+                    if lines.is_empty() {
+                        continue;
+                    }
+                    let (start, total) = shots
+                        .get(&format!("{}:{}", act.id, keyframe.id))
+                        .copied()
+                        .unwrap_or((act_start, keyframe.duration_ms));
+                    let share = (total / lines.len() as i64).max(1);
+                    for (index, line) in lines.iter().enumerate() {
+                        let clip_id = crate::domain::new_id();
+                        clips.push(text_clip(
+                            &text_track,
+                            &line.text,
+                            start + index as i64 * share,
+                            share,
+                            &now,
+                        ));
+                        edit_clips.push(StoryEditClip {
+                            act_id: act.id.clone(),
+                            keyframe_id: Some(String::new()),
+                            clip_id,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     let mut commands = Vec::new();
     let timeline_id = match timeline_id {
         Some(id) => {
-            super::timeline_of(moka, &id)?;
+            let existing = super::timeline_of(moka, &id)?;
+            let mine: Vec<String> = story
+                .edit
+                .clip_by_act
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter(|entry| existing.clips.iter().any(|clip| clip.id == entry.clip_id))
+                .map(|entry| entry.clip_id.clone())
+                .collect();
+            if !mine.is_empty() {
+                commands.push(DocumentCommand::RemoveClips {
+                    timeline_id: id.clone(),
+                    clip_ids: mine,
+                });
+            }
+            let known_tracks: std::collections::HashSet<&str> = existing
+                .tracks
+                .iter()
+                .map(|track| track.id.as_str())
+                .collect();
+            for track in tracks
+                .iter()
+                .filter(|track| !known_tracks.contains(track.id.as_str()))
+            {
+                commands.push(DocumentCommand::AddTrack {
+                    timeline_id: id.clone(),
+                    track: track.clone(),
+                    index: None,
+                });
+            }
+            commands.push(DocumentCommand::AddClips {
+                timeline_id: id.clone(),
+                clips,
+                seams: None,
+            });
             id
         }
         None => {
@@ -2170,15 +2575,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                 name: timeline_name,
                 schema_version: crate::domain::timeline::TIMELINE_SCHEMA_VERSION,
                 settings,
-                tracks: vec![TimelineTrack {
-                    id: track_id,
-                    kind: TrackKind::Video,
-                    name: "V1".into(),
-                    muted: false,
-                    hidden: false,
-                    locked: false,
-                    created_at: now.clone(),
-                }],
+                tracks,
                 clips,
                 transitions: Vec::new(),
                 created_at: now.clone(),
@@ -2192,6 +2589,7 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             id
         }
     };
+
     let edit = StoryEdit {
         timeline_id: Some(timeline_id.clone()),
         clip_by_act: Some(edit_clips),
@@ -2207,12 +2605,218 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
     });
     Ok(ToolOutcome::write(
         format!(
-            "Assembled {} clips into a timeline",
+            "Assembled {} clips onto timeline {timeline_id}",
             edit.clip_by_act.as_ref().map(Vec::len).unwrap_or(0)
         ),
-        json!({"timelineId": timeline_id}),
+        json!({
+            "timelineId": timeline_id,
+            "clips": edit.clip_by_act.as_ref().map(Vec::len).unwrap_or(0),
+            "withSubtitles": with_subtitles,
+        }),
         commands,
     ))
+}
+
+struct AssemblyUnit {
+    keyframe_id: Option<String>,
+    start_ms: i64,
+    duration_ms: i64,
+    in_point_ms: i64,
+    out_point_ms: i64,
+    asset_id: String,
+}
+
+fn assembly_units(
+    act: &crate::domain::story::StoryAct,
+    fallback: &crate::domain::story::StoryShotGranularity,
+    moka: &MokaFile,
+    start: i64,
+) -> Vec<AssemblyUnit> {
+    use crate::domain::story::StoryShotGranularity;
+    let (keyframes, take, planned_ms) = if act.transition.is_some() {
+        (
+            None,
+            act.video.takes.last(),
+            act.transition
+                .as_ref()
+                .map(|transition| transition.duration_ms)
+                .unwrap_or(4_000),
+        )
+    } else if act.shot_granularity.unwrap_or(*fallback) == StoryShotGranularity::Keyframe {
+        (Some(()), None, 0)
+    } else {
+        (None, act.video.takes.last(), act_duration(act))
+    };
+    let mut units = Vec::new();
+    let mut cursor = start;
+    if keyframes.is_some() {
+        for keyframe in &act.keyframes {
+            let Some(take) = keyframe.video.takes.last() else {
+                continue;
+            };
+            let Some(asset_id) = take.asset_ids.first() else {
+                continue;
+            };
+            let duration = resource_duration(moka, asset_id).unwrap_or(keyframe.duration_ms);
+            units.push(AssemblyUnit {
+                keyframe_id: Some(keyframe.id.clone()),
+                start_ms: cursor,
+                duration_ms: duration.max(100),
+                in_point_ms: 0,
+                out_point_ms: duration.max(100),
+                asset_id: asset_id.clone(),
+            });
+            cursor += duration.max(100);
+        }
+        return units;
+    }
+    let Some(take) = take else {
+        return units;
+    };
+    if take.asset_ids.is_empty() {
+        return units;
+    }
+    let share = planned_ms / take.asset_ids.len() as i64;
+    let mut full = 0_i64;
+    let mut parts = Vec::new();
+    for asset_id in &take.asset_ids {
+        if moka.resources.find(asset_id).is_none() {
+            continue;
+        }
+        let duration = resource_duration(moka, asset_id).unwrap_or(share).max(1);
+        parts.push((asset_id.clone(), duration));
+        full += duration;
+    }
+    let window_in = take.in_ms.unwrap_or(0).clamp(0, full);
+    let window_out = take.out_ms.unwrap_or(full).clamp(window_in, full);
+    let mut piece_at = 0_i64;
+    for (asset_id, duration) in parts {
+        let piece_start = piece_at;
+        piece_at += duration;
+        let in_point = window_in.max(piece_start);
+        let out_point = window_out.min(piece_start + duration);
+        if out_point <= in_point {
+            continue;
+        }
+        units.push(AssemblyUnit {
+            keyframe_id: None,
+            start_ms: cursor,
+            duration_ms: out_point - in_point,
+            in_point_ms: in_point - piece_start,
+            out_point_ms: out_point - piece_start,
+            asset_id,
+        });
+        cursor += out_point - in_point;
+    }
+    units
+}
+
+fn act_duration(act: &crate::domain::story::StoryAct) -> i64 {
+    act.keyframes
+        .iter()
+        .map(|keyframe| keyframe.duration_ms)
+        .sum::<i64>()
+        .max(4_000)
+}
+
+fn resource_duration(moka: &MokaFile, asset_id: &str) -> Option<i64> {
+    moka.resources
+        .find(asset_id)
+        .and_then(|entry| entry.probe.as_ref())
+        .and_then(|probe| probe.duration_ms)
+}
+
+fn audio_track(id: &str, name: &str, now: &str) -> TimelineTrack {
+    TimelineTrack {
+        id: id.to_string(),
+        kind: TrackKind::Audio,
+        name: name.to_string(),
+        muted: false,
+        hidden: false,
+        locked: false,
+        created_at: now.to_string(),
+    }
+}
+
+fn audio_clip(
+    track_id: &str,
+    asset_id: &str,
+    start_ms: i64,
+    duration_ms: i64,
+    now: &str,
+) -> TimelineClip {
+    TimelineClip {
+        id: crate::domain::new_id(),
+        track_id: track_id.to_string(),
+        kind: TrackKind::Audio,
+        label: String::new(),
+        start_ms,
+        duration_ms,
+        in_point_ms: 0,
+        out_point_ms: duration_ms,
+        speed: 1.0,
+        volume: 1.0,
+        fade_in_ms: 0,
+        fade_out_ms: 0,
+        muted: false,
+        opacity: 1.0,
+        created_at: now.to_string(),
+        updated_at: now.to_string(),
+        asset_id: Some(asset_id.to_string()),
+        adjust: None,
+        filter: None,
+        text: None,
+    }
+}
+
+fn text_clip(
+    track_id: &str,
+    content: &str,
+    start_ms: i64,
+    duration_ms: i64,
+    now: &str,
+) -> TimelineClip {
+    let label = if content.chars().count() > 24 {
+        format!("{}…", content.chars().take(24).collect::<String>())
+    } else {
+        content.to_string()
+    };
+    TimelineClip {
+        id: crate::domain::new_id(),
+        track_id: track_id.to_string(),
+        kind: TrackKind::Text,
+        label,
+        start_ms,
+        duration_ms,
+        in_point_ms: 0,
+        out_point_ms: duration_ms,
+        speed: 1.0,
+        volume: 1.0,
+        fade_in_ms: 0,
+        fade_out_ms: 0,
+        muted: false,
+        opacity: 1.0,
+        created_at: now.to_string(),
+        updated_at: now.to_string(),
+        asset_id: None,
+        adjust: None,
+        filter: None,
+        text: Some(crate::domain::TextClipData {
+            content: content.to_string(),
+            style: crate::domain::TextClipStyle {
+                font_family: "Inter, ui-sans-serif, system-ui, sans-serif".into(),
+                font_size: 48,
+                color: "#ffffff".into(),
+                bold: false,
+                italic: false,
+                align: crate::domain::TextAlign::Center,
+                position: crate::domain::TextPosition::Bottom,
+                background: None,
+                stroke_width: 0,
+                stroke_color: "#000000".into(),
+            },
+        }),
+    }
 }
 
 fn timeline_settings(story: &StoryDocument) -> TimelineSettings {
@@ -2236,10 +2840,16 @@ fn timeline_settings(story: &StoryDocument) -> TimelineSettings {
 pub async fn effect(
     state: &ApiState,
     session: &ProjectSession,
-    _name: &str,
+    name: &str,
     input: &Value,
     moka: &MokaFile,
 ) -> Result<ToolOutcome, ToolError> {
+    match name {
+        "story.focus" => return focus_room(state, moka, input).await,
+        "story.list_jobs" => return list_jobs(session, input).await,
+        "story.read_job" => return read_job(session, input).await,
+        _ => {}
+    }
     let args = Args::new("story.start_job", input)?;
     let story_id = args.req_str("storyId")?.to_string();
     super::story_of(moka, &story_id)?;
@@ -2372,6 +2982,105 @@ pub async fn effect(
         }),
         ..ToolOutcome::default()
     })
+}
+
+async fn focus_room(
+    state: &ApiState,
+    moka: &MokaFile,
+    input: &Value,
+) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.focus", input)?;
+    let story_id = args.req_str("storyId")?.to_string();
+    let story = super::story_of(moka, &story_id)?;
+    let chapter_id = args.opt_str("chapterId").map(str::to_string);
+    if let Some(chapter_id) = chapter_id.as_deref() {
+        if !story
+            .chapters
+            .iter()
+            .any(|chapter| chapter.id == chapter_id)
+        {
+            return Err(ToolError::new(
+                "CHAPTER_NOT_FOUND",
+                format!("chapter {chapter_id} does not exist"),
+            ));
+        }
+    }
+    let step = args
+        .opt_str("step")
+        .map(str::to_string)
+        .unwrap_or_else(|| "storyboard".to_string());
+    let focus = json!({
+        "room": "story",
+        "storyId": story_id,
+        "step": step,
+        "chapterId": chapter_id,
+        "actId": args.opt_str("actId"),
+        "keyframeId": args.opt_str("keyframeId"),
+        "elementId": args.opt_str("elementId"),
+    });
+    *state.focus.lock().await = Some(focus.clone());
+    Ok(ToolOutcome::read(
+        "Asked the story room to move there",
+        json!({"focus": focus}),
+    ))
+}
+
+async fn list_jobs(session: &ProjectSession, input: &Value) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.list_jobs", input)?;
+    let story_id = args.opt_str("storyId").map(str::to_string);
+    let include_answers = args.opt_bool("answers", false);
+    let mut jobs = session.0.list_story_jobs().await?;
+    if let Some(story_id) = story_id {
+        jobs.retain(|job| job.story_id == story_id);
+    }
+    jobs.sort_by(|one, other| other.created_at.cmp(&one.created_at));
+    let listed: Vec<Value> = jobs
+        .iter()
+        .map(|job| {
+            let mut value = json!({
+                "id": job.id,
+                "storyId": job.story_id,
+                "kind": job.kind,
+                "status": job.status,
+                "model": job.model,
+                "parallel": job.parallel,
+                "readAt": job.read_at,
+                "createdAt": job.created_at,
+                "updatedAt": job.updated_at,
+                "itemCount": job.items.len(),
+                "succeeded": job.items.iter().filter(|item| item.status == crate::story::StoryJobStatus::Succeeded).count(),
+                "failed": job.items.iter().filter(|item| item.status == crate::story::StoryJobStatus::Failed).count(),
+            });
+            if include_answers {
+                value["items"] = json!(job.items);
+            }
+            value
+        })
+        .collect();
+    Ok(ToolOutcome::read(
+        format!("{} story jobs", listed.len()),
+        json!({"jobs": listed}),
+    ))
+}
+
+async fn read_job(session: &ProjectSession, input: &Value) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.read_job", input)?;
+    let id = args.req_str("jobId")?;
+    let mut job = session.0.get_story_job(id).await?;
+    let marked = job.status.is_terminal() && job.read_at.is_none();
+    if marked {
+        job.read_at = Some(now_iso());
+        job = session.0.update_story_job(job).await?;
+    }
+    Ok(ToolOutcome::write(
+        if marked {
+            format!("Marked story job {id} read")
+        } else {
+            format!("Story job {id} was already read or is still running")
+        },
+        json!({"jobId": job.id, "status": job.status, "readAt": job.read_at, "marked": marked}),
+        Vec::new(),
+    ))
 }
 
 fn _slot_target_family(_: &StorySlotTarget) {}

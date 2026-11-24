@@ -919,7 +919,7 @@ fn story_tools() -> Vec<ToolSpec> {
         ])),
         command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent.", schema(&["storyId", "kind"], &[
             ("storyId", "string", "Story id"),
-            ("kind", "string", "outline, elements, actPlan, storyboard, elementArt, keyframeArt, actVideo, keyframeVideo, lineVoice, or music"),
+            ("kind", "string", "outline (whole story, or chapterId for one chapter), elements, mergeElements, actPlan, storyboard, continuity, outlineRevision, elementArt, keyframeArt, actVideo, keyframeVideo, lineVoice, voice, or music"),
             ("chapterId", "string", "Chapter to plan, where the kind is chapter-scoped"),
             ("actId", "string", "One act of the chapter"),
             ("keyframeIds", "array", "One or more shots of the chapter"),
@@ -929,6 +929,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("model", "string", "Configured model id for the batch; per-place models are used when omitted"),
             ("videoModel", "string", "Video model whose clip window the storyboard is planned against"),
             ("includeExisting", "boolean", "Plan places that already have a current take too"),
+            ("groups", "array", "For mergeElements: readings grouped by kind and name"),
         ])),
         command("story.create", "story", ToolRisk::Write, "Create a story with an optional brief.", schema(&["name"], &[
             ("name", "string", "Story name"),
@@ -990,17 +991,33 @@ fn story_tools() -> Vec<ToolSpec> {
             ("elementId", "string", "Element id"),
             ("confirm", "string", "Must be non-empty"),
         ])),
-        command("story.update_chapter", "story", ToolRisk::Write, "Change one chapter's title, synopsis, or target duration. The outline is written whole but only the named fields move.", schema(&["storyId", "chapterId", "patch"], &[
+        command("story.update_chapter", "story", ToolRisk::Write, "Change one chapter's title, synopsis, target duration, or outline lock. The outline is written whole but only the named fields move.", schema(&["storyId", "chapterId", "patch"], &[
             ("storyId", "string", "Story id"),
             ("chapterId", "string", "Chapter id"),
-            ("patch", "object", "title, synopsis, targetDurationMs"),
+            ("patch", "object", "title, synopsis, targetDurationMs, outlineLocked"),
         ])),
-        command("story.add_act", "story", ToolRisk::Write, "Insert an empty act into a chapter.", schema(&["storyId", "chapterId"], &[
+        command("story.add_chapter", "story", ToolRisk::Write, "Insert a chapter into the outline. Its acts are added separately.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("index", "integer", "Position in the outline"),
+            ("chapter", "object", "title, synopsis, targetDurationMs, outlineLocked"),
+        ])),
+        command("story.remove_chapter", "story", ToolRisk::Destroy, "Delete a chapter and its acts. Requires confirm.", schema(&["storyId", "chapterId", "confirm"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("confirm", "string", "Must be non-empty"),
+        ])),
+        command("story.move_chapter", "story", ToolRisk::Write, "Move a chapter within the outline.", schema(&["storyId", "chapterId", "toIndex"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("toIndex", "integer", "New position"),
+        ])),
+        command("story.add_act", "story", ToolRisk::Write, "Insert an act into a chapter. An act object can carry cast, scene, sound, granularity, video model, a bridge transition and shots.", schema(&["storyId", "chapterId"], &[
             ("storyId", "string", "Story id"),
             ("chapterId", "string", "Chapter id"),
             ("index", "integer", "Position in the chapter"),
             ("title", "string", "Act title"),
             ("summary", "string", "Act summary"),
+            ("act", "object", "A complete act; overrides title and summary"),
         ])),
         command("story.remove_act", "story", ToolRisk::Destroy, "Delete an act and its shots. Requires confirm.", schema(&["storyId", "chapterId", "actId", "confirm"], &[
             ("storyId", "string", "Story id"),
@@ -1014,7 +1031,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("actId", "string", "Act id"),
             ("toIndex", "integer", "New position"),
         ])),
-        command("story.update_act", "story", ToolRisk::Write, "Change an act's title, summary, cast, setting, props, or sounds.", schema(&["storyId", "chapterId", "actId", "patch"], &[
+        command("story.update_act", "story", ToolRisk::Write, "Change an act's title, summary, plan, cast, setting, props, sound, video model, shot granularity, or bridge transition.", schema(&["storyId", "chapterId", "actId", "patch"], &[
             ("storyId", "string", "Story id"),
             ("chapterId", "string", "Chapter id"),
             ("actId", "string", "Act id"),
@@ -1041,6 +1058,20 @@ fn story_tools() -> Vec<ToolSpec> {
             ("keyframeId", "string", "Shot id"),
             ("confirm", "string", "Must be non-empty"),
         ])),
+        command("story.move_keyframe", "story", ToolRisk::Write, "Move a shot within its act, keeping everything made for it.", schema(&["storyId", "chapterId", "actId", "keyframeId", "toIndex"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("actId", "string", "Act id"),
+            ("keyframeId", "string", "Shot id"),
+            ("toIndex", "integer", "New position"),
+        ])),
+        command("story.duplicate_keyframe", "story", ToolRisk::Write, "Copy a shot, its picture, clip and references, with fresh line ids.", schema(&["storyId", "chapterId", "actId", "keyframeId"], &[
+            ("storyId", "string", "Story id"),
+            ("chapterId", "string", "Chapter id"),
+            ("actId", "string", "Act id"),
+            ("keyframeId", "string", "Shot id"),
+            ("index", "integer", "Where the copy goes; default after the original"),
+        ])),
         command("story.set_slot", "story", ToolRisk::Write, "Add, select, or drop takes on a story slot. Existing takes are kept unless the action says otherwise.", schema(&["storyId", "target", "action"], &[
             ("storyId", "string", "Story id"),
             ("target", "object", "Story slot target"),
@@ -1055,9 +1086,30 @@ fn story_tools() -> Vec<ToolSpec> {
             ("storyId", "string", "Story id"),
             ("step", "string", "idea, outline, elements, storyboard, or edit"),
         ])),
-        command("story.assemble", "story", ToolRisk::Write, "Assemble a story into a timeline.", schema(&["storyId"], &[
+        command("story.import_canvas", "story", ToolRisk::Write, "Lay the telling's premise, cast, acts, shots, frames and clips onto a new canvas as cards that name the same files.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("name", "string", "Canvas name; the story's name by default"),
+        ])),
+        command("story.assemble", "story", ToolRisk::Write, "Assemble a story into a timeline: pictures or clips, line readings, whole-act voice and score, optionally subtitles.", schema(&["storyId"], &[
             ("storyId", "string", "Story id"),
             ("timelineId", "string", "Existing timeline, or a new one when omitted"),
+            ("timelineName", "string", "Name for a new timeline"),
+            ("withSubtitles", "boolean", "Lay each spoken line on a text track"),
+        ])),
+        effect("story.focus", "story", ToolRisk::Read, "Ask an open story room to move to a story, step and chapter. The window reads it once.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("step", "string", "idea, outline, elements, storyboard, or edit"),
+            ("chapterId", "string", "Chapter to open"),
+            ("actId", "string", "Act to open"),
+            ("keyframeId", "string", "Shot to open"),
+            ("elementId", "string", "Element to open"),
+        ])),
+        effect("story.list_jobs", "story", ToolRisk::Read, "List story batches, newest first, with status and unread mark. Set answers to include item texts and assets.", schema(&[], &[
+            ("storyId", "string", "Only this story's batches"),
+            ("answers", "boolean", "Include each item's answer, when it has one"),
+        ])),
+        effect("story.read_job", "story", ToolRisk::Write, "Mark a settled batch read. Only call after its answer is applied: the room will not apply a read batch again.", schema(&["jobId"], &[
+            ("jobId", "string", "Story job id"),
         ])),
         effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait.", schema(&["storyId", "kind", "items"], &[
             ("storyId", "string", "Story id"),

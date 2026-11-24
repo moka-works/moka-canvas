@@ -960,6 +960,21 @@ pub struct StoryActPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub video_model: Option<Option<String>>,
+    /// How this act's clip is made, where it parts from the telling's habit; a
+    /// null hands it back to the telling's own.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub shot_granularity: Option<Option<StoryShotGranularity>>,
+    /// The bridge this act is, where it is one; a null makes it an ordinary act.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub transition: Option<Option<StoryTransition>>,
 }
 
 /// The fields a caller may move on a shot, for `updateStoryKeyframe`.
@@ -2690,6 +2705,11 @@ pub fn apply_story_command(
                 prop_ids: patch.prop_ids.as_ref().map(|_| act.prop_ids.clone()),
                 sound: patch.sound.as_ref().map(|_| act.sound.clone()),
                 video_model: patch.video_model.as_ref().map(|_| act.video_model.clone()),
+                shot_granularity: patch
+                    .shot_granularity
+                    .as_ref()
+                    .map(|_| act.shot_granularity),
+                transition: patch.transition.as_ref().map(|_| act.transition.clone()),
             };
             let mut next = story.clone();
             for chapter in next.chapters.iter_mut() {
@@ -2726,6 +2746,12 @@ pub fn apply_story_command(
                     }
                     if let Some(model) = &patch.video_model {
                         held.video_model = model.clone();
+                    }
+                    if let Some(granularity) = &patch.shot_granularity {
+                        held.shot_granularity = *granularity;
+                    }
+                    if let Some(transition) = &patch.transition {
+                        held.transition = transition.clone();
                     }
                 }
             }

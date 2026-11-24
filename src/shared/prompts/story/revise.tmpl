@@ -23,7 +23,7 @@ Frame {{ frame.id }} — {{ frame.title }}
 {% if frame.motion %}
   Motion: {{ frame.motion }}
 {% endif %}
-{% if frame.dialogue.length > 0 %}
+{% if frame.dialogue | length > 0 %}
   Dialogue:
 {% for line in frame.dialogue %}
     [{{ line.id }}] {{ line.speaker }}: {{ line.text }}{% if line.tone %} ({{ line.tone }}){% endif %}

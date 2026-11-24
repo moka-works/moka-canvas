@@ -151,6 +151,8 @@ moka tools call story.get --input '{"storyId":"st_1","chapterId":"ch_2","fullTex
 moka tools call story.get --input '{"storyId":"st_1","include":["slots"]}' --json
 moka tools call story.progress --input '{"storyId":"st_1","step":"storyboard"}' --json
 moka tools call story.plan_job --input '{"storyId":"st_1","kind":"storyboard","chapterId":"ch_1"}' --json
+moka tools call story.plan_job --input '{"storyId":"st_1","kind":"continuity","chapterId":"ch_1"}' --json
+moka tools call story.plan_job --input '{"storyId":"st_1","kind":"outline","chapterId":"ch_1"}' --json
 moka tools call story.add_keyframe --input ./keyframe.json --json
 moka tools call story.start_job --input ./job.json --json
 moka tasks get storyJob <id> --json
@@ -160,12 +162,15 @@ moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard
 
 - Text is shortened to 2000 characters unless `fullText` is true; `synopsisLength`/`contentLength` and the `*Truncated` flags say whether anything was left out. Use `chapterId`/`actId` to read one part of a long story.
 - `include:["slots"]` returns every place's current files, take count and pending set. Use it before planning media.
-- `story.plan_job` builds the next batch from the document itself: the same prompts the room uses, the targets still missing work, their reference pictures and their models, grouped into `waves`. It spends nothing and writes nothing; start each wave with `story.start_job` (pass the wave's `model`). Kinds: `outline`, `elements`, `actPlan`, `storyboard`, `elementArt`, `keyframeArt`, `actVideo`, `keyframeVideo`, `lineVoice`, `music`. Use `includeExisting` to plan a redraw of a place that already has a current take.
+- `story.plan_job` builds the next batch from the document itself: the same prompts the room uses, the targets still missing work, their reference pictures, hand-written prompt overrides and their models, grouped into `waves`. It spends nothing and writes nothing; start each wave with `story.start_job` using the answer's `kind` (pass the wave's `model`). Kinds: `outline` (whole story, or one chapter when `chapterId` is set), `elements`, `mergeElements` (with `groups`), `actPlan`, `storyboard`, `continuity`, `outlineRevision`, `elementArt`, `keyframeArt`, `actVideo`, `keyframeVideo`, `lineVoice`, `voice`, `music`. Use `includeExisting` to plan a redraw of a place that already has a current take.
 - `story.start_job` is `spend`; confirm before starting. `model` and `parallel` are optional; without `model` the capability's default answers.
 - **Someone must apply a job's answer exactly once.** If the Moka app has the story room loaded, it lists the story's jobs and writes unread answers into the document with its own parsers (including reference recognition for pictures). In that case do **not** also call `set_slot` or `replace_*`, or the answer lands twice. If no app is open, read `task.get` and apply it yourself: `story.set_slot` (media) or `story.add_* / story.update_* / story.replace_*` (text), with the same care as any other write.
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.
 - Call `story.confirm_step` only when the user explicitly says to confirm/pass the step; a finished generation is not a confirmation.
-- Keep old takes unless the user asks to choose another; `set_slot` appends, it does not overwrite.
+- Keep old takes unless the user asks to choose another; `set_slot` appends, it does not overwrite. A take may be appended as a full `take` object with `inMs`/`outMs`.
+- `story.assemble` lays pictures or clips, line readings, whole-act voice and score, and optional subtitles. Its `assembledDigest` is not written, so the room may still offer to return the cut; say so if it matters.
+- Structural tools exist beside the field patches: `add_chapter` / `remove_chapter` / `move_chapter`, `add_act` with a full act (including a bridge `transition`), `move_keyframe`, `duplicate_keyframe`, and `story.import_canvas`.
+- `story.list_jobs` and `story.read_job` are for an external applier: list unread batches, read one's answers, apply them once, then mark it read. Never mark a batch read while the room is also applying it.
 - For a whole chapter — board, cast pictures, frames, clips, voices and score — use the `moka-storyboard` skill. It is the same tools in a batch workflow with reader checkpoints.
 
 ## 6. Changes, audits, sessions
