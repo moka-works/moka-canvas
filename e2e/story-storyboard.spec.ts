@@ -301,6 +301,16 @@ test("an episode is boarded, framed, and filmed", async ({ page }) => {
     await expect(page.getByTestId("story-act-1")).toBeVisible();
     await expect(firstAct.getByTestId("story-kf-0")).toBeVisible();
 
+    // The episode says how many acts and shots it is, and each act draws its
+    // pacing as one seat a shot.
+    await expect(page.getByTestId("story-board-counts")).toHaveText(
+      "Acts 2 · Shots 3",
+    );
+    await expect(firstAct.getByTestId("story-act-rhythm-0")).toBeVisible();
+    await expect(firstAct.getByTestId(/^story-act-rhythm-seat-0-/)).toHaveCount(
+      2,
+    );
+
     // Every shot carries what it shows and what moves within it as two
     // separate things: the motion stands beside the still frame's ask rather
     // than among its words.

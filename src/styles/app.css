@@ -9666,6 +9666,71 @@ button > .story-spin {
   background: rgb(255 255 255 / 2%);
 }
 
+/* The board's rhythm at a glance: one seat a shot, colored by its framing. */
+.story-kf-row,
+.story-act-rhythm-seat {
+  --shot-hue: var(--muted);
+}
+
+.story-kf-row[data-shot-size="extremeClose"],
+.story-act-rhythm-seat[data-shot-size="extremeClose"] {
+  --shot-hue: var(--danger);
+}
+
+.story-kf-row[data-shot-size="close"],
+.story-act-rhythm-seat[data-shot-size="close"] {
+  --shot-hue: color-mix(in srgb, var(--danger) 55%, var(--yellow));
+}
+
+.story-kf-row[data-shot-size="mediumClose"],
+.story-act-rhythm-seat[data-shot-size="mediumClose"] {
+  --shot-hue: var(--yellow);
+}
+
+.story-kf-row[data-shot-size="medium"],
+.story-act-rhythm-seat[data-shot-size="medium"] {
+  --shot-hue: color-mix(in srgb, var(--yellow) 55%, var(--success));
+}
+
+.story-kf-row[data-shot-size="mediumFull"],
+.story-act-rhythm-seat[data-shot-size="mediumFull"] {
+  --shot-hue: var(--success);
+}
+
+.story-kf-row[data-shot-size="full"],
+.story-act-rhythm-seat[data-shot-size="full"] {
+  --shot-hue: color-mix(in srgb, var(--success) 45%, var(--muted));
+}
+
+.story-kf-row[data-shot-size="wide"],
+.story-act-rhythm-seat[data-shot-size="wide"] {
+  --shot-hue: var(--muted);
+}
+
+.story-kf-row[data-shot-size="extremeWide"],
+.story-act-rhythm-seat[data-shot-size="extremeWide"] {
+  --shot-hue: var(--ink);
+}
+
+.story-kf-row .story-col-index {
+  box-shadow: inset 2px 0 0 var(--shot-hue);
+}
+
+.story-act-rhythm {
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin: 6px 0 2px;
+  overflow: hidden;
+}
+
+.story-act-rhythm-seat {
+  background: var(--shot-hue);
+  flex-basis: 0;
+  min-width: 2px;
+}
+
 .story-table select,
 .story-table input,
 .story-table textarea {
