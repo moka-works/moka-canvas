@@ -710,6 +710,7 @@ fn act_from(
             title: String::new(),
             summary: String::new(),
             plan: None,
+            continue_from_previous: false,
             character_ids: Vec::new(),
             scene_id: None,
             prop_ids: Vec::new(),

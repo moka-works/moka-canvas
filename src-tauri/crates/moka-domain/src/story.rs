@@ -560,6 +560,9 @@ pub struct StoryAct {
     /// What this act is for before its shots are written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+    /// Whether this act opens on the last frame of the act before it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub continue_from_previous: bool,
     pub character_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_id: Option<String>,
@@ -940,6 +943,9 @@ pub struct StoryActPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub plan: Option<Option<String>>,
+    /// Whether the act opens on the previous act's last frame; false clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continue_from_previous: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character_ids: Option<Vec<String>>,
     #[serde(
@@ -2682,6 +2688,9 @@ pub fn apply_story_command(
                 title: patch.title.as_ref().map(|_| act.title.clone()),
                 summary: patch.summary.as_ref().map(|_| act.summary.clone()),
                 plan: patch.plan.as_ref().map(|_| act.plan.clone()),
+                continue_from_previous: patch
+                    .continue_from_previous
+                    .map(|_| act.continue_from_previous),
                 character_ids: patch
                     .character_ids
                     .as_ref()
@@ -2711,6 +2720,9 @@ pub fn apply_story_command(
                             .as_ref()
                             .map(|held| held.trim().to_string())
                             .filter(|held| !held.is_empty());
+                    }
+                    if let Some(on) = patch.continue_from_previous {
+                        held.continue_from_previous = on;
                     }
                     if let Some(ids) = &patch.character_ids {
                         held.character_ids = ids.clone();
@@ -3179,6 +3191,7 @@ mod outline_revision_tests {
             title: String::new(),
             summary: String::new(),
             plan: None,
+            continue_from_previous: false,
             character_ids: Vec::new(),
             scene_id: None,
             prop_ids: Vec::new(),

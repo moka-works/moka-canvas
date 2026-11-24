@@ -638,6 +638,14 @@
     "chapterCounts": "{{acts}} 幕 · {{shots}} 个镜头",
     "rhythm": "{{count}} 个镜头，共 {{seconds}} 秒：本幕节奏",
     "rhythmSeat": "第 {{at}} 镜，{{size}}，{{seconds}} 秒",
+    "continuePrevious": "接上一幕",
+    "continueHint": "从上一幕成片的末帧开始，作为一个连续镜头",
+    "continueFirst": "这是本集第一幕",
+    "continuePerShot": "按格拍摄的幕，每一格从自己的画面开始",
+    "continueNoPrevious": "上一幕还没有成片",
+    "continueUndrawn": "先画完这一幕的镜头图",
+    "continueNoOpeningFrame": "这一幕以参考图或文字开场，没有单一首帧",
+    "continueIdle": "此标记暂不生效：{{reason}}",
     "target": "目标时长 {{duration}}",
     "settled": "已完成 {{done}}/{{total}} 幕",
     "asking": "生成中 · {{models}}",
@@ -991,6 +999,11 @@
     "audioFallback": "这里的音频模型是没给自己的模型的角色、以及旁白的兜底；每个角色的声音在第三步「剧情元素」里定",
     "fitsSped": "比这一格长 {{over}} 秒 · 按 {{speed}} 倍速念",
     "fitsOverrun": "比这一格长 {{over}} 秒 · 按最快念完，末尾 {{spill}} 秒压到下一格上",
-    "fitsUnmeasured": "没量出长度 · 按这一格的长度原速放"
+    "fitsUnmeasured": "没量出长度 · 按这一格的长度原速放",
+    "fitGo": "让镜头容纳台词",
+    "fitGoHint": "把镜头延长到 {{seconds}} 秒，让每句按原速读完",
+    "fitNeedsRefilm": "这一格的窗口是已拍片段长度；要改长度需重拍",
+    "fitCapped": "这一镜最多延长到 {{seconds}} 秒；其余部分仍需加速或删词",
+    "fitPlanOnly": "这一幕的成片仍按原长度；要用上新计划需重拍本幕"
   }
 }

@@ -2773,6 +2773,14 @@ function applyOne(
                   if (plan === "") delete next.plan;
                   else next.plan = plan;
                 }
+                if (
+                  command.patch.continueFromPrevious === null ||
+                  command.patch.continueFromPrevious === false
+                ) {
+                  delete next.continueFromPrevious;
+                } else if (command.patch.continueFromPrevious === true) {
+                  next.continueFromPrevious = true;
+                }
                 if (command.patch.characterIds !== undefined)
                   next.characterIds = command.patch.characterIds;
                 if (command.patch.sceneId === null) delete next.sceneId;

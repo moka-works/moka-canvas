@@ -1540,6 +1540,72 @@ describe("planning the clips", () => {
     expect(planActVideos(unfilmed, ids.chapterFirst, [ids.act])).toEqual([]);
   });
 
+  it("opens an act on the last frame of the act before it", () => {
+    const base = story();
+    const chapter = base.chapters[0]!;
+    const first = chapter.acts[0]!;
+    const second = {
+      ...first,
+      id: "act-after",
+      title: "第二幕",
+      continueFromPrevious: true,
+      video: { takes: [] },
+      keyframes: first.keyframes.map((keyframe, at) => ({
+        ...keyframe,
+        id: `frame-after-${at}`,
+        ...(at === 0 ? { filmRole: "firstFrame" as const } : {}),
+        video: { takes: [] },
+      })),
+    };
+    const held: StoryDocument = {
+      ...base,
+      chapters: base.chapters.map((each) =>
+        each.id === chapter.id ? { ...each, acts: [first, second] } : each,
+      ),
+    };
+
+    const items = planActVideos(held, chapter.id, [second.id]);
+
+    expect(items[0]?.inputs?.[0]).toEqual({
+      role: "firstFrame",
+      assetId: ids.actVideo,
+      frame: "last",
+    });
+    expect(items[0]?.prompt).toContain("opens on the last frame");
+  });
+
+  it("begins on its own frame when the act before it has no clip", () => {
+    const base = story();
+    const chapter = base.chapters[0]!;
+    const first = { ...chapter.acts[0]!, video: { takes: [] } };
+    const second = {
+      ...first,
+      id: "act-after",
+      title: "第二幕",
+      continueFromPrevious: true,
+      keyframes: first.keyframes.map((keyframe, at) => ({
+        ...keyframe,
+        id: `frame-after-${at}`,
+        ...(at === 0 ? { filmRole: "firstFrame" as const } : {}),
+        video: { takes: [] },
+      })),
+    };
+    const held: StoryDocument = {
+      ...base,
+      chapters: base.chapters.map((each) =>
+        each.id === chapter.id ? { ...each, acts: [first, second] } : each,
+      ),
+    };
+
+    const items = planActVideos(held, chapter.id, [second.id]);
+
+    expect(items[0]?.inputs?.[0]).toEqual({
+      role: "firstFrame",
+      assetId: ids.frameArt,
+    });
+    expect(items[0]?.prompt).not.toContain("opens on the last frame");
+  });
+
   it("films a shot from its own drawing, ending on the next one's", () => {
     const items = planKeyframeVideos(drawnStory(), ids.chapterFirst, ids.act, [
       ids.frameFirst,

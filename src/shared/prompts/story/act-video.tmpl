@@ -1,5 +1,6 @@
 Shoot {% if part %}part {{ part }} of {{ total }} of this act{% else %}this act{% endif %} of a film as {% if part %}one continuous piece of{% else %}one continuous piece,{% endif %} about {{ seconds }} seconds long, a {{ aspect }} frame in the film's own look: {{ style }}.
 
+{% if continues %}This clip opens on the last frame of the act before it: carry on from that frame as one continuous shot, without replaying what that act already showed.{% endif %}
 {% if part %}The act, whole: {{ title }} — {{ summary }}
 {% else %}The act: {{ title }} — {{ summary }}
 {% endif %}The clip runs through these moments in order, each opening at the second named and holding until the next one opens. Each moment is given as the still frame it opens on and then what moves within it; the camera movement named with it tells how the view travels.

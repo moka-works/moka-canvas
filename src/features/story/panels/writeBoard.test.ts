@@ -50,9 +50,42 @@ describe("cutting an act in two", () => {
     expect(tail?.title).not.toBe(act.title);
     expect(tail?.title.startsWith(act.title)).toBe(true);
   });
+
+  it("opens the second half on the first, and keeps the first's own mark", () => {
+    const held = story();
+    const chapter = held.chapters[0]!;
+    const act = chapter.acts[0]!;
+    act.continueFromPrevious = true;
+
+    splitAct(held, chapter.id, act, 1);
+
+    const [head, tail] = writtenActs();
+    expect(head?.continueFromPrevious).toBe(true);
+    expect(tail?.continueFromPrevious).toBe(true);
+  });
 });
 
 describe("joining two acts", () => {
+  it("keeps the joined act opening where the first of the two opened", () => {
+    const held = story();
+    const chapter = held.chapters[0]!;
+    const act = chapter.acts[0]!;
+    const below: StoryAct = {
+      ...structuredClone(act),
+      id: "act-below",
+      continueFromPrevious: true,
+      keyframes: [],
+      video: { takes: [] },
+    };
+    chapter.acts = [act, below];
+
+    mergeActsAt(held, chapter.id, 1);
+
+    // The seam is gone, so the second act's mark has no meaning; the pair is
+    // still a continuation only when the first act was one.
+    expect(writtenActs()[0]?.continueFromPrevious).toBeUndefined();
+  });
+
   it("says a description the two acts share only once", () => {
     const held = story();
     const chapter = held.chapters[0]!;

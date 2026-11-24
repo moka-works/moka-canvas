@@ -8,6 +8,7 @@ import {
   actPlannedMs,
   currentTake,
   frameSettled,
+  neighbourVideos,
   referenceTake,
   takeFile,
   type StoryGuess,
@@ -342,6 +343,25 @@ export function ActCard({
   // for the frames around it to fill. Nothing is left waiting when it is
   // filmed, and whether the pictures are liked is not for the room to ask.
   const everyFrameDrawn = act.keyframes.length > 0 && missing.length === 0;
+  const chapter = story.chapters.find((held) => held.id === chapterId);
+  const previousClip =
+    index === 0 || chapter === undefined
+      ? undefined
+      : neighbourVideos(story, chapter, index).from;
+  const openingKind = pieces[0]?.kind;
+  const continueProblem =
+    index === 0
+      ? t("story:storyboard.continueFirst")
+      : perShot
+        ? t("story:storyboard.continuePerShot")
+        : previousClip === undefined
+          ? t("story:storyboard.continueNoPrevious")
+          : !everyFrameDrawn
+            ? t("story:storyboard.continueUndrawn")
+            : openingKind !== "frame" && openingKind !== "pair"
+              ? t("story:storyboard.continueNoOpeningFrame")
+              : undefined;
+  const continueOn = act.continueFromPrevious === true;
   const filmed = act.keyframes.filter(
     (keyframe) => keyframe.video.takes.length > 0,
   ).length;
@@ -907,6 +927,33 @@ export function ActCard({
               data-testid={`story-act-film-${index}`}
             >
               <span className="story-act-film-side">
+                <label
+                  className="story-act-continue"
+                  title={continueProblem ?? t("story:storyboard.continueHint")}
+                >
+                  <input
+                    checked={continueOn}
+                    data-testid={`story-act-continue-${index}`}
+                    disabled={continueProblem !== undefined && !continueOn}
+                    onChange={(event) =>
+                      write({
+                        continueFromPrevious: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  {t("story:storyboard.continuePrevious")}
+                </label>
+                {continueOn && continueProblem !== undefined && (
+                  <span
+                    className="story-hint"
+                    data-testid={`story-act-continue-idle-${index}`}
+                  >
+                    {t("story:storyboard.continueIdle", {
+                      reason: continueProblem,
+                    })}
+                  </span>
+                )}
                 {!perShot && (
                   <span className="story-act-clip-actions">
                     {clip === undefined ? (

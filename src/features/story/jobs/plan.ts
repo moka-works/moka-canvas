@@ -1845,6 +1845,14 @@ export function planActVideos(
     const pieces = actClipPieces(act, ceiling);
     if (pieces.length === 0) return [];
     const several = pieces.length > 1;
+    // A clip that continues an earlier act opens on that act's own last frame,
+    // taken out of its finished clip rather than from a picture drawn for this
+    // one. A piece made from references or words has no single first frame to
+    // give, and is left to begin on its own.
+    const previous =
+      act.continueFromPrevious === true
+        ? neighbourVideos(story, chapter, chapter.acts.indexOf(act)).from
+        : undefined;
     return pieces.map((piece, at) => {
       const held = piece.keyframes.flatMap((keyframe) => {
         const take = currentTake(keyframe.art);
@@ -1862,6 +1870,10 @@ export function planActVideos(
       const last = held[held.length - 1];
       const references = piece.kind === "reference";
       const words = piece.kind === "words";
+      const continues =
+        at === 0 &&
+        previous !== undefined &&
+        (piece.kind === "frame" || piece.kind === "pair");
       const inputs: StoryJobInput[] = references
         ? held.map((frame) => ({
             role: "reference" as const,
@@ -1870,7 +1882,13 @@ export function planActVideos(
         : first === undefined
           ? []
           : [
-              { role: "firstFrame", assetId: first.assetId },
+              continues
+                ? {
+                    role: "firstFrame" as const,
+                    assetId: previous.assetId,
+                    frame: "last" as const,
+                  }
+                : { role: "firstFrame", assetId: first.assetId },
               ...(piece.kind === "pair" && last !== undefined
                 ? [{ role: "lastFrame" as const, assetId: last.assetId }]
                 : []),
@@ -1902,6 +1920,7 @@ export function planActVideos(
             mode: references ? "references" : words ? "words" : "frames",
             seconds: piece.seconds,
             ...(several ? { part: at + 1, total: pieces.length } : {}),
+            ...(continues ? { continues: true } : {}),
           }),
         inputs,
         promptContext: {
@@ -1933,6 +1952,7 @@ export function planActVideos(
           ),
           ...(sound === undefined ? {} : { sound }),
           ...(several ? { part: at + 1, total: pieces.length } : {}),
+          ...(continues ? { continues: true } : {}),
         },
         params: videoParams(
           story.brief.aspect,

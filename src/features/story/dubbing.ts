@@ -199,3 +199,44 @@ function fitLine(
 export function spokenLines(keyframe: StoryKeyframe) {
   return keyframe.dialogue.filter((line) => line.text.trim() !== "");
 }
+
+/** What a shot would have to run for its lines to be read at their own pace. */
+export interface ShotFit {
+  /** The line whose reading needs the most room. */
+  lineId: string;
+  /** The length the shot needs: every line's share at the longest reading. */
+  needMs: number;
+  /** The longest reading the shot holds. */
+  longestMs: number;
+}
+
+/**
+ * The length a shot needs for its lines to fit without being sped up.
+ *
+ * The lines of a shot share its window equally, so the window that leaves the
+ * longest reading at its recorded pace is the longest reading times how many
+ * lines there are. A line nobody measured still takes a share; it simply does
+ * not say how long that share has to be.
+ */
+export function fitShotToLines(
+  keyframe: StoryKeyframe,
+  measure: Measure,
+): ShotFit | undefined {
+  const lines = spokenLines(keyframe);
+  if (lines.length === 0) return undefined;
+  let longest: { lineId: string; materialMs: number } | undefined;
+  for (const line of lines) {
+    const take = voiceTakeOf(keyframe, line.id);
+    const assetId = take?.slot.takes.at(-1)?.assetIds[0];
+    if (assetId === undefined) continue;
+    const material = measure(assetId);
+    if (material === undefined || material <= 0) continue;
+    if (longest === undefined || material > longest.materialMs) {
+      longest = { lineId: line.id, materialMs: material };
+    }
+  }
+  if (longest === undefined) return undefined;
+  const needMs = lines.length * longest.materialMs;
+  if (needMs <= keyframe.durationMs) return undefined;
+  return { lineId: longest.lineId, needMs, longestMs: longest.materialMs };
+}

@@ -5,7 +5,9 @@ import {
   CAMERA_ANGLE_LABELS,
   CAMERA_MOVE_LABELS,
   FILM_ROLE_LABELS,
+  MAX_KEYFRAME_MS,
   MAX_KEYFRAME_MOTION,
+  MIN_KEYFRAME_MS,
   SHOT_SIZE_LABELS,
   STORY_CAMERA_ANGLES,
   STORY_CAMERA_MOVES,
@@ -33,6 +35,7 @@ import {
   type StoryGuess,
 } from "../../../shared/domain";
 import type {
+  AssetId,
   StoryAct,
   StoryDialogueLine,
   StoryDocument,
@@ -51,9 +54,10 @@ import { i18n } from "../../../shared/i18n";
 import { storyKeyframePromptParts } from "../../../shared/prompts";
 import { execute } from "../../editor/commands/execute";
 import { planAssembly } from "../assembly";
-import { planDubbing, type DubCue } from "../dubbing";
+import { fitShotToLines, planDubbing, type DubCue } from "../dubbing";
 import {
   actDefaultReferences,
+  actVideoCeiling,
   drawnFrames,
   filmRoleOf,
   jobKey,
@@ -1532,6 +1536,9 @@ function LineVoiceRow({
   sentence,
   cue,
   moka,
+  onFit,
+  fitDisabled,
+  fitTitle,
 }: {
   index: number;
   storyId: string;
@@ -1543,6 +1550,10 @@ function LineVoiceRow({
   /** How this line's reading will lie under its shot, where it is planned. */
   cue: DubCue | undefined;
   moka: MokaFile | null;
+  /** Lengthens the shot for this line's reading, where it can be lengthened. */
+  onFit?: () => void;
+  fitDisabled?: boolean;
+  fitTitle?: string;
 }) {
   const { t } = useTranslation();
   const [picking, setPicking] = useState(false);
@@ -1582,6 +1593,18 @@ function LineVoiceRow({
         >
           {fitsLine(cue)}
         </span>
+      )}
+      {onFit !== undefined && (
+        <button
+          className="link"
+          data-testid={`story-line-voice-fit-go-${index}`}
+          disabled={fitDisabled === true}
+          onClick={onFit}
+          title={fitTitle}
+          type="button"
+        >
+          {t("story:voice.fitGo")}
+        </button>
       )}
       {take.slot.takes.length > 1 && (
         <button
@@ -1684,16 +1707,28 @@ function DialogueEditor({
   const [draft, setDraft] = useState(lines);
   // Where the readings that exist will lie under their shots, planned from the
   // telling as it stands: a line about to be read is told what it will cost.
+  const measure = (assetId: AssetId) =>
+    moka === null ? undefined : findResource(moka, assetId)?.probe?.durationMs;
   const cues =
     moka === null
       ? undefined
       : new Map(
-          planDubbing(
-            story,
-            planAssembly(story, moka).units,
-            (assetId) => findResource(moka, assetId)?.probe?.durationMs,
-          ).cues.map((cue) => [cue.lineId, cue]),
+          planDubbing(story, planAssembly(story, moka).units, measure).cues.map(
+            (cue) => [cue.lineId, cue],
+          ),
         );
+  // What the shot would need to run for its longest line to be read at its
+  // own pace, where a reading was measured at all.
+  const fit = moka === null ? undefined : fitShotToLines(keyframe, measure);
+  const perShot = actGranularity(act, story.shotGranularity) === "keyframe";
+  const fitTargetMs =
+    fit === undefined
+      ? undefined
+      : Math.max(
+          MIN_KEYFRAME_MS,
+          Math.min(MAX_KEYFRAME_MS, actVideoCeiling(act) * 1000, fit.needMs),
+        );
+  const filmed = keyframe.video.takes.length > 0;
   const write = (at: number, patch: Partial<StoryDialogueLine>) =>
     setDraft(
       draft.map((held, index) =>
@@ -1722,6 +1757,26 @@ function DialogueEditor({
         const busy = busyLines.get(line.id);
         const dirty =
           saved !== undefined && line.text.trim() !== saved.text.trim();
+        const fitHere =
+          fit !== undefined &&
+          fit.lineId === line.id &&
+          fitTargetMs !== undefined &&
+          fitTargetMs > keyframe.durationMs;
+        const fitTarget = fitHere ? fitTargetMs : undefined;
+        const fitTitle =
+          fitTarget === undefined
+            ? undefined
+            : perShot && filmed
+              ? t("story:voice.fitNeedsRefilm")
+              : fit !== undefined && fit.needMs > fitTarget
+                ? t("story:voice.fitCapped", {
+                    seconds: (fitTarget / 1000).toFixed(1),
+                  })
+                : !perShot && act.video.takes.length > 0
+                  ? t("story:voice.fitPlanOnly")
+                  : t("story:voice.fitGoHint", {
+                      seconds: (fitTarget / 1000).toFixed(1),
+                    });
         return (
           <div className="story-dialogue-line" key={line.id}>
             <SpeakerField
@@ -1778,8 +1833,18 @@ function DialogueEditor({
             {saved !== undefined && take !== undefined && (
               <LineVoiceRow
                 cue={cues?.get(line.id)}
+                fitDisabled={perShot && filmed}
+                fitTitle={fitTitle}
                 index={index}
                 moka={moka}
+                onFit={
+                  fitTarget === undefined
+                    ? undefined
+                    : () =>
+                        writeKeyframe(story, chapterId, act, keyframe.id, {
+                          durationMs: fitTarget,
+                        })
+                }
                 place={{
                   kind: "lineVoice",
                   chapterId,

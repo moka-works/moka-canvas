@@ -1040,6 +1040,11 @@ export interface StoryAct {
    * a reader may also write the plan by hand.
    */
   plan?: string;
+  /**
+   * Whether this act is filmed on from the last frame of the act before it
+   * rather than opening on its own first drawn frame.
+   */
+  continueFromPrevious?: boolean;
   /** The characters in this act, by the element ids step three settled on. */
   characterIds: string[];
   sceneId?: string;
@@ -1467,6 +1472,8 @@ export interface StoryActPatch {
   summary?: string;
   /** The act's plan; a null takes the plan away. */
   plan?: string | null;
+  /** Whether the act opens on the previous act's last frame; false clears it. */
+  continueFromPrevious?: boolean | null;
   characterIds?: string[];
   sceneId?: string | null;
   propIds?: string[];

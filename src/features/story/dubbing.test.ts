@@ -4,7 +4,12 @@ import { createAct, createKeyframe } from "../../shared/domain/factories";
 import { buildStoryMokaFile, storyIds } from "../../shared/domain/fixtures";
 import type { MokaFile, ResourceEntry } from "../../shared/domain/types";
 import { planAssembly } from "./assembly";
-import { LINE_FIT_SPEED_MAX, planDubbing, type Measure } from "./dubbing";
+import {
+  fitShotToLines,
+  LINE_FIT_SPEED_MAX,
+  planDubbing,
+  type Measure,
+} from "./dubbing";
 
 const ids = storyIds();
 const T0 = "2026-01-01T00:00:00.000Z";
@@ -64,6 +69,60 @@ function plan(moka: MokaFile, measure: Measure) {
   const story = moka.stories![0]!;
   return planDubbing(story, planAssembly(story, moka).units, measure);
 }
+
+describe("fitting a shot to its lines", () => {
+  function shot(moka: MokaFile) {
+    return moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;
+  }
+
+  it("asks for every line's share at the longest reading", () => {
+    const moka = read([
+      { id: "line-a", text: "车已经停运了。", asset: "said-a" },
+      { id: "line-b", text: "门也不开了。", asset: "said-b" },
+    ]);
+    const fit = fitShotToLines(
+      shot(moka),
+      shelf([voice("said-a", 1_200), voice("said-b", 2_400)]),
+    );
+
+    expect(fit).toEqual({
+      lineId: "line-b",
+      needMs: 4_800,
+      longestMs: 2_400,
+    });
+  });
+
+  it("still gives an unmeasured line its share", () => {
+    const moka = read([
+      { id: "line-a", text: "车已经停运了。", asset: "said-a" },
+      { id: "line-b", text: "门也不开了。" },
+    ]);
+    const fit = fitShotToLines(shot(moka), shelf([voice("said-a", 1_200)]));
+
+    expect(fit).toEqual({
+      lineId: "line-a",
+      needMs: 2_400,
+      longestMs: 1_200,
+    });
+  });
+
+  it("has nothing to fit when the shot already runs long enough", () => {
+    const moka = read([
+      { id: "line-a", text: "车已经停运了。", asset: "said-a" },
+    ]);
+    shot(moka).durationMs = 3_000;
+    expect(
+      fitShotToLines(shot(moka), shelf([voice("said-a", 1_200)])),
+    ).toBeUndefined();
+  });
+
+  it("has nothing to fit when no line was measured", () => {
+    const moka = read([
+      { id: "line-a", text: "车已经停运了。", asset: "said-a" },
+    ]);
+    expect(fitShotToLines(shot(moka), shelf([]))).toBeUndefined();
+  });
+});
 
 describe("planDubbing", () => {
   it("leaves a reading that fits its shot where it is", () => {

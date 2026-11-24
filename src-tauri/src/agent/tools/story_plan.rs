@@ -622,7 +622,7 @@ async fn plan_act_videos(
 ) -> Result<Vec<Planned>, ToolError> {
     let chapter = chapter_of(story, chapter_id)?;
     let mut planned = Vec::new();
-    for act in &chapter.acts {
+    for (index, act) in chapter.acts.iter().enumerate() {
         if act_id.is_some_and(|id| act.id != id) {
             continue;
         }
@@ -647,12 +647,34 @@ async fn plan_act_videos(
             continue;
         }
         let total = pieces.len();
+        let also_tail = previous_act_tail(chapter, index);
         let item_model = none_if_empty(model).or_else(|| {
             act.video_model
                 .clone()
                 .filter(|value| !value.trim().is_empty())
         });
-        for (at, piece) in pieces.into_iter().enumerate() {
+        for (at, mut piece) in pieces.into_iter().enumerate() {
+            let continues = at == 0
+                && act.continue_from_previous
+                && !piece.words
+                && !piece.references
+                && !piece.inputs.is_empty()
+                && also_tail.is_some();
+            if at == 0 && act.continue_from_previous && !continues {
+                warnings.push(format!(
+                    "{} cannot open on the act before it; its clip begins on its own frames",
+                    act.title
+                ));
+            }
+            if continues {
+                if let Some(tail) = &also_tail {
+                    piece.inputs[0] = json!({
+                        "role": "firstFrame",
+                        "assetId": tail,
+                        "frame": "last",
+                    });
+                }
+            }
             let mut context = json!({
                 "aspect": story.brief.aspect.as_str(),
                 "style": story.brief.style,
@@ -667,6 +689,9 @@ async fn plan_act_videos(
             if total > 1 {
                 context["part"] = json!(at + 1);
                 context["total"] = json!(total);
+            }
+            if continues {
+                context["continues"] = json!(true);
             }
             let prompt = render(Prompt::StoryActVideo, context)?;
             let base = format!("actVideo:{}:{}", chapter.id, act.id);
@@ -1101,6 +1126,19 @@ fn current_asset(slot: &StorySlot) -> Option<String> {
     slot.takes
         .last()
         .and_then(|take| take.asset_ids.first().cloned())
+}
+
+/// The last file of the act before this one, when it has a clip to take it from.
+fn previous_act_tail(chapter: &StoryChapter, index: usize) -> Option<String> {
+    let previous = chapter.acts.get(index.checked_sub(1)?)?;
+    if previous.transition.is_some() {
+        return None;
+    }
+    previous
+        .video
+        .takes
+        .last()
+        .and_then(|take| take.asset_ids.last().cloned())
 }
 
 fn line_voice_exists(keyframe: &StoryKeyframe, line_id: Option<&str>) -> bool {

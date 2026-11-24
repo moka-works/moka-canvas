@@ -10316,6 +10316,18 @@ button > .story-spin {
 
 /* The model an act is filmed by stands on the act's own foot, beside the asks
    it governs rather than in the step's band. */
+.story-act-continue {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.story-act-continue input {
+  margin: 0;
+}
+
 .story-act-model {
   min-width: 160px;
 }
