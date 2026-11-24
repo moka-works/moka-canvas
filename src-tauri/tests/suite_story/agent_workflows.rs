@@ -1053,7 +1053,7 @@ async fn a_story_batch_is_refused_before_a_provider_is_asked() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "VALIDATION_FAILED");
-    assert!(body["details"]["issues"].as_array().unwrap().len() > 0);
+    assert!(!body["details"]["issues"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

@@ -56,10 +56,10 @@ pub async fn command(
     let mut planned = match kind.as_str() {
         "outline" => match chapter_id.as_deref() {
             Some(chapter_id) => plan_chapter_outline(story, chapter_id, &model)?,
-            None => plan_outline(story)?,
+            None => plan_outline(story, &model)?,
         },
-        "elements" => plan_elements(story)?,
-        "mergeElements" => plan_merge_elements(story, args.raw("groups").cloned())?,
+        "elements" => plan_elements(story, &model)?,
+        "mergeElements" => plan_merge_elements(story, args.raw("groups").cloned(), &model)?,
         "storyboard" => {
             plan_storyboard(
                 state,
@@ -184,7 +184,7 @@ pub async fn command(
 // The words a telling is asked for
 // -----------------------------------------------------------------------------
 
-fn plan_outline(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
+fn plan_outline(story: &StoryDocument, model: &str) -> Result<Vec<Planned>, ToolError> {
     let prompt = join_prompts(&[
         facts_prompt(story)?,
         render(
@@ -196,7 +196,7 @@ fn plan_outline(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
         )?,
     ]);
     Ok(vec![Planned {
-        model: None,
+        model: none_if_empty(model),
         value: job_item(
             "outline",
             json!({"kind": "outline"}),
@@ -212,7 +212,7 @@ fn plan_outline(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
     }])
 }
 
-fn plan_elements(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
+fn plan_elements(story: &StoryDocument, model: &str) -> Result<Vec<Planned>, ToolError> {
     let chapters: Vec<Value> = story
         .chapters
         .iter()
@@ -236,7 +236,7 @@ fn plan_elements(story: &StoryDocument) -> Result<Vec<Planned>, ToolError> {
         )?,
     ]);
     Ok(vec![Planned {
-        model: None,
+        model: none_if_empty(model),
         value: job_item(
             "elements",
             json!({"kind": "elements"}),
@@ -607,13 +607,14 @@ fn plan_outline_revision(
 fn plan_merge_elements(
     _story: &StoryDocument,
     groups: Option<Value>,
+    model: &str,
 ) -> Result<Vec<Planned>, ToolError> {
     let groups = groups
         .and_then(|value| value.as_array().cloned())
         .filter(|groups| !groups.is_empty())
         .ok_or_else(|| ToolError::validation("mergeElements needs a non-empty groups list"))?;
     Ok(vec![Planned {
-        model: None,
+        model: none_if_empty(model),
         value: job_item(
             "elements:merge",
             json!({"kind": "elements"}),

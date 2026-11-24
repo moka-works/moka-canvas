@@ -2393,8 +2393,8 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                 .is_some_and(|slot| !slot.takes.is_empty())
         })
     });
-    let voice_track = voice_rows.then(|| crate::domain::new_id());
-    let music_track = music_rows.then(|| crate::domain::new_id());
+    let voice_track = voice_rows.then(crate::domain::new_id);
+    let music_track = music_rows.then(crate::domain::new_id);
     if let Some(track_id) = &voice_track {
         tracks.push(audio_track(track_id, "Voice", &now));
     }
@@ -2526,6 +2526,55 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                 }
             }
         }
+    }
+
+    // A timeline already on file keeps the rows it was given: this telling's
+    // own audio and subtitle rows are reused rather than laid beside empty
+    // copies of themselves on every assembly.
+    let existing_timeline = match timeline_id.as_deref() {
+        Some(id) => Some(super::timeline_of(moka, id)?),
+        None => None,
+    };
+    let mut added_tracks = tracks.clone();
+    if let Some(existing) = existing_timeline.as_ref() {
+        let mut remap: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        if let Some(track) = existing
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Video)
+        {
+            remap.insert(video_track.clone(), track.id.clone());
+        }
+        let audio: Vec<&TimelineTrack> = existing
+            .tracks
+            .iter()
+            .filter(|track| track.kind == TrackKind::Audio)
+            .collect();
+        if let (Some(new), Some(track)) = (voice_track.as_ref(), audio.first()) {
+            remap.insert(new.clone(), track.id.clone());
+        }
+        if let (Some(new), Some(track)) = (music_track.as_ref(), audio.get(1)) {
+            remap.insert(new.clone(), track.id.clone());
+        }
+        if let Some(track) = existing
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Text)
+        {
+            if let Some(new) = tracks
+                .iter()
+                .find(|track| track.kind == TrackKind::Text)
+                .map(|track| track.id.clone())
+            {
+                remap.insert(new, track.id.clone());
+            }
+        }
+        for clip in &mut clips {
+            if let Some(track_id) = remap.get(&clip.track_id) {
+                clip.track_id = track_id.clone();
+            }
+        }
+        added_tracks.retain(|track| !remap.contains_key(&track.id));
     }
 
     let mut commands = Vec::new();
