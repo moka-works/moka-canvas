@@ -971,6 +971,11 @@ fn story_tools() -> Vec<ToolSpec> {
             ("elements", "array", "Complete element list"),
             ("confirm", "string", "Must be non-empty"),
         ])),
+        command("story.update_voice", "story", ToolRisk::Write, "Set or clear the narrator's voice, or one element's voice. A null voice clears it.", schema(&["storyId", "target"], &[
+            ("storyId", "string", "Story id"),
+            ("target", "object", "{\"kind\":\"narrator\"} or {\"kind\":\"element\",\"elementId\":\"...\"}"),
+            ("voice", "object", "Voice profile: model, voice, rate, pitch, instructions, referenceAssetId; null clears"),
+        ])),
         command("story.update_element", "story", ToolRisk::Write, "Change one element's name, description, chapters, or voice.", schema(&["storyId", "elementId", "patch"], &[
             ("storyId", "string", "Story id"),
             ("elementId", "string", "Element id"),
@@ -1044,6 +1049,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("assetId", "string", "Asset to select, for action select"),
             ("takeIndex", "integer", "Take index to select or drop"),
             ("makeCurrent", "boolean", "Whether an appended take becomes current, default true"),
+            ("take", "object", "A complete take for append: assetIds, inMs, outMs, jobId, itemId, note, createdAt"),
         ])),
         command("story.confirm_step", "story", ToolRisk::Write, "Confirm a story step. Only call when the user explicitly asks to confirm; gaps are refused. Steps cannot be unconfirmed through this tool.", schema(&["storyId", "step"], &[
             ("storyId", "string", "Story id"),

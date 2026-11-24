@@ -18,6 +18,7 @@ use crate::domain::{
     now_iso, DocumentCommand, MokaFile, TimelineClip, TimelineDocument, TimelineSettings,
     TimelineTrack, TrackKind,
 };
+use crate::project::ProjectStore;
 
 use super::super::error::ToolError;
 use super::{Args, TaskRef, ToolOutcome};
@@ -123,6 +124,10 @@ pub async fn command(moka: &MokaFile, name: &str, input: &Value) -> Result<ToolO
                     "maxReferenceImages": story.max_reference_images,
                     "confirmedSteps": story.confirmed_steps,
                     "chapterCount": story.chapters.len(),
+                    "narrator": story.narrator,
+                    "imagePromptOverrides": story.image_prompt_overrides,
+                    "videoPromptOverrides": story.video_prompt_overrides,
+                    "edit": story.edit,
                 },
             });
             if wants("brief") {
@@ -1295,18 +1300,21 @@ fn set_slot(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                     ));
                 }
             }
-            let previous_last = slot.takes.last().cloned();
+            // A take appended beside the current one keeps the current take
+            // last; appending it and then trying to put the old one back would
+            // leave two copies of the old take instead of one new take.
+            let previous_last = if args.opt_bool("makeCurrent", true) {
+                None
+            } else {
+                slot.takes.pop()
+            };
             slot.takes.push(take.clone());
+            if let Some(previous) = previous_last {
+                slot.takes.push(previous);
+            }
             if slot.takes.len() > crate::domain::story::MAX_TAKES_PER_SLOT {
                 slot.takes.remove(0);
                 warnings.push("the oldest take was dropped to stay within 12".to_string());
-            }
-            if !args.opt_bool("makeCurrent", true) {
-                if let Some(previous) = previous_last {
-                    slot.takes.pop();
-                    slot.takes.push(previous);
-                    let _ = take;
-                }
             }
         }
         "select" => {
@@ -1439,32 +1447,129 @@ fn step_word(step: &crate::domain::story::StoryStep) -> &'static str {
 }
 
 fn readiness(story: &StoryDocument) -> (Value, Vec<Value>) {
+    use crate::domain::story::StoryShotGranularity;
     let mut gaps = Vec::new();
-    let has_idea = !story.brief.idea.trim().is_empty();
-    let has_outline = !story.chapters.is_empty()
+    let idea_ok =
+        story.brief.idea.trim().chars().count() >= 10 || story.brief.source_asset_id.is_some();
+
+    let outline_ok = !story.chapters.is_empty()
         && story
             .chapters
             .iter()
-            .all(|chapter| !chapter.title.trim().is_empty());
-    let has_elements = !story.elements.is_empty();
-    let mut board_ok = !story.chapters.is_empty();
-    for chapter in &story.chapters {
-        if chapter.acts.is_empty() {
-            board_ok = false;
-            gaps.push(json!({"step": "storyboard", "chapterId": chapter.id, "kind": "missingActs", "message": format!("{} has no acts", chapter.title)}));
-        }
-        for act in &chapter.acts {
-            if act.keyframes.is_empty() {
-                board_ok = false;
-                gaps.push(json!({"step": "storyboard", "chapterId": chapter.id, "actId": act.id, "kind": "missingKeyframes", "message": format!("{} has no shots", act.title)}));
-            }
+            .all(|chapter| !chapter.title.trim().is_empty() && !chapter.synopsis.trim().is_empty());
+    if !outline_ok {
+        if story.chapters.is_empty() {
+            gaps.push(json!({"step": "outline", "kind": "noChapters", "message": "the outline has no chapters"}));
+        } else {
+            let numbers: Vec<usize> = story
+                .chapters
+                .iter()
+                .enumerate()
+                .filter(|(_, chapter)| {
+                    chapter.title.trim().is_empty() || chapter.synopsis.trim().is_empty()
+                })
+                .map(|(at, _)| at + 1)
+                .collect();
+            gaps.push(json!({"step": "outline", "kind": "chaptersUnwritten", "numbers": numbers, "message": "some chapters have no title or words"}));
         }
     }
+
+    let elements_ok = !story.elements.is_empty()
+        && story.elements.iter().all(|element| {
+            !element.name.trim().is_empty() && !element.description.trim().is_empty()
+        });
+    if !elements_ok {
+        if story.elements.is_empty() {
+            gaps.push(
+                json!({"step": "elements", "kind": "noElements", "message": "the cast is empty"}),
+            );
+        } else {
+            let names: Vec<&str> = story
+                .elements
+                .iter()
+                .filter(|element| {
+                    element.name.trim().is_empty() || element.description.trim().is_empty()
+                })
+                .map(|element| element.name.as_str())
+                .collect();
+            gaps.push(json!({"step": "elements", "kind": "elementsUndescribed", "names": names, "message": "some elements have no description"}));
+        }
+    }
+
+    let acts: Vec<&crate::domain::story::StoryAct> = story
+        .chapters
+        .iter()
+        .flat_map(|chapter| chapter.acts.iter())
+        .collect();
+    let mut board_ok = !acts.is_empty();
+    if acts.is_empty() {
+        gaps.push(
+            json!({"step": "storyboard", "kind": "noActs", "message": "no chapter has acts"}),
+        );
+    } else {
+        let bare = acts
+            .iter()
+            .filter(|act| act.transition.is_none() && act.keyframes.is_empty())
+            .count();
+        if bare > 0 {
+            board_ok = false;
+            gaps.push(json!({"step": "storyboard", "kind": "actsWithoutShots", "count": bare, "message": format!("{bare} acts have no shots")}));
+        }
+        let frames = acts
+            .iter()
+            .flat_map(|act| act.keyframes.iter())
+            .filter(|keyframe| keyframe.art.takes.is_empty() && !keyframe.art_not_needed)
+            .count();
+        if frames > 0 {
+            board_ok = false;
+            gaps.push(json!({"step": "storyboard", "kind": "framesMissing", "count": frames, "message": format!("{frames} shots have no picture")}));
+        }
+        let clips = acts
+            .iter()
+            .filter(|act| {
+                if act.transition.is_some() {
+                    return act.video.takes.is_empty();
+                }
+                match act.shot_granularity.unwrap_or(story.shot_granularity) {
+                    StoryShotGranularity::Keyframe => {
+                        act.keyframes.is_empty()
+                            || act
+                                .keyframes
+                                .iter()
+                                .any(|keyframe| keyframe.video.takes.is_empty())
+                    }
+                    StoryShotGranularity::Act => act.video.takes.is_empty(),
+                }
+            })
+            .count();
+        if clips > 0 {
+            board_ok = false;
+            gaps.push(json!({"step": "storyboard", "kind": "clipsMissing", "count": clips, "message": format!("{clips} acts are missing a clip")}));
+        }
+        let shots = acts
+            .iter()
+            .filter(|act| {
+                act.transition.is_none()
+                    && act.shot_granularity.unwrap_or(story.shot_granularity)
+                        == StoryShotGranularity::Keyframe
+            })
+            .flat_map(|act| act.keyframes.iter())
+            .filter(|keyframe| keyframe.video.takes.is_empty())
+            .count();
+        if shots > 0 {
+            board_ok = false;
+            gaps.push(json!({"step": "storyboard", "kind": "shotsMissing", "count": shots, "message": format!("{shots} shots have no clip")}));
+        }
+    }
+
     let edit_ok = story.edit.timeline_id.is_some();
+    if !edit_ok {
+        gaps.push(json!({"step": "edit", "kind": "noTimeline", "message": "the story has no assembled timeline"}));
+    }
     let ready = json!({
-        "idea": has_idea,
-        "outline": has_outline,
-        "elements": has_elements,
+        "idea": idea_ok,
+        "outline": outline_ok,
+        "elements": elements_ok,
         "storyboard": board_ok,
         "edit": edit_ok,
     });
@@ -1511,14 +1616,32 @@ fn confirm_step(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolErr
             ));
         }
     }
+    let mut commands = vec![DocumentCommand::ConfirmStoryStep {
+        story_id: story.id.clone(),
+        step,
+        confirmed: true,
+    }];
+    // The room settles an outline by locking it as well; a confirmation that
+    // left the words open would be a step settled in name only.
+    if step == crate::domain::story::StoryStep::Outline {
+        let chapters = story
+            .chapters
+            .iter()
+            .cloned()
+            .map(|mut chapter| {
+                chapter.outline_locked = true;
+                chapter
+            })
+            .collect();
+        commands.push(DocumentCommand::SetStoryChapters {
+            story_id: story.id.clone(),
+            chapters,
+        });
+    }
     Ok(ToolOutcome::write(
         format!("Confirmed {key}"),
         json!({"confirmedSteps": story.confirmed_steps, "step": key}),
-        vec![DocumentCommand::ConfirmStoryStep {
-            story_id: story.id.clone(),
-            step,
-            confirmed: true,
-        }],
+        commands,
     ))
 }
 
@@ -2190,9 +2313,55 @@ pub async fn effect(
         .opt_i64("parallel")
         .map(|value| value.max(1) as usize)
         .unwrap_or(crate::story::DEFAULT_PARALLEL_ITEMS);
+    // The same checks the room's HTTP route makes: a batch is refused before a
+    // provider is paid, not after eleven of its twelve pieces have come home.
+    if let Err(issues) = crate::story::validate_start(
+        moka,
+        &story_id,
+        kind,
+        &parsed,
+        parallel,
+        &moka.resources,
+        state.story_jobs.limits(),
+    ) {
+        return Err(
+            ToolError::validation("the requested story job is not valid")
+                .details(json!({"issues": issues})),
+        );
+    }
+    let active = session
+        .0
+        .list_story_jobs()
+        .await?
+        .iter()
+        .filter(|job| !job.status.is_terminal())
+        .count();
+    if active >= state.story_jobs.limits().max_active_jobs_per_project {
+        return Err(ToolError::new(
+            "STORY_JOB_BUSY",
+            "this project already has a job in progress",
+        ));
+    }
+    // A named model is resolved as it stands; none means the deployment's
+    // default for this capability. Passing the raw choice through would record
+    // a model id the record cannot use and leave the failure to the run.
+    let named = model.trim();
+    let resolved = if named.is_empty() {
+        state.models.resolve_default(kind.capability()).await
+    } else {
+        state.models.resolve(named, kind.capability()).await
+    }
+    .map_err(ToolError::from)?;
     let job = state
         .story_jobs
-        .start(&session.0, story_id, kind, model, parallel, parsed)
+        .start(
+            &session.0,
+            story_id,
+            kind,
+            resolved.config_id,
+            parallel,
+            parsed,
+        )
         .await?;
     Ok(ToolOutcome {
         summary: format!("Started a story job with {} items", items.len()),

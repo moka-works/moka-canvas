@@ -65,6 +65,12 @@ async fn current(app: &axum::Router) -> Value {
 }
 
 async fn call(app: &axum::Router, name: &str, input: Value) -> Value {
+    let (status, body) = call_raw(app, name, input).await;
+    assert_eq!(status, StatusCode::OK, "{name}: {body}");
+    body
+}
+
+async fn call_raw(app: &axum::Router, name: &str, input: Value) -> (StatusCode, Value) {
     let response = app
         .clone()
         .oneshot(json_request(
@@ -76,8 +82,7 @@ async fn call(app: &axum::Router, name: &str, input: Value) -> Value {
         .unwrap();
     let status = response.status();
     let body = body_json(response).await;
-    assert_eq!(status, StatusCode::OK, "{name}: {body}");
-    body
+    (status, body)
 }
 
 #[tokio::test]
@@ -260,7 +265,7 @@ async fn a_story_is_filled_step_by_step_and_confirmed_only_when_ready() {
     .await;
     assert!(added["data"]["keyframes"].as_i64().unwrap() >= 1);
 
-    for step in ["idea", "outline", "elements", "storyboard"] {
+    for step in ["idea", "outline", "elements"] {
         let confirmed = call(
             &app,
             "story.confirm_step",
@@ -270,8 +275,19 @@ async fn a_story_is_filled_step_by_step_and_confirmed_only_when_ready() {
         assert_eq!(confirmed["kind"], "command", "{step}");
     }
     let progress = call(&app, "story.progress", json!({"storyId": story_id})).await;
-    assert_eq!(progress["data"]["ready"]["storyboard"], true);
-    assert_eq!(progress["data"]["confirmed"].as_array().unwrap().len(), 4);
+    // A board is not ready on shots alone: every shot needs a picture before
+    // the step can be settled, the same rule the room reads.
+    assert_eq!(progress["data"]["ready"]["storyboard"], false);
+    assert!(progress["data"]["gaps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|gap| gap["kind"] == "framesMissing"));
+    let opened = current(&app).await;
+    assert_eq!(
+        opened["moka"]["stories"][0]["chapters"][0]["outlineLocked"], true,
+        "confirming the outline locks it, as the room does"
+    );
 }
 
 #[tokio::test]
@@ -974,4 +990,68 @@ async fn an_effect_is_idempotent_and_only_audited() {
         .as_array()
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+async fn a_narrator_voice_is_written_through_the_story_voice_tool() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.update_voice",
+        json!({
+            "storyId": story_id,
+            "target": {"kind": "narrator"},
+            "voice": {"model": "speech-1", "voice": "alloy", "rate": 1.0}
+        }),
+    )
+    .await;
+    let read = call(&app, "story.get", json!({"storyId": story_id})).await;
+    assert_eq!(read["data"]["story"]["narrator"]["voice"], "alloy");
+}
+
+#[tokio::test]
+async fn a_story_batch_is_refused_before_a_provider_is_asked() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    let (status, body) = call_raw(
+        &app,
+        "story.start_job",
+        json!({
+            "storyId": story_id,
+            "kind": "storyboard",
+            "items": [{
+                "id": "bad",
+                "target": {"kind": "outline"},
+                "capability": "text",
+                "prompt": "Write the board."
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "VALIDATION_FAILED");
+    assert!(body["details"]["issues"].as_array().unwrap().len() > 0);
 }

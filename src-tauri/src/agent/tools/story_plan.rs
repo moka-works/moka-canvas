@@ -460,7 +460,28 @@ fn plan_element_art(
                     continue;
                 }
                 let aspect = look.ratio.unwrap_or(story.brief.aspect);
-                let prompt = if view == "turnaround" {
+                let target = match variant_id.as_deref() {
+                    Some(variant_id) => json!({
+                        "kind": "elementArt",
+                        "elementId": element.id,
+                        "view": view,
+                        "variantId": variant_id,
+                    }),
+                    None => json!({
+                        "kind": "elementArt",
+                        "elementId": element.id,
+                        "view": view,
+                    }),
+                };
+                let id = match variant_id.as_deref() {
+                    Some(variant_id) => {
+                        format!("element:{}:{}:{}", view, element.id, variant_id)
+                    }
+                    None => format!("element:{}:{}", view, element.id),
+                };
+                let prompt = if let Some(prompt) = image_prompt_override(story, &id) {
+                    prompt.to_string()
+                } else if view == "turnaround" {
                     render(
                         Prompt::StoryElementTurnaround,
                         json!({
@@ -491,25 +512,6 @@ fn plan_element_art(
                     picture_reference_asset(story, look.reference)
                         .map(|asset_id| vec![json!({"role": "reference", "assetId": asset_id})])
                         .unwrap_or_default()
-                };
-                let target = match variant_id.as_deref() {
-                    Some(variant_id) => json!({
-                        "kind": "elementArt",
-                        "elementId": element.id,
-                        "view": view,
-                        "variantId": variant_id,
-                    }),
-                    None => json!({
-                        "kind": "elementArt",
-                        "elementId": element.id,
-                        "view": view,
-                    }),
-                };
-                let id = match variant_id.as_deref() {
-                    Some(variant_id) => {
-                        format!("element:{}:{}:{}", view, element.id, variant_id)
-                    }
-                    None => format!("element:{}:{}", view, element.id),
                 };
                 let name = if view == "turnaround" {
                     format!("{} turn-around", look.name)
@@ -564,19 +566,6 @@ fn plan_keyframe_art(
                 continue;
             }
             let (cast, inputs) = keyframe_cast(story, act, keyframe, warnings);
-            let prompt = render(
-                Prompt::StoryKeyframe,
-                json!({
-                    "aspect": story.brief.aspect.as_str(),
-                    "style": story.brief.style,
-                    "chapter": {"title": chapter.title},
-                    "summary": act.summary,
-                    "content": keyframe.content,
-                    "shotSize": keyframe.shot_size.as_str(),
-                    "angle": keyframe.angle.as_str(),
-                    "cast": cast,
-                }),
-            )?;
             let target = json!({
                 "kind": "keyframeArt",
                 "chapterId": chapter.id,
@@ -584,6 +573,23 @@ fn plan_keyframe_art(
                 "keyframeId": keyframe.id,
             });
             let id = format!("keyframe:{}:{}:{}", chapter.id, act.id, keyframe.id);
+            let prompt = if let Some(prompt) = image_prompt_override(story, &id) {
+                prompt.to_string()
+            } else {
+                render(
+                    Prompt::StoryKeyframe,
+                    json!({
+                        "aspect": story.brief.aspect.as_str(),
+                        "style": story.brief.style,
+                        "chapter": {"title": chapter.title},
+                        "summary": act.summary,
+                        "content": keyframe.content,
+                        "shotSize": keyframe.shot_size.as_str(),
+                        "angle": keyframe.angle.as_str(),
+                        "cast": cast,
+                    }),
+                )?
+            };
             let item_model = none_if_empty(model).or_else(|| {
                 keyframe
                     .image_model
@@ -668,12 +674,15 @@ async fn plan_act_videos(
                 context["part"] = json!(at + 1);
                 context["total"] = json!(total);
             }
-            let prompt = render(Prompt::StoryActVideo, context)?;
             let base = format!("actVideo:{}:{}", chapter.id, act.id);
             let id = if total > 1 {
                 format!("{base}:{}", at + 1)
             } else {
                 base
+            };
+            let prompt = match video_prompt_override(story, &id) {
+                Some(prompt) => prompt.to_string(),
+                None => render(Prompt::StoryActVideo, context)?,
             };
             planned.push(Planned {
                 model: item_model.clone(),
@@ -747,23 +756,27 @@ async fn plan_keyframe_videos(
             if let Some(last_frame) = last_frame {
                 inputs.push(json!({"role": "lastFrame", "assetId": last_frame}));
             }
-            let prompt = render(
-                Prompt::StoryKeyframeVideo,
-                json!({
-                    "aspect": story.brief.aspect.as_str(),
-                    "style": story.brief.style,
-                    "title": keyframe.title,
-                    "content": strip_mentions(&keyframe.content),
-                    "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
-                    "move": keyframe.camera_move.as_str(),
-                    "seconds": seconds,
-                    "dialogue": spoken_lines(&keyframe.dialogue),
-                }),
-            )?;
+            let id = format!("keyframeVideo:{}:{}:{}", chapter.id, act.id, keyframe.id);
+            let prompt = match video_prompt_override(story, &id) {
+                Some(prompt) => prompt.to_string(),
+                None => render(
+                    Prompt::StoryKeyframeVideo,
+                    json!({
+                        "aspect": story.brief.aspect.as_str(),
+                        "style": story.brief.style,
+                        "title": keyframe.title,
+                        "content": strip_mentions(&keyframe.content),
+                        "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
+                        "move": keyframe.camera_move.as_str(),
+                        "seconds": seconds,
+                        "dialogue": spoken_lines(&keyframe.dialogue),
+                    }),
+                )?,
+            };
             planned.push(Planned {
                 model: item_model.clone(),
                 value: job_item(
-                    &format!("keyframeVideo:{}:{}:{}", chapter.id, act.id, keyframe.id),
+                    &id,
                     json!({
                         "kind": "keyframeVideo",
                         "chapterId": chapter.id,
@@ -1404,6 +1417,24 @@ fn system_prompt() -> Result<String, ToolError> {
 fn render(prompt: Prompt, context: Value) -> Result<String, ToolError> {
     prompts::render(prompt, &context)
         .map_err(|error| ToolError::new("PROMPT_TEMPLATE_FAILED", error.to_string()))
+}
+
+/// The words a reader wrote for one picture, keyed by the ask's own id.
+fn image_prompt_override<'a>(story: &'a StoryDocument, id: &str) -> Option<&'a str> {
+    story
+        .image_prompt_overrides
+        .as_ref()
+        .and_then(|overrides| overrides.get(id))
+        .map(|override_| override_.prompt.as_str())
+}
+
+/// The same for one clip.
+fn video_prompt_override<'a>(story: &'a StoryDocument, id: &str) -> Option<&'a str> {
+    story
+        .video_prompt_overrides
+        .as_ref()
+        .and_then(|overrides| overrides.get(id))
+        .map(|override_| override_.prompt.as_str())
 }
 
 fn join_prompts(parts: &[String]) -> String {
