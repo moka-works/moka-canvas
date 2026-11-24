@@ -496,11 +496,19 @@ async fn discover(flag: Option<String>) -> Result<String> {
     )))
 }
 
+/// The metadata directory as this machine's server resolves it: the override,
+/// or the platform application-data directory's own subdirectory.
+fn metadata_root() -> Option<PathBuf> {
+    match std::env::var("MOKA_METADATA_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir)),
+        _ => paths::platform_default()
+            .ok()
+            .map(|root| root.join(paths::DIR_NAME)),
+    }
+}
+
 fn runtime_note() -> Option<String> {
-    let root = match std::env::var("MOKA_METADATA_DIR") {
-        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
-        _ => paths::platform_default().ok()?,
-    };
+    let root = metadata_root()?;
     let raw = std::fs::read_to_string(root.join("runtime.json")).ok()?;
     let note: Value = serde_json::from_str(&raw).ok()?;
     note.get("url").and_then(Value::as_str).map(str::to_string)
@@ -524,12 +532,7 @@ struct StoredLogins {
 /// Where the kept sign-ins live: the metadata directory, or the platform
 /// default when no override names one. Same machine, same owner, one file.
 fn logins_path() -> Option<PathBuf> {
-    match std::env::var("MOKA_METADATA_DIR") {
-        Ok(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir).join(LOGINS_FILE)),
-        _ => paths::platform_default()
-            .ok()
-            .map(|root| root.join(paths::DIR_NAME).join(LOGINS_FILE)),
-    }
+    Some(metadata_root()?.join(LOGINS_FILE))
 }
 
 fn read_logins() -> StoredLogins {
