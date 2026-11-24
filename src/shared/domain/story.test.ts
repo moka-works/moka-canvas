@@ -2054,6 +2054,32 @@ describe("the board commands", () => {
     expect(storyOfFile(cleared).chapters[0].acts[0].plan).toBeUndefined();
   });
 
+  it("marks an act as continuing the one before, and clears the mark", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const set = expectRoundTrip(moka, {
+      type: "updateStoryAct",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      patch: { continueFromPrevious: true },
+    });
+    expect(storyOfFile(set).chapters[0].acts[0].continueFromPrevious).toBe(
+      true,
+    );
+
+    const cleared = expectRoundTrip(set, {
+      type: "updateStoryAct",
+      storyId: ids.story,
+      chapterId: ids.chapterFirst,
+      actId: ids.act,
+      patch: { continueFromPrevious: false },
+    });
+    expect(
+      storyOfFile(cleared).chapters[0].acts[0].continueFromPrevious,
+    ).toBeUndefined();
+  });
+
   it("moves only the fields a shot patch names, and keeps a shot to its length", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();

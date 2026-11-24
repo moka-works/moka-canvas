@@ -76,6 +76,8 @@ export interface StoryPromptContext {
   referencePictures?: PromptContextPicture[];
   /** How a bridge moves from one act to the next. */
   transition?: { from: string; to: string; move: string };
+  /** Whether this act opens on the last frame of the act before it. */
+  continues?: boolean;
   cast: PromptContextCast[];
   dialogue: PromptContextLine[];
   sound?: { music: string; sfx: string; ambience?: string };

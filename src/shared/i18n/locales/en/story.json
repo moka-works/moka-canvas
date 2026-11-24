@@ -639,6 +639,14 @@
     "chapterCounts": "Acts {{acts}} · Shots {{shots}}",
     "rhythm": "{{count}} shots over {{seconds}} s: the act's pacing",
     "rhythmSeat": "Shot {{at}}, {{size}}, {{seconds}} s",
+    "continuePrevious": "Continue from the act before",
+    "continueHint": "Open on the last frame of the act before it, as one continuous shot",
+    "continueFirst": "This is the episode's first act",
+    "continuePerShot": "A shot-at-a-time act starts each shot on its own frame",
+    "continueNoPrevious": "The act before this one has not been filmed yet",
+    "continueUndrawn": "Draw this act's frames first",
+    "continueNoOpeningFrame": "This act opens on references or words, not one frame",
+    "continueIdle": "This mark waits: {{reason}}",
     "target": "Target {{duration}}",
     "settled": "{{done}}/{{total}} acts finished",
     "asking": "Generating · {{models}}",
@@ -992,6 +1000,11 @@
     "audioFallback": "The audio model here is what characters without a model of their own — and the narrator — fall back to. Each character's voice is set on the third step.",
     "fitsSped": "{{over}}s longer than its shot · read {{speed}}× faster",
     "fitsOverrun": "{{over}}s longer than its shot · read as fast as it may, {{spill}}s over the shot",
-    "fitsUnmeasured": "No measured length · laid at the shot's own length"
+    "fitsUnmeasured": "No measured length · laid at the shot's own length",
+    "fitGo": "Fit the shot to its lines",
+    "fitGoHint": "Lengthen the shot to {{seconds}} s so every line reads at its own pace",
+    "fitNeedsRefilm": "This shot's window is its filmed clip; refilm it to change the length",
+    "fitCapped": "The shot can only grow to {{seconds}} s; the rest needs a faster read or fewer words",
+    "fitPlanOnly": "The act's clip is filmed as it stood; refilm the act to use the longer plan"
   }
 }

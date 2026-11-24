@@ -101,6 +101,9 @@ export function splitAct(
     ...common,
     ...(act.plan === undefined ? {} : { plan: act.plan }),
     ...(act.videoModel === undefined ? {} : { videoModel: act.videoModel }),
+    ...(act.continueFromPrevious === true
+      ? { continueFromPrevious: true }
+      : {}),
     keyframes: act.keyframes.slice(0, at),
     video: emptyStorySlot(),
   };
@@ -108,6 +111,8 @@ export function splitAct(
     ...createAct(continuation(act.title)),
     ...common,
     ...(act.videoModel === undefined ? {} : { videoModel: act.videoModel }),
+    // The second half opens where the first half ended.
+    continueFromPrevious: true,
     keyframes: act.keyframes.slice(at),
     video: emptyStorySlot(),
   };
@@ -178,6 +183,11 @@ export function mergeActsAt(
       : {}),
     ...(above.videoModel !== undefined && above.videoModel === below.videoModel
       ? { videoModel: above.videoModel }
+      : {}),
+    // The joined act still opens on whatever the first of the two opened on;
+    // the seam between them is gone, so the second half's mark has no meaning.
+    ...(above.continueFromPrevious === true
+      ? { continueFromPrevious: true }
       : {}),
   };
   const acts = [...chapter.acts];

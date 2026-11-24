@@ -639,6 +639,21 @@ describe("story prompts", () => {
     expect(prompt).not.toContain("{{");
   });
 
+  it("carries on from the frame of the act before when asked", () => {
+    const base = {
+      aspect: "16:9" as const,
+      style: "现代都市风",
+      title: "第 1 幕 空站台",
+      summary: "站台上的灯一盏一盏亮起来。",
+      shots: [{ at: 0, content: "雨中的站台。", move: "static" }],
+      seconds: 5,
+    };
+    expect(storyActVideoPrompt(base)).not.toContain("opens on the last frame");
+    expect(storyActVideoPrompt({ ...base, continues: true })).toContain(
+      "opens on the last frame",
+    );
+  });
+
   it("films each moment from what moves in it, after the still frame it opens on", () => {
     const prompt = storyActVideoPrompt({
       aspect: "16:9",

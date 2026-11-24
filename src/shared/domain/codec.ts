@@ -531,6 +531,7 @@ function encodeStoryAct(act: StoryAct): Record<string, unknown> {
   };
   if (act.sceneId !== undefined) doc.sceneId = act.sceneId;
   if (act.plan !== undefined && act.plan.trim() !== "") doc.plan = act.plan;
+  if (act.continueFromPrevious === true) doc.continueFromPrevious = true;
   // An act that has not chosen a granularity is left to the telling's, so the
   // field is written only where it says something the story does not.
   if (act.shotGranularity !== undefined)
@@ -1792,6 +1793,7 @@ function decodeStoryAct(value: unknown): StoryAct {
   if (doc.sceneId !== undefined) act.sceneId = optionalString(doc.sceneId);
   const plan = optionalString(doc.plan);
   if (plan !== undefined) act.plan = plan;
+  if (doc.continueFromPrevious === true) act.continueFromPrevious = true;
   const videoModel = optionalString(doc.videoModel);
   if (videoModel !== undefined) act.videoModel = videoModel;
   if (doc.shotGranularity !== undefined)

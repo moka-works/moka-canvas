@@ -150,6 +150,7 @@ fn act(id: &str) -> StoryAct {
         title: "第 1 幕".into(),
         summary: "内容".into(),
         plan: None,
+        continue_from_previous: false,
         character_ids: Vec::new(),
         scene_id: None,
         prop_ids: Vec::new(),
@@ -317,6 +318,7 @@ fn story_document() -> MokaFile {
                     title: "第 1 幕 空站台".into(),
                     summary: "站台上的灯一盏一盏亮起来。".into(),
                     plan: None,
+                    continue_from_previous: false,
                     character_ids: vec![HERO.into(), PARTNER.into()],
                     scene_id: Some(SCENE.into()),
                     prop_ids: vec![PROP.into()],
@@ -1459,6 +1461,38 @@ fn names_the_plan_an_act_is_boarded_from_and_can_take_it_away() {
         }],
     );
     assert_eq!(story_of(&cleared).chapters[0].acts[0].plan, None);
+}
+
+#[test]
+fn marks_an_act_as_continuing_the_one_before_and_can_clear_it() {
+    let moka = story_document();
+    let set = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateStoryAct {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            patch: story::StoryActPatch {
+                continue_from_previous: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(story_of(&set).chapters[0].acts[0].continue_from_previous);
+
+    let cleared = round_trip(
+        &set,
+        vec![DocumentCommand::UpdateStoryAct {
+            story_id: STORY.into(),
+            chapter_id: CHAPTER_FIRST.into(),
+            act_id: ACT.into(),
+            patch: story::StoryActPatch {
+                continue_from_previous: Some(false),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(!story_of(&cleared).chapters[0].acts[0].continue_from_previous);
 }
 
 #[test]

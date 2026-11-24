@@ -644,6 +644,8 @@ export function storyActVideoPrompt(
     /** Its place among the pieces, when the act is filmed in several. */
     part?: number;
     total?: number;
+    /** Whether the piece opens on the last frame of the act before it. */
+    continues?: boolean;
   },
 ): string {
   const shots = input.shots.map((shot) => ({

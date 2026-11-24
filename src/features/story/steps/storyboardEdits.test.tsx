@@ -98,6 +98,22 @@ describe("editing an episode's board", () => {
     );
   });
 
+  it("continues a filmed act from the act before it", async () => {
+    const moka = withTwoFilmedActs();
+    const second = moka.stories![0]!.chapters[0]!.acts[1]!;
+    second.keyframes[0]!.filmRole = "firstFrame";
+    openAtBoard(moka);
+
+    const box = screen.getByTestId("story-act-continue-1") as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    fireEvent.click(box);
+    await waitFor(() => expect(acts()[1]?.continueFromPrevious).toBe(true));
+    expect(acts()[0]?.continueFromPrevious).toBeUndefined();
+    expect(
+      (screen.getByTestId("story-act-continue-0") as HTMLInputElement).disabled,
+    ).toBe(true);
+  });
+
   it("marks the cells whose framing the answer never really gave", async () => {
     openAtBoard(boarded(), 1);
     answers[`storyboard:${story().chapters[1]!.id}`] = boardAnswer("遥遥远景");
@@ -794,6 +810,17 @@ describe("a reading too long for its shot", () => {
     expect(openLine().textContent).toContain(
       "1.4s longer than its shot · read as fast as it may, 0.5s over the shot",
     );
+  });
+
+  it("lengthens the shot to hold its line at its own pace", async () => {
+    openAtBoard(withReadLine(2_400));
+    fireEvent.click(screen.getByTestId("story-kf-dialogue-0"));
+    fireEvent.click(screen.getByTestId("story-line-voice-fit-go-0"));
+
+    await waitFor(() =>
+      expect(acts()[0]?.keyframes[0]?.durationMs).toBe(2_400),
+    );
+    expect(screen.queryByTestId("story-line-voice-fit-0")).toBeNull();
   });
 
   it("says when nobody measured the reading at all", () => {
