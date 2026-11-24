@@ -265,16 +265,15 @@ film the report describes.
 
 These are places where the room still leads:
 
-- splitting a manuscript into chapters (the outline step's split);
-- importing a canvas or a timeline into a story;
-- drawing a mask for a local repaint.
+- importing a timeline into a story;
+- drawing the mask itself (the mask file has to exist; `pictureEdit` uses it).
 
-The staging check and outline revision are now plannable (`kind:"continuity"`
+The manuscript split is now `story.split_manuscript` (paid and destructive; confirm first), the staging check and outline revision are plannable (`kind:"continuity"`
 and `kind:"outlineRevision"`); an outline revision answer is still a proposal
 the reader settles in its preview, never a patch this skill writes. Use
 `story.focus` to ask an open room to move to a story, step and chapter; it is a
 request, not a guarantee. `story.import_canvas` lays the telling's cards on a
-canvas without the room's wiring.
+canvas and wires them.
 
 Everything else — the board, the cast pictures, the frames, the clips, the
 lines, the score, the review sheets and the assembled cut — is covered here.

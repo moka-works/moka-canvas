@@ -168,8 +168,13 @@ moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.
 - Call `story.confirm_step` only when the user explicitly says to confirm/pass the step; a finished generation is not a confirmation.
 - Keep old takes unless the user asks to choose another; `set_slot` appends, it does not overwrite. A take may be appended as a full `take` object with `inMs`/`outMs`.
-- `story.assemble` lays pictures or clips, line readings, whole-act voice and score, and optional subtitles. Its `assembledDigest` is not written, so the room may still offer to return the cut; say so if it matters.
+- `story.split_manuscript` cuts the filed manuscript into chapters through a text model and replaces the outline. It is a paid, destructive effect and needs `--yes`/`--ack-destroy`; confirm with the user first.
+- `story.set_prompt` writes hand-written picture or clip prompts, keyed by the ask ids `plan_job` returns; a null clears one. Rewriting a batch is plan, rewrite the prompts yourself, then write them back.
+- For a local repaint, `plan_job kind:"pictureEdit"` with `instruction` and an optional `maskAssetId` hands the current picture back with the mask; the answer lands as a new take.
+- `story.assemble` lays pictures or clips, line readings, whole-act voice and score, optional subtitles, and writes `assembledDigest` so the room agrees the cut is current.
 - Structural tools exist beside the field patches: `add_chapter` / `remove_chapter` / `move_chapter`, `add_act` with a full act (including a bridge `transition`), `move_keyframe`, `duplicate_keyframe`, and `story.import_canvas`.
+- `story.focus` moves the open window: `room` may be `story`, `canvas`, `clip`, `assets`, or `director`, with that room's ids (`canvasId/nodeIds`, `timelineId/clipIds/playheadMs`, `assetId`).
+- `story.import_canvas` lays the telling's cards on a canvas and wires each chapter, act, shot, frame and clip to what it came from.
 - `story.list_jobs` and `story.read_job` are for an external applier: list unread batches, read one's answers, apply them once, then mark it read. Never mark a batch read while the room is also applying it.
 - For a whole chapter — board, cast pictures, frames, clips, voices and score — use the `moka-storyboard` skill. It is the same tools in a batch workflow with reader checkpoints.
 

@@ -3236,6 +3236,7 @@ pub async fn effect(
     moka: &MokaFile,
 ) -> Result<ToolOutcome, ToolError> {
     match name {
+        "story.split_manuscript" => return split_manuscript(state, session, moka, input).await,
         "story.focus" => return focus_room(state, moka, input).await,
         "story.list_jobs" => return list_jobs(session, input).await,
         "story.read_job" => return read_job(session, input).await,
@@ -3375,6 +3376,652 @@ pub async fn effect(
     })
 }
 
+async fn split_manuscript(
+    state: &ApiState,
+    session: &ProjectSession,
+    moka: &MokaFile,
+    input: &Value,
+) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.split_manuscript", input)?;
+    args.confirmed()?;
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let source_id = args
+        .opt_str("sourceAssetId")
+        .map(str::to_string)
+        .or_else(|| story.brief.source_asset_id.clone())
+        .ok_or_else(|| ToolError::new("STEP_GAPS", "the story has no manuscript on file"))?;
+    let entry = moka
+        .resources
+        .texts
+        .iter()
+        .find(|entry| entry.id == source_id)
+        .ok_or_else(|| ToolError::new("ASSET_NOT_FOUND", "the manuscript is not on the shelf"))?;
+    let inside = entry.path.starts_with("assets/")
+        && !entry.path.split(['/', '\\']).any(|part| part == "..");
+    if !inside {
+        return Err(ToolError::validation(
+            "the manuscript is outside the project's own files",
+        ));
+    }
+    let root = session.0.project_root().await?;
+    let text = tokio::fs::read_to_string(root.join(&entry.path))
+        .await
+        .map_err(|error| {
+            ToolError::validation(format!("the manuscript cannot be read: {error}"))
+        })?;
+    let chars: Vec<char> = text.chars().collect();
+    let budget = args.opt_i64("budget").unwrap_or(12_000).max(1_000) as usize;
+    let minutes = (story.brief.chapter_ms.max(60_000) / 60_000).max(1);
+    let total = format_timestamp(story.brief.total_duration_ms);
+    let named = args.opt_str("model").unwrap_or("").trim();
+    let resolved = if named.is_empty() {
+        state
+            .models
+            .resolve_default(crate::domain::Capability::Text)
+            .await
+    } else {
+        state
+            .models
+            .resolve(named, crate::domain::Capability::Text)
+            .await
+    }
+    .map_err(ToolError::from)?;
+    let system = crate::prompts::render(crate::prompts::Prompt::StorySplitSystem, &json!({}))
+        .map_err(|error| ToolError::new("PROMPT_TEMPLATE_FAILED", error.to_string()))?;
+    let mut cut: Vec<CutChapter> = Vec::new();
+    let mut cursor = 0_usize;
+    let mut part = 0;
+    while cursor < chars.len() {
+        part += 1;
+        if part > 1_000 {
+            return Err(ToolError::new(
+                "STEP_GAPS",
+                "the manuscript needs too many parts",
+            ));
+        }
+        let end = window_end(&chars, cursor, budget);
+        let window: String = chars[cursor..end].iter().collect();
+        let final_part = end >= chars.len();
+        let mut reading: Option<WindowReading> = None;
+        let mut reason = String::new();
+        for attempt in 1..=3 {
+            let prompt = if attempt == 1 {
+                crate::prompts::render(
+                    crate::prompts::Prompt::StorySplit,
+                    &json!({
+                        "text": window,
+                        "part": part,
+                        "minutes": minutes,
+                        "total": total,
+                        "last": final_part,
+                    }),
+                )
+            } else {
+                crate::prompts::render(
+                    crate::prompts::Prompt::StorySplitRepair,
+                    &json!({
+                        "text": window,
+                        "part": part,
+                        "minutes": minutes,
+                        "total": total,
+                        "last": final_part,
+                        "missing": [reason.clone()],
+                    }),
+                )
+            }
+            .map_err(|error| ToolError::new("PROMPT_TEMPLATE_FAILED", error.to_string()))?;
+            let request = GenerateRequest {
+                capability: crate::domain::Capability::Text,
+                model: resolved.config_id.clone(),
+                prompt,
+                system: Some(system.clone()),
+                ..GenerateRequest::default()
+            };
+            let result = state
+                .gateway
+                .text(&session.0, request, &DeltaSink::default(), &Cancel::new())
+                .await
+                .map_err(ToolError::from)?;
+            let Some(answer) = result.text.as_deref() else {
+                reason = "the split answer had no text".to_string();
+                continue;
+            };
+            let pointers = match split_pointers(answer) {
+                Ok(pointers) => pointers,
+                Err(error) => {
+                    reason = error;
+                    continue;
+                }
+            };
+            let (boundaries, missed) = locate_boundaries(&window, &pointers, cursor == 0);
+            if !missed.is_empty() && attempt < 3 {
+                reason = missed[0].clone();
+                continue;
+            }
+            let found = cut_window(&window, &boundaries, final_part);
+            let progressed = if final_part {
+                !found.chapters.is_empty()
+            } else {
+                found.tail_start.is_some_and(|tail| tail > cursor)
+            };
+            if !progressed {
+                reason = missed
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "no chapter boundary could be placed".to_string());
+                continue;
+            }
+            reading = Some(found);
+            break;
+        }
+        let Some(reading) = reading else {
+            return Err(ToolError::new(
+                "STEP_GAPS",
+                format!("part {part} could not be cut: {reason}"),
+            ));
+        };
+        for chapter in reading.chapters {
+            if cut.len() >= crate::domain::story::MAX_CHAPTERS_PER_STORY {
+                if let Some(last) = cut.last_mut() {
+                    last.body = format!("{}\n\n{}", last.body, chapter.body);
+                }
+            } else {
+                cut.push(chapter);
+            }
+        }
+        if final_part {
+            break;
+        }
+        let Some(tail) = reading.tail_start else {
+            return Err(ToolError::new(
+                "STEP_GAPS",
+                "the split left no place to continue",
+            ));
+        };
+        if tail <= cursor {
+            return Err(ToolError::new(
+                "STEP_GAPS",
+                "the split did not move forward",
+            ));
+        }
+        cursor = tail;
+    }
+    if cut.is_empty() {
+        return Err(ToolError::new(
+            "STEP_GAPS",
+            "the manuscript produced no chapters",
+        ));
+    }
+    let lengths: Vec<usize> = cut
+        .iter()
+        .map(|chapter| chapter.body.chars().count().max(1))
+        .collect();
+    let sum: usize = lengths.iter().sum();
+    let mut spent = 0_i64;
+    let mut chapters = Vec::with_capacity(cut.len());
+    for (index, chapter) in cut.iter().enumerate() {
+        let last = index + 1 == cut.len();
+        let duration = if last {
+            (story.brief.total_duration_ms - spent).max(1)
+        } else {
+            ((story.brief.total_duration_ms as i128 * lengths[index] as i128) / sum as i128).max(1)
+                as i64
+        };
+        spent += duration;
+        chapters.push(StoryChapter {
+            id: crate::domain::new_id(),
+            title: chapter.title.clone(),
+            synopsis: chapter.body.clone(),
+            target_duration_ms: duration,
+            acts: Vec::new(),
+            revision: 1,
+            board_revision: None,
+            board_outline: None,
+            outline_locked: false,
+        });
+    }
+    let mut commands = vec![DocumentCommand::SetStoryChapters {
+        story_id: story.id.clone(),
+        chapters,
+    }];
+    commands.push(DocumentCommand::UpdateStoryBrief {
+        story_id: story.id.clone(),
+        patch: StoryBriefPatch {
+            source_split: Some(Some(true)),
+            ..StoryBriefPatch::default()
+        },
+    });
+    let opened = session
+        .0
+        .current()
+        .await?
+        .ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "no project is open"))?;
+    let saved = session
+        .0
+        .apply_agent_commands(opened.moka.metadata.revision, commands)
+        .await
+        .map_err(ToolError::from)?;
+    Ok(ToolOutcome::write(
+        format!("Cut the manuscript into {} chapters", cut.len()),
+        json!({
+            "storyId": story.id,
+            "chapters": cut.len(),
+            "revision": saved.0.revision,
+        }),
+        Vec::new(),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SplitEntry {
+    #[serde(default)]
+    number: Option<i64>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    start: Option<String>,
+    #[serde(default)]
+    end: Option<String>,
+    #[serde(default)]
+    before: Option<String>,
+    #[serde(default)]
+    discard: Option<bool>,
+}
+
+struct SplitPointer {
+    title: String,
+    start: Option<String>,
+    end: Option<String>,
+    before: Option<String>,
+    discard: bool,
+}
+
+fn split_pointers(answer: &str) -> Result<Vec<SplitPointer>, String> {
+    let value = extract_json(answer)?;
+    let raw = if let Some(chapters) = value.get("chapters").and_then(Value::as_array) {
+        chapters.clone()
+    } else if let Some(list) = value.as_array() {
+        list.clone()
+    } else {
+        vec![value]
+    };
+    let mut pointers = Vec::new();
+    for entry in raw {
+        let Ok(entry) = serde_json::from_value::<SplitEntry>(entry) else {
+            continue;
+        };
+        let start = entry
+            .start
+            .map(|word| word.trim().to_string())
+            .filter(|word| !word.is_empty());
+        let end = entry
+            .end
+            .map(|word| word.trim().to_string())
+            .filter(|word| !word.is_empty());
+        let before = entry
+            .before
+            .map(|word| word.trim().to_string())
+            .filter(|word| !word.is_empty());
+        if start.is_none() && before.is_none() && !pointers.is_empty() {
+            continue;
+        }
+        let discard = entry.discard == Some(true) || entry.number == Some(0);
+        pointers.push(SplitPointer {
+            title: entry.title.unwrap_or_default(),
+            start,
+            end,
+            before,
+            discard,
+        });
+    }
+    if pointers.is_empty() {
+        Err("the answer named no chapter boundary".to_string())
+    } else {
+        Ok(pointers)
+    }
+}
+
+fn extract_json(answer: &str) -> Result<Value, String> {
+    let start = answer
+        .char_indices()
+        .find(|(_, ch)| *ch == '{' || *ch == '[')
+        .map(|(at, _)| at)
+        .ok_or_else(|| "the answer held no json".to_string())?;
+    let slice = &answer[start..];
+    let end = if slice.starts_with('{') { '}' } else { ']' };
+    let tail = slice
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| *ch == end)
+        .map(|(at, _)| at + 1)
+        .ok_or_else(|| "the answer's json was not closed".to_string())?;
+    serde_json::from_str(&slice[..tail])
+        .map_err(|error| format!("the answer was not json: {error}"))
+}
+
+struct CutChapter {
+    title: String,
+    body: String,
+}
+
+struct Boundary {
+    at: usize,
+    title: String,
+    discard: bool,
+    end: Option<usize>,
+}
+
+struct WindowReading {
+    chapters: Vec<CutChapter>,
+    tail_start: Option<usize>,
+}
+
+fn locate_boundaries(
+    window: &str,
+    pointers: &[SplitPointer],
+    first_part: bool,
+) -> (Vec<Boundary>, Vec<String>) {
+    let chars: Vec<char> = window.chars().collect();
+    let compact = compact_chars(&chars);
+    let mut boundaries = Vec::new();
+    let mut missed = Vec::new();
+    let mut from = 0;
+    let mut first = true;
+    for pointer in pointers {
+        if pointer.discard {
+            if first_part && first {
+                boundaries.push(Boundary {
+                    at: 0,
+                    title: pointer.title.clone(),
+                    discard: true,
+                    end: None,
+                });
+                first = false;
+            }
+            continue;
+        }
+        if first && pointer.start.is_none() && pointer.before.is_none() {
+            boundaries.push(Boundary {
+                at: 0,
+                title: pointer.title.clone(),
+                discard: false,
+                end: pointer
+                    .end
+                    .as_deref()
+                    .and_then(|quote| find_quote(&chars, &compact, quote, 0)),
+            });
+            first = false;
+            continue;
+        }
+        if !first_part && first {
+            boundaries.push(Boundary {
+                at: 0,
+                title: pointer.title.clone(),
+                discard: false,
+                end: pointer
+                    .end
+                    .as_deref()
+                    .and_then(|quote| find_quote(&chars, &compact, quote, 0)),
+            });
+            first = false;
+            continue;
+        }
+        first = false;
+        let mut at = pointer
+            .start
+            .as_deref()
+            .and_then(|quote| find_quote(&chars, &compact, quote, from));
+        if at.is_none() {
+            if let Some(before) = pointer.before.as_deref() {
+                if let Some(held) = find_quote(&chars, &compact, before, from) {
+                    let mut next = held + before.chars().count();
+                    while next < chars.len() && chars[next].is_whitespace() {
+                        next += 1;
+                    }
+                    at = Some(next);
+                }
+            }
+        }
+        let Some(at) = at else {
+            missed.push(
+                pointer
+                    .start
+                    .clone()
+                    .or(pointer.before.clone())
+                    .unwrap_or_else(|| pointer.title.clone()),
+            );
+            continue;
+        };
+        if (at <= from && !boundaries.is_empty()) || at >= chars.len() {
+            missed.push(
+                pointer
+                    .start
+                    .clone()
+                    .or(pointer.before.clone())
+                    .unwrap_or_else(|| pointer.title.clone()),
+            );
+            continue;
+        }
+        boundaries.push(Boundary {
+            at,
+            title: pointer.title.clone(),
+            discard: false,
+            end: pointer
+                .end
+                .as_deref()
+                .and_then(|quote| find_quote(&chars, &compact, quote, at)),
+        });
+        from = at;
+    }
+    (boundaries, missed)
+}
+
+fn cut_window(window: &str, boundaries: &[Boundary], final_part: bool) -> WindowReading {
+    let chars: Vec<char> = window.chars().collect();
+    let mut chapters = Vec::new();
+    let mut tail_end = None;
+    for (index, boundary) in boundaries.iter().enumerate() {
+        if boundary.discard {
+            continue;
+        }
+        let next = boundaries.get(index + 1);
+        let start = boundary.at;
+        if next.is_none() && !final_part {
+            let Some(end) = boundary.end else { continue };
+            if end <= start {
+                continue;
+            }
+            if let Some(chapter) = cut_chapter(&chars, start, end, boundary, chapters.len() + 1) {
+                chapters.push(chapter);
+                tail_end = Some(end);
+            }
+            continue;
+        }
+        let end = next.map(|next| next.at).unwrap_or(chars.len());
+        if end <= start {
+            continue;
+        }
+        if let Some(chapter) = cut_chapter(&chars, start, end, boundary, chapters.len() + 1) {
+            chapters.push(chapter);
+        }
+    }
+    let last = boundaries.last();
+    WindowReading {
+        chapters,
+        tail_start: if final_part || last.is_none() {
+            None
+        } else {
+            Some(tail_end.unwrap_or_else(|| last.map(|held| held.at).unwrap_or(0)))
+        },
+    }
+}
+
+fn cut_chapter(
+    chars: &[char],
+    start: usize,
+    end: usize,
+    boundary: &Boundary,
+    number: usize,
+) -> Option<CutChapter> {
+    let body: String = chars[start..end].iter().collect();
+    let line_end = body.find('\n');
+    let first_line = line_end.map(|at| &body[..at]).unwrap_or(&body).trim();
+    let title = if boundary.title.trim().is_empty() {
+        heading_at(&body)
+            .map(|heading| heading.chars().take(120).collect())
+            .unwrap_or_else(|| format!("Chapter {number}"))
+    } else {
+        boundary.title.chars().take(120).collect()
+    };
+    let mut body = if first_line == title.trim() && is_source_heading(first_line) {
+        line_end
+            .map(|at| body[at + 1..].to_string())
+            .unwrap_or_default()
+    } else {
+        body
+    };
+    body = body.trim().to_string();
+    (!body.is_empty()).then_some(CutChapter { title, body })
+}
+
+fn heading_at(window: &str) -> Option<String> {
+    let line = window.lines().next()?.trim();
+    if line.is_empty() {
+        return None;
+    }
+    if is_source_heading(line) || line.chars().count() <= 60 {
+        Some(line.to_string())
+    } else {
+        None
+    }
+}
+
+fn is_source_heading(line: &str) -> bool {
+    let line = line.trim();
+    (line.starts_with('第') && line.contains('章'))
+        || (line.starts_with('第') && line.contains('集'))
+        || (line.starts_with('第') && line.contains('回'))
+        || line.to_ascii_lowercase().starts_with("chapter ")
+}
+
+struct CompactChars {
+    text: Vec<char>,
+    map: Vec<usize>,
+}
+
+fn compact_chars(chars: &[char]) -> CompactChars {
+    let mut text = Vec::new();
+    let mut map = Vec::new();
+    for (at, ch) in chars.iter().enumerate() {
+        if ch.is_whitespace() {
+            continue;
+        }
+        text.push(*ch);
+        map.push(at);
+    }
+    CompactChars { text, map }
+}
+
+fn bare_quote(quote: &str) -> String {
+    quote
+        .trim()
+        .trim_matches(|ch: char| {
+            ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '\'' | '"'
+                        | '“'
+                        | '”'
+                        | '‘'
+                        | '’'
+                        | '「'
+                        | '」'
+                        | '『'
+                        | '』'
+                        | '《'
+                        | '》'
+                        | '【'
+                        | '】'
+                        | '('
+                        | ')'
+                        | '（'
+                        | '）'
+                        | '.'
+                        | '…'
+                )
+        })
+        .to_string()
+}
+
+fn find_quote(chars: &[char], compact: &CompactChars, quote: &str, from: usize) -> Option<usize> {
+    let bare = bare_quote(quote);
+    let target: Vec<char> = bare.chars().collect();
+    if target.len() < 2 {
+        return None;
+    }
+    if target.len() <= chars.len() {
+        for at in from..=chars.len() - target.len() {
+            if chars[at..at + target.len()] == target[..] {
+                return Some(at);
+            }
+        }
+    }
+    let squeezed: Vec<char> = target
+        .into_iter()
+        .filter(|ch| !ch.is_whitespace())
+        .collect();
+    if squeezed.is_empty() {
+        return None;
+    }
+    for at in 0..=compact.text.len().saturating_sub(squeezed.len()) {
+        let source_at = compact.map[at];
+        if source_at < from {
+            continue;
+        }
+        if compact.text[at..at + squeezed.len()] == squeezed[..] {
+            return Some(source_at);
+        }
+    }
+    None
+}
+
+fn window_end(chars: &[char], from: usize, budget: usize) -> usize {
+    if from >= chars.len() {
+        return chars.len();
+    }
+    let wanted = (from + budget.max(1)).min(chars.len());
+    if wanted >= chars.len() {
+        return chars.len();
+    }
+    let floor = from + (wanted - from) / 2;
+    if let Some(at) = (floor..wanted)
+        .rev()
+        .find(|at| chars.get(*at) == Some(&'\n') && chars.get(at + 1) == Some(&'\n'))
+    {
+        return (at + 2).min(chars.len());
+    }
+    if let Some(at) = (floor..wanted)
+        .rev()
+        .find(|at| chars.get(*at) == Some(&'\n'))
+    {
+        return (at + 1).min(chars.len());
+    }
+    wanted
+}
+
+fn format_timestamp(ms: i64) -> String {
+    let total = (ms.max(0) as f64 / 1000.0).round() as i64;
+    let seconds = total % 60;
+    let minutes = (total / 60) % 60;
+    let hours = total / 3600;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
+}
+
 async fn focus_room(
     state: &ApiState,
     moka: &MokaFile,
@@ -3475,3 +4122,47 @@ async fn read_job(session: &ProjectSession, input: &Value) -> Result<ToolOutcome
 }
 
 fn _slot_target_family(_: &StorySlotTarget) {}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+
+    #[test]
+    fn a_fenced_split_answer_names_its_boundaries() {
+        let pointers = split_pointers(
+            "```json\n{\"chapters\":[{\"number\":1,\"title\":\"One\",\"start\":\"chapter one\",\"end\":\"chapter two\"},{\"number\":2,\"title\":\"Two\",\"start\":\"chapter two\"}]}\n```",
+        )
+        .expect("the answer is read");
+        assert_eq!(pointers.len(), 2);
+        assert_eq!(pointers[0].title, "One");
+        assert_eq!(pointers[0].end.as_deref(), Some("chapter two"));
+    }
+
+    #[test]
+    fn a_manuscript_is_cut_at_the_places_its_answer_quoted() {
+        let window = "第一章 开始\n甲。\n第二章 后来\n乙。\n";
+        let pointers = vec![
+            SplitPointer {
+                title: "第一章 开始".into(),
+                start: Some("第一章 开始".into()),
+                end: Some("第二章 后来".into()),
+                before: None,
+                discard: false,
+            },
+            SplitPointer {
+                title: "第二章 后来".into(),
+                start: Some("第二章 后来".into()),
+                end: None,
+                before: None,
+                discard: false,
+            },
+        ];
+        let (boundaries, missed) = locate_boundaries(window, &pointers, true);
+        assert!(missed.is_empty(), "{missed:?}");
+        let reading = cut_window(window, &boundaries, true);
+        assert_eq!(reading.chapters.len(), 2);
+        assert_eq!(reading.chapters[0].title, "第一章 开始");
+        assert!(reading.chapters[0].body.contains("甲。"));
+        assert!(reading.chapters[1].body.contains("乙。"));
+    }
+}

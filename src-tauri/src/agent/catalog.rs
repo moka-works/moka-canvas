@@ -1126,6 +1126,13 @@ fn story_tools() -> Vec<ToolSpec> {
         effect("story.read_job", "story", ToolRisk::Write, "Mark a settled batch read. Only call after its answer is applied: the room will not apply a read batch again.", schema(&["jobId"], &[
             ("jobId", "string", "Story job id"),
         ])),
+        effect("story.split_manuscript", "story", ToolRisk::Destroy, "Cut the story's manuscript into chapters through a text model, replacing the outline. Requires confirm; one paid call per window.", schema(&["storyId", "confirm"], &[
+            ("storyId", "string", "Story id"),
+            ("sourceAssetId", "string", "Manuscript asset; the story's own source by default"),
+            ("model", "string", "Configured text model; the default when omitted"),
+            ("budget", "integer", "Characters per ask, at least 1000"),
+            ("confirm", "string", "Must be non-empty"),
+        ])),
         effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait.", schema(&["storyId", "kind", "items"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "Job kind"),

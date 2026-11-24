@@ -50,6 +50,12 @@ pub enum Prompt {
     StoryActPlan,
     /// A chapter boarded as acts and shots.
     StoryStoryboard,
+    /// A manuscript cut into chapters at the places its own text divides.
+    StorySplit,
+    /// The same cut asked again where a quotation could not be found.
+    StorySplitRepair,
+    /// The instruction a cut is answered under.
+    StorySplitSystem,
     /// A board checked for staging that runs on across shots.
     StoryContinuity,
     /// A board revised from a newer outline.
@@ -75,7 +81,7 @@ pub enum Prompt {
 impl Prompt {
     /// Every template there is, so a startup check walks all of them rather than
     /// the ones somebody remembered to list.
-    pub const ALL: [Prompt; 20] = [
+    pub const ALL: [Prompt; 23] = [
         Prompt::Tilt,
         Prompt::TiltTurn,
         Prompt::TiltTip,
@@ -86,6 +92,9 @@ impl Prompt {
         Prompt::StoryChapter,
         Prompt::StoryActPlan,
         Prompt::StoryStoryboard,
+        Prompt::StorySplit,
+        Prompt::StorySplitRepair,
+        Prompt::StorySplitSystem,
         Prompt::StoryContinuity,
         Prompt::StoryRevision,
         Prompt::StoryTransitionVideo,
@@ -112,6 +121,9 @@ impl Prompt {
             Self::StoryChapter => "story/chapter",
             Self::StoryActPlan => "story/act-plan",
             Self::StoryStoryboard => "story/storyboard",
+            Self::StorySplit => "story/split",
+            Self::StorySplitRepair => "story/split-repair",
+            Self::StorySplitSystem => "story/split-system",
             Self::StoryContinuity => "story/continuity",
             Self::StoryRevision => "story/revise",
             Self::StoryTransitionVideo => "story/transition-video",
@@ -154,6 +166,15 @@ impl Prompt {
             }
             Self::StoryStoryboard => {
                 include_str!("../../../../src/shared/prompts/story/storyboard.tmpl")
+            }
+            Self::StorySplit => {
+                include_str!("../../../../src/shared/prompts/story/split.tmpl")
+            }
+            Self::StorySplitRepair => {
+                include_str!("../../../../src/shared/prompts/story/split-repair.tmpl")
+            }
+            Self::StorySplitSystem => {
+                include_str!("../../../../src/shared/prompts/story/split-system.tmpl")
             }
             Self::StoryContinuity => {
                 include_str!("../../../../src/shared/prompts/story/continuity.tmpl")
