@@ -629,6 +629,7 @@ pub async fn effect(
             let tags = args.opt_strings("tags");
             let note = args.opt_str("note").map(str::to_string);
             let hint = args.opt_str("categoryHint");
+            let root = session.0.project_root().await?;
             let mut added = Vec::new();
             let mut failures = Vec::new();
             let mut revision = None;
@@ -637,6 +638,7 @@ pub async fn effect(
                 let staged = match super::super::runner::stage_path(
                     std::path::Path::new(path),
                     hint,
+                    &root,
                 )
                 .await
                 {

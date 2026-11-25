@@ -484,9 +484,15 @@ pub async fn undo_change(
 }
 
 /// Stages a file from a path on this machine, for the external import tool.
+///
+/// The copy lands under the project's own `tmp/` rather than the process
+/// temporary directory: a server run with `PrivateTmp` has a tmpfs for
+/// `std::env::temp_dir()`, and promoting the staged file into `assets/` is a
+/// rename that cannot cross devices.
 pub async fn stage_path(
     path: &std::path::Path,
     hint: Option<&str>,
+    project_root: &std::path::Path,
 ) -> Result<StagedAsset, ToolError> {
     let metadata = std::fs::metadata(path).map_err(|error| {
         ToolError::validation(format!("{} cannot be read: {error}", path.display()))
@@ -502,7 +508,8 @@ pub async fn stage_path(
         .and_then(|name| name.to_str())
         .unwrap_or("import")
         .to_string();
-    let tmp_dir = std::env::temp_dir().join(format!("moka-agent-{}", crate::domain::new_id()));
+    let tmp_dir = crate::assets::tmp_dir(project_root)
+        .join(format!("moka-agent-{}", crate::domain::new_id()));
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|error| ToolError::internal(format!("a staging directory failed: {error}")))?;
     let tmp_path = tmp_dir.join(&name);
