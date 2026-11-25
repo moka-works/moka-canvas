@@ -14,6 +14,7 @@ pub mod contract;
 pub mod crypto;
 pub mod docs;
 pub mod fs;
+pub mod portable;
 pub mod redact;
 pub mod store;
 pub mod types;
@@ -30,12 +31,13 @@ pub(crate) use moka_config as config;
 pub(crate) use moka_domain as domain;
 
 pub use types::{
-    Defaults, DocumentInfo, ImagePreferences, MetadataInfo, MetadataStoreKind, ModelConfig,
-    ModelDraft, ModelRecord, ModelsSnapshot, MusicPreferences, PanelFolds, PanelWidths,
-    PictureGrid, PictureToolsPrefs, Preferences, PromptItem, PromptPage, PromptQuery, PromptSource,
-    Protocol, RecentProject, Scene, SecretInfo, SecretStorage, SpeechPreferences, StoryPlace,
-    StoryPreferences, SubModel, TimelineView, UiPreferences, UiPrefsPatch, VideoPreferences,
-    MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    Defaults, DocumentInfo, ImagePreferences, ImportOutcome, ImportedKey, ImportedSettings,
+    MetadataInfo, MetadataStoreKind, ModelConfig, ModelDraft, ModelRecord, ModelsSnapshot,
+    MusicPreferences, PanelFolds, PanelWidths, PictureGrid, PictureToolsPrefs, Preferences,
+    PromptItem, PromptPage, PromptQuery, PromptSource, Protocol, RecentProject, Scene, SecretInfo,
+    SecretStorage, SpeechPreferences, StoryPlace, StoryPreferences, SubModel, TimelineView,
+    UiPreferences, UiPrefsPatch, VideoPreferences, MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT,
+    MAX_SEARCH_PAGE_SIZE,
 };
 
 use crate::config::{MetadataConfig, RuntimeMode};
@@ -209,6 +211,20 @@ pub trait MetadataStore: Send + Sync {
         preferences: &Preferences,
         expected_revision: Option<u64>,
     ) -> Result<(), MetadataError>;
+
+    /// Replaces or merges a whole configuration and the credentials that came
+    /// with it, as one operation.
+    ///
+    /// The model document is written first and the credential document second,
+    /// under one write lock: a crash between them leaves credentials that
+    /// startup collects, never a configuration whose keys are gone. A failure
+    /// in the second write is reported in the outcome rather than returned as
+    /// an error, because the configuration is already committed.
+    async fn import_settings(
+        &self,
+        imported: ImportedSettings,
+        expected_revision: Option<u64>,
+    ) -> Result<ImportOutcome, MetadataError>;
 
     /// The interface choices this machine was last left with.
     async fn ui_preferences(&self) -> Result<UiPreferences, MetadataError>;

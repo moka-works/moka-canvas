@@ -12,9 +12,9 @@
 use std::sync::Arc;
 
 use super::types::{
-    Defaults, ModelDraft, Preferences, PromptItem, PromptQuery, PromptSource, Protocol,
-    RecentProject, StoryPlace, TimelineView, UiPrefsPatch, VideoPreferences, MAX_RECENT,
-    MAX_SEARCH_PAGE_SIZE,
+    Defaults, ImportedKey, ImportedSettings, ModelConfig, ModelDraft, Preferences, PromptItem,
+    PromptQuery, PromptSource, Protocol, RecentProject, StoryPlace, TimelineView, UiPrefsPatch,
+    VideoPreferences, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
 };
 use super::{MetadataError, MetadataStore, MetadataStoreKind};
 use crate::domain::Capability;
@@ -79,6 +79,11 @@ pub async fn run_metadata_suite(open: &StoreFactory) -> Vec<ContractFailure> {
         &mut failures,
         "defaults_and_preferences",
         defaults_and_preferences(store).await,
+    );
+    record(
+        &mut failures,
+        "import_settings_merge_and_replace",
+        import_settings_merge_and_replace(store).await,
     );
     record(
         &mut failures,
@@ -182,6 +187,26 @@ fn draft(id: &str, category: Capability) -> ModelDraft {
         sub_models: Vec::new(),
         enabled: true,
         expected_revision: None,
+    }
+}
+
+fn config(id: &str, category: Capability) -> ModelConfig {
+    let draft = draft(id, category);
+    ModelConfig {
+        id: draft.id,
+        category: draft.category,
+        protocol: draft.protocol,
+        url: draft.url,
+        model: draft.model,
+        display_name: draft.display_name,
+        max_video_seconds: draft.max_video_seconds,
+        reasoning_effort: draft.reasoning_effort,
+        max_tokens: draft.max_tokens,
+        temperature: draft.temperature,
+        params: draft.params,
+        scenes: draft.scenes,
+        sub_models: draft.sub_models,
+        enabled: draft.enabled,
     }
 }
 
@@ -370,6 +395,164 @@ async fn defaults_and_preferences(store: &dyn MetadataStore) -> Result<(), Strin
     }
     if snapshot.preferences != preferences {
         return Err("preferences did not persist".to_string());
+    }
+    Ok(())
+}
+
+async fn import_settings_merge_and_replace(store: &dyn MetadataStore) -> Result<(), String> {
+    describe(
+        "keep",
+        store.upsert_model(&draft("import-keep", Capability::Text)),
+    )
+    .await?;
+    describe("keep key", store.put_secret("import-keep", "sk-keep")).await?;
+    describe(
+        "shared",
+        store.upsert_model(&draft("import-shared", Capability::Text)),
+    )
+    .await?;
+    describe("shared key", store.put_secret("import-shared", "sk-shared")).await?;
+
+    let before = describe("snapshot before", store.models_snapshot()).await?;
+    let mut replacement = config("import-shared", Capability::Text);
+    replacement.display_name = "Imported Shared".to_string();
+    let imported = ImportedSettings {
+        models: vec![replacement, config("import-fresh", Capability::Text)],
+        defaults: Defaults {
+            text: Some("import-fresh".to_string()),
+            ..Defaults::default()
+        },
+        preferences: Preferences {
+            system_prompt: "imported".to_string(),
+            ..Preferences::default()
+        },
+        replace: false,
+        keys: vec![ImportedKey {
+            model_id: "import-fresh".to_string(),
+            api_key: "sk-fresh".to_string(),
+        }],
+    };
+    let outcome = describe(
+        "merge import",
+        store.import_settings(imported.clone(), Some(before.revision)),
+    )
+    .await?;
+    if outcome.revision != before.revision + 1 {
+        return Err(format!(
+            "import moved the revision from {} to {}",
+            before.revision, outcome.revision
+        ));
+    }
+    if (outcome.added, outcome.replaced, outcome.removed) != (1, 1, 0) {
+        return Err(format!("unexpected merge counts {outcome:?}"));
+    }
+    if outcome.keys_stored != 1 || outcome.key_failure.is_some() {
+        return Err(format!("unexpected key outcome {outcome:?}"));
+    }
+
+    let merged = describe("snapshot after merge", store.models_snapshot()).await?;
+    if !merged.models.iter().any(|model| model.id == "import-keep") {
+        return Err("merge dropped a model the file did not name".to_string());
+    }
+    let shared = merged
+        .models
+        .iter()
+        .find(|model| model.id == "import-shared")
+        .ok_or("merge lost the replaced model")?;
+    if shared.display_name != "Imported Shared" {
+        return Err("merge did not take the file's fields".to_string());
+    }
+    if merged.defaults.text.as_deref() != Some("import-fresh")
+        || merged.preferences.system_prompt != "imported"
+    {
+        return Err("merge did not take defaults and preferences".to_string());
+    }
+    let fresh_key = describe("fresh key", store.get_secret("import-fresh")).await?;
+    if fresh_key.as_deref() != Some("sk-fresh") {
+        return Err("merge did not store the imported credential".to_string());
+    }
+    let shared_key = describe("shared key after merge", store.get_secret("import-shared")).await?;
+    if shared_key.as_deref() != Some("sk-shared") {
+        return Err("merge replaced a credential the file did not name".to_string());
+    }
+
+    let stale = store
+        .import_settings(imported, Some(before.revision))
+        .await
+        .unwrap_err();
+    if stale.code() != "METADATA_CONFLICT" {
+        return Err(format!("a stale import reported {}", stale.code()));
+    }
+    let unchanged = describe("snapshot after stale import", store.models_snapshot()).await?;
+    if unchanged != merged {
+        return Err("a refused import changed the configuration".to_string());
+    }
+
+    // The suite shares one store, so replace drops every model earlier checks
+    // left behind, not just the two this check made. Count them instead of
+    // assuming a bare store.
+    let before_replace = unchanged.clone();
+    let mut removed_ids = Vec::new();
+    let mut expected_keys_removed = 0;
+    for model in &before_replace.models {
+        if model.id == "import-fresh" {
+            continue;
+        }
+        removed_ids.push(model.id.clone());
+        if describe("removed key", store.get_secret(&model.id))
+            .await?
+            .is_some()
+        {
+            expected_keys_removed += 1;
+        }
+    }
+    let replaced = describe(
+        "replace import",
+        store.import_settings(
+            ImportedSettings {
+                models: vec![config("import-fresh", Capability::Text)],
+                defaults: Defaults {
+                    text: Some("import-fresh".to_string()),
+                    ..Defaults::default()
+                },
+                preferences: Preferences::default(),
+                replace: true,
+                keys: Vec::new(),
+            },
+            Some(unchanged.revision),
+        ),
+    )
+    .await?;
+    if (replaced.added, replaced.replaced, replaced.removed)
+        != (0, 1, removed_ids.len())
+    {
+        return Err(format!("unexpected replace counts {replaced:?}"));
+    }
+    if replaced.keys_removed != expected_keys_removed {
+        return Err(format!(
+            "replace cleared {} credentials, expected {expected_keys_removed}",
+            replaced.keys_removed
+        ));
+    }
+    let final_snapshot = describe("snapshot after replace", store.models_snapshot()).await?;
+    if final_snapshot.models.len() != 1 || final_snapshot.models[0].id != "import-fresh" {
+        return Err(format!(
+            "replace kept more than the file's models: {:?}",
+            final_snapshot
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>()
+        ));
+    }
+    let survivor = describe("survivor key", store.get_secret("import-fresh")).await?;
+    if survivor.as_deref() != Some("sk-fresh") {
+        return Err("replace dropped a surviving model's credential".to_string());
+    }
+    for id in &removed_ids {
+        if describe("removed key", store.get_secret(id)).await?.is_some() {
+            return Err(format!("a removed model's credential outlived it: {id}"));
+        }
     }
     Ok(())
 }

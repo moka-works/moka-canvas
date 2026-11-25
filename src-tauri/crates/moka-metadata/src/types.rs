@@ -735,6 +735,48 @@ impl Default for ModelsSnapshot {
     }
 }
 
+/// One configuration set being imported, with the credentials that came with
+/// it in plaintext so the store can seal them under this machine's master key.
+///
+/// The store is the one place a credential is sealed; a caller that already
+/// holds ciphertext for another machine cannot hand it over as-is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedSettings {
+    /// Every model in the file, in the order the file holds them.
+    pub models: Vec<ModelConfig>,
+    pub defaults: Defaults,
+    pub preferences: Preferences,
+    /// Drop models this file does not name. Merge otherwise keeps them.
+    pub replace: bool,
+    /// Credentials to store, by model id. A model absent here keeps whatever
+    /// credential it already had.
+    pub keys: Vec<ImportedKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedKey {
+    pub model_id: String,
+    pub api_key: String,
+}
+
+/// What one import changed, as the store saw it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportOutcome {
+    pub revision: u64,
+    /// Models the file added, and existing models it overwrote.
+    pub added: usize,
+    pub replaced: usize,
+    /// Models a replace import dropped, and their credentials that were
+    /// cleared with them.
+    pub removed: usize,
+    pub keys_removed: usize,
+    pub keys_stored: usize,
+    /// Set when the configuration was written but the credential document
+    /// could not be. The models are committed; the reason is reported rather
+    /// than turning a partial success into a failure that hides it.
+    pub key_failure: Option<String>,
+}
+
 /// What may be disclosed about a stored credential. Never the credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

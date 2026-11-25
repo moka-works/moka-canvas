@@ -18,7 +18,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
-use super::crypto::{open as open_sealed, seal, KeyProvider};
+use super::crypto::{open as open_sealed, seal, KeyProvider, MasterKey};
 use super::docs::{
     self, DocumentCorruption, MetaDoc, ModelsDoc, PromptItemsDoc, PromptSourcesDoc, RecentDoc,
     SecretEntry, SecretsDoc, UiDoc, MANAGED_DOCUMENTS, META_DOC, MODELS_DOC, PROMPT_ITEMS_DIR,
@@ -27,10 +27,10 @@ use super::docs::{
 use super::fs::{self, DirLock, DOCUMENT_MODE, SECRET_MODE};
 use super::redact;
 use super::types::{
-    Defaults, DocumentInfo, MetadataInfo, MetadataStoreKind, ModelConfig, ModelDraft, ModelRecord,
-    ModelsSnapshot, Preferences, PromptItem, PromptPage, PromptQuery, PromptSource, RecentProject,
-    SecretInfo, SecretStorage, UiPreferences, UiPrefsPatch, MAX_PROMPT_ITEMS_PER_SOURCE,
-    MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    Defaults, DocumentInfo, ImportOutcome, ImportedSettings, MetadataInfo, MetadataStoreKind,
+    ModelConfig, ModelDraft, ModelRecord, ModelsSnapshot, Preferences, PromptItem, PromptPage,
+    PromptQuery, PromptSource, RecentProject, SecretInfo, SecretStorage, UiPreferences, UiPrefsPatch,
+    MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
 };
 use super::{MetadataError, MetadataStore, FILE_STORE, SCHEMA_VERSION};
 use crate::config::{MetadataConfig, RuntimeMode};
@@ -321,6 +321,21 @@ impl FileMetadataStore {
                 MetadataError::unavailable(format!("key lookup was cancelled: {error}"))
             })?
     }
+
+    /// Seals one credential under the master key, without writing it.
+    fn seal_secret(
+        master: &MasterKey,
+        model_id: &str,
+        key: &str,
+    ) -> Result<SecretEntry, MetadataError> {
+        let cipher = seal(master.bytes(), model_id, key)?;
+        Ok(SecretEntry {
+            cipher,
+            fingerprint: redact::fingerprint(key),
+            masked: redact::masked(key),
+            rotated_at: now_iso(),
+        })
+    }
 }
 
 #[async_trait]
@@ -502,6 +517,133 @@ impl MetadataStore for FileMetadataStore {
         Ok(())
     }
 
+    async fn import_settings(
+        &self,
+        imported: ImportedSettings,
+        expected_revision: Option<u64>,
+    ) -> Result<ImportOutcome, MetadataError> {
+        let incoming: HashSet<&str> = imported.models.iter().map(|model| model.id.as_str()).collect();
+        if incoming.len() != imported.models.len() {
+            return Err(MetadataError::invalid(
+                "an imported configuration names the same model twice",
+            ));
+        }
+        for key in &imported.keys {
+            if !incoming.contains(key.model_id.as_str()) {
+                return Err(MetadataError::invalid(format!(
+                    "a credential names model configuration {}, which is not in the import",
+                    key.model_id
+                )));
+            }
+            if key.api_key.is_empty() {
+                return Err(MetadataError::invalid(format!(
+                    "the credential for {} is empty",
+                    key.model_id
+                )));
+            }
+        }
+
+        // Sealed before the first write: a key that cannot be sealed must not
+        // leave a configuration that was imported without it.
+        let sealed: Vec<(String, SecretEntry)> = if imported.keys.is_empty() {
+            Vec::new()
+        } else {
+            let master = self.master_key().await?;
+            let mut entries = Vec::with_capacity(imported.keys.len());
+            for key in &imported.keys {
+                entries.push((
+                    key.model_id.clone(),
+                    Self::seal_secret(&master, &key.model_id, &key.api_key)?,
+                ));
+            }
+            entries
+        };
+
+        let _sequence = self.write_seq.lock().await;
+        let mut next_models = self.inner.read().await.models.clone();
+        check_revision("models", expected_revision, next_models.revision)?;
+
+        let before: HashSet<String> = next_models
+            .models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect();
+        let replaced = imported
+            .models
+            .iter()
+            .filter(|model| before.contains(&model.id))
+            .count();
+        let added = imported.models.len() - replaced;
+        let removed_ids: Vec<String> = if imported.replace {
+            before
+                .iter()
+                .filter(|id| !incoming.contains(id.as_str()))
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        if imported.replace {
+            next_models.models = imported.models.clone();
+        } else {
+            for model in &imported.models {
+                match next_models
+                    .models
+                    .iter_mut()
+                    .find(|existing| existing.id == model.id)
+                {
+                    Some(existing) => *existing = model.clone(),
+                    None => next_models.models.push(model.clone()),
+                }
+            }
+        }
+        next_models.defaults = imported.defaults.clone();
+        next_models.preferences = imported.preferences.clone();
+        next_models.revision += 1;
+        let revision = next_models.revision;
+
+        self.persist(MODELS_DOC, &next_models, DOCUMENT_MODE)?;
+        self.inner.write().await.models = next_models;
+
+        let mut outcome = ImportOutcome {
+            revision,
+            added,
+            replaced,
+            removed: removed_ids.len(),
+            ..ImportOutcome::default()
+        };
+        if sealed.is_empty() && removed_ids.is_empty() {
+            return Ok(outcome);
+        }
+
+        let mut next_secrets = self.inner.read().await.secrets.clone();
+        let mut keys_removed = 0;
+        for id in &removed_ids {
+            if next_secrets.entries.remove(id).is_some() {
+                keys_removed += 1;
+            }
+        }
+        for (id, entry) in sealed {
+            next_secrets.entries.insert(id, entry);
+        }
+        next_secrets.revision += 1;
+        match self.persist(SECRETS_DOC, &next_secrets, SECRET_MODE) {
+            Ok(_) => {
+                self.inner.write().await.secrets = next_secrets;
+                outcome.keys_stored = imported.keys.len();
+                outcome.keys_removed = keys_removed;
+            }
+            Err(error) => {
+                // The configuration is already committed; saying the whole
+                // import failed would hide that, and the reason is what a
+                // reader needs to decide whether to try the keys again.
+                outcome.key_failure = Some(error.to_string());
+            }
+        }
+        Ok(outcome)
+    }
+
     async fn ui_preferences(&self) -> Result<UiPreferences, MetadataError> {
         Ok(self.inner.read().await.ui.preferences.clone())
     }
@@ -529,18 +671,12 @@ impl MetadataStore for FileMetadataStore {
             return Err(MetadataError::invalid("a credential cannot be empty"));
         }
         let master = self.master_key().await?;
-        let cipher = seal(master.bytes(), model_id, key)?;
+        let entry = Self::seal_secret(&master, model_id, key)?;
         let info = SecretInfo {
             set: true,
-            masked: Some(redact::masked(key)),
-            fingerprint: Some(redact::fingerprint(key)),
-            rotated_at: Some(now_iso()),
-        };
-        let entry = SecretEntry {
-            cipher,
-            fingerprint: info.fingerprint.clone().unwrap_or_default(),
-            masked: info.masked.clone().unwrap_or_default(),
-            rotated_at: info.rotated_at.clone().unwrap_or_default(),
+            masked: Some(entry.masked.clone()),
+            fingerprint: Some(entry.fingerprint.clone()),
+            rotated_at: Some(entry.rotated_at.clone()),
         };
         let id = model_id.to_string();
         let storage = master.storage();

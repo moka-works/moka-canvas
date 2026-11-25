@@ -13,6 +13,7 @@ fs2 = "0.4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 moka-config = { path = "../moka-config" }
 moka-domain = { path = "../moka-domain" }
+pbkdf2 = { version = "0.12", features = ["hmac"] }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
