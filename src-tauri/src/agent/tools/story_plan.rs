@@ -9,6 +9,8 @@
 
 use serde_json::{json, Value};
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::api::ApiState;
 use crate::domain::story::{
     StoryAct, StoryAspect, StoryChapter, StoryDocument, StoryElement, StoryFilmRole, StoryKeyframe,
@@ -47,6 +49,7 @@ pub async fn command(
     let model = args.opt_str("model").unwrap_or_default().to_string();
     let video_model = args.opt_str("videoModel").unwrap_or_default().to_string();
     let include_existing = args.opt_bool("includeExisting", false);
+    let budget = args.opt_i64("budget");
     let count = args
         .opt_i64("count")
         .unwrap_or(1)
@@ -61,7 +64,7 @@ pub async fn command(
             Some(chapter_id) => plan_chapter_outline(story, chapter_id, &model)?,
             None => plan_outline(story, &model)?,
         },
-        "elements" => plan_elements(story, &model)?,
+        "elements" => plan_elements(state, story, budget, &model).await?,
         "mergeElements" => plan_merge_elements(story, args.raw("groups").cloned(), &model)?,
         "storyboard" => {
             plan_storyboard(
@@ -227,44 +230,346 @@ fn plan_outline(story: &StoryDocument, model: &str) -> Result<Vec<Planned>, Tool
     }])
 }
 
-fn plan_elements(story: &StoryDocument, model: &str) -> Result<Vec<Planned>, ToolError> {
-    let chapters: Vec<Value> = story
-        .chapters
-        .iter()
-        .enumerate()
-        .map(|(at, chapter)| {
-            json!({
-                "number": at + 1,
-                "title": chapter.title,
-                "text": chapter.synopsis,
+/// How much of a telling one reading ask carries when nothing else says.
+const DEFAULT_READING_BUDGET: usize = 500_000;
+const MIN_READING_BUDGET: i64 = 1_000;
+const MAX_READING_BUDGET: i64 = 1_000_000;
+
+struct ReadingPiece {
+    number: usize,
+    title: String,
+    text: String,
+}
+
+async fn plan_elements(
+    state: &ApiState,
+    story: &StoryDocument,
+    budget: Option<i64>,
+    model: &str,
+) -> Result<Vec<Planned>, ToolError> {
+    // A telling longer than one ask may carry is read a part at a time, the
+    // way the room reads it: the parts keep the telling's own chapter numbers,
+    // and the merge that puts repeated names together comes after them.
+    let budget = match budget {
+        Some(value) if (MIN_READING_BUDGET..=MAX_READING_BUDGET).contains(&value) => value as usize,
+        Some(_) => {
+            return Err(ToolError::validation(
+                "budget must be between 1000 and 1000000 characters",
+            ))
+        }
+        None => state
+            .models
+            .snapshot()
+            .await
+            .map(|view| view.preferences.story.split_chars as usize)
+            .unwrap_or(DEFAULT_READING_BUDGET)
+            .clamp(MIN_READING_BUDGET as usize, MAX_READING_BUDGET as usize),
+    };
+    let parts = chapter_reading_parts(story, budget);
+    let total = parts.len().max(1);
+    let (people, places) = element_inventory(story);
+    let mut planned = Vec::new();
+    for (at, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        let numbers: BTreeSet<usize> = part.iter().map(|piece| piece.number).collect();
+        let chapters: Vec<Value> = part
+            .iter()
+            .map(|piece| {
+                json!({
+                    "number": piece.number,
+                    "title": piece.title,
+                    "text": piece.text,
+                })
             })
+            .collect();
+        let mut context = json!({"chapters": chapters});
+        let id = if total == 1 {
+            "elements".to_string()
+        } else {
+            context["part"] = json!(at + 1);
+            context["total"] = json!(total);
+            format!("elements:{}", at + 1)
+        };
+        let prompt = join_prompts(&[
+            facts_prompt(story)?,
+            inventory_prompt(&people, &places, &numbers),
+            render(Prompt::StoryElements, context)?,
+        ]);
+        planned.push(Planned {
+            model: none_if_empty(model),
+            value: job_item(
+                &id,
+                json!({"kind": "elements"}),
+                "text",
+                prompt,
+                Some(system_prompt()?),
+                Vec::new(),
+                json!({}),
+                None,
+                None,
+                None,
+            ),
+        });
+    }
+    Ok(planned)
+}
+
+/// The chapters of a telling packed into the asks that read them.
+///
+/// The same arithmetic as the room's own packer: a piece costs its words and
+/// its title, neighbouring chapters share an ask until it is full, and a
+/// chapter longer than one ask is cut back to a paragraph boundary and carried
+/// into the next one. A batch less than half full is closed rather than
+/// carried forward.
+fn chapter_reading_parts(story: &StoryDocument, budget: usize) -> Vec<Vec<ReadingPiece>> {
+    let limit = budget.max(1);
+    let floor = (limit / 2).max(1);
+    let mut waves: Vec<Vec<ReadingPiece>> = Vec::new();
+    let mut wave: Vec<ReadingPiece> = Vec::new();
+    let mut used = 0usize;
+    for (index, chapter) in story.chapters.iter().enumerate() {
+        let title = chapter.title.clone();
+        let title_cost = title.chars().count();
+        let mut rest: String = chapter.synopsis.trim().to_string();
+        if rest.is_empty() {
+            wave.push(ReadingPiece {
+                number: index + 1,
+                title,
+                text: String::new(),
+            });
+            used += title_cost;
+            if used >= limit {
+                flush_wave(&mut waves, &mut wave, &mut used);
+            }
+            continue;
+        }
+        while !rest.is_empty() {
+            let remaining = limit.saturating_sub(used);
+            if remaining < floor {
+                flush_wave(&mut waves, &mut wave, &mut used);
+                continue;
+            }
+            let room = remaining.saturating_sub(title_cost);
+            if room == 0 {
+                if !wave.is_empty() {
+                    flush_wave(&mut waves, &mut wave, &mut used);
+                    continue;
+                }
+                let length = rest.chars().count();
+                wave.push(ReadingPiece {
+                    number: index + 1,
+                    title: title.clone(),
+                    text: rest.clone(),
+                });
+                used += length + title_cost;
+                rest.clear();
+                flush_wave(&mut waves, &mut wave, &mut used);
+                break;
+            }
+            let length = rest.chars().count();
+            if length <= room {
+                wave.push(ReadingPiece {
+                    number: index + 1,
+                    title: title.clone(),
+                    text: rest.clone(),
+                });
+                used += length + title_cost;
+                rest.clear();
+                if used >= limit {
+                    flush_wave(&mut waves, &mut wave, &mut used);
+                }
+                break;
+            }
+            let take = length.min(paragraph_cut_at(&rest, room)).max(1);
+            let cut: String = rest.chars().take(take).collect();
+            rest = rest.chars().skip(take).collect();
+            wave.push(ReadingPiece {
+                number: index + 1,
+                title: title.clone(),
+                text: cut,
+            });
+            used += take + title_cost;
+            flush_wave(&mut waves, &mut wave, &mut used);
+        }
+    }
+    flush_wave(&mut waves, &mut wave, &mut used);
+    waves
+}
+
+fn flush_wave(waves: &mut Vec<Vec<ReadingPiece>>, wave: &mut Vec<ReadingPiece>, used: &mut usize) {
+    if wave.is_empty() {
+        return;
+    }
+    waves.push(std::mem::take(wave));
+    *used = 0;
+}
+
+/// Where to cut a text so the cut lands between paragraphs where it can.
+fn paragraph_cut_at(text: &str, limit: usize) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let length = chars.len();
+    if limit >= length {
+        return length;
+    }
+    let wanted = limit.max(1);
+    if wanted >= 2 {
+        let upto = wanted.saturating_sub(2).min(length.saturating_sub(2));
+        for at in (0..=upto).rev() {
+            if chars[at] == '\n' && chars[at + 1] == '\n' {
+                return at + 2;
+            }
+        }
+    }
+    let upto = wanted.saturating_sub(1);
+    for at in (0..=upto).rev() {
+        if chars[at] == '\n' {
+            return at + 1;
+        }
+    }
+    wanted
+}
+
+pub(super) type PeopleIndex = BTreeMap<String, BTreeSet<usize>>;
+pub(super) type PlaceIndex = BTreeMap<String, (usize, BTreeSet<usize>)>;
+
+/// Who and what the telling's own notes say it is made of.
+///
+/// The cast lists and scene headings a script already carries are read back
+/// as an index: people by the chapters that name them, places by the scenes
+/// they stand in. It is the telling's own words, not a reading of the plot.
+pub(super) fn element_inventory(story: &StoryDocument) -> (PeopleIndex, PlaceIndex) {
+    let mut people: PeopleIndex = BTreeMap::new();
+    let mut places: PlaceIndex = BTreeMap::new();
+    for (index, chapter) in story.chapters.iter().enumerate() {
+        let number = index + 1;
+        for name in chapter_cast(&chapter.synopsis) {
+            people.entry(name).or_default().insert(number);
+        }
+        for place in chapter_places(&chapter.synopsis) {
+            let entry = places.entry(place).or_insert_with(|| (0, BTreeSet::new()));
+            entry.0 += 1;
+            entry.1.insert(number);
+        }
+    }
+    (people, places)
+}
+
+/// The prompt's own checklist, limited to the chapters this part reads.
+fn inventory_prompt(people: &PeopleIndex, places: &PlaceIndex, numbers: &BTreeSet<usize>) -> String {
+    let mut lines = Vec::new();
+    let mut named: Vec<(&String, &BTreeSet<usize>)> = people
+        .iter()
+        .filter(|(_, chapters)| chapters.iter().any(|number| numbers.contains(number)))
+        .collect();
+    named.sort_by(|one, other| {
+        let one_first = one.1.iter().next().copied().unwrap_or(0);
+        let other_first = other.1.iter().next().copied().unwrap_or(0);
+        one_first.cmp(&other_first).then_with(|| one.0.cmp(other.0))
+    });
+    if !named.is_empty() {
+        lines.push("The telling's own cast lists name these people, by chapter:".to_string());
+        for (name, chapters) in named {
+            lines.push(format!("- {name} [{}]", chapter_list(chapters)));
+        }
+    }
+    let mut recurring: Vec<(&String, &(usize, BTreeSet<usize>))> = places
+        .iter()
+        .filter(|(_, (scenes, chapters))| {
+            *scenes >= 2 && chapters.iter().any(|number| numbers.contains(number))
         })
         .collect();
-    let prompt = join_prompts(&[
-        facts_prompt(story)?,
-        render(
-            Prompt::StoryElements,
-            json!({
-                "chapters": chapters,
-                "elements": elements_list(story),
-            }),
-        )?,
-    ]);
-    Ok(vec![Planned {
-        model: none_if_empty(model),
-        value: job_item(
-            "elements",
-            json!({"kind": "elements"}),
-            "text",
-            prompt,
-            Some(system_prompt()?),
-            Vec::new(),
-            json!({}),
-            None,
-            None,
-            None,
-        ),
-    }])
+    recurring.sort_by(|one, other| other.1 .0.cmp(&one.1 .0).then(one.0.cmp(other.0)));
+    if !recurring.is_empty() {
+        lines.push(
+            "These places recur in two or more scenes (place — scenes — chapters):".to_string(),
+        );
+        for (name, (scenes, chapters)) in recurring {
+            lines.push(format!("- {name} — {scenes} scenes — [{}]", chapter_list(chapters)));
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    lines.push(
+        "Every person named above and every place that recurs must have an entry; do not leave one out because part of its appearance is small, and keep the chapter numbers the telling gives.".to_string(),
+    );
+    lines.join("\n")
+}
+
+fn chapter_list(chapters: &BTreeSet<usize>) -> String {
+    chapters
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The people a script's own `主要人物` line names.
+fn chapter_cast(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed
+            .strip_prefix("**主要人物**：")
+            .or_else(|| trimmed.strip_prefix("**主要人物**:"))
+        else {
+            continue;
+        };
+        for piece in rest.split(['、', ',', '，']) {
+            let name = piece
+                .split(['（', '('])
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !name.is_empty() && name != "—" {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+const SCENE_TIME_WORDS: [&str; 14] = [
+    "清晨", "上午", "中午", "下午", "黄昏", "夜", "凌晨", "黎明前", "白天", "傍晚", "深夜", "清早",
+    "正午", "午夜",
+];
+
+/// The places a script's own scene headings stand in, one per heading.
+fn chapter_places(text: &str) -> Vec<String> {
+    let mut places = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("## ") else {
+            continue;
+        };
+        let Some(dot) = rest.find(". ") else {
+            continue;
+        };
+        let label = rest[dot + 2..]
+            .split(['（', '('])
+            .next()
+            .unwrap_or("")
+            .trim();
+        if label.is_empty() {
+            continue;
+        }
+        let mut parts: Vec<&str> = label.split('·').collect();
+        while let Some(last) = parts.last() {
+            if SCENE_TIME_WORDS.contains(&last.trim()) {
+                parts.pop();
+            } else {
+                break;
+            }
+        }
+        let place = parts.join("·").trim().to_string();
+        if !place.is_empty() {
+            places.push(place);
+        }
+    }
+    places
 }
 
 fn chapter_index(story: &StoryDocument, chapter_id: &str) -> Result<usize, ToolError> {
@@ -2665,3 +2970,35 @@ const CAMERA_ANGLES: [&str; 7] = [
     "overTheShoulder",
     "pointOfView",
 ];
+
+#[cfg(test)]
+mod inventory_tests {
+    use super::{chapter_cast, chapter_places, paragraph_cut_at};
+
+    #[test]
+    fn a_cast_line_is_read_without_its_note() {
+        let text = "**主要人物**：黎知盈、宋见明（助理代传话）、唐母\n";
+        assert_eq!(chapter_cast(text), vec!["黎知盈", "宋见明", "唐母"]);
+    }
+
+    #[test]
+    fn scene_headings_keep_the_place_and_drop_the_hour() {
+        let text = "## 1. 旧灯塔·潮位室·凌晨（0:00–0:20）\n## 2. 旧海堤·决口·黎明前（0:20–1:20）\n";
+        assert_eq!(
+            chapter_places(text),
+            vec!["旧灯塔·潮位室", "旧海堤·决口"]
+        );
+    }
+
+    #[test]
+    fn a_cut_prefers_a_paragraph_boundary() {
+        let text = "甲".repeat(10) + "\n\n" + &"乙".repeat(10);
+        assert_eq!(paragraph_cut_at(&text, 15), 12);
+    }
+
+    #[test]
+    fn a_cut_falls_back_to_a_line_boundary() {
+        let text = "甲".repeat(10) + "\n" + &"乙".repeat(10);
+        assert_eq!(paragraph_cut_at(&text, 15), 11);
+    }
+}

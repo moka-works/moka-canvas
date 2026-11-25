@@ -927,6 +927,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("views", "array", "For elementArt: main, turnaround"),
             ("count", "integer", "Pictures per place, 1 to 3"),
             ("model", "string", "Configured model id for the batch; per-place models are used when omitted"),
+            ("budget", "integer", "For elements: characters one reading ask may carry, 1000 to 1000000; the story setting's splitChars when omitted"),
             ("videoModel", "string", "Video model whose clip window the storyboard is planned against"),
             ("includeExisting", "boolean", "Plan places that already have a current take too"),
             ("groups", "array", "For mergeElements: readings grouped by kind and name"),
@@ -1125,6 +1126,13 @@ fn story_tools() -> Vec<ToolSpec> {
         ])),
         effect("story.read_job", "story", ToolRisk::Write, "Mark a settled batch read. Only call after its answer is applied: the room will not apply a read batch again.", schema(&["jobId"], &[
             ("jobId", "string", "Story job id"),
+        ])),
+        effect("story.element_repeats", "story", ToolRisk::Read, "Read the names more than one elements part described, as merge groups for story.plan_job kind mergeElements.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
+            ("jobIds", "array", "Only these elements batches; every succeeded elements batch of the story when omitted"),
+        ])),
+        effect("story.audit_elements", "story", ToolRisk::Read, "Compare the cast with the telling's own cast lists and recurring scene headings, and report names and places no element covers.", schema(&["storyId"], &[
+            ("storyId", "string", "Story id"),
         ])),
         effect("story.split_manuscript", "story", ToolRisk::Destroy, "Cut the story's manuscript into chapters through a text model, replacing the outline. Requires confirm; one paid call per window.", schema(&["storyId", "confirm"], &[
             ("storyId", "string", "Story id"),

@@ -9,6 +9,8 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use std::collections::HashMap;
+
 use crate::api::{ApiState, ProjectSession};
 use crate::domain::commands::make_node;
 use crate::domain::story::{
@@ -3244,6 +3246,8 @@ pub async fn effect(
         "story.focus" => return focus_room(state, moka, input).await,
         "story.list_jobs" => return list_jobs(session, input).await,
         "story.read_job" => return read_job(session, input).await,
+        "story.element_repeats" => return element_repeats(session, input).await,
+        "story.audit_elements" => return audit_elements(moka, input),
         _ => {}
     }
     let args = Args::new("story.start_job", input)?;
@@ -4182,6 +4186,174 @@ async fn read_job(session: &ProjectSession, input: &Value) -> Result<ToolOutcome
     ))
 }
 
+/// The names more than one elements part described, as merge groups.
+///
+/// A telling read in parts describes the same name in each part it appears in.
+/// The room collects those readings before it writes them, so no visually
+/// different appearance is lost to whichever part came home last; this is the
+/// same collection for a caller that started the parts itself. The groups are
+/// what `story.plan_job kind:"mergeElements"` asks to be reconciled.
+async fn element_repeats(
+    session: &ProjectSession,
+    input: &Value,
+) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.element_repeats", input)?;
+    let story_id = args.req_str("storyId")?.to_string();
+    let wanted = args.opt_strings("jobIds");
+    let mut jobs = session.0.list_story_jobs().await?;
+    jobs.retain(|job| {
+        job.story_id == story_id
+            && job.kind == crate::story::StoryJobKind::Elements
+            && (wanted.is_empty() || wanted.contains(&job.id))
+    });
+    let mut texts: Vec<(u64, String)> = Vec::new();
+    for job in &jobs {
+        for item in &job.items {
+            if item.status != crate::story::StoryJobStatus::Succeeded {
+                continue;
+            }
+            let Some(text) = item.text.as_ref() else {
+                continue;
+            };
+            texts.push((element_part_of(&item.id), text.clone()));
+        }
+    }
+    texts.sort_by_key(|(part, _)| *part);
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, (String, String, Vec<Value>)> = HashMap::new();
+    for (_, text) in &texts {
+        let Some(answer) = element_answer(text) else {
+            continue;
+        };
+        for (list, kind) in [
+            ("characters", "character"),
+            ("scenes", "scene"),
+            ("props", "prop"),
+        ] {
+            let Some(items) = answer.get(list).and_then(Value::as_array) else {
+                continue;
+            };
+            for item in items {
+                let Some(name) = item.get("name").and_then(Value::as_str) else {
+                    continue;
+                };
+                let description = item
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if name.trim().is_empty() || description.is_empty() {
+                    continue;
+                }
+                let forms = item.get("forms").cloned().unwrap_or_else(|| json!([]));
+                let reading = json!({"description": description, "forms": forms});
+                let key = format!("{kind}:{name}");
+                let held = groups.entry(key.clone()).or_insert_with(|| {
+                    order.push(key.clone());
+                    (kind.to_string(), name.to_string(), Vec::new())
+                });
+                if !held.2.iter().any(|existing| existing == &reading) {
+                    held.2.push(reading);
+                }
+            }
+        }
+    }
+    let repeated: Vec<Value> = order
+        .into_iter()
+        .filter_map(|key| {
+            let (kind, name, readings) = groups.remove(&key)?;
+            (readings.len() >= 2).then(|| {
+                json!({"kind": kind, "name": name, "readings": readings})
+            })
+        })
+        .collect();
+    Ok(ToolOutcome::read(
+        format!("{} repeated names", repeated.len()),
+        json!({"groups": repeated}),
+    ))
+}
+
+fn element_part_of(id: &str) -> u64 {
+    id.strip_prefix("elements:")
+        .and_then(|part| part.parse::<u64>().ok())
+        .unwrap_or(u64::MAX)
+}
+
+/// The JSON block an elements answer carries, fenced or bare.
+fn element_answer(text: &str) -> Option<Value> {
+    if let Some(start) = text.find("```json") {
+        let after = &text[start + "```json".len()..];
+        let end = after.find("```")?;
+        return serde_json::from_str(after[..end].trim()).ok();
+    }
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    serde_json::from_str(&text[start..=end]).ok()
+}
+
+/// What the cast on file still owes the telling's own notes.
+///
+/// The telling names its people in each episode's cast list and names the place
+/// of every scene in its headings. An element the answer left out is exactly
+/// what a reader cannot see in the document, so this compares the cast with
+/// those words and reports the names and recurring places no element covers.
+fn audit_elements(moka: &MokaFile, input: &Value) -> Result<ToolOutcome, ToolError> {
+    let args = Args::new("story.audit_elements", input)?;
+    let story = super::story_of(moka, args.req_str("storyId")?)?;
+    let (people, places) = super::story_plan::element_inventory(story);
+    let normalized = |name: &str| -> String {
+        name.chars().filter(|held| !held.is_whitespace()).collect()
+    };
+    let characters: std::collections::BTreeSet<String> = story
+        .elements
+        .iter()
+        .filter(|element| element.kind.as_str() == "character")
+        .map(|element| normalized(&element.name))
+        .collect();
+    let scenes: std::collections::BTreeSet<String> = story
+        .elements
+        .iter()
+        .filter(|element| element.kind.as_str() == "scene")
+        .map(|element| normalized(&element.name))
+        .collect();
+    let missing_characters: Vec<Value> = people
+        .iter()
+        .filter(|(name, _)| !characters.contains(&normalized(name)))
+        .map(|(name, chapters)| {
+            json!({
+                "name": name,
+                "chapters": chapters.iter().copied().collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let missing_scenes: Vec<Value> = places
+        .iter()
+        .filter(|(name, (occurrences, _))| {
+            *occurrences >= 2 && !scenes.contains(&normalized(name))
+        })
+        .map(|(name, (occurrences, chapters))| {
+            json!({
+                "name": name,
+                "scenes": occurrences,
+                "chapters": chapters.iter().copied().collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Ok(ToolOutcome::read(
+        format!(
+            "{} missing characters, {} missing recurring places",
+            missing_characters.len(),
+            missing_scenes.len()
+        ),
+        json!({
+            "missingCharacters": missing_characters,
+            "missingScenes": missing_scenes,
+            "namedCharacters": people.len(),
+            "recurringPlaces": places.values().filter(|(scenes, _)| *scenes >= 2).count(),
+        }),
+    ))
+}
+
 fn _slot_target_family(_: &StorySlotTarget) {}
 
 #[cfg(test)]
@@ -4225,5 +4397,25 @@ mod split_tests {
         assert_eq!(reading.chapters[0].title, "第一章 开始");
         assert!(reading.chapters[0].body.contains("甲。"));
         assert!(reading.chapters[1].body.contains("乙。"));
+    }
+}
+
+#[cfg(test)]
+mod element_answer_tests {
+    use super::element_answer;
+
+    #[test]
+    fn a_fenced_answer_is_read() {
+        let value = element_answer(
+            "noise\n```json\n{\"characters\":[{\"name\":\"A\"}]}\n```\n",
+        )
+        .expect("the answer is read");
+        assert_eq!(value["characters"][0]["name"], "A");
+    }
+
+    #[test]
+    fn a_bare_answer_is_read() {
+        let value = element_answer("{\"props\":[]}").expect("the answer is read");
+        assert_eq!(value["props"].as_array().map(Vec::len), Some(0));
     }
 }
