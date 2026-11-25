@@ -1133,11 +1133,12 @@ fn story_tools() -> Vec<ToolSpec> {
             ("budget", "integer", "Characters per ask, at least 1000"),
             ("confirm", "string", "Must be non-empty"),
         ])),
-        effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait.", schema(&["storyId", "kind", "items"], &[
+        effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait. With models, pieces take turns and each model's pieces start as their own batch; jobs lists every batch, the task covers the first.", schema(&["storyId", "kind", "items"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "Job kind"),
             ("items", "array", "Targets to generate: id, target, capability, prompt, optional system, inputs, params"),
             ("model", "string", "Configured model id; omitted asks the capability's default"),
+            ("models", "array", "Configured model ids to answer in turns; pieces are spread over them round-robin, one batch per model"),
             ("parallel", "integer", "How many pieces may be in flight at once"),
         ])),
     ]

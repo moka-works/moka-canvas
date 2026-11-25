@@ -1872,9 +1872,13 @@ fn confirm_step(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolErr
             chapters,
         });
     }
+    let mut confirmed = story.confirmed_steps.clone();
+    if !confirmed.contains(&step) {
+        confirmed.push(step);
+    }
     Ok(ToolOutcome::write(
         format!("Confirmed {key}"),
-        json!({"confirmedSteps": story.confirmed_steps, "step": key}),
+        json!({"confirmedSteps": confirmed, "step": key}),
         commands,
     ))
 }
@@ -3310,7 +3314,22 @@ pub async fn effect(
             .map(str::to_string);
         parsed.push(queued);
     }
+    // A place may be asked of several models at once: the pieces take turns,
+    // and the ones that land on the same model start as that model's own
+    // batch. The room spreads its asks the same way in its model bar, so a
+    // CLI caller naming a pool gets the same rotation rather than a second
+    // meaning for the same setting.
     let model = args.opt_str("model").unwrap_or("").to_string();
+    let mut names: Vec<String> = Vec::new();
+    for name in args.opt_strings("models") {
+        let name = name.trim().to_string();
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        names.push(model.trim().to_string());
+    }
     let parallel = args
         .opt_i64("parallel")
         .map(|value| value.max(1) as usize)
@@ -3338,7 +3357,10 @@ pub async fn effect(
         .iter()
         .filter(|job| !job.status.is_terminal())
         .count();
-    if active >= state.story_jobs.limits().max_active_jobs_per_project {
+    // Every model of the pool drives a batch of its own, so a pool is held to
+    // the same ceiling as the batches it becomes rather than counted once.
+    let waves = names.len().max(1);
+    if active + waves > state.story_jobs.limits().max_active_jobs_per_project {
         return Err(ToolError::new(
             "STORY_JOB_BUSY",
             "this project already has a job in progress",
@@ -3347,30 +3369,69 @@ pub async fn effect(
     // A named model is resolved as it stands; none means the deployment's
     // default for this capability. Passing the raw choice through would record
     // a model id the record cannot use and leave the failure to the run.
-    let named = model.trim();
-    let resolved = if named.is_empty() {
-        state.models.resolve_default(kind.capability()).await
-    } else {
-        state.models.resolve(named, kind.capability()).await
+    let mut resolved = Vec::with_capacity(names.len());
+    for name in &names {
+        let config = if name.is_empty() {
+            state.models.resolve_default(kind.capability()).await
+        } else {
+            state.models.resolve(name, kind.capability()).await
+        }
+        .map_err(ToolError::from)?;
+        resolved.push((name.clone(), config.config_id));
     }
-    .map_err(ToolError::from)?;
-    let job = state
-        .story_jobs
-        .start(
-            &session.0,
-            story_id,
-            kind,
-            resolved.config_id,
-            parallel,
-            parsed,
+    // The pieces take turns in the order the models were given; a model left
+    // with no piece is not started as an empty batch.
+    let mut groups: Vec<Vec<crate::story::StoryJobItem>> =
+        (0..resolved.len()).map(|_| Vec::new()).collect();
+    let item_count = parsed.len();
+    let turns = groups.len();
+    for (index, item) in parsed.into_iter().enumerate() {
+        groups[index % turns].push(item);
+    }
+    let mut started = Vec::new();
+    for ((name, model_id), group) in resolved.into_iter().zip(groups) {
+        if group.is_empty() {
+            continue;
+        }
+        let job = state
+            .story_jobs
+            .start(&session.0, story_id.clone(), kind, model_id, parallel, group)
+            .await
+            .map_err(|error| {
+                ToolError::internal(format!(
+                    "the batch for {name} could not be started after {} others were: {error}",
+                    started.len()
+                ))
+            })?;
+        started.push(job);
+    }
+    let Some(first) = started.first() else {
+        return Err(ToolError::validation("a story batch needs at least one item"));
+    };
+    let jobs: Vec<Value> = started
+        .iter()
+        .map(|job| {
+            json!({
+                "jobId": job.id,
+                "model": if job.model.is_empty() { "default" } else { job.model.as_str() },
+                "items": job.items.len(),
+            })
+        })
+        .collect();
+    let summary = if started.len() == 1 {
+        format!("Started a story job with {item_count} items")
+    } else {
+        format!(
+            "Started {} story jobs with {item_count} items",
+            started.len()
         )
-        .await?;
+    };
     Ok(ToolOutcome {
-        summary: format!("Started a story job with {} items", items.len()),
-        data: json!({"jobId": job.id, "storyId": job.story_id}),
+        summary,
+        data: json!({"jobId": first.id, "storyId": first.story_id, "jobs": jobs}),
         task: Some(TaskRef {
             kind: "storyJob".into(),
-            id: job.id,
+            id: first.id.clone(),
         }),
         ..ToolOutcome::default()
     })
