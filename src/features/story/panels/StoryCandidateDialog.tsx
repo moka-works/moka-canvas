@@ -17,11 +17,17 @@ import type { StoryTake } from "../../../shared/domain/types";
  */
 export function StoryCandidateDialog({
   label,
+  name,
+  description,
   candidates,
   onChoose,
   onClose,
 }: {
   label: string;
+  /** The element these drawings belong to, named in the title where there is one. */
+  name?: string;
+  /** What the drawings were made from, standing under the title to choose by. */
+  description?: string;
   candidates: StoryTake[];
   onChoose: (assetId: string) => void;
   onClose: () => void;
@@ -30,6 +36,10 @@ export function StoryCandidateDialog({
   const [picked, setPicked] = useState<string | undefined>(() =>
     takeFile(candidates[0]),
   );
+  const heading =
+    name === undefined
+      ? t("story:panels.candidates")
+      : t("story:panels.candidatesFor", { label, name });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -48,7 +58,7 @@ export function StoryCandidateDialog({
       role="presentation"
     >
       <div
-        aria-label={t("story:panels.candidates")}
+        aria-label={heading}
         aria-modal="true"
         className="story-candidates"
         data-testid="story-candidates"
@@ -56,7 +66,15 @@ export function StoryCandidateDialog({
       >
         <header className="story-candidates-head">
           <div>
-            <h2>{t("story:panels.candidates")}</h2>
+            <h2>{heading}</h2>
+            {description !== undefined && description.trim() !== "" && (
+              <p
+                className="story-candidates-description"
+                data-testid="story-candidates-description"
+              >
+                {description}
+              </p>
+            )}
             <p className="story-hint">
               {t("story:panels.candidatesHint", { label })}
             </p>

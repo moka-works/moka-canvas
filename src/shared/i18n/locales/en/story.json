@@ -416,6 +416,7 @@
     "candidateDrawing": "Drawing the choices ({{count}}/{{total}})",
     "candidateReady": "{{count}} to choose",
     "candidates": "Choose the main picture",
+    "candidatesFor": "Choose {{label}} · {{name}}",
     "candidatesHint": "{{label}}: these pictures were drawn side by side from the same prompt. The one you confirm becomes the main picture; the others stay in this place so you can switch later.",
     "candidateAt": "Picture {{at}}",
     "candidatePicked": "Chosen",

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -85,6 +86,25 @@ describe("a place asked for a set of drawings", () => {
     expect(screen.getByTestId("story-slot-main-pick")).toBeTruthy();
     fireEvent.click(screen.getByTestId("story-slot-main-candidates"));
     expect(screen.getByTestId("story-candidates")).toBeTruthy();
+  });
+
+  it("names the element and its description over the set", () => {
+    draw({
+      slot: pendingSet(["asset-a", "asset-b"]),
+      label: "Main picture",
+      name: "Keeper",
+      description: "The gate guard, tall and unsmiling.",
+      onChoosePending: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByTestId("story-slot-main-candidates"));
+    const dialog = screen.getByTestId("story-candidates");
+    expect(within(dialog).getByRole("heading").textContent).toBe(
+      "Choose Main picture · Keeper",
+    );
+    expect(screen.getByTestId("story-candidates-description").textContent).toBe(
+      "The gate guard, tall and unsmiling.",
+    );
   });
 
   it("says how many of the set are still being drawn", () => {

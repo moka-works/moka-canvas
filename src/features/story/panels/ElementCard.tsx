@@ -126,6 +126,10 @@ export const ElementCard = memo(function ElementCard({
   const activeRatio = variant === undefined ? element.ratio : variant.ratio;
   const activeDescription =
     variant === undefined ? element.description : variant.description;
+  // The card's place as the choice between drawings names it: the element, and
+  // the form when the card stands on one.
+  const slotName =
+    variant === undefined ? element.name : `${element.name} · ${variant.name}`;
   const activeReference =
     variant === undefined ? element.reference : variant.reference;
   const referenceAsset = pictureReferenceAsset(story, activeReference);
@@ -325,7 +329,9 @@ export const ElementCard = memo(function ElementCard({
           }
           busy={busyMain}
           canGenerate
+          description={activeDescription}
           label={t("story:elements.main")}
+          name={slotName}
           onChoose={(assetId) =>
             chooseElementTake(story, element, "main", assetId, variant?.id)
           }
@@ -379,10 +385,12 @@ export const ElementCard = memo(function ElementCard({
             }
             busy={busyTurnaround}
             canGenerate={main !== undefined}
+            description={activeDescription}
             disabledReason={
               main === undefined ? t("story:elements.needMainFirst") : undefined
             }
             label={t("story:elements.turnaround")}
+            name={slotName}
             note={t("story:elements.turnaroundFour")}
             onChoose={(assetId) =>
               chooseElementTake(

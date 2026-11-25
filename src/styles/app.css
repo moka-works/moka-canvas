@@ -8688,6 +8688,19 @@ button > .story-spin {
   margin: 0 0 4px;
 }
 
+/* What the set was drawn from, kept close under the title: the reader is
+   choosing a picture of this element, and its words are what the pictures
+   must be measured against. */
+.story-candidates-description {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 6px;
+  max-height: 7.5em;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .story-candidates-grid {
   display: grid;
   gap: 12px;

@@ -92,6 +92,8 @@ export function StorySlotView({
   slot,
   ratio,
   label,
+  name,
+  description,
   busy,
   canGenerate,
   disabledReason,
@@ -113,6 +115,10 @@ export function StorySlotView({
   /** The shape of the place, as a CSS aspect ratio. */
   ratio: string;
   label: string;
+  /** The element the place stands in, shown over the set of drawings. */
+  name?: string;
+  /** What the place's drawings are made from, shown over the set. */
+  description?: string;
   busy?: PlaceBusy;
   canGenerate: boolean;
   disabledReason?: string;
@@ -376,7 +382,9 @@ export function StorySlotView({
       {choosing && pending !== undefined && onChoosePending !== undefined && (
         <StoryCandidateDialog
           candidates={pending.takes}
+          description={description}
           label={label}
+          name={name}
           onChoose={(assetId) => {
             setChoosing(false);
             onChoosePending(assetId);

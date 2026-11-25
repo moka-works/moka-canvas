@@ -416,6 +416,7 @@
     "candidateDrawing": "正在画候选图（{{count}}/{{total}}）",
     "candidateReady": "{{count}} 张待选",
     "candidates": "选择主图",
+    "candidatesFor": "选择{{label}} · {{name}}",
     "candidatesHint": "「{{label}}」的这些图按同一段提示词并行画出。确认后选中的一张作为主图，其余也留在这个图片位，之后可以再切换。",
     "candidateAt": "第 {{at}} 张",
     "candidatePicked": "选用这张",
