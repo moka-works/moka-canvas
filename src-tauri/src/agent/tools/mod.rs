@@ -344,7 +344,9 @@ pub async fn run_effect(
         | "story.split_manuscript"
         | "story.focus"
         | "story.list_jobs"
-        | "story.read_job" => {
+        | "story.read_job"
+        | "story.element_repeats"
+        | "story.audit_elements" => {
             story::effect(
                 state,
                 session.ok_or_else(|| ToolError::new("PROJECT_NOT_OPEN", "No project is open"))?,
