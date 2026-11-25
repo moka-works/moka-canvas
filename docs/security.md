@@ -117,7 +117,10 @@ the provider.
 The honest positioning, and the one the UI must not overstate:
 
 - **It does** keep plaintext keys out of the metadata directory, out of logs,
-  out of HTTP responses, and out of exported project packages. With the key in
+  out of HTTP responses, and out of exported project packages. A configuration
+  export carries them only when the reader asked and supplied a passphrase, and
+  then only sealed; a file containing keys is as sensitive as the keys
+  themselves and should be treated that way. With the key in
   the keychain or exported through the environment it also keeps them out of
   backups of that directory; with a file-held key the backup carries the key
   alongside the ciphertext, so that part of the guarantee is only as strong as
@@ -155,7 +158,12 @@ recover a superseded key.
 A key leaves this process only towards the host it belongs to, and the rules
 around that are deliberately narrow:
 
-- It goes out on a generation request. Nothing else carries one.
+- It goes out on a generation request, and into a configuration export the
+  reader explicitly asked to include keys in. Nothing else carries one. Such
+  an export seals the credentials under a passphrase (PBKDF2-HMAC-SHA256,
+  600,000 rounds, then AES-256-GCM), writes the file owner-only, and never
+  sends a plaintext key in a response or a log. The passphrase is not stored
+  anywhere; losing it loses the keys in that file.
 - The plaintext is decrypted at send time and lives only inside that one
   in-flight request. Configuration holds ciphertext, the gateway decrypts once
   per call, and the task registry holds no credential at all — polling a video
