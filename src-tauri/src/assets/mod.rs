@@ -184,7 +184,9 @@ pub fn analyze_staged(path: &Path) -> Result<StagedAnalysis, ProjectError> {
         infer::get(&bytes)
             .map(|kind| kind.mime_type().to_string())
             .unwrap_or_else(|| {
-                if std::str::from_utf8(&bytes[..bytes.len().min(8192)]).is_ok() {
+                // The whole file is already in memory; checking only a prefix
+                // can land mid-character and call valid UTF-8 text binary.
+                if std::str::from_utf8(&bytes).is_ok() {
                     "text/plain".to_string()
                 } else {
                     "application/octet-stream".to_string()
@@ -388,7 +390,7 @@ pub fn new_tmp_path(project_root: &Path) -> std::io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_filename, promote, slugify};
+    use super::{analyze_staged, asset_filename, promote, slugify};
 
     #[test]
     fn a_name_already_taken_is_stepped_aside_from() {
@@ -477,5 +479,18 @@ mod tests {
     fn a_long_name_is_cut_to_what_a_folder_can_hold() {
         let slug = slugify(&"é".repeat(100));
         assert_eq!(slug.chars().count(), 60);
+    }
+
+    #[test]
+    fn utf8_text_is_not_called_binary_when_a_prefix_ends_mid_character() {
+        // 8191 ASCII bytes then a three-byte character: reading only the first
+        // 8192 bytes lands inside that character, and a manuscript in Chinese
+        // was filed as application/octet-stream for it.
+        let mut text = "a".repeat(8191);
+        text.push('中');
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("manuscript.md");
+        std::fs::write(&path, text.as_bytes()).unwrap();
+        assert_eq!(analyze_staged(&path).unwrap().mime, "text/plain");
     }
 }
