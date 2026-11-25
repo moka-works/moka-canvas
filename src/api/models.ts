@@ -164,6 +164,84 @@ export interface ModelsView {
   secretStoragePref?: SecretStorageChoice;
 }
 
+/** How an import treats the configuration this machine already has. */
+export type SettingsImportMode = "merge" | "replace";
+
+export interface SettingsExportRequest {
+  destination: string;
+  /** Whether stored credentials travel, sealed under `passphrase`. */
+  includeKeys: boolean;
+  passphrase?: string;
+}
+
+export interface SettingsExportReport {
+  destination: string;
+  bytes: number;
+  models: number;
+  keys: number;
+}
+
+/** One model, as a preview lists what it found. */
+export interface SettingsModelSummary {
+  id: string;
+  displayName: string;
+  category: Capability;
+}
+
+/** Where an import reads its document from. Exactly one field is used. */
+export interface SettingsSource {
+  /** A desktop's chosen file. The web runtime sends `text` instead. */
+  path?: string;
+  /** The file's own text, for a browser that cannot name a server path. */
+  text?: string;
+}
+
+export interface SettingsPreview {
+  /** SHA-256 of the exact bytes; an import sends it back. */
+  digest: string;
+  /** The configuration revision the preview read. */
+  revision: number;
+  format: string;
+  version: number;
+  appVersion: string;
+  exportedAt: string;
+  models: number;
+  added: number;
+  conflicts: SettingsModelSummary[];
+  /** Models here that the file does not name; replace would drop them. */
+  localOnly: SettingsModelSummary[];
+  byCategory: Partial<Record<Capability, number>>;
+  /** How many credentials the file carries, encrypted. */
+  secrets: number;
+}
+
+export interface SettingsPreviewRequest extends SettingsSource {
+  mode: SettingsImportMode;
+}
+
+export interface SettingsImportRequest extends SettingsSource {
+  mode: SettingsImportMode;
+  includeKeys: boolean;
+  passphrase?: string;
+  expectedDigest: string;
+  expectedRevision?: number | null;
+}
+
+export interface SettingsImportReport {
+  added: number;
+  replaced: number;
+  removed: number;
+  keysStored: number;
+  keysRemoved: number;
+  /** Set when the configuration was written but the credentials were not. */
+  keyFailure: string | null;
+}
+
+export interface SettingsImportResult {
+  view: ModelsView;
+  report: SettingsImportReport;
+}
+
 export interface ModelDraft {
   id: string;
   category: Capability;
@@ -364,5 +442,39 @@ export const modelsApi = {
   /** Returns the available converter protocols from the server. */
   fetchProtocols(): Promise<ProtocolsResponse> {
     return http.request<ProtocolsResponse>("/api/v1/converter/protocols");
+  },
+
+  /**
+   * Writes every model configuration, the capability defaults, and the
+   * generation preferences where a save dialog said. Credentials travel only
+   * when asked for, sealed under the passphrase in the same request.
+   */
+  exportSettings(
+    request: SettingsExportRequest,
+  ): Promise<SettingsExportReport> {
+    return http.request<SettingsExportReport>("/api/v1/models/export", {
+      method: "POST",
+      body: request,
+    });
+  },
+
+  /** Validates a configuration file and describes what importing it would do. */
+  previewSettingsImport(
+    request: SettingsPreviewRequest,
+  ): Promise<SettingsPreview> {
+    return http.request<SettingsPreview>("/api/v1/models/import/preview", {
+      method: "POST",
+      body: request,
+    });
+  },
+
+  /** Applies a previewed configuration file. */
+  importSettings(
+    request: SettingsImportRequest,
+  ): Promise<SettingsImportResult> {
+    return http.request<SettingsImportResult>("/api/v1/models/import", {
+      method: "POST",
+      body: request,
+    });
   },
 };

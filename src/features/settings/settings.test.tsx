@@ -16,6 +16,7 @@ import type {
   ProtocolGroups,
 } from "../../api";
 import { i18n } from "../../shared/i18n";
+import { useSavePathStore } from "../editor/launcher/savePathStore";
 import { protocolChoices, protocolLabel, useModelStore } from "./modelStore";
 
 const CONFIG = {
@@ -350,6 +351,55 @@ function route(url: string, method: string, body: unknown): Response {
       secretStoragePref: storage,
     };
     return json(view);
+  }
+
+  if (path === "/api/v1/models/export" && method === "POST") {
+    const request = body as {
+      destination: string;
+      includeKeys: boolean;
+      passphrase?: string;
+    };
+    return json({
+      destination: request.destination,
+      bytes: 512,
+      models: view.models.length,
+      keys: request.includeKeys
+        ? view.models.filter((model) => model.apiKey.set).length
+        : 0,
+    });
+  }
+
+  if (path === "/api/v1/models/import/preview" && method === "POST") {
+    const request = body as { mode: string; text?: string };
+    return json({
+      digest: `digest-${request.mode}`,
+      revision: view.revision,
+      format: "moka-canvas.settings",
+      version: 1,
+      appVersion: "0.4.0",
+      exportedAt: "2026-11-25T00:00:00Z",
+      models: 2,
+      added: 1,
+      conflicts: [{ id: "writer", displayName: "Writer", category: "text" }],
+      localOnly: [],
+      byCategory: { text: 2 },
+      secrets: 1,
+    });
+  }
+
+  if (path === "/api/v1/models/import" && method === "POST") {
+    view = { ...view, revision: view.revision + 1 };
+    return json({
+      view,
+      report: {
+        added: 1,
+        replaced: 1,
+        removed: 0,
+        keysStored: 1,
+        keysRemoved: 0,
+        keyFailure: null,
+      },
+    });
   }
 
   const named = path.match(/^\/api\/v1\/models\/([^/]+)(\/.*)?$/);
@@ -1567,5 +1617,117 @@ describe("naming a protocol", () => {
         "text",
       ).map((choice) => choice.id),
     ).toEqual(["late"]);
+  });
+});
+
+describe("configuration transfer", () => {
+  it("exports through the save dialog with a sealed passphrase", async () => {
+    await openSettings("System");
+    fireEvent.click(await screen.findByTestId("settings-export"));
+
+    const passphrase = await screen.findByTestId("settings-export-passphrase");
+    const confirmation = screen.getByTestId("settings-export-confirm");
+    fireEvent.change(passphrase, { target: { value: "short" } });
+    fireEvent.change(confirmation, { target: { value: "short" } });
+    fireEvent.click(screen.getByTestId("settings-export-run"));
+
+    expect(
+      await screen.findByText("The passphrase must be at least 12 characters"),
+    ).toBeTruthy();
+    expect(writesTo("/api/v1/models/export")).toHaveLength(0);
+
+    fireEvent.change(passphrase, {
+      target: { value: "correct horse battery" },
+    });
+    fireEvent.change(confirmation, {
+      target: { value: "correct horse battery" },
+    });
+    fireEvent.click(screen.getByTestId("settings-export-run"));
+
+    await waitFor(() =>
+      expect(useSavePathStore.getState().pending).not.toBeNull(),
+    );
+    useSavePathStore.getState().reply("/tmp/moka-settings.json");
+    await waitFor(() =>
+      expect(writesTo("/api/v1/models/export")).toHaveLength(1),
+    );
+    expect(writesTo("/api/v1/models/export")[0].body).toEqual({
+      destination: "/tmp/moka-settings.json",
+      includeKeys: true,
+      passphrase: "correct horse battery",
+    });
+  });
+
+  it("previews a file, re-reads it for a mode change, and imports the digest", async () => {
+    await openSettings("System");
+    const file = new File(
+      [
+        JSON.stringify({
+          format: "moka-canvas.settings",
+          version: 1,
+          models: [],
+          defaults: {},
+          preferences: {},
+        }),
+      ],
+      "moka-settings.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(screen.getByTestId("settings-import-file"), {
+      target: { files: [file] },
+    });
+
+    await screen.findByTestId("settings-import-preview");
+    const previews = writesTo("/api/v1/models/import/preview");
+    expect(previews).toHaveLength(1);
+    expect(previews[0].body).toMatchObject({ mode: "merge" });
+    expect(typeof (previews[0].body as { text?: string }).text).toBe("string");
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Replace/ }));
+    await waitFor(() =>
+      expect(writesTo("/api/v1/models/import/preview")).toHaveLength(2),
+    );
+    expect(
+      (writesTo("/api/v1/models/import/preview")[1].body as { mode: string })
+        .mode,
+    ).toBe("replace");
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.change(screen.getByTestId("settings-import-passphrase"), {
+      target: { value: "export-passphrase" },
+    });
+    fireEvent.click(screen.getByTestId("settings-import-run"));
+
+    await waitFor(() =>
+      expect(writesTo("/api/v1/models/import")).toHaveLength(1),
+    );
+    expect(writesTo("/api/v1/models/import")[0].body).toEqual({
+      text: expect.any(String),
+      mode: "replace",
+      includeKeys: true,
+      passphrase: "export-passphrase",
+      expectedDigest: "digest-replace",
+      expectedRevision: 1,
+    });
+    expect(confirm).toHaveBeenCalled();
+  });
+
+  it("asks for the passphrase before importing encrypted keys", async () => {
+    await openSettings("System");
+    const file = new File(["{}"], "moka-settings.json", {
+      type: "application/json",
+    });
+    fireEvent.change(screen.getByTestId("settings-import-file"), {
+      target: { files: [file] },
+    });
+    await screen.findByTestId("settings-import-preview");
+
+    fireEvent.click(screen.getByTestId("settings-import-run"));
+    expect(
+      await screen.findByText(
+        "Enter the passphrase this file was exported with",
+      ),
+    ).toBeTruthy();
+    expect(writesTo("/api/v1/models/import")).toHaveLength(0);
   });
 });

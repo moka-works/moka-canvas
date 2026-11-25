@@ -9,6 +9,8 @@ import {
   type ProtocolGroups,
   type ProtocolParameter,
   type SecretStorageChoice,
+  type SettingsImportRequest,
+  type SettingsImportResult,
 } from "../../api";
 import type { Capability } from "../../shared/domain";
 import { i18n } from "../../shared/i18n";
@@ -279,6 +281,14 @@ interface ModelState {
   /** Makes one model the default of a capability, or clears that capability. */
   setDefault: (capability: Capability, id: string | null) => Promise<boolean>;
   savePreferences: (patch: PreferencesPatch) => Promise<boolean>;
+  /**
+   * Applies an imported configuration and adopts the view it answers with.
+   * Rejects on failure so the transfer panel can say why; the store's own
+   * error is set as well for the dialog footer.
+   */
+  importSettings: (
+    request: SettingsImportRequest,
+  ) => Promise<SettingsImportResult>;
   reset: () => void;
 }
 
@@ -491,6 +501,26 @@ export const useModelStore = create<ModelState>()((set, get) => {
       return write(i18n.t("settings:errors.savePreferences"), (revision) =>
         modelsApi.setPreferences({ ...patch, expectedRevision: revision }),
       );
+    },
+
+    async importSettings(request) {
+      set({ saving: true, error: null, errorCode: null });
+      try {
+        const result = await modelsApi.importSettings({
+          ...request,
+          // The preview is the state the reader confirmed; a window's older
+          // revision must not turn an unchanged configuration into a conflict.
+          expectedRevision:
+            request.expectedRevision ?? get().view?.revision ?? null,
+        });
+        set({ view: result.view, saving: false });
+        return result;
+      } catch (error) {
+        set({ saving: false });
+        if (isApiError(error, "METADATA_CONFLICT")) await get().load();
+        set(describe(error, i18n.t("settings:errors.importSettings")));
+        throw error;
+      }
     },
 
     reset() {

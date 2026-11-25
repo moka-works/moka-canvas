@@ -5,6 +5,7 @@ import { CAPABILITY_LABELS } from "../../shared/domain";
 import { useLocale, type LocaleMode } from "../../shared/i18n";
 import { useAppStore } from "../editor/stores/appStore";
 import { UpdateSection } from "../update/UpdateSection";
+import { ConfigTransfer } from "./ConfigTransfer";
 import { useModelStore } from "./modelStore";
 import { SecretStorageNote } from "./SecretStorageNote";
 
@@ -143,6 +144,8 @@ export function SystemTab() {
       {!switchable && !envLocked && options.length < 2 && (
         <p className="settings-hint">{t("settings:system.noKeychain")}</p>
       )}
+
+      <ConfigTransfer />
 
       <h3 className="settings-heading">{t("settings:system.storedKeys")}</h3>
       <div className="settings-row">
