@@ -9,11 +9,12 @@
 //! invocation, 3 the server could not be reached or the sign-in could not be
 //! kept.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use moka_canvas::generate::settings::{ImportMode, MAX_FILE_BYTES};
 use moka_canvas::metadata::paths;
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -64,8 +65,8 @@ struct Cli {
     /// Print the server's JSON as it answered.
     #[arg(long, global = true)]
     json: bool,
-    /// Confirm spend, destroy, and export tools. Without it those tools are
-    /// refused by the server.
+    /// Confirm spend, destroy, export, and configuration-replacement
+    /// operations. Without it those operations are refused.
     #[arg(long, global = true)]
     yes: bool,
     /// Print details and the request id when a call fails.
@@ -122,6 +123,12 @@ enum Command {
     Projects {
         #[command(subcommand)]
         command: ProjectsCommand,
+    },
+    /// Configuration backup: every model configuration, the capability
+    /// defaults, and the generation preferences.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
     },
     /// Serve the external tools over MCP on stdin/stdout.
     Mcp {
@@ -260,6 +267,53 @@ enum ProjectsCommand {
 }
 
 #[derive(Subcommand)]
+enum ConfigCommand {
+    /// Write every model configuration, the defaults, and the preferences to
+    /// a file. Stored keys travel only with --keys, sealed under a passphrase.
+    Export {
+        /// Where the file goes, chosen by the caller. A relative path is
+        /// resolved against this shell's directory, but the file is written by
+        /// the server, so with --server it is that machine's path.
+        #[arg(long)]
+        destination: String,
+        /// Seal stored API keys into the file. Requires a passphrase.
+        #[arg(long, alias = "include-keys")]
+        keys: bool,
+        /// The passphrase that seals the keys. Read from MOKA_PASSPHRASE, then
+        /// the terminal, when absent.
+        #[arg(long)]
+        passphrase: Option<String>,
+    },
+    /// Validate a configuration file, show what it would do, and apply it.
+    Import {
+        /// The file to read, on this shell's machine.
+        #[arg(long)]
+        file: String,
+        /// merge keeps local-only models; replace removes them and their keys.
+        #[arg(long, default_value = "merge", value_parser = parse_import_mode)]
+        mode: ImportMode,
+        /// Apply the configuration without storing the file's sealed keys.
+        #[arg(long)]
+        skip_keys: bool,
+        /// The passphrase the file's keys were sealed with. Read from
+        /// MOKA_PASSPHRASE, then the terminal, when absent.
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// Describe the file without writing anything.
+        #[arg(long)]
+        preview: bool,
+    },
+}
+
+fn parse_import_mode(raw: &str) -> std::result::Result<ImportMode, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "merge" => Ok(ImportMode::Merge),
+        "replace" => Ok(ImportMode::Replace),
+        other => Err(format!("mode must be merge or replace, not '{other}'")),
+    }
+}
+
+#[derive(Subcommand)]
 enum McpCommand {
     Serve {
         #[arg(long)]
@@ -283,6 +337,9 @@ enum CliError {
         message: String,
         status: u16,
     },
+    /// The server answered, and the operation did not finish whole. The
+    /// configuration is in place; the reason names what is not.
+    Incomplete(String),
 }
 
 impl CliError {
@@ -290,7 +347,7 @@ impl CliError {
         match self {
             Self::Usage(_) => 2,
             Self::Transport(_) | Self::Storage(_) => 3,
-            Self::Refused { .. } => 1,
+            Self::Refused { .. } | Self::Incomplete(_) => 1,
         }
     }
 
@@ -299,6 +356,7 @@ impl CliError {
             Self::Usage(message) => format!("usage: {message}"),
             Self::Transport(message) => format!("cannot reach the local server: {message}"),
             Self::Storage(message) => format!("the sign-in could not be kept: {message}"),
+            Self::Incomplete(message) => message.clone(),
             Self::Refused { code, message, .. } if code == "AUTH_REQUIRED" => {
                 format!("{code}: {message}; run `moka login`")
             }
@@ -614,6 +672,293 @@ fn prompt(label: &str) -> Result<String> {
         .read_line(&mut line)
         .map_err(|error| CliError::Usage(error.to_string()))?;
     Ok(line.trim_end_matches(['\n', '\r']).to_string())
+}
+
+/// The absolute form of a path the caller named.
+fn absolute_path(named: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(named);
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .map_err(|error| CliError::Usage(format!("{named}: {error}")))
+}
+
+/// The passphrase a request needs: the flag, the environment, then the
+/// terminal. A pipe that names neither is refused rather than left waiting.
+fn passphrase_for(explicit: Option<String>, confirm: bool) -> Result<String> {
+    if let Some(passphrase) = explicit.filter(|passphrase| !passphrase.is_empty()) {
+        return Ok(passphrase);
+    }
+    if let Ok(passphrase) = std::env::var("MOKA_PASSPHRASE") {
+        if !passphrase.is_empty() {
+            return Ok(passphrase);
+        }
+    }
+    if !std::io::stdin().is_terminal() {
+        return Err(CliError::Usage(
+            "a passphrase is required; pass --passphrase or set MOKA_PASSPHRASE".into(),
+        ));
+    }
+    let passphrase = prompt("Passphrase: ")?;
+    if passphrase.is_empty() {
+        return Err(CliError::Usage("a passphrase is required".into()));
+    }
+    if confirm {
+        let repeated = prompt("Repeat passphrase: ")?;
+        if repeated != passphrase {
+            return Err(CliError::Usage("the two passphrases do not match".into()));
+        }
+    }
+    Ok(passphrase)
+}
+
+/// Reads the file an import is about, on this machine, under the server's own
+/// ceiling so an oversized file is refused before it travels.
+fn read_configuration_file(named: &str) -> Result<String> {
+    let path = absolute_path(named)?;
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))?;
+    if !metadata.is_file() {
+        return Err(CliError::Usage(format!("{} is not a file", path.display())));
+    }
+    if metadata.len() > MAX_FILE_BYTES as u64 {
+        return Err(CliError::Usage(format!(
+            "{} is {} bytes, above the {} byte limit",
+            path.display(),
+            metadata.len(),
+            MAX_FILE_BYTES
+        )));
+    }
+    std::fs::read_to_string(&path)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))
+}
+
+fn list_names(rows: Option<&Value>) -> Vec<&str> {
+    rows.and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("displayName").and_then(Value::as_str))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// What a preview found, in the words a person reading the terminal wants.
+fn print_preview(preview: &Value) {
+    let count = |field: &str| preview.get(field).and_then(Value::as_u64).unwrap_or(0);
+    if let (Some(exported), Some(version)) = (
+        preview.get("exportedAt").and_then(Value::as_str),
+        preview.get("appVersion").and_then(Value::as_str),
+    ) {
+        println!(
+            "file: exported {} with version {version}",
+            exported.get(..10).unwrap_or(exported)
+        );
+    }
+    let conflicts = list_names(preview.get("conflicts"));
+    let local_only = list_names(preview.get("localOnly"));
+    println!(
+        "{} model configurations: {} new, {} overwrite existing, {} local-only",
+        count("models"),
+        count("added"),
+        conflicts.len(),
+        local_only.len()
+    );
+    if !conflicts.is_empty() {
+        println!("  overwrites: {}", conflicts.join(", "));
+    }
+    if !local_only.is_empty() {
+        println!("  local-only: {}", local_only.join(", "));
+    }
+    if count("secrets") > 0 {
+        println!("{} sealed API keys are in the file", count("secrets"));
+    }
+}
+
+/// What an applied import changed.
+fn print_import_report(applied: &Value) {
+    let report = &applied["report"];
+    let count = |field: &str| report.get(field).and_then(Value::as_u64).unwrap_or(0);
+    let added = count("added");
+    let replaced = count("replaced");
+    let removed = count("removed");
+    let mut summary = format!(
+        "Imported {} model configurations ({added} new, {replaced} overwritten",
+        added + replaced
+    );
+    if removed > 0 {
+        summary.push_str(&format!(", {removed} removed"));
+    }
+    summary.push(')');
+    println!("{summary}");
+    if count("keysStored") > 0 {
+        println!("{} API keys were stored.", count("keysStored"));
+    }
+    if count("keysRemoved") > 0 {
+        println!(
+            "{} stored API keys were removed with their models.",
+            count("keysRemoved")
+        );
+    }
+}
+
+/// How many of the configured models hold a credential, without asking for
+/// any of them to be disclosed.
+async fn stored_key_count(client: &Client) -> Result<usize> {
+    let view = client.get("/api/v1/models").await?;
+    Ok(view
+        .get("models")
+        .and_then(Value::as_array)
+        .map_or(0, |models| {
+            models
+                .iter()
+                .filter(|model| model.pointer("/apiKey/set").and_then(Value::as_bool) == Some(true))
+                .count()
+        }))
+}
+
+async fn export_configuration(
+    client: &Client,
+    json: bool,
+    destination: String,
+    keys: bool,
+    passphrase: Option<String>,
+) -> Result<()> {
+    let destination = destination.trim();
+    if destination.is_empty() {
+        return Err(CliError::Usage("a destination path is required".into()));
+    }
+    let destination = absolute_path(destination)?;
+    // The same default the settings form takes: a file only carries keys when
+    // the machine has any, so asking for them never asks for a passphrase to
+    // seal nothing.
+    let include_keys = keys && stored_key_count(client).await? > 0;
+    let passphrase = if include_keys {
+        Some(passphrase_for(passphrase, true)?)
+    } else {
+        None
+    };
+    let mut body = json!({
+        "destination": destination.to_string_lossy(),
+        "includeKeys": include_keys,
+    });
+    if let Some(passphrase) = &passphrase {
+        body["passphrase"] = json!(passphrase);
+    }
+    let report = client.post("/api/v1/models/export", body).await?;
+    if json {
+        print_value(&report, true);
+        return Ok(());
+    }
+    let written = report
+        .get("destination")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| destination.to_str().unwrap_or(""));
+    let models = report.get("models").and_then(Value::as_u64).unwrap_or(0);
+    println!("Exported {models} model configurations to {written}");
+    let sealed = report.get("keys").and_then(Value::as_u64).unwrap_or(0);
+    if sealed > 0 {
+        println!("{sealed} API keys are sealed inside; the passphrase opens them.");
+    } else if keys {
+        println!("No API keys are stored, so the file carries none.");
+    }
+    Ok(())
+}
+
+async fn import_configuration(
+    client: &Client,
+    json: bool,
+    file: String,
+    mode: ImportMode,
+    skip_keys: bool,
+    passphrase: Option<String>,
+    preview_only: bool,
+) -> Result<()> {
+    let text = read_configuration_file(&file)?;
+    let mode_word = match mode {
+        ImportMode::Merge => "merge",
+        ImportMode::Replace => "replace",
+    };
+    let preview = client
+        .post(
+            "/api/v1/models/import/preview",
+            json!({"text": &text, "mode": mode_word}),
+        )
+        .await?;
+    let digest = preview
+        .get("digest")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CliError::Transport("the preview carried no file digest".into()))?
+        .to_string();
+    let revision = preview.get("revision").and_then(Value::as_u64);
+    let secrets = preview.get("secrets").and_then(Value::as_u64).unwrap_or(0);
+    let local_only = preview
+        .get("localOnly")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+
+    if preview_only {
+        if json {
+            print_value(&preview, true);
+        } else {
+            print_preview(&preview);
+            println!("Nothing was written; run without --preview to apply it.");
+        }
+        return Ok(());
+    }
+    if mode == ImportMode::Replace && !client.yes {
+        let effect = if local_only == 0 {
+            "replacing the configuration drops every local model the file does not name, and its stored keys".to_string()
+        } else {
+            format!(
+                "replacing the configuration removes {local_only} local model{} and their stored keys",
+                if local_only == 1 { "" } else { "s" }
+            )
+        };
+        return Err(CliError::Usage(format!("{effect}; pass --yes to apply")));
+    }
+    if !json {
+        print_preview(&preview);
+    }
+
+    let include_keys = !skip_keys && secrets > 0;
+    let passphrase = if include_keys {
+        Some(passphrase_for(passphrase, false)?)
+    } else {
+        None
+    };
+    let mut body = json!({
+        "text": text,
+        "mode": mode_word,
+        "includeKeys": include_keys,
+        "expectedDigest": digest,
+    });
+    if let Some(revision) = revision {
+        body["expectedRevision"] = json!(revision);
+    }
+    if let Some(passphrase) = &passphrase {
+        body["passphrase"] = json!(passphrase);
+    }
+    let applied = client.post("/api/v1/models/import", body).await?;
+    if json {
+        print_value(&applied, true);
+    } else {
+        print_import_report(&applied);
+        if skip_keys && secrets > 0 {
+            println!("The file's sealed API keys were left alone (--skip-keys).");
+        }
+    }
+    match applied
+        .pointer("/report/keyFailure")
+        .and_then(Value::as_str)
+    {
+        Some(reason) => Err(CliError::Incomplete(format!(
+            "the configuration was imported, but some API keys were not stored: {reason}"
+        ))),
+        None => Ok(()),
+    }
 }
 
 fn failure_status(status: StatusCode, value: &Value) -> CliError {
@@ -1281,6 +1626,25 @@ async fn run(cli: Cli) -> Result<()> {
                 } else {
                     human_tool(&answer);
                 }
+            }
+        },
+        Command::Config { command } => match command {
+            ConfigCommand::Export {
+                destination,
+                keys,
+                passphrase,
+            } => {
+                export_configuration(&client, json, destination, keys, passphrase).await?;
+            }
+            ConfigCommand::Import {
+                file,
+                mode,
+                skip_keys,
+                passphrase,
+                preview,
+            } => {
+                import_configuration(&client, json, file, mode, skip_keys, passphrase, preview)
+                    .await?;
             }
         },
         Command::Skills { .. } => {}

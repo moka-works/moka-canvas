@@ -70,7 +70,7 @@ moka --project ./lake changes undo cs_...
 moka --project ./lake tools call canvas.add_node --dry-run \
   --input '{"canvasId":"cv_1","kind":"text","title":"Note"}'
 
-# 花钱/删除/导出需要 --yes（删除类还要求 input.confirm 非空）
+# 花钱/删除/导出/整体替换配置需要 --yes（删除类还要求 input.confirm 非空）
 moka --project ./lake --yes tools call canvas.run \
   --input '{"canvasId":"cv_1","nodeIds":["n_1"]}'
 moka --project ./lake --yes tools call timeline.export --wait 300 \
@@ -95,14 +95,46 @@ moka --project ./lake audit list
 - `--wait <秒>` 是 CLI 侧轮询 `task.get`，不是工具在服务端等待。
 - `--dry-run` 只对 command 工具有效；effect 返回 `DRY_RUN_UNSUPPORTED`。
 
+## 配置备份
+
+设置里的「配置备份」（全部模型配置、各能力默认模型、生成偏好）也可以从命令行搬运：
+
+```sh
+# 导出；目的地必须由调用者给出
+moka config export --destination ./moka-settings.json
+
+# 连 API 密钥一起导出
+moka config export --destination ~/moka-settings.json --keys
+
+# 只预览文件内容，不写入
+moka config import --file ./moka-settings.json --preview
+
+# 合并导入；文件带密钥时默认一并导入
+moka config import --file ./moka-settings.json
+
+# 整体替换：文件未提到的本地模型及密钥会被删除，必须 --yes
+moka config import --file ./moka-settings.json --mode replace --yes
+
+# 只导入配置，跳过文件里的密钥
+moka config import --file ./moka-settings.json --skip-keys
+```
+
+- `--destination` 不接受默认位置；相对路径按当前目录解析成绝对路径。导出由服务器写盘，所以路径属于服务器所在的机器；`--server` 指向远端时尤其要注意。导入文件由 CLI 自己读取后上传，与服务器不在同一台机器也可以。
+- 只有加 `--keys`（别名 `--include-keys`）才携带密钥；机器上没有已保存的密钥时不会要求口令，文件也不含密钥。口令依次取 `--passphrase`、`MOKA_PASSPHRASE`，都没有且终端可交互时提示输入；非交互环境会直接报错，不会等待。`--passphrase` 会进入 shell 历史，优先用环境变量或终端输入。从终端输入口令时，导出会要求输入两遍，且至少 12 个字符（服务端策略）。口令不保存，丢失后文件里的密钥无法恢复。
+- 密钥只以口令加密形式写入文件（PBKDF2-HMAC-SHA256 + AES-256-GCM），文件权限为 0600，任何输出与日志都不含明文密钥。
+- 导入总是先向服务器预览，再带着预览得到的文件摘要与配置修订号（revision）应用；预览之后配置发生变化会被拒绝（`REVISION_CONFLICT`），重新执行即可。
+- 文件里有加密密钥时默认导入密钥，需要提供口令；`--skip-keys` 只导入配置。若配置已写入但个别密钥未能保存，命令以退出码 1 结束，并在 stderr 给出服务端返回的真实原因。
+- `--mode merge`（默认）保留文件未提到的本地模型；`--mode replace` 删除它们及其存储的密钥，缺少 `--yes` 时不写入任何内容，并以退出码 2 拒绝。
+- `--json` 下：`--preview` 输出预览 JSON；实际导入只输出应用结果（含 `view` 与 `report`）。
+
 ## 退出码
 
-| 码  | 含义                                          |
-| --- | --------------------------------------------- |
-| 0   | 成功                                          |
-| 1   | 服务器拒绝（problem code 与消息写在 stderr）  |
-| 2   | 用法错误或本地输入不合法                      |
-| 3   | 找不到 / 连不上服务器，或登录信息无法写入本地 |
+| 码  | 含义                                                           |
+| --- | -------------------------------------------------------------- |
+| 0   | 成功                                                           |
+| 1   | 服务器拒绝（problem code 与消息写在 stderr），或只完成了一部分 |
+| 2   | 用法错误、本地输入不合法，或缺少 `--yes`                       |
+| 3   | 找不到 / 连不上服务器，或登录信息无法写入本地                  |
 
 ## MCP
 

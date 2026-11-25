@@ -1099,3 +1099,235 @@ async fn a_desktop_may_import_a_file_by_path() {
     assert_eq!(status, StatusCode::OK, "{applied}");
     assert_eq!(applied["view"]["models"][0]["apiKey"]["masked"], MASKED_KEY);
 }
+
+/// The CLI as a real process, against a real listener: discovery is named
+/// explicitly, and the metadata directory is a temporary one so no sign-in
+/// stored on this machine is read.
+async fn run_cli(metadata: &Path, base: &str, args: &[&str]) -> std::process::Output {
+    tokio::process::Command::new(env!("CARGO_BIN_EXE_moka"))
+        .arg("--server")
+        .arg(base)
+        .args(args)
+        .env("MOKA_METADATA_DIR", metadata)
+        .env_remove("MOKA_PASSPHRASE")
+        .env_remove("MOKA_SERVER")
+        .output()
+        .await
+        .expect("the CLI runs")
+}
+
+async fn serve(harness: &Harness) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = harness.app.clone();
+    let served = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("the app serves");
+    });
+    (format!("http://{address}"), served)
+}
+
+#[tokio::test]
+async fn the_cli_exports_previews_and_imports_the_configuration() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("writer", Some(API_KEY))).await;
+    let (base, served) = serve(&harness).await;
+    let metadata = root.path().join("cli-metadata");
+    let destination = root.path().join("cli-settings.json");
+    let destination_arg = destination.to_str().unwrap().to_string();
+
+    let exported = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "export",
+            "--destination",
+            &destination_arg,
+            "--keys",
+            "--passphrase",
+            TRANSFER_PASSPHRASE,
+        ],
+    )
+    .await;
+    assert!(
+        exported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&exported.stdout).contains("Exported 1 model configurations"),
+        "{}",
+        String::from_utf8_lossy(&exported.stdout)
+    );
+    let text = std::fs::read_to_string(&destination).unwrap();
+    assert!(!text.contains(API_KEY), "a credential was written in clear");
+
+    let previewed = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "import",
+            "--file",
+            &destination_arg,
+            "--preview",
+            "--json",
+        ],
+    )
+    .await;
+    assert!(
+        previewed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&previewed.stderr)
+    );
+    let preview: Value = serde_json::from_slice(&previewed.stdout).unwrap();
+    assert_eq!(preview["models"], 1);
+    assert_eq!(preview["secrets"], 1);
+    assert_eq!(preview["localOnly"], json!([]));
+
+    let applied = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "import",
+            "--file",
+            &destination_arg,
+            "--passphrase",
+            TRANSFER_PASSPHRASE,
+            "--json",
+        ],
+    )
+    .await;
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let answer: Value = serde_json::from_slice(&applied.stdout).unwrap();
+    assert_eq!(answer["report"]["replaced"], 1);
+    assert_eq!(answer["report"]["keysStored"], 1);
+    assert_eq!(answer["view"]["models"][0]["apiKey"]["masked"], MASKED_KEY);
+
+    let human_preview = run_cli(
+        &metadata,
+        &base,
+        &["config", "import", "--file", &destination_arg, "--preview"],
+    )
+    .await;
+    assert!(
+        human_preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&human_preview.stderr)
+    );
+    let preview_text = String::from_utf8_lossy(&human_preview.stdout);
+    assert!(
+        preview_text.contains("1 model configurations: 0 new, 1 overwrite existing, 0 local-only"),
+        "{preview_text}"
+    );
+    assert!(
+        preview_text.contains("1 sealed API keys are in the file"),
+        "{preview_text}"
+    );
+
+    let skipped = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "import",
+            "--file",
+            &destination_arg,
+            "--skip-keys",
+        ],
+    )
+    .await;
+    assert!(
+        skipped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&skipped.stderr)
+    );
+    let skipped_text = String::from_utf8_lossy(&skipped.stdout);
+    assert!(
+        skipped_text.contains("Imported 1 model configurations (0 new, 1 overwritten)"),
+        "{skipped_text}"
+    );
+    assert!(
+        skipped_text.contains("The file's sealed API keys were left alone (--skip-keys)."),
+        "{skipped_text}"
+    );
+    served.abort();
+}
+
+#[tokio::test]
+async fn the_cli_refuses_a_replace_without_yes() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    let (base, served) = serve(&harness).await;
+    let metadata = root.path().join("cli-metadata");
+    let destination = root.path().join("cli-settings.json");
+    let destination_arg = destination.to_str().unwrap().to_string();
+
+    // Asking for keys on a machine that stores none asks for no passphrase and
+    // succeeds: there is nothing to seal.
+    let empty = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "export",
+            "--destination",
+            &destination_arg,
+            "--keys",
+        ],
+    )
+    .await;
+    assert!(
+        empty.status.success(),
+        "{}",
+        String::from_utf8_lossy(&empty.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&empty.stdout)
+            .contains("No API keys are stored, so the file carries none."),
+        "{}",
+        String::from_utf8_lossy(&empty.stdout)
+    );
+
+    put_model(&harness.app, model_body("writer", Some(API_KEY))).await;
+    let exported = run_cli(
+        &metadata,
+        &base,
+        &["config", "export", "--destination", &destination_arg],
+    )
+    .await;
+    assert!(
+        exported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+
+    let replaced = run_cli(
+        &metadata,
+        &base,
+        &[
+            "config",
+            "import",
+            "--file",
+            &destination_arg,
+            "--mode",
+            "replace",
+        ],
+    )
+    .await;
+    assert_eq!(replaced.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&replaced.stderr).contains("--yes"),
+        "{}",
+        String::from_utf8_lossy(&replaced.stderr)
+    );
+    let (_, view) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
+    assert_eq!(view["models"].as_array().unwrap().len(), 1, "{view}");
+    served.abort();
+}

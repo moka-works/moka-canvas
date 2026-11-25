@@ -159,11 +159,12 @@ A key leaves this process only towards the host it belongs to, and the rules
 around that are deliberately narrow:
 
 - It goes out on a generation request, and into a configuration export the
-  reader explicitly asked to include keys in. Nothing else carries one. Such
-  an export seals the credentials under a passphrase (PBKDF2-HMAC-SHA256,
-  600,000 rounds, then AES-256-GCM), writes the file owner-only, and never
-  sends a plaintext key in a response or a log. The passphrase is not stored
-  anywhere; losing it loses the keys in that file.
+  reader explicitly asked to include keys in, from Settings or through
+  `moka config export --keys`. Nothing else carries one. Such an export seals
+  the credentials under a passphrase (PBKDF2-HMAC-SHA256, 600,000 rounds, then
+  AES-256-GCM), writes the file owner-only, and never sends a plaintext key in
+  a response or a log. The passphrase is not stored anywhere; losing it loses
+  the keys in that file.
 - The plaintext is decrypted at send time and lives only inside that one
   in-flight request. Configuration holds ciphertext, the gateway decrypts once
   per call, and the task registry holds no credential at all — polling a video
