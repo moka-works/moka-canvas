@@ -163,14 +163,20 @@ impl ProjectRegistry {
                 format!("Not a project directory or .moka file: {}", entry.display()),
             ));
         };
+        // A project this process already holds may have jobs in flight. The
+        // sweep is for work a dead process left behind, so it must not run
+        // again on a project this process itself is driving.
+        let known = self.knows_root(&root);
         let (moka, stamp) = FsProjectStore::load_from_disk(&self.config, &root)?;
         FsProjectStore::clean_tmp(&root);
         // A project made before saves asked where to go has no output folder
         // yet, and the save dialogs open at it: made here rather than left to
         // the first export, which never invents one.
         std::fs::create_dir_all(root.join("output"))?;
-        FsProjectStore::sweep_interrupted_runs(&root);
-        FsProjectStore::sweep_interrupted_story_jobs(&root);
+        if !known {
+            FsProjectStore::sweep_interrupted_runs(&root);
+            FsProjectStore::sweep_interrupted_story_jobs(&root);
+        }
         let revision = moka.metadata.revision;
         Ok(self.publish(root, moka, revision, stamp))
     }
@@ -221,6 +227,18 @@ impl ProjectRegistry {
         let open = self.open.lock().expect("store poisoned");
         let id = open.current.as_deref()?;
         open.by_id.get(id).cloned()
+    }
+
+    /// Whether a store for `root` is already open in this process.
+    fn knows_root(&self, root: &Path) -> bool {
+        let wanted = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let open = self.open.lock().expect("store poisoned");
+        open.by_id.values().any(|store| {
+            store
+                .open_root()
+                .map(|held| held.canonicalize().unwrap_or(held) == wanted)
+                .unwrap_or(false)
+        })
     }
 
     /// Publishes a freshly read document under its own id.
