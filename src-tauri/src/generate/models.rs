@@ -166,7 +166,7 @@ pub struct ResolvedModel {
 
 /// Reads and writes model configuration through the metadata store.
 pub struct ModelRepo {
-    metadata: Arc<dyn MetadataStore>,
+    pub(crate) metadata: Arc<dyn MetadataStore>,
 }
 
 impl ModelRepo {
@@ -232,7 +232,16 @@ impl ModelRepo {
 
     /// Creates or replaces one model configuration.
     pub async fn upsert(&self, draft: ModelDraft) -> Result<ModelRecord, ProviderError> {
-        let mut draft = draft;
+        let draft = self.validate_draft(draft).await?;
+        Ok(self.metadata.upsert_model(&draft).await?)
+    }
+
+    /// Trims, normalizes, and checks one configuration, whether it came from
+    /// the form or from a file this program is importing.
+    pub(crate) async fn validate_draft(
+        &self,
+        mut draft: ModelDraft,
+    ) -> Result<ModelDraft, ProviderError> {
         draft.id = draft.id.trim().to_string();
         draft.display_name = draft.display_name.trim().to_string();
         draft.model = draft.model.trim().to_string();
@@ -269,7 +278,7 @@ impl ModelRepo {
         check_text_params(&mut draft)?;
         check_model_params(&mut draft)?;
         check_scene_claims(&mut draft)?;
-        Ok(self.metadata.upsert_model(&draft).await?)
+        Ok(draft)
     }
 
     /// Whether a protocol may serve one category of model: it must name a
@@ -880,7 +889,7 @@ fn check_model_params(draft: &mut ModelDraft) -> Result<(), ProviderError> {
 
 /// Bounds the numbers that reach a provider call. The rest of the
 /// preferences are free text the provider gets to reject.
-fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> {
+pub(crate) fn validate_preferences(preferences: &Preferences) -> Result<(), ProviderError> {
     if !(1..=MAX_IMAGES_PER_RUN).contains(&preferences.image.count) {
         return Err(ProviderError::invalid(format!(
             "image count must be between 1 and {MAX_IMAGES_PER_RUN}"

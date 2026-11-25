@@ -1,13 +1,15 @@
 use super::dto::{
     ApplyCommandsRequest, AssetChangeResponse, AssetShelfRequest, CapabilitiesResponse,
     ClearUnusedRequest, ClearUnusedResponse, ClipExportRequest, CreateProjectRequest,
-    DefaultsPatch, ExportRequest, FileNodeRequest, FileNodeResponse, FilesystemListing,
-    FilesystemQuery, FilesystemWriteQuery, FilesystemWriteResponse, GenerateResponse,
-    GenerationPreviewRequest, GenerationPreviewResponse, ImportProjectRequest, ModelKeyRequest,
+    DefaultsPatch, ExportRequest, ExportSettingsRequest, ExportSettingsResponse, FileNodeRequest,
+    FileNodeResponse, FilesystemListing, FilesystemQuery, FilesystemWriteQuery,
+    FilesystemWriteResponse, GenerateResponse, GenerationPreviewRequest, GenerationPreviewResponse,
+    ImportProjectRequest, ImportSettingsRequest, ImportSettingsResponse, ModelKeyRequest,
     OpenProjectRequest, OpenProjectResponse, PackageResponse, PreferencesPatch, PreviewInput,
-    PublicConfigResponse, ReorderModelsRequest, RevealRequest, RevisionQuery, RunStreamQuery,
-    SaveResponse, SecretStorageRequest, SelfCheckResponse, StartRunRequest, StartStoryJobRequest,
-    StoryJobItemDraft, StoryJobQuery, UpsertModelRequest,
+    PreviewSettingsRequest, PublicConfigResponse, ReorderModelsRequest, RevealRequest,
+    RevisionQuery, RunStreamQuery, SaveResponse, SecretStorageRequest, SelfCheckResponse,
+    SettingsSource, StartRunRequest, StartStoryJobRequest, StoryJobItemDraft, StoryJobQuery,
+    UpsertModelRequest,
 };
 use super::problem::{json_or_problem, Problem};
 use super::{filesystem, ApiState, ProjectSession};
@@ -20,6 +22,7 @@ use crate::domain::{
     now_iso, DocumentCommand, ResourceRegistry, RunRecord, RunStatus, ValidationIssue,
 };
 use crate::generate::models::ModelsView;
+use crate::generate::settings::{self, SettingsError};
 use crate::generate::{
     collect_generation_inputs, Cancel, DeltaSink, GenerateInput, GenerateRequest, ProviderError,
     TaskState,
@@ -1880,6 +1883,174 @@ pub async fn patch_preferences(
         .set_preferences(&preferences, patch.expected_revision)
         .await?;
     models_view(&state).await
+}
+
+/// Writes the whole configuration where a save dialog said.
+///
+/// Credentials travel only when asked for, and only sealed under the
+/// passphrase in the same request. The file is written private because a
+/// sealed key is as sensitive as the key itself.
+pub async fn export_settings(
+    State(state): State<ApiState>,
+    json: Result<Json<ExportSettingsRequest>, JsonRejection>,
+) -> Result<Json<ExportSettingsResponse>, Problem> {
+    let Json(request) = json_or_problem(json)?;
+    let destination = request.destination.trim();
+    if destination.is_empty() {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "A destination path is required",
+        ));
+    }
+    let (document, keys) = state
+        .models
+        .export_settings(request.include_keys, request.passphrase.as_deref())
+        .await?;
+    let models = document.models.len();
+    let bytes = serde_json::to_vec_pretty(&document).map_err(|error| {
+        Problem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            format!("the configuration could not be serialized: {error}"),
+        )
+    })?;
+    let written = super::filesystem::write_private(FsPath::new(destination), &bytes)
+        .await
+        .map_err(Problem::from)?;
+    Ok(Json(ExportSettingsResponse {
+        destination: destination.to_string(),
+        bytes: written,
+        models,
+        keys,
+    }))
+}
+
+/// Validates an import and describes it, without writing anything.
+pub async fn preview_settings_import(
+    State(state): State<ApiState>,
+    json: Result<Json<PreviewSettingsRequest>, JsonRejection>,
+) -> Result<Json<settings::SettingsPreview>, Problem> {
+    let Json(request) = json_or_problem(json)?;
+    let bytes = read_settings_source(&state, &request.source).await?;
+    Ok(Json(
+        state.models.preview_settings(&bytes, request.mode).await?,
+    ))
+}
+
+/// Applies an import that was previewed.
+pub async fn import_settings(
+    State(state): State<ApiState>,
+    json: Result<Json<ImportSettingsRequest>, JsonRejection>,
+) -> Result<Json<ImportSettingsResponse>, Problem> {
+    let Json(request) = json_or_problem(json)?;
+    let bytes = read_settings_source(&state, &request.source).await?;
+    let expected = request.expected_digest.trim();
+    if expected.is_empty() {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "A previewed file digest is required",
+        ));
+    }
+    if !expected.eq_ignore_ascii_case(&settings::digest(&bytes)) {
+        return Err(SettingsError::FileChanged.into());
+    }
+    let (view, report) = state
+        .models
+        .import_settings(
+            &bytes,
+            request.mode,
+            request.include_keys,
+            request.passphrase.as_deref(),
+            request.expected_revision,
+        )
+        .await?;
+    Ok(Json(ImportSettingsResponse { view, report }))
+}
+
+/// Reads the file a preview or an apply is about.
+///
+/// A desktop names a path the operating system's dialog answered. A browser
+/// sends the file's text instead: the server's disk is not the browser's disk,
+/// so a path from a web client is refused rather than turned into a read of
+/// this machine's files.
+async fn read_settings_source(
+    state: &ApiState,
+    source: &SettingsSource,
+) -> Result<Vec<u8>, Problem> {
+    match (
+        source
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty()),
+        source.text.as_deref(),
+    ) {
+        (Some(_), Some(_)) => Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "Name either a path or the file's text, not both",
+        )),
+        (None, None) => Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "A configuration file is required",
+        )),
+        (Some(path), None) => {
+            if !matches!(state.mode, RuntimeMode::Native) {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "VALIDATION_FAILED",
+                    "The web runtime sends the file's text; a server path is not read",
+                ));
+            }
+            let path = PathBuf::from(path);
+            if path.is_relative() {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "VALIDATION_FAILED",
+                    "A configuration path must be absolute",
+                ));
+            }
+            let metadata = tokio::fs::metadata(&path).await.map_err(|error| {
+                SettingsError::FileReadFailed(format!("{}: {error}", path.display()))
+            })?;
+            if !metadata.is_file() {
+                return Err(SettingsError::FileReadFailed(format!(
+                    "{} is not a file",
+                    path.display()
+                ))
+                .into());
+            }
+            let file = tokio::fs::File::open(&path).await.map_err(|error| {
+                SettingsError::FileReadFailed(format!("{}: {error}", path.display()))
+            })?;
+            let mut bytes = Vec::new();
+            let mut reader = file.take((settings::MAX_FILE_BYTES + 1) as u64);
+            reader.read_to_end(&mut bytes).await.map_err(|error| {
+                SettingsError::FileReadFailed(format!("{}: {error}", path.display()))
+            })?;
+            if bytes.len() > settings::MAX_FILE_BYTES {
+                return Err(SettingsError::FileTooLarge {
+                    bytes: bytes.len(),
+                    limit: settings::MAX_FILE_BYTES,
+                }
+                .into());
+            }
+            Ok(bytes)
+        }
+        (None, Some(text)) => {
+            if text.len() > settings::MAX_FILE_BYTES {
+                return Err(SettingsError::FileTooLarge {
+                    bytes: text.len(),
+                    limit: settings::MAX_FILE_BYTES,
+                }
+                .into());
+            }
+            Ok(text.as_bytes().to_vec())
+        }
+    }
 }
 
 /// Interface choices, read whole when a window starts.

@@ -402,6 +402,7 @@ pub fn router() -> axum::Router<ApiState> {
             post(routes::preview_generation),
         )
         .merge(model_router())
+        .merge(settings_router())
         .merge(ui_router())
         .merge(generate_router())
         .merge(clip_router())
@@ -527,6 +528,28 @@ fn model_router() -> axum::Router<ApiState> {
             put(routes::set_secret_storage),
         )
         .route_layer(DefaultBodyLimit::max(MAX_PROVIDER_BODY_BYTES))
+}
+
+/// Configuration transfer: the whole model document out, and back in.
+///
+/// A browser sends the file's text as a JSON string, so the escaped body can
+/// be larger than the file itself; the file ceiling is enforced independently
+/// by the handler. The separate router keeps that larger ceiling away from the
+/// ordinary model writes beside it.
+fn settings_router() -> axum::Router<ApiState> {
+    use axum::extract::DefaultBodyLimit;
+    use axum::routing::post;
+
+    const MAX_TRANSFER_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+    axum::Router::new()
+        .route("/api/v1/models/export", post(routes::export_settings))
+        .route(
+            "/api/v1/models/import/preview",
+            post(routes::preview_settings_import),
+        )
+        .route("/api/v1/models/import", post(routes::import_settings))
+        .route_layer(DefaultBodyLimit::max(MAX_TRANSFER_BODY_BYTES))
 }
 
 /// Interface choices: language, palette, panel geometry, and the places the

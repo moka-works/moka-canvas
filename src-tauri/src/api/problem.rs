@@ -113,7 +113,12 @@ pub fn status_for_code(code: &str) -> StatusCode {
         // Unregistered, but the established name for "the client went away
         // mid-request"; 4xx keeps it out of the server-failure counts.
         "GENERATION_CANCELLED" => client_closed_request(),
-        "PAYLOAD_TOO_LARGE" | "MOKA_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE,
+        "PAYLOAD_TOO_LARGE" | "MOKA_TOO_LARGE" | "SETTINGS_FILE_TOO_LARGE" => {
+            StatusCode::PAYLOAD_TOO_LARGE
+        }
+        // The file was previewed and then changed; asking again after a fresh
+        // preview is exactly the fix.
+        "SETTINGS_FILE_CHANGED" => StatusCode::CONFLICT,
         "UNSUPPORTED_MEDIA_TYPE" => StatusCode::UNSUPPORTED_MEDIA_TYPE,
         "PATH_ESCAPE" => StatusCode::BAD_REQUEST,
         "INTERNAL" => StatusCode::INTERNAL_SERVER_ERROR,
@@ -144,6 +149,33 @@ impl From<crate::metadata::MetadataError> for Problem {
         );
         if error.retryable() {
             problem = problem.with_details(serde_json::json!({ "retryable": true }));
+        }
+        problem
+    }
+}
+
+impl From<crate::generate::settings::SettingsError> for Problem {
+    fn from(error: crate::generate::settings::SettingsError) -> Self {
+        // A storage failure keeps the metadata layer's own retryability, which
+        // tells a client whether trying again can help.
+        if let crate::generate::settings::SettingsError::Storage(source) = &error {
+            let mut problem = Problem::new(
+                status_for_code(source.code()),
+                source.code(),
+                source.to_string(),
+            );
+            if source.retryable() {
+                problem = problem.with_details(serde_json::json!({ "retryable": true }));
+            }
+            return problem;
+        }
+        let mut problem = Problem::new(
+            status_for_code(error.code()),
+            error.code(),
+            error.to_string(),
+        );
+        if let Some(details) = error.details() {
+            problem = problem.with_details(details);
         }
         problem
     }

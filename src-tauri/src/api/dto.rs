@@ -1,5 +1,7 @@
 use crate::config::LimitsConfig;
 use crate::domain::{Capability, DocumentCommand, MokaFile, ResourceEntry, SelfCheckReport};
+use crate::generate::models::ModelsView;
+use crate::generate::settings::{ImportMode, SettingsImportReport};
 use crate::generate::{AsyncTask, GenerateResult, GeneratedItem, InputRole, Usage};
 use crate::metadata::{
     ImagePreferences, ModelDraft, MusicPreferences, SecretStorage, SpeechPreferences,
@@ -410,6 +412,75 @@ pub struct ReorderModelsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SecretStorageRequest {
     pub storage: SecretStorage,
+}
+
+/// Where a configuration export goes, and what it carries.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSettingsRequest {
+    /// The path a save dialog answered. Absolute, and in a folder that exists.
+    pub destination: String,
+    /// Whether stored credentials travel, sealed under `passphrase`.
+    #[serde(default)]
+    pub include_keys: bool,
+    #[serde(default)]
+    pub passphrase: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSettingsResponse {
+    pub destination: String,
+    pub bytes: u64,
+    pub models: usize,
+    pub keys: usize,
+}
+
+/// Where an import reads its document from.
+///
+/// A desktop names a path the operating system's dialog answered; a browser
+/// sends the file's text, because the server's disk is not the browser's disk
+/// and reading a server path would be a wider door than the one that was
+/// asked for. Exactly one field is used.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSource {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSettingsRequest {
+    #[serde(flatten)]
+    pub source: SettingsSource,
+    pub mode: ImportMode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSettingsRequest {
+    #[serde(flatten)]
+    pub source: SettingsSource,
+    pub mode: ImportMode,
+    /// Whether the file's encrypted credentials are stored too.
+    #[serde(default)]
+    pub include_keys: bool,
+    #[serde(default)]
+    pub passphrase: Option<String>,
+    /// The digest the preview answered with, sent back for the exact bytes.
+    pub expected_digest: String,
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSettingsResponse {
+    pub view: ModelsView,
+    pub report: SettingsImportReport,
 }
 
 /// Sets or clears one model configuration's credential on its own.

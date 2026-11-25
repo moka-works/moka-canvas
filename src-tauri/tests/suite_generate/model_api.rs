@@ -32,6 +32,10 @@ struct Harness {
 
 /// Opens the app over a temporary directory that already holds a master key.
 fn harness(root: &Path) -> Harness {
+    harness_with_mode(root, RuntimeMode::Web)
+}
+
+fn harness_with_mode(root: &Path, mode: RuntimeMode) -> Harness {
     let config = parse_test_config(root);
     let metadata = config
         .metadata
@@ -41,7 +45,7 @@ fn harness(root: &Path) -> Harness {
     std::fs::create_dir_all(&metadata).expect("the metadata directory is created");
     let encoded = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
     std::fs::write(metadata.join(MASTER_KEY_FILE), encoded).expect("the master key is written");
-    let state = ApiState::new(config, RuntimeMode::Web, &metadata).expect("the store opens");
+    let state = ApiState::new(config, mode, &metadata).expect("the store opens");
     Harness {
         app: moka_canvas::server::router(state),
         metadata,
@@ -101,6 +105,64 @@ async fn put_model(app: &Router, body: Value) -> Value {
     let (status, view) = send(app, json_request("PUT", "/api/v1/models", body)).await;
     assert_eq!(status, StatusCode::OK, "{view}");
     view
+}
+
+const TRANSFER_PASSPHRASE: &str = "transfer-passphrase-1";
+
+async fn export_configuration(
+    harness: &Harness,
+    destination: &Path,
+    include_keys: bool,
+    passphrase: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut body = json!({
+        "destination": destination.to_string_lossy(),
+        "includeKeys": include_keys,
+    });
+    if let Some(passphrase) = passphrase {
+        body["passphrase"] = json!(passphrase);
+    }
+    send(
+        &harness.app,
+        json_request("POST", "/api/v1/models/export", body),
+    )
+    .await
+}
+
+async fn preview_configuration(harness: &Harness, text: &str, mode: &str) -> (StatusCode, Value) {
+    send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/models/import/preview",
+            json!({ "text": text, "mode": mode }),
+        ),
+    )
+    .await
+}
+
+async fn import_configuration(
+    harness: &Harness,
+    text: &str,
+    mode: &str,
+    include_keys: bool,
+    passphrase: Option<&str>,
+    digest: &str,
+) -> (StatusCode, Value) {
+    let mut body = json!({
+        "text": text,
+        "mode": mode,
+        "includeKeys": include_keys,
+        "expectedDigest": digest,
+    });
+    if let Some(passphrase) = passphrase {
+        body["passphrase"] = json!(passphrase);
+    }
+    send(
+        &harness.app,
+        json_request("POST", "/api/v1/models/import", body),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -667,4 +729,373 @@ async fn a_protocol_the_category_does_not_offer_is_refused() {
 
     let (_, view) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
     assert_eq!(view["models"], json!([]), "nothing was stored");
+}
+
+#[tokio::test]
+async fn an_export_carries_every_model_and_never_a_plaintext_key() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("writer", Some(API_KEY))).await;
+    let mut painter = model_body("painter", Some(API_KEY));
+    painter["category"] = json!("image");
+    painter["protocol"] = json!("openaiImages");
+    painter["url"] = json!("https://provider.test/v1/images/generations");
+    put_model(&harness.app, painter).await;
+    let (status, _) = send(
+        &harness.app,
+        json_request(
+            "PATCH",
+            "/api/v1/models/defaults",
+            json!({ "text": "writer", "image": "painter" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &harness.app,
+        json_request(
+            "PATCH",
+            "/api/v1/models/preferences",
+            json!({ "systemPrompt": "be brief" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let destination = root.path().join("moka-settings.json");
+    let (status, report) =
+        export_configuration(&harness, &destination, true, Some(TRANSFER_PASSPHRASE)).await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(report["models"], 2);
+    assert_eq!(report["keys"], 2);
+
+    let raw = std::fs::read(&destination).unwrap();
+    let text = String::from_utf8(raw.clone()).unwrap();
+    assert!(!text.contains(API_KEY), "a credential was written in clear");
+    let document: Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(document["format"], "moka-canvas.settings");
+    assert_eq!(document["version"], 1);
+    assert_eq!(document["models"].as_array().unwrap().len(), 2);
+    assert_eq!(document["credentials"]["count"], 2);
+    assert!(
+        document["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|model| model.get("apiKey").is_none()),
+        "a model document carried a key field"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&destination)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "an export is not owner-only");
+    }
+}
+
+#[tokio::test]
+async fn a_previewed_import_restores_models_preferences_and_sealed_keys() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("writer", Some(API_KEY))).await;
+    let mut painter = model_body("painter", Some(API_KEY));
+    painter["category"] = json!("image");
+    painter["protocol"] = json!("openaiImages");
+    painter["url"] = json!("https://provider.test/v1/images/generations");
+    put_model(&harness.app, painter).await;
+    send(
+        &harness.app,
+        json_request(
+            "PATCH",
+            "/api/v1/models/defaults",
+            json!({ "text": "writer", "image": "painter" }),
+        ),
+    )
+    .await;
+    send(
+        &harness.app,
+        json_request(
+            "PATCH",
+            "/api/v1/models/preferences",
+            json!({ "systemPrompt": "be brief" }),
+        ),
+    )
+    .await;
+
+    let destination = root.path().join("moka-settings.json");
+    let (status, _) =
+        export_configuration(&harness, &destination, true, Some(TRANSFER_PASSPHRASE)).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = std::fs::read_to_string(&destination).unwrap();
+
+    for id in ["writer", "painter"] {
+        let (status, _) = send(
+            &harness.app,
+            plain_request("DELETE", &format!("/api/v1/models/{id}")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (_, empty) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
+    assert_eq!(empty["models"], json!([]));
+
+    let (status, preview) = preview_configuration(&harness, &text, "merge").await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["models"], 2);
+    assert_eq!(preview["added"], 2);
+    assert_eq!(preview["conflicts"], json!([]));
+    assert_eq!(preview["secrets"], 2);
+    assert_eq!(preview["byCategory"]["text"], 1);
+    assert_eq!(preview["byCategory"]["image"], 1);
+
+    let digest = preview["digest"].as_str().unwrap();
+    let (status, applied) = import_configuration(
+        &harness,
+        &text,
+        "merge",
+        true,
+        Some(TRANSFER_PASSPHRASE),
+        digest,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["report"]["added"], 2);
+    assert_eq!(applied["report"]["keysStored"], 2);
+    assert!(applied["report"]["keyFailure"].is_null());
+    let models = applied["view"]["models"].as_array().unwrap();
+    assert_eq!(models.len(), 2);
+    assert!(models.iter().all(|model| model["apiKey"]["set"] == true));
+    assert!(models
+        .iter()
+        .all(|model| model["apiKey"]["masked"] == MASKED_KEY));
+    assert_eq!(applied["view"]["defaults"]["text"], "writer");
+    assert_eq!(applied["view"]["defaults"]["image"], "painter");
+    assert_eq!(applied["view"]["preferences"]["systemPrompt"], "be brief");
+
+    // A wrong passphrase reaches no write, so the model deleted before the
+    // attempt is still gone.
+    send(
+        &harness.app,
+        plain_request("DELETE", "/api/v1/models/writer"),
+    )
+    .await;
+    let (status, preview) = preview_configuration(&harness, &text, "merge").await;
+    assert_eq!(status, StatusCode::OK);
+    let digest = preview["digest"].as_str().unwrap();
+    let (status, problem) = import_configuration(
+        &harness,
+        &text,
+        "merge",
+        true,
+        Some("wrong-passphrase-1"),
+        digest,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_PASSPHRASE_INVALID");
+    let (_, after) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
+    assert!(
+        !after["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|model| model["id"] == "writer"),
+        "a wrong passphrase still wrote the configuration"
+    );
+}
+
+#[tokio::test]
+async fn a_changed_file_and_a_stale_revision_are_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("writer", Some(API_KEY))).await;
+    let destination = root.path().join("moka-settings.json");
+    export_configuration(&harness, &destination, false, None).await;
+    let text = std::fs::read_to_string(&destination).unwrap();
+    let (status, preview) = preview_configuration(&harness, &text, "merge").await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    let digest = preview["digest"].as_str().unwrap();
+
+    let edited = format!("{text}\n");
+    let (status, problem) =
+        import_configuration(&harness, &edited, "merge", false, None, digest).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_FILE_CHANGED");
+
+    let (_, view) = send(&harness.app, plain_request("GET", "/api/v1/models")).await;
+    let revision = view["revision"].as_u64().unwrap();
+    put_model(&harness.app, model_body("other", None)).await;
+    let (status, problem) = send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/models/import",
+            json!({
+                "text": text,
+                "mode": "merge",
+                "expectedDigest": digest,
+                "expectedRevision": revision,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{problem}");
+    assert_eq!(problem["code"], "METADATA_CONFLICT");
+}
+
+#[tokio::test]
+async fn replace_removes_local_only_models_and_their_keys() {
+    let source_root = tempfile::tempdir().unwrap();
+    let source = harness(source_root.path());
+    put_model(&source.app, model_body("kept", Some(API_KEY))).await;
+    let destination = source_root.path().join("source-settings.json");
+    let (status, _) = export_configuration(&source, &destination, false, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = std::fs::read_to_string(&destination).unwrap();
+
+    let target_root = tempfile::tempdir().unwrap();
+    let target = harness(target_root.path());
+    put_model(&target.app, model_body("local", Some(API_KEY))).await;
+    put_model(&target.app, model_body("kept", Some(API_KEY))).await;
+
+    let (status, preview) = preview_configuration(&target, &text, "replace").await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["localOnly"].as_array().unwrap().len(), 1);
+    let digest = preview["digest"].as_str().unwrap();
+    let (status, applied) =
+        import_configuration(&target, &text, "replace", false, None, digest).await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["report"]["removed"], 1);
+    assert_eq!(applied["report"]["keysRemoved"], 1);
+    let models = applied["view"]["models"].as_array().unwrap();
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0]["id"], "kept");
+    assert_eq!(
+        models[0]["apiKey"]["masked"], MASKED_KEY,
+        "a surviving model keeps the key it had when the file carries none"
+    );
+    let (_, empty) = send(&target.app, plain_request("GET", "/api/v1/models")).await;
+    assert!(
+        !empty["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|model| model["id"] == "local"),
+        "replace kept a model the file did not name"
+    );
+}
+
+#[tokio::test]
+async fn the_import_validator_names_what_is_wrong() {
+    let root = tempfile::tempdir().unwrap();
+    let harness = harness(root.path());
+    put_model(&harness.app, model_body("writer", None)).await;
+    let mut painter = model_body("painter", None);
+    painter["category"] = json!("image");
+    painter["protocol"] = json!("openaiImages");
+    painter["url"] = json!("https://provider.test/v1/images/generations");
+    put_model(&harness.app, painter).await;
+    let destination = root.path().join("moka-settings.json");
+    export_configuration(&harness, &destination, false, None).await;
+    let text = std::fs::read_to_string(&destination).unwrap();
+    let valid: Value = serde_json::from_str(&text).unwrap();
+
+    let mut newer = valid.clone();
+    newer["version"] = json!(2);
+    let (status, problem) = preview_configuration(&harness, &newer.to_string(), "merge").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_VERSION_UNSUPPORTED");
+
+    let mut keyed = valid.clone();
+    keyed["models"][0]["apiKey"] = json!("sk-hand-edited");
+    let (status, problem) = preview_configuration(&harness, &keyed.to_string(), "merge").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_FILE_INVALID");
+    assert!(problem["message"].as_str().unwrap().contains("apiKey"));
+
+    let mut duplicated = valid.clone();
+    let first = duplicated["models"][0].clone();
+    duplicated["models"].as_array_mut().unwrap().push(first);
+    let (status, problem) = preview_configuration(&harness, &duplicated.to_string(), "merge").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_FILE_INVALID");
+
+    let mut unknown = valid.clone();
+    unknown["models"][0]["protocol"] = json!("notInstalled");
+    let (status, problem) = preview_configuration(&harness, &unknown.to_string(), "merge").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_MODEL_INVALID");
+    assert_eq!(problem["details"]["model"], "writer");
+
+    let mut wrong_default = valid.clone();
+    wrong_default["defaults"]["text"] = json!("painter");
+    let (status, problem) =
+        preview_configuration(&harness, &wrong_default.to_string(), "merge").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_DEFAULTS_INVALID");
+    assert_eq!(problem["details"]["capability"], "text");
+
+    let (status, problem) = send(
+        &harness.app,
+        json_request(
+            "POST",
+            "/api/v1/models/import/preview",
+            json!({ "path": "/tmp/moka-settings.json", "mode": "merge" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{problem}");
+    assert_eq!(problem["code"], "VALIDATION_FAILED");
+
+    let oversized = "x".repeat(moka_canvas::generate::settings::MAX_FILE_BYTES + 1);
+    let (status, problem) = preview_configuration(&harness, &oversized, "merge").await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{problem}");
+    assert_eq!(problem["code"], "SETTINGS_FILE_TOO_LARGE");
+}
+
+#[tokio::test]
+async fn a_desktop_may_import_a_file_by_path() {
+    let source_root = tempfile::tempdir().unwrap();
+    let source = harness(source_root.path());
+    put_model(&source.app, model_body("writer", Some(API_KEY))).await;
+    let destination = source_root.path().join("moka-settings.json");
+    let (status, _) =
+        export_configuration(&source, &destination, true, Some(TRANSFER_PASSPHRASE)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let target_root = tempfile::tempdir().unwrap();
+    let target = harness_with_mode(target_root.path(), RuntimeMode::Native);
+    let (status, preview) = send(
+        &target.app,
+        json_request(
+            "POST",
+            "/api/v1/models/import/preview",
+            json!({ "path": destination.to_string_lossy(), "mode": "merge" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["models"], 1);
+    let digest = preview["digest"].as_str().unwrap();
+    let (status, applied) = send(
+        &target.app,
+        json_request(
+            "POST",
+            "/api/v1/models/import",
+            json!({
+                "path": destination.to_string_lossy(),
+                "mode": "merge",
+                "includeKeys": true,
+                "passphrase": TRANSFER_PASSPHRASE,
+                "expectedDigest": digest,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["view"]["models"][0]["apiKey"]["masked"], MASKED_KEY);
 }

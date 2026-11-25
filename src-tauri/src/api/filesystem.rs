@@ -322,6 +322,23 @@ impl WriteError {
 /// save that fails halfway leaves whatever was there as it was, and a reader's
 /// own folder with nothing new in it.
 pub async fn write(destination: &Path, bytes: &[u8]) -> Result<u64, WriteError> {
+    write_with_mode(destination, bytes, false).await
+}
+
+/// Writes a file only its owner can read.
+///
+/// Used for an export that carries credentials under a passphrase: the file is
+/// still sealed, but a sealed key is as sensitive as the key itself, and a
+/// world-readable copy is not what "sealed" promised.
+pub async fn write_private(destination: &Path, bytes: &[u8]) -> Result<u64, WriteError> {
+    write_with_mode(destination, bytes, true).await
+}
+
+async fn write_with_mode(
+    destination: &Path,
+    bytes: &[u8],
+    private: bool,
+) -> Result<u64, WriteError> {
     if destination.is_relative() {
         return Err(WriteError::Relative(displayed(destination)));
     }
@@ -342,7 +359,7 @@ pub async fn write(destination: &Path, bytes: &[u8]) -> Result<u64, WriteError> 
 
     let staging = staging_name(destination);
     let written = async {
-        let mut file = tokio::fs::File::create(&staging).await?;
+        let mut file = create_staging(&staging, private).await?;
         file.write_all(bytes).await?;
         file.sync_all().await
     }
@@ -358,7 +375,38 @@ pub async fn write(destination: &Path, bytes: &[u8]) -> Result<u64, WriteError> 
             reason: source.to_string(),
         });
     }
+    if private {
+        restrict_to_owner(destination)
+            .await
+            .map_err(|source| WriteError::Io {
+                path: displayed(destination),
+                reason: format!("the file was written but could not be made private: {source}"),
+            })?;
+    }
     Ok(bytes.len() as u64)
+}
+
+async fn create_staging(path: &Path, private: bool) -> std::io::Result<tokio::fs::File> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        options.mode(if private { 0o600 } else { 0o666 });
+    }
+    options.open(path).await
+}
+
+async fn restrict_to_owner(destination: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(destination, std::fs::Permissions::from_mode(0o600)).await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = destination;
+        Ok(())
+    }
 }
 
 /// The name a save takes while it is being made: its destination's own name

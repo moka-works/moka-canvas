@@ -37,6 +37,7 @@ pub mod ingest;
 pub mod jobs;
 pub mod media;
 pub mod models;
+pub mod settings;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
