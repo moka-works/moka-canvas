@@ -1070,6 +1070,18 @@ export function applyElementAppearance(
 }
 
 /**
+ * A character always answers its four-view place, including one made before
+ * that place was part of an element: the slot an old telling lacks is added
+ * when its cast is listed again, so a sheet can be filed without replacing the
+ * element.
+ */
+function withTurnaroundSlot(element: StoryElement): StoryElement {
+  return element.kind === "character" && element.turnaround === undefined
+    ? { ...element, turnaround: emptyStorySlot() }
+    : element;
+}
+
+/**
  * An identification's elements against the story's own.
  *
  * Matching is by kind and name rather than by place, because reading a story
@@ -1166,7 +1178,7 @@ export function mergeElements(
     const element = cast.get(key);
     if (element !== undefined) added.push(element);
   }
-  if (!partial) return [...kept, ...added];
+  if (!partial) return [...kept, ...added].map(withTurnaroundSlot);
   const named = new Set(
     identified.map((draft) => elementKey(draft.kind, draft.name)),
   );
@@ -1174,7 +1186,7 @@ export function mergeElements(
     ...kept,
     ...added,
     ...existing.filter((held) => !named.has(elementKey(held.kind, held.name))),
-  ];
+  ].map(withTurnaroundSlot);
 }
 
 /**
@@ -1768,7 +1780,8 @@ export function keyframeAt(
  * The two sound slots are absent on a telling that was never voiced, and an
  * absent place answers as an empty one: the first take ever made for an act is
  * written into a slot that was not there, which is what a reader pressing the
- * button for the first time is asking for.
+ * button for the first time is asking for. A character made before four-view
+ * slots existed answers its turnaround the same way.
  */
 export function slotAt(
   story: StoryDocument,
@@ -1781,9 +1794,15 @@ export function slotAt(
       if (target.variantId !== undefined) {
         const form = elementForm(element, target.variantId);
         if (form === undefined) return undefined;
-        return target.view === "main" ? form.main : form.turnaround;
+        if (target.view === "main") return form.main;
+        return element.kind === "character"
+          ? (form.turnaround ?? emptyStorySlot())
+          : form.turnaround;
       }
-      return target.view === "main" ? element.main : element.turnaround;
+      if (target.view === "main") return element.main;
+      return element.kind === "character"
+        ? (element.turnaround ?? emptyStorySlot())
+        : element.turnaround;
     }
     case "keyframe":
       return keyframeAt(story, target)?.art;

@@ -1183,9 +1183,18 @@ impl StoryDocument {
                 };
                 match view {
                     StoryElementView::Main => Ok(main.clone()),
-                    StoryElementView::Turnaround => {
-                        turnaround.cloned().ok_or_else(story_target_invalid)
-                    }
+                    // A character's absent turnaround is an empty place rather
+                    // than a missing one: one made before four-view slots
+                    // existed can still have its first sheet written, and that
+                    // write is what creates the slot. A scene or thing has no
+                    // such place, and asking for one is still a mistake.
+                    StoryElementView::Turnaround => match turnaround.cloned() {
+                        Some(slot) => Ok(slot),
+                        None if element.kind == StoryElementKind::Character => {
+                            Ok(StorySlot::default())
+                        }
+                        None => Err(story_target_invalid()),
+                    },
                 }
             }
             StorySlotTarget::Keyframe {

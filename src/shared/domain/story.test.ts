@@ -51,6 +51,7 @@ import {
   mergeElements,
   missingVideoTargets,
   reviseChapter,
+  slotAt,
   slotWithoutTake,
   stepComplete,
   stepGaps,
@@ -693,6 +694,36 @@ describe("mergeElements", () => {
     expect(merged[0].main.takes).toHaveLength(1);
     expect(merged[0].main.takes[0].assetIds[0]).toBe("asset-hero-main");
     expect(merged[0].turnaround?.takes).toHaveLength(1);
+  });
+
+  it("gives a character made before four-view slots its turnaround place again", () => {
+    const old: StoryElement = {
+      ...element("element-old", "character"),
+      name: "林",
+    };
+    delete old.turnaround;
+    const merged = mergeElements(
+      [old],
+      [{ kind: "character", name: "林", description: "" }],
+      [],
+    );
+    expect(merged[0].turnaround).toEqual(emptyStorySlot());
+  });
+
+  it("answers a missing turnaround as an empty place", () => {
+    const old: StoryElement = {
+      ...element("element-old", "character"),
+      name: "林",
+    };
+    delete old.turnaround;
+    const story = { elements: [old] } as StoryDocument;
+    expect(
+      slotAt(story, {
+        kind: "element",
+        elementId: old.id,
+        view: "turnaround",
+      }),
+    ).toEqual(emptyStorySlot());
   });
 
   it("writes distinct static forms while preserving existing artwork and manual forms", () => {

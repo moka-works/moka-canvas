@@ -1301,3 +1301,84 @@ async fn a_story_is_imported_as_a_wired_canvas_and_its_prompts_can_be_written() 
         "Ahe, painted in one flat colour."
     );
 }
+
+#[tokio::test]
+async fn a_turnaround_sheet_can_be_filed_for_a_character_made_without_its_place() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "story.add_element",
+        json!({
+            "storyId": story_id,
+            "element": {"kind": "character", "name": "Ahe", "description": "The keeper."}
+        }),
+    )
+    .await;
+    let opened = current(&app).await;
+    let element_id = opened["moka"]["stories"][0]["elements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        opened["moka"]["stories"][0]["elements"][0]
+            .get("turnaround")
+            .is_none(),
+        "the hand-added character starts without a four-view place"
+    );
+
+    let main_picture = temp.path().join("main.png");
+    let sheet = temp.path().join("sheet.png");
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([30, 90, 160, 255]))
+        .save(&main_picture)
+        .unwrap();
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([160, 90, 30, 255]))
+        .save(&sheet)
+        .unwrap();
+    let imported = call(
+        &app,
+        "asset.import_path",
+        json!({"paths": [main_picture.to_string_lossy(), sheet.to_string_lossy()]}),
+    )
+    .await;
+    let main_asset = imported["assetsAdded"][0]["id"].as_str().unwrap().to_string();
+    let sheet_asset = imported["assetsAdded"][1]["id"].as_str().unwrap().to_string();
+
+    for (view, asset) in [("main", &main_asset), ("turnaround", &sheet_asset)] {
+        call(
+            &app,
+            "story.set_slot",
+            json!({
+                "storyId": story_id,
+                "target": {"kind": "element", "elementId": element_id, "view": view},
+                "action": "append",
+                "assetIds": [asset]
+            }),
+        )
+        .await;
+    }
+
+    let after = current(&app).await;
+    let element = &after["moka"]["stories"][0]["elements"][0];
+    let main_takes = element["main"]["takes"].as_array().unwrap();
+    assert_eq!(main_takes.len(), 1);
+    assert_eq!(main_takes[0]["assetIds"][0], main_asset);
+    let takes = element["turnaround"]["takes"].as_array().unwrap();
+    assert_eq!(
+        takes.len(),
+        1,
+        "the sheet's place holds only the sheet, not a copy of the main picture"
+    );
+    assert_eq!(takes[0]["assetIds"][0], sheet_asset);
+}

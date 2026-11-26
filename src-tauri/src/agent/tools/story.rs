@@ -1409,18 +1409,18 @@ fn slot_of<'a>(story: &'a StoryDocument, target: &StorySlotTarget) -> Option<&'a
                     .iter()
                     .flatten()
                     .find(|form| form.id == *variant_id)
-                    .map(|form| match view {
-                        crate::domain::story::StoryElementView::Main => &form.main,
+                    .and_then(|form| match view {
+                        crate::domain::story::StoryElementView::Main => Some(&form.main),
                         crate::domain::story::StoryElementView::Turnaround => {
-                            form.turnaround.as_ref().unwrap_or(&form.main)
+                            form.turnaround.as_ref()
                         }
                     }),
-                None => Some(match view {
-                    crate::domain::story::StoryElementView::Main => &element.main,
+                None => match view {
+                    crate::domain::story::StoryElementView::Main => Some(&element.main),
                     crate::domain::story::StoryElementView::Turnaround => {
-                        element.turnaround.as_ref().unwrap_or(&element.main)
+                        element.turnaround.as_ref()
                     }
-                }),
+                },
             }),
         StorySlotTarget::Keyframe {
             chapter_id,

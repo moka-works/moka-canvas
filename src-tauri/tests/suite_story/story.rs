@@ -2102,6 +2102,49 @@ fn keeps_the_window_a_take_was_cut_to_across_the_codec() {
 }
 
 #[test]
+fn writes_a_turnaround_into_a_character_that_had_none() {
+    let mut moka = story_document();
+    {
+        let story = &mut moka.stories.as_mut().unwrap()[0];
+        let partner = story
+            .elements
+            .iter_mut()
+            .find(|element| element.id == PARTNER)
+            .unwrap();
+        partner.turnaround = None;
+    }
+    // The place was not there before, so undoing the write leaves an empty
+    // place rather than removing it; the sheet being written is what matters.
+    let (next, _) = apply(
+        &moka,
+        vec![DocumentCommand::SetStorySlot {
+            story_id: STORY.into(),
+            target: StorySlotTarget::Element {
+                element_id: PARTNER.into(),
+                view: StoryElementView::Turnaround,
+                variant_id: None,
+            },
+            slot: StorySlot {
+                takes: vec![take("asset-partner-sheet")],
+                ..Default::default()
+            },
+            read: None,
+        }],
+    );
+    let partner = story_of(&next)
+        .elements
+        .iter()
+        .find(|element| element.id == PARTNER)
+        .unwrap();
+    let turnaround = partner.turnaround.as_ref().expect("the sheet's place is made");
+    assert_eq!(turnaround.takes.len(), 1);
+    assert_eq!(
+        turnaround.takes[0].asset_ids,
+        vec!["asset-partner-sheet".to_string()]
+    );
+}
+
+#[test]
 fn keeps_the_drawings_a_place_is_waiting_to_choose_between() {
     let moka = story_document();
     let slot = StorySlot {
