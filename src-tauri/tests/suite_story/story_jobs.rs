@@ -1849,6 +1849,9 @@ async fn a_batch_a_previous_process_was_running_is_failed_on_the_next_open() {
     // out there and the work stopped with the process.
     leave_record(&project, abandoned_job(None));
 
+    // A restart lets go of the library's lock before it opens it again.
+    drop(harness);
+    let harness = harness_at(&tmp);
     harness.reopen().await;
 
     let swept = harness.job("job-abandoned").await;
