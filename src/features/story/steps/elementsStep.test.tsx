@@ -1726,13 +1726,67 @@ describe("a cast too long for one page", () => {
       "Showing 10–18 of 20",
     );
 
+    // The field is empty again for the next jump, and the strip says where the
+    // reader stands.
+    expect(jump.value).toBe("");
+    expect(
+      screen.getByTestId("story-elements-page-2").getAttribute("aria-current"),
+    ).toBe("page");
+
     // A page past the end is read as the last one rather than as nothing.
     fireEvent.change(jump, { target: { value: "99" } });
     fireEvent.keyDown(jump, { key: "Enter" });
     expect(screen.getByTestId("story-elements-shown").textContent).toBe(
       "Showing 19–20 of 20",
     );
-    expect(jump.value).toBe("3");
+    expect(jump.value).toBe("");
+  });
+
+  it("turns to the page a reader picks by its number", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 20);
+    openAtElements(moka);
+
+    // A cast of three pages lists all three, the one being read marked.
+    expect(screen.getByTestId("story-elements-page-3")).toBeTruthy();
+    expect(
+      screen.getByTestId("story-elements-page-1").getAttribute("aria-current"),
+    ).toBe("page");
+
+    fireEvent.click(screen.getByTestId("story-elements-page-3"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 19–20 of 20",
+    );
+    expect(
+      screen.getByTestId("story-elements-page-3").getAttribute("aria-current"),
+    ).toBe("page");
+
+    fireEvent.click(screen.getByTestId("story-elements-page-1"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 1–9 of 20",
+    );
+  });
+
+  it("keeps a long cast to a strip of pages, with both ends always there", () => {
+    const moka = buildStoryMokaFile();
+    moka.stories![0].elements = castOf("prop", 200);
+    openAtElements(moka);
+
+    // Twenty-three pages of nine: the ends stand in the strip while the pages
+    // far from the one being read are left to the typed jump.
+    expect(screen.getByTestId("story-elements-page-1")).toBeTruthy();
+    expect(screen.getByTestId("story-elements-page-23")).toBeTruthy();
+    expect(screen.queryByTestId("story-elements-page-12")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("story-elements-page-23"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 199–200 of 200",
+    );
+    // The pages beside the one being read stand with the ends.
+    fireEvent.click(screen.getByTestId("story-elements-page-22"));
+    expect(screen.getByTestId("story-elements-shown").textContent).toBe(
+      "Showing 190–198 of 200",
+    );
   });
 
   it("keeps each kind on the page the reader left it on", () => {

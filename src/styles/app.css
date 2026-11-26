@@ -7893,6 +7893,31 @@ body.is-dragging-split {
   opacity: 0.5;
 }
 
+/* Every page of a short cast, and the ends with the page being read for a
+   long one: a reader aims at a page rather than stepping to it. */
+.story-page-numbers {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.story-page-number {
+  font-size: 12px;
+  min-width: 28px;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+.story-page-number.is-on {
+  background: var(--surface-raised);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+.story-page-gap {
+  padding: 0 2px;
+}
+
 .story-page-jump {
   align-items: center;
   display: inline-flex;

@@ -956,7 +956,36 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
                   >
                     ‹
                   </button>
-                  <PageJump onGo={goToPage} page={page} pageCount={pageCount} />
+                  {pageCount > 1 && (
+                    <span className="story-page-numbers">
+                      {pageStrip(page, pageCount).map((each, at) =>
+                        each === null ? (
+                          <span
+                            aria-hidden="true"
+                            className="story-page-gap"
+                            key={`gap-${at}`}
+                          >
+                            …
+                          </span>
+                        ) : (
+                          <button
+                            aria-current={each === page ? "page" : undefined}
+                            aria-label={t("story:elements.goToPage", {
+                              page: each,
+                            })}
+                            className={`story-page-step story-page-number${each === page ? " is-on" : ""}`}
+                            data-testid={`story-elements-page-${each}`}
+                            key={each}
+                            onClick={() => goToPage(each)}
+                            type="button"
+                          >
+                            {each}
+                          </button>
+                        ),
+                      )}
+                    </span>
+                  )}
+                  <PageJump onGo={goToPage} pageCount={pageCount} />
                   <button
                     aria-label={t("story:elements.nextPage")}
                     className="story-page-step"
@@ -1036,40 +1065,57 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
 }
 
 /**
- * The page a reader is on, typed in rather than turned to.
+ * The pages the strip beside the arrows offers.
  *
- * A telling of two hundred cards is many pages, and a row of page numbers is
- * not a list a reader can aim at; the arrow beside this steps one page at a
- * time, and this jumps to the one they name.
+ * A short cast shows every page. A long one shows the two ends and the page
+ * being read with its neighbours, and a gap stands for the rest, so the strip
+ * stays one row however many pages a kind's cast fills. The typed jump is what
+ * reaches a page far from the one in view.
+ */
+function pageStrip(page: number, pageCount: number): Array<number | null> {
+  const held =
+    pageCount <= 7
+      ? Array.from({ length: pageCount }, (_, at) => at + 1)
+      : [...new Set([1, pageCount, page - 1, page, page + 1])]
+          .filter((each) => each >= 1 && each <= pageCount)
+          .sort((a, b) => a - b);
+  const strip: Array<number | null> = [];
+  held.forEach((each, at) => {
+    const before = held[at - 1];
+    if (before !== undefined && each - before > 1) strip.push(null);
+    strip.push(each);
+  });
+  return strip;
+}
+
+/**
+ * A page named outright rather than turned to.
+ *
+ * The strip beside it reaches the pages around the one being read; this is the
+ * way to any of the rest without stepping through them. It stands empty — the
+ * strip already says which page is being read — and is cleared once its page
+ * is turned to, so the next jump starts from nothing.
  */
 function PageJump({
-  page,
   pageCount,
   onGo,
 }: {
-  page: number;
   pageCount: number;
   onGo: (page: number) => void;
 }) {
   const { t } = useTranslation();
-  const [text, setText] = useState(String(page));
-
-  // The page may be turned by the arrow beside the field, or read as a
-  // shorter list when elements are taken out; the field follows it.
-  useEffect(() => {
-    setText(String(page));
-  }, [page]);
+  const [text, setText] = useState("");
 
   const go = () => {
     const typed = Number.parseInt(text, 10);
-    const wanted = Number.isFinite(typed) ? typed : page;
-    const next = Math.min(Math.max(1, wanted), pageCount);
-    setText(String(next));
-    if (next !== page) onGo(next);
+    setText("");
+    if (!Number.isFinite(typed)) return;
+    onGo(Math.min(Math.max(1, typed), pageCount));
   };
 
   return (
-    <span className="story-page-jump">
+    <label className="story-page-jump">
+      {t("story:elements.pageJump")}
       <input
         aria-label={t("story:elements.pageJump")}
         data-testid="story-elements-page"
@@ -1086,8 +1132,7 @@ function PageJump({
         type="number"
         value={text}
       />
-      <span>{t("story:elements.pageOf", { total: pageCount })}</span>
-    </span>
+    </label>
   );
 }
 
