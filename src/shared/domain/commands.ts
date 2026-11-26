@@ -3227,20 +3227,23 @@ function slotOf(story: StoryDocument, target: StorySlotTarget): StorySlot {
             i18n.t("errors:command.storyElementNotFound"),
           );
         if (target.view === "main") return form.main;
-        if (!form.turnaround)
-          throw new CommandError(
-            "STORY_TARGET_INVALID",
-            i18n.t("errors:command.storyElementNotFound"),
-          );
-        return form.turnaround;
-      }
-      if (target.view === "main") return element.main;
-      if (!element.turnaround)
+        if (form.turnaround) return form.turnaround;
+        // A character's form that was never drawn from four sides has an empty
+        // sheet, not no form: writing its first take is what brings the slot
+        // into being. A place has no sheet at all.
+        if (element.kind === "character") return emptyStorySlot();
         throw new CommandError(
           "STORY_TARGET_INVALID",
           i18n.t("errors:command.storyElementNotFound"),
         );
-      return element.turnaround;
+      }
+      if (target.view === "main") return element.main;
+      if (element.turnaround) return element.turnaround;
+      if (element.kind === "character") return emptyStorySlot();
+      throw new CommandError(
+        "STORY_TARGET_INVALID",
+        i18n.t("errors:command.storyElementNotFound"),
+      );
     }
     case "keyframe":
       return keyframeOf(

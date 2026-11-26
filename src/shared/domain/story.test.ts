@@ -2615,6 +2615,31 @@ describe("filing a drawing at a place", () => {
     ).toBe("STORY_TARGET_INVALID");
   });
 
+  it("opens a character's four-view place by filing its first sheet there", () => {
+    const moka = buildStoryMokaFile();
+    const ids = storyIds();
+    const stripped = apply(moka, {
+      type: "setStoryElements",
+      storyId: ids.story,
+      elements: storyOfFile(moka).elements.map((held) => {
+        if (held.id !== ids.hero) return held;
+        const { turnaround: _sheet, ...rest } = held;
+        return rest;
+      }),
+    }).next;
+    const sheet: StorySlot = { takes: [take("asset-first-sheet")] };
+    const next = apply(stripped, {
+      type: "setStorySlot",
+      storyId: ids.story,
+      target: { kind: "element", elementId: ids.hero, view: "turnaround" },
+      slot: sheet,
+    }).next;
+    const hero = storyOfFile(next).elements.find(
+      (held) => held.id === ids.hero,
+    );
+    expect(hero?.turnaround?.takes).toHaveLength(1);
+  });
+
   it("files an act's clip at the act, and a shot's clip at the shot", () => {
     const moka = buildStoryMokaFile();
     const ids = storyIds();
