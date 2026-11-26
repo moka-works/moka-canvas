@@ -327,6 +327,17 @@ describe("story prompts", () => {
     expect(prompt).toContain(
       "the one workplace they stand in together is still the one",
     );
+    // A scene and a prop are reference pictures for the place and the thing
+    // alone: anyone the telling follows is drawn by the shots they stand in,
+    // so a description that puts people in a place or a thing would hand every
+    // frame figures it never asked for.
+    expect(prompt).toContain("describe the place alone: put no one in it");
+    expect(prompt).toContain(
+      "describing the thing alone: no one holds, wears or stands beside it",
+    );
+    expect(prompt).toContain(
+      "keep it out of the cast and out of every scene's description",
+    );
   });
 
   it("asks for props a shot must show, not light or weather", () => {
@@ -396,6 +407,12 @@ describe("story prompts", () => {
     );
     expect(prompt).toContain("add or leave out an entry");
     expect(prompt).toContain("never voice, habits, manner");
+    expect(prompt).toContain(
+      "describing the place alone with no person standing in it",
+    );
+    expect(prompt).toContain(
+      "describing the thing alone with no person holding or wearing it",
+    );
     expect(prompt).toContain("This is merge 1 of 2");
     expect(prompt).toContain('"forms"');
     expect(prompt).not.toContain("{{");
@@ -505,6 +522,8 @@ describe("story prompts", () => {
       description: "空车厢，灯管忽明忽暗。",
     });
     expect(prompt).toContain("unmistakable");
+    expect(prompt).toContain("no person anywhere in the frame");
+    expect(prompt).toContain("the place stands empty");
     expect(prompt).not.toContain("head to foot");
     expect(prompt).not.toContain("white background");
   });
@@ -519,6 +538,9 @@ describe("story prompts", () => {
     });
     expect(prompt).toContain("旧车票 — 发黄的车票，边角磨损。");
     expect(prompt).toContain("plain white background");
+    expect(prompt).toContain(
+      "no person holding, wearing or standing beside it",
+    );
     expect(prompt).not.toContain("head to foot");
   });
 
