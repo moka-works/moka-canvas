@@ -43,6 +43,11 @@ use crate::generate::{
 /// handler again forever is a loop, and a loop would otherwise never end.
 const MAX_EXCHANGES: usize = 64;
 
+/// How many times one item's finished bytes are read before the read is
+/// given up on. The address serves the same file every time, so a download
+/// that timed out on a thin link is worth asking for again.
+const MEDIA_DOWNLOAD_ATTEMPTS: u32 = 3;
+
 static CONVERTER_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// Sets the converter root directory. Called once during startup after deploy.
@@ -905,16 +910,29 @@ async fn item_of(
     if let Some(address) = spec.get("url").and_then(Value::as_str) {
         // The address is wherever the provider left the media, so it is asked
         // for the way the configured endpoint was — the same rule every other
-        // address outside it follows.
-        let reply = exchange(
-            Kind::Media,
-            call,
-            call.described_with("GET", address, auth)?,
-            call.budgets.timeout_for(capability),
-            call.budgets.max_response_bytes,
-            run,
-        )
-        .await?;
+        // address outside it follows. The read is repeated when the link drops
+        // or stalls: a finished film is already rendered, and a thin connection
+        // failing to carry it says nothing about whether it is still there.
+        let mut attempt = 1;
+        let reply = loop {
+            match exchange(
+                Kind::Media,
+                call,
+                call.described_with("GET", address, auth)?,
+                call.budgets.timeout_for(capability),
+                call.budgets.max_response_bytes,
+                run,
+            )
+            .await
+            {
+                Ok(reply) => break reply,
+                Err(error) if attempt < MEDIA_DOWNLOAD_ATTEMPTS && retry_download(&error) => {
+                    tokio::time::sleep(Duration::from_secs(2u64.pow(attempt - 1))).await;
+                    attempt += 1;
+                }
+                Err(error) => return Err(error),
+            }
+        };
         if !succeeded(reply.status) {
             return Err(provider_error(&reply, &call.api_key));
         }
@@ -938,6 +956,16 @@ async fn item_of(
     Err(ProviderError::invalid(
         "the script described an item with no bytes to store",
     ))
+}
+
+/// Whether reading an item's bytes again can help: a link that dropped or
+/// stalled carries no judgement about the file behind it. A refusal — the
+/// address answering with a status — is the provider's word and is kept.
+fn retry_download(error: &ProviderError) -> bool {
+    matches!(
+        error,
+        ProviderError::Timeout(_) | ProviderError::Unreachable(_)
+    )
 }
 
 /// One item's bytes, stored as the media the request was for.
@@ -1412,6 +1440,13 @@ mod tests {
     fn a_reply_that_states_no_words_is_read_as_no_words() {
         assert_eq!(text_of(Some(&json!({"items": []}))).unwrap(), None);
         assert_eq!(text_of(Some(&json!({"cues": {}}))).unwrap(), None);
+    }
+
+    #[test]
+    fn only_a_broken_link_makes_a_download_worth_repeating() {
+        assert!(retry_download(&ProviderError::Timeout("late".into())));
+        assert!(retry_download(&ProviderError::Unreachable("gone".into())));
+        assert!(!retry_download(&ProviderError::Rejected("nope".into())));
     }
 
     #[test]
