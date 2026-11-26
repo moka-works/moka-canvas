@@ -61,6 +61,7 @@ import {
   drawnFrames,
   filmRoleOf,
   jobKey,
+  keyframeArtCast,
   keyframeCastFor,
   settledRoleFrames,
 } from "../jobs/plan";
@@ -1182,6 +1183,7 @@ function KeyframePromptCell({
 
   // The same words the plan will send, read apart: the fixed scaffolding is
   // the muted part, and the hole it was written around is the field below.
+  const artCast = keyframeArtCast(story, act, keyframe, content.value);
   const parts = storyKeyframePromptParts({
     aspect: story.brief.aspect,
     style: story.brief.style,
@@ -1192,10 +1194,11 @@ function KeyframePromptCell({
       shotSize: keyframe.shotSize,
       angle: keyframe.angle,
     },
-    cast: cast.carried.map(({ name, description }) => ({
+    cast: artCast.cast.map(({ name, description }) => ({
       name,
       description,
     })),
+    place: artCast.place,
   });
 
   return (

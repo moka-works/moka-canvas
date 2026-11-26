@@ -558,6 +558,8 @@ export interface StoryKeyframePromptInput extends StoryLook {
     angle: string;
   };
   cast: Array<{ name: string; description: string }>;
+  /** Whether picture 1 is the place the frame is shot in, rather than a person. */
+  place?: boolean;
 }
 
 /** The mark the content is rendered between so the words around it can be read

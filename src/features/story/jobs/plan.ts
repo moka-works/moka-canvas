@@ -1544,10 +1544,25 @@ export function keyframeCast(
     seenAssets.add(reference.assetId);
     return true;
   });
+  // The place is the base a frame is composed on, so it leads the pictures
+  // that travel; people follow it, and things come last. A close-up kept
+  // without its place is not overruled here: the picture list decides what
+  // travels, and this only fixes the order the list is read in.
+  const rank = (reference: StoryReference): number => {
+    const kind = reference.element?.kind;
+    if (kind === "scene") return 0;
+    if (kind === "character") return 1;
+    if (kind === "prop") return 2;
+    return 3;
+  };
+  const ordered = all
+    .map((reference, index) => ({ reference, index }))
+    .sort((a, b) => rank(a.reference) - rank(b.reference) || a.index - b.index)
+    .map(({ reference }) => reference);
   const limit = story.maxReferenceImages;
   return {
-    carried: all.slice(0, limit),
-    beyond: all.slice(limit),
+    carried: ordered.slice(0, limit),
+    beyond: ordered.slice(limit),
     undrawn,
   };
 }
@@ -1596,6 +1611,36 @@ function carriedElement(
       variant === undefined ? element.description : variant.description,
     assetId: take.assetIds[0],
   };
+}
+
+/** A frame's pictures as the ask carries them: its cast, its place leading. */
+export function keyframeArtCast(
+  story: StoryDocument,
+  act: StoryAct,
+  keyframe: StoryKeyframe,
+  content: string = keyframe.content,
+): { cast: StoryReference[]; place: boolean } {
+  const carried = keyframeCastFor(story, act, keyframe, content).carried;
+  // The place the shot's own list names is the base; the act's place stands in
+  // only when the shot left it out (a close-up keeps the room's light and
+  // walls behind the face). A frame with no pictures at all stays
+  // reference-free — a title card or an insert is drawn from its words alone.
+  const listed = carried.find((held) => held.element?.kind === "scene");
+  if (listed !== undefined) return { cast: carried, place: carried[0] === listed };
+  const placeElement =
+    carried.length === 0 || act.sceneId === undefined
+      ? undefined
+      : elementOf(story, act.sceneId);
+  const place =
+    placeElement === undefined
+      ? undefined
+      : carriedElement(story, placeElement.name, keyframe.variantChoices ?? {});
+  if (place === undefined) return { cast: carried, place: false };
+  const cast = [place, ...carried.filter((held) => held.assetId !== place.assetId)].slice(
+    0,
+    story.maxReferenceImages,
+  );
+  return { cast, place: cast[0] === place };
 }
 
 /** One picture of the shot's list, as its words name it. */
@@ -1655,7 +1700,7 @@ export function planKeyframeArt(
         : act.keyframes.find((held) => held.id === keyframeId);
     if (chapter === undefined || act === undefined || keyframe === undefined)
       return [];
-    const cast = keyframeCastFor(story, act, keyframe).carried;
+    const { cast, place: hasPlace } = keyframeArtCast(story, act, keyframe);
     const target: StoryTarget = {
       kind: "keyframeArt",
       chapterId,
@@ -1683,6 +1728,7 @@ export function planKeyframeArt(
               name,
               description,
             })),
+            place: hasPlace,
           }),
         inputs: cast.map(({ assetId }) => ({
           role: "reference" as const,

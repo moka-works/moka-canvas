@@ -856,7 +856,8 @@ describe("planning the drawings", () => {
   it("leaves a name nobody has drawn to the words", () => {
     // The prop has no drawing of its own, so the mention is prose: it is not
     // numbered as a reference. The speaker of the shot's line still travels,
-    // since a frame without their face gives the line to a stranger.
+    // since a frame without their face gives the line to a stranger, and the
+    // act's place leads them so the frame is composed inside the room.
     const items = planKeyframeArt(withContent("`旧车票`攥在手里。"), [
       {
         chapterId: ids.chapterFirst,
@@ -865,8 +866,11 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: ids.sceneMain },
       { role: "reference", assetId: ids.heroSheet },
     ]);
+    expect(items[0].prompt).toContain("1. 末班车车厢 —");
+    expect(items[0].prompt).toContain("2. 林 —");
     expect(items[0].prompt).not.toContain("旧车票 —");
     expect(items[0].prompt).toContain("旧车票攥在手里。");
   });
@@ -882,18 +886,18 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(items[0].inputs).toEqual([
+      { role: "reference", assetId: ids.sceneMain },
       { role: "reference", assetId: ids.heroSheet },
       { role: "reference", assetId: ids.partnerMain },
-      { role: "reference", assetId: ids.sceneMain },
     ]);
-    expect(items[0].prompt).toContain("1. 林 —");
-    expect(items[0].prompt).toContain("2. 周 —");
-    expect(items[0].prompt).toContain("3. 末班车车厢 —");
+    expect(items[0].prompt).toContain("1. 末班车车厢 —");
+    expect(items[0].prompt).toContain("2. 林 —");
+    expect(items[0].prompt).toContain("3. 周 —");
     // The prop has no drawing, so it has no numbered reference to stand on.
     expect(items[0].prompt).not.toContain("旧车票 —");
   });
 
-  it("carries the first of the act's pictures its limit allows", () => {
+  it("carries the place first when only one picture fits", () => {
     const held = withContent("雨下个不停。");
     held.chapters[0]!.acts[0]!.keyframes[0]!.references = undefined;
     const limited: StoryDocument = { ...held, maxReferenceImages: 1 };
@@ -904,7 +908,7 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.sceneMain]);
   });
 
   it("draws a shot that names nothing from the list it still keeps", () => {
@@ -939,7 +943,7 @@ describe("planning the drawings", () => {
     expect(items[0].inputs).toEqual([]);
   });
 
-  it("does not add the act's cast to a shot whose words name a picture", () => {
+  it("keeps the place under a shot whose words name only a person", () => {
     const held = withContent("`林`立在灯下。");
     held.chapters[0]!.acts[0]!.keyframes[0]!.references = undefined;
     const [item] = planKeyframeArt(held, [
@@ -949,7 +953,10 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
+      ids.heroSheet,
+    ]);
   });
 
   it("numbers exactly the pictures that travel", () => {
@@ -967,21 +974,22 @@ describe("planning the drawings", () => {
       .split("\n")
       .filter((line) => /^\d+\./.test(line.trim()));
     expect(numbered.length).toBe(items[0].inputs?.length);
-    expect(numbered[0]).toContain("周");
+    expect(numbered[0]).toContain("末班车车厢");
   });
 
-  it("carries the first pictures the story's limit allows, in the order they are named", () => {
-    // Three drawn elements are mentioned and the story allows two: the first
-    // two travel and the third is left to the words.
+  it("carries the place and the named pictures up to the story's limit", () => {
+    // Three drawn elements are mentioned and the story allows two: the place
+    // leads them and the first person named rides behind it, while the second
+    // is left to the words.
     const words = "`林`看着`周`，`末班车车厢`里很暗。";
     const held = withContent(words);
     const limited: StoryDocument = { ...held, maxReferenceImages: 2 };
     const cast = keyframeCast(limited, words);
     expect(cast.carried.map(({ assetId }) => assetId)).toEqual([
+      ids.sceneMain,
       ids.heroSheet,
-      ids.partnerMain,
     ]);
-    expect(cast.beyond.map(({ name }) => name)).toEqual(["末班车车厢"]);
+    expect(cast.beyond.map(({ name }) => name)).toEqual(["周"]);
     expect(cast.undrawn).toEqual([]);
 
     const [item] = planKeyframeArt(limited, [
@@ -992,10 +1000,10 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       ids.heroSheet,
-      ids.partnerMain,
     ]);
-    expect(item.prompt).not.toContain("末班车车厢 —");
+    expect(item.prompt).not.toContain("周 —");
   });
 
   it("carries a story element reference the words name from the drawing it keeps now", () => {
@@ -1070,6 +1078,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       ids.heroSheet,
       "asset-extra",
     ]);
@@ -1094,7 +1103,10 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    expect(item.inputs?.map((input) => input.assetId)).toEqual([ids.heroSheet]);
+    expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
+      ids.heroSheet,
+    ]);
     expect(item.prompt).not.toContain("霓虹");
   });
 
@@ -1113,16 +1125,18 @@ describe("planning the drawings", () => {
         keyframeId: ids.frameFirst,
       },
     ]);
-    // The words name 周; the act's place and the one who speaks are carried
-    // behind them, so the frame has a background and the line a face.
+    // The words name 周; the act's place leads the pictures, the one named
+    // follows, and the one who speaks comes last so the line has a face.
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
-      ids.partnerMain,
       ids.sceneMain,
+      ids.partnerMain,
       ids.heroSheet,
     ]);
   });
 
-  it("does not force a place into a close-up", () => {
+  it("keeps the place under a close-up too", () => {
+    // A close-up is still cut inside a place: the plate leads it so the walls
+    // and light behind the face are the room the act is shot in.
     const held = withContent("`周`转过身来。");
     const frame = held.chapters[0]!.acts[0]!.keyframes[0]!;
     frame.shotSize = "close";
@@ -1139,6 +1153,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       ids.partnerMain,
       ids.heroSheet,
     ]);
@@ -1181,6 +1196,7 @@ describe("planning the drawings", () => {
       },
     ]);
     expect(item.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       "asset-hero-old",
     ]);
   });

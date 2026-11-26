@@ -1,9 +1,9 @@
 One still frame of a film, from "{{ chapter.title }}" — {{ summary }}
 
-This shot: {{ content }}
-It is a {{ shotSize }} shot, seen from {{ angle }}. The picture is one held moment: nobody and nothing moves within it, and it shows what the shot looks like at rest.
-
-{% if cast | length > 0 %}Draw the people, the place and the things exactly as the reference pictures show them, and keep to them: the same faces, the same hair, the same clothes, the same place. The reference pictures, in the order they are given:
-
+{% if cast | length > 0 %}{% if place %}The frame is shot inside the place shown in picture 1: keep its architecture, materials, furnishings and light, and stand the people and things in that place with true depth, shadow and occlusion. {% endif %}The pictures are identity references only: take each person's face, hair, clothes and colours and each thing's look, and nothing else — never copy their white background, front-facing standing pose, framing or sheet layout, never lay people side by side, and never draw a character sheet, collage or turnaround. People look where the shot's words have them look, not into the lens. The reference pictures, in the order they are given:
 {% for reference in cast %}{{ loop.index }}. {{ reference.name }} — {{ reference.description }}
-{% endfor %}{% endif %}A single {{ aspect }} frame in the film's own look: {{ style }}. No text, no lettering, no watermark, no frame around the picture.
+{% endfor %}{% endif %}This shot: {{ content }}
+It is a {{ shotSize }} shot, seen from {{ angle }}. The picture is one held moment: nobody and nothing moves within it, and it shows what the shot looks like at rest.
+{% if shotSize == "close" or shotSize == "mediumClose" %}Crop the frame at the chest: head, neck and shoulders fill the picture. Never widen it to the whole figure and never show the feet.{% elif shotSize == "medium" %}Crop the frame at the waist: the upper body fills the picture.{% elif shotSize == "mediumFull" %}Crop the frame above the knees: the figure is not cut at the ankles.{% elif shotSize == "full" %}The whole standing figure is in frame, head to feet, inside the place.{% elif shotSize == "extremeClose" %}Fill the frame with one detail of the subject; this is not a portrait.{% endif %}
+
+A single {{ aspect }} frame in the film's own look: {{ style }}. No subtitles, no captions, no watermark, no frame around the picture; lettering that belongs to the world (a sign, a page, a screen) may appear and should read correctly.

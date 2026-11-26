@@ -521,8 +521,11 @@ describe("story prompts", () => {
       name: "末班车车厢",
       description: "空车厢，灯管忽明忽暗。",
     });
+    expect(prompt).toContain("empty location plate");
     expect(prompt).toContain("unmistakable");
     expect(prompt).toContain("no person anywhere in the frame");
+    expect(prompt).toContain("no pedestrians");
+    expect(prompt).toContain("leave them out");
     expect(prompt).toContain("the place stands empty");
     expect(prompt).not.toContain("head to foot");
     expect(prompt).not.toContain("white background");
@@ -609,13 +612,13 @@ describe("story prompts", () => {
     };
     const parts = storyKeyframePromptParts(input);
     // The hole the content is written into sits between the scaffolding: what
-    // comes before it ends at the shot's introduction, and nothing of the
-    // shot's own words is in the greyed part.
+    // comes before it ends at the shot's introduction, carries the numbered
+    // pictures the cast is read against, and holds none of the shot's words.
     expect(parts.content).toBe("雨中的站台，`林`立在灯下。");
+    expect(parts.before).toContain("1. 林 — 四十岁上下。");
     expect(parts.before).toContain("This shot: ");
     expect(parts.before).not.toContain("雨中的站台");
     expect(parts.after.startsWith("\nIt is a wide shot")).toBe(true);
-    expect(parts.after).toContain("1. 林 — 四十岁上下。");
     // What is shown is what is sent: the parts spliced back are the ask, with
     // the mentions' backticks stripped from the words alone.
     expect(parts.before + stripStoryMentions(parts.content) + parts.after).toBe(

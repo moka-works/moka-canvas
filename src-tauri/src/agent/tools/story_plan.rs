@@ -1451,7 +1451,69 @@ fn plan_keyframe_art(
             if current_asset(&keyframe.art).is_some() && !include_existing {
                 continue;
             }
-            let (cast, inputs) = keyframe_cast(story, act, keyframe, warnings);
+            let (mut cast, mut inputs) = keyframe_cast(story, act, keyframe, warnings);
+            // A frame that travels with pictures is composed inside its place:
+            // the place leads them even when the shot's own list left it out,
+            // so a close-up keeps the room's light and walls behind the face.
+            // The place the shot's list names wins over the act's own. A frame
+            // with no pictures at all stays reference-free.
+            let place_id = keyframe
+                .references
+                .as_ref()
+                .and_then(|references| {
+                    references.iter().find_map(|reference| {
+                        let id = reference.element_id.as_deref()?;
+                        story
+                            .elements
+                            .iter()
+                            .find(|element| element.id == id && element.kind.as_str() == "scene")
+                            .map(|element| element.id.clone())
+                    })
+                })
+                .or_else(|| act.scene_id.clone());
+            let mut has_place = false;
+            if !cast.is_empty() {
+                if let Some(scene_id) = place_id.as_deref() {
+                    if let Some(element) = story.elements.iter().find(|held| held.id == scene_id) {
+                        let variant = keyframe.variant_choices.get(&element.id).cloned();
+                        if let Some(look) = element_look(element, variant.as_deref()) {
+                            if let Some(asset_id) = current_asset(look.main) {
+                                let held = inputs.iter().position(|input| {
+                                    input.get("assetId").and_then(|value| value.as_str())
+                                        == Some(asset_id.as_str())
+                                });
+                                match held {
+                                    Some(0) => has_place = true,
+                                    Some(position) => {
+                                        let picture = cast.remove(position);
+                                        let input = inputs.remove(position);
+                                        cast.insert(0, picture);
+                                        inputs.insert(0, input);
+                                        has_place = true;
+                                    }
+                                    None => {
+                                        cast.insert(
+                                            0,
+                                            json!({
+                                                "name": look.name,
+                                                "description": look.description,
+                                            }),
+                                        );
+                                        inputs.insert(
+                                            0,
+                                            json!({"role": "reference", "assetId": asset_id}),
+                                        );
+                                        let limit = story.max_reference_images as usize;
+                                        cast.truncate(limit);
+                                        inputs.truncate(limit);
+                                        has_place = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let target = json!({
                 "kind": "keyframeArt",
                 "chapterId": chapter.id,
@@ -1473,6 +1535,7 @@ fn plan_keyframe_art(
                         "shotSize": keyframe.shot_size.as_str(),
                         "angle": keyframe.angle.as_str(),
                         "cast": cast,
+                        "place": has_place,
                     }),
                 )?
             };
@@ -2069,10 +2132,11 @@ fn plan_line_voices(
                 let line_id = line.id.clone().unwrap_or_else(crate::domain::new_id);
                 let voice = resolve_voice(story, line.character_id.as_deref(), &line.speaker);
                 let item_model = none_if_empty(model).or_else(|| none_if_empty(&voice.model));
+                // The reference travels as the item's input picture; a speech
+                // service takes no reference in its params, and a batch that
+                // named one there would be refused before it was sent.
                 let mut params = json!({});
-                if let Some(reference) = &voice.reference_asset_id {
-                    params["referenceAssetId"] = json!(reference);
-                } else if !voice.voice.trim().is_empty() {
+                if voice.reference_asset_id.is_none() && !voice.voice.trim().is_empty() {
                     params["voice"] = json!(voice.voice);
                 }
                 if let Some(rate) = voice.rate {
@@ -2175,9 +2239,7 @@ fn plan_act_voice(
         }
         let item_model = none_if_empty(model).or_else(|| none_if_empty(&voice.model));
         let mut params = json!({});
-        if let Some(reference) = &voice.reference_asset_id {
-            params["referenceAssetId"] = json!(reference);
-        } else if !voice.voice.trim().is_empty() {
+        if voice.reference_asset_id.is_none() && !voice.voice.trim().is_empty() {
             params["voice"] = json!(voice.voice);
         }
         if let Some(rate) = voice.rate {
@@ -2528,6 +2590,23 @@ fn keyframe_cast(
             }
         }
     }
+    // The place is the base a frame is composed on: it leads the pictures,
+    // people follow, and things come last. The order is fixed here because the
+    // numbered references in the prompt are read against it.
+    let rank = |element_id: &str| -> u8 {
+        story
+            .elements
+            .iter()
+            .find(|element| element.id == element_id)
+            .map(|element| match element.kind.as_str() {
+                "scene" => 0,
+                "character" => 1,
+                "prop" => 2,
+                _ => 3,
+            })
+            .unwrap_or(3)
+    };
+    wants.sort_by_key(|(element_id, _, _)| rank(element_id));
     let mut cast = direct;
     for (element_id, variant_id, name) in wants {
         let Some(element) = story

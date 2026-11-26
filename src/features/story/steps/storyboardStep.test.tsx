@@ -636,6 +636,7 @@ describe("writing an episode's board", () => {
     expect(starts[0]!.kind).toBe("keyframeArt");
     expect(starts[0]!.items).toHaveLength(1);
     expect(starts[0]!.items[0]?.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       "asset-hero-sheet-new",
     ]);
   });
@@ -764,11 +765,14 @@ describe("writing an episode's board", () => {
     const [item] = starts[0]!.items;
     expect(starts[0]!.kind).toBe("keyframeArt");
     // The shot's words name the picture that travels with it, in the order the
-    // names first appear; a name left as plain words carries nothing.
+    // names first appear, behind the place the frame is cut in; a name left as
+    // plain words carries nothing.
     expect(item?.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       "asset-partner-sheet",
     ]);
-    expect(item?.prompt).toContain("1. 周");
+    expect(item?.prompt).toContain("1. 末班车车厢 —");
+    expect(item?.prompt).toContain("2. 周 —");
     expect(item?.prompt).not.toContain("旧车票");
   });
 
@@ -790,13 +794,14 @@ describe("writing an episode's board", () => {
     const item = starts[0]!.items.find((each) =>
       each.id.includes(ids.frameFirst),
     );
-    // The first pictures the story's limit allows, in the act's own order.
+    // The place the frame is cut in leads the act's cast, up to the limit.
     expect(item?.inputs?.map((input) => input.assetId)).toEqual([
+      ids.sceneMain,
       ids.heroSheet,
       "asset-partner-sheet",
-      ids.sceneMain,
     ]);
-    expect(item?.prompt).toContain("1. 林 —");
+    expect(item?.prompt).toContain("1. 末班车车厢 —");
+    expect(item?.prompt).toContain("2. 林 —");
   });
 
   it("takes one of the act's pictures off a shot, keeping the rest", async () => {
@@ -846,7 +851,8 @@ describe("writing an episode's board", () => {
     expect(prompt).toContain('One still frame of a film, from "第一章 站台"');
     expect(prompt).toContain("It is a wide shot");
     expect(prompt).toContain("in the film's own look: 现代都市风");
-    expect(prompt).toContain("1. 林 — ");
+    expect(prompt).toContain("1. 末班车车厢 — ");
+    expect(prompt).toContain("2. 林 — ");
     // The one name the words mention stands as a chip, and its picture rides.
     const cell = screen.getByTestId("story-kf-content-0");
     const chips = cell.querySelectorAll("[data-mention-name]");
@@ -950,10 +956,10 @@ describe("writing an episode's board", () => {
       "末班车车厢",
     ]);
     expect(chips[0]?.className).toContain("is-carried");
-    expect(chips[1]?.className).toContain("is-carried");
-    // The third mention is drawn and over the limit: its words stay, its
-    // picture stands dimmed among the ones that travel.
-    expect(chips[2]?.className).toContain("is-beyond");
+    expect(chips[1]?.className).toContain("is-beyond");
+    // The place leads the pictures that travel, so with the limit at two it
+    // takes a slot and 周's words stay without one.
+    expect(chips[2]?.className).toContain("is-carried");
     expect(
       screen
         .getByTestId("story-kf-refs-0")
