@@ -275,10 +275,13 @@ describe("the two numbers a plan turns on", () => {
     expect(imageSizeForAspect("1:1")).toBe("1024x1024");
   });
 
-  it("asks a clip for what it is meant to run, up to the ceiling", () => {
+  it("asks a clip for what it is meant to run, never past the ceiling", () => {
     expect(clampSeconds(4_400)).toBe(4);
     expect(clampSeconds(0)).toBe(1);
     expect(clampSeconds(120_000, 8)).toBe(8);
+    // A worker's ceiling may be a fraction more than its frame grid renders:
+    // 14.8 s must not round up to the fifteen-second ceiling H3 cannot film.
+    expect(clampSeconds(14_800, 15)).toBe(14);
   });
 
   it("names a piece after the place it is for", () => {

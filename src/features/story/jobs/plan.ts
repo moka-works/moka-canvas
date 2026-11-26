@@ -268,8 +268,14 @@ export function imageSizeForAspect(aspect: StoryAspect): string {
 }
 
 /**
- * How many seconds a clip is asked for: what the story plans for it, rounded to
+ * How many seconds a clip is asked for: what the story plans for it, in whole
  * seconds, never less than one and never past the length one clip may be.
+ *
+ * A whole second is taken down rather than up: a worker's ceiling is often a
+ * fraction more than its frame grid can render (H3 declares fifteen seconds
+ * and films 345 frames at 24 fps, 14.375 s), so a plan of 14.8 s rounded up
+ * would ask for the ceiling and be refused. Asking a fraction shorter is a
+ * clip that loses part of a second; asking longer is a clip that never starts.
  *
  * The ceiling is the video model's own where the deployment knows it, and the
  * app's otherwise — and not the video settings' length: that number is the
@@ -281,7 +287,7 @@ export function clampSeconds(
   ms: number,
   ceiling: number = MAX_VIDEO_SECONDS,
 ): number {
-  return Math.min(ceiling, Math.max(1, Math.round(ms / 1000)));
+  return Math.min(ceiling, Math.max(1, Math.floor(ms / 1000)));
 }
 
 /**

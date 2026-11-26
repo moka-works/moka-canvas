@@ -2875,9 +2875,14 @@ fn image_size(aspect: &str, turnaround: bool) -> &'static str {
     }
 }
 
+/// A clip's seconds: the plan taken down to a whole second, never past the
+/// ceiling. Down rather than nearest, because a worker's ceiling is often a
+/// fraction more than its frame grid renders (H3 declares fifteen seconds and
+/// films 345 frames at 24 fps, 14.375 s): 14.8 s rounded up would ask for the
+/// ceiling and be refused, while a clip a fraction short still plays.
 fn clamp_seconds(ms: i64, ceiling: u32) -> u32 {
-    let rounded = ((ms.max(0) as f64) / 1000.0).round() as i64;
-    rounded.clamp(1, ceiling.max(1) as i64) as u32
+    let whole = ms.max(0) / 1000;
+    (whole.clamp(1, ceiling.max(1) as i64)) as u32
 }
 
 async fn video_ceiling(state: &ApiState, model: &str) -> u32 {
