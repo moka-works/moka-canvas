@@ -57,6 +57,7 @@
 ## 代码约定
 
 - 所有用户可见文案走 i18next（en/zh 双份），不得硬编码字符串；测试固定英文。
+- 视频参考音频：协议必须在 `model.json` 声明 `features.audioReference`，规划器才会把说话角色的参考录音作为 `referenceAudio` 输入附到片段上（内置 MiniMax H3 已声明）；自部署模型树里的自定义转换器也要补这一行，且 `version` 不得低于内置版本，否则会被内置文件覆盖。带参考音频的片段上限 11 秒、最多 3 位说话角色，超出时规划只保留画面并给出警告。
 - `src/api/` 是前端访问服务器的唯一出口；错误经 `ApiError` 把服务端 problem code 映射到 i18n 文案，不要各页面自行解析响应。前端请求一律同源相对路径 `/api/v1/*`。
 - 服务端错误用 `src-tauri/src/api/problem.rs` 的结构化 problem 体。
 - 图标/美术成品须满幅、裁到内容边界（不留空边）；favicon 由 `npm run favicon` 从 `src-tauri/icons` 再生成，不要手改 `public/`。
