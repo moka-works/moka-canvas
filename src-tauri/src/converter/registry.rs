@@ -211,6 +211,14 @@ pub struct Features {
     /// reference is optional, so a clip without one still renders.
     #[serde(default, skip_serializing_if = "is_false")]
     pub audio_reference: bool,
+    /// The longest clip the protocol still reads a recording over.
+    ///
+    /// A service that conditions more rows per window caps a clip carrying a
+    /// voice reference shorter than a picture-only one. The window is the
+    /// converter's own, not the app's: a protocol that names none is read at
+    /// any length, up to the model's own clip window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_reference_seconds: Option<u32>,
     /// The protocol can carry a mask beside the picture it edits.
     #[serde(default, skip_serializing_if = "is_false")]
     pub mask: bool,
@@ -236,6 +244,7 @@ impl Features {
             && !self.needs_voice
             && !self.needs_reference_audio
             && !self.audio_reference
+            && self.audio_reference_seconds.is_none()
             && !self.mask
             && !self.image_input
             && !self.job
@@ -596,7 +605,7 @@ mod tests {
               "script": "wan-image.lua",
               "order": 20,
               "auth": {"header": "x-api-key", "scheme": ""},
-              "features": {"mask": true, "imageInput": true, "audioReference": true},
+              "features": {"mask": true, "imageInput": true, "audioReference": true, "audioReferenceSeconds": 11},
               "version": 1
             }"#,
             Some("wan-image.lua"),
@@ -619,6 +628,7 @@ mod tests {
         assert!(entry.features.mask);
         assert!(entry.features.image_input);
         assert!(entry.features.audio_reference);
+        assert_eq!(entry.features.audio_reference_seconds, Some(11));
     }
 
     #[test]

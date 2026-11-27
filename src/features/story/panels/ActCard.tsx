@@ -48,10 +48,10 @@ import {
   planLineVoiceAsks,
 } from "../jobs/plan";
 import {
-  anyActVideoCandidateTakesVoiceReferences,
+  actVideoVoiceReference,
+  voiceReferenceFits,
   voiceReferencesFor,
 } from "../jobs/voiceReferences";
-import { AUDIO_REFERENCE_SECONDS } from "../../../shared/domain/constants";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import {
   useStoryRun,
@@ -280,12 +280,13 @@ export function ActCard({
     ) {
       return [];
     }
-    if (!anyActVideoCandidateTakesVoiceReferences(act)) return [];
+    const ability = actVideoVoiceReference(act);
+    if (!ability.supported) return [];
     const held = actClipPieces(act, actVideoCeiling(act));
     return [
       ...new Set(
         held
-          .filter((piece) => piece.seconds <= AUDIO_REFERENCE_SECONDS)
+          .filter((piece) => voiceReferenceFits(ability, piece.seconds))
           .flatMap((piece) =>
             voiceReferencesFor(
               story,
@@ -888,9 +889,7 @@ export function ActCard({
               <span
                 className="story-hint"
                 data-testid={`story-act-voice-refs-${index}`}
-                title={t("story:storyboard.voiceRefsHint", {
-                  seconds: AUDIO_REFERENCE_SECONDS,
-                })}
+                title={t("story:storyboard.voiceRefsHint")}
               >
                 {t("story:storyboard.voiceRefsShort", {
                   names: voiceNames.join("、"),

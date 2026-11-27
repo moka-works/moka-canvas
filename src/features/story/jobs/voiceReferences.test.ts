@@ -80,7 +80,7 @@ function viewWithVideo(
           script: "minimax-video.lua",
           displayName: "MiniMax",
           urlExample: "https://provider.test/v2/video_generation",
-          features: { audioReference: true },
+          features: { audioReference: true, audioReferenceSeconds: 11 },
         },
         openaiVideos: {
           script: "openai-videos.lua",
@@ -189,7 +189,7 @@ describe("the model an audio ask is sent to", () => {
       viewWithVideo([{ id: "filmer", audioReference: true }]),
     );
     const act = story().chapters[0]!.acts[0]!;
-    expect(audioCapableVideoModel(act, "filmer")).toBe("filmer");
+    expect(audioCapableVideoModel(act, "filmer", 4)).toBe("filmer");
   });
 
   it("replaces a chosen model that reads none with one that does", () => {
@@ -200,7 +200,7 @@ describe("the model an audio ask is sent to", () => {
     useModelStore.setState(settings);
     useStoryModels.setState({ choices: { video: ["plain", "filmer"] } });
     const act = story().chapters[0]!.acts[0]!;
-    expect(audioCapableVideoModel(act, "plain")).toBe("filmer");
+    expect(audioCapableVideoModel(act, "plain", 4)).toBe("filmer");
   });
 
   it("says why a recording is not travelling", () => {
@@ -234,5 +234,34 @@ describe("the model an audio ask is sent to", () => {
     expect(voiceReferenceState(held, keyframe.dialogue, 4, act).state).toBe(
       "noModel",
     );
+  });
+
+  it("uses the window each converter declares, and no window where it names none", () => {
+    const settings = viewWithVideo([{ id: "filmer", audioReference: true }]);
+    useModelStore.setState(settings);
+    const held = story();
+    held.elements.find((element) => element.id === ids.hero)!.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+    const act = held.chapters[0]!.acts[0]!;
+    const keyframe = act.keyframes[0]!;
+    // MiniMax whispers 11 seconds; a longer clip is left without the recording.
+    expect(voiceReferenceState(held, keyframe.dialogue, 12, act)).toEqual({
+      state: "tooLong",
+      voices: [{ speaker: "S1", name: "林", assetId: "asset-hero-voice" }],
+      seconds: 11,
+    });
+
+    // A protocol that names no window is read at the model's own clip length.
+    settings.protocols.video!["minimaxVideo"]!.features = {
+      audioReference: true,
+    };
+    useModelStore.setState(settings);
+    expect(voiceReferenceState(held, keyframe.dialogue, 20, act).state).toBe(
+      "on",
+    );
+    expect(audioCapableVideoModel(act, "filmer", 20)).toBe("filmer");
   });
 });

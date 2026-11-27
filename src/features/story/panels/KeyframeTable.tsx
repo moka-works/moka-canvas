@@ -67,10 +67,10 @@ import {
   settledRoleFrames,
 } from "../jobs/plan";
 import {
-  anyActVideoCandidateTakesVoiceReferences,
+  actVideoVoiceReference,
+  voiceReferenceFits,
   voiceReferencesFor,
 } from "../jobs/voiceReferences";
-import { AUDIO_REFERENCE_SECONDS } from "../../../shared/domain/constants";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
@@ -386,13 +386,15 @@ function KeyframeRow({
     ) {
       return [];
     }
+    const ability = actVideoVoiceReference(act);
     if (
-      clampSeconds(keyframe.durationMs, actVideoCeiling(act)) >
-      AUDIO_REFERENCE_SECONDS
+      !voiceReferenceFits(
+        ability,
+        clampSeconds(keyframe.durationMs, actVideoCeiling(act)),
+      )
     ) {
       return [];
     }
-    if (!anyActVideoCandidateTakesVoiceReferences(act)) return [];
     return [
       ...new Set(
         voiceReferencesFor(story, keyframe.dialogue).map((voice) => voice.name),
@@ -883,9 +885,7 @@ function KeyframeRow({
               <span
                 className="story-hint"
                 data-testid={`story-kf-voice-refs-${index}`}
-                title={t("story:storyboard.voiceRefsHint", {
-                  seconds: AUDIO_REFERENCE_SECONDS,
-                })}
+                title={t("story:storyboard.voiceRefsHint")}
               >
                 {t("story:storyboard.voiceRefsShort", {
                   names: voiceNames.join("、"),

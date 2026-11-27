@@ -347,7 +347,7 @@ export interface ProtocolEntry {
    * whichever part of the program knows that feature — a mask of its own, for
    * instance.
    */
-  features?: Record<string, boolean>;
+  features?: Record<string, boolean | number>;
   /**
    * The protocol switches a model configuration may set, in the order a form
    * draws them.

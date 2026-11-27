@@ -27,7 +27,6 @@ import {
 } from "../../settings/modelStore";
 import { useModelStore } from "../../settings/modelStore";
 import { storyAskModels } from "../stores/storyModels";
-import { AUDIO_REFERENCE_SECONDS } from "../../../shared/domain/constants";
 
 /** One recording a clip carries, and whose voice it is. */
 export interface VoiceReference {
@@ -43,18 +42,6 @@ const MAX_VOICE_REFERENCES = 3;
 
 /** The paragraph that tells the service which speaker each recording voices. */
 const VOICE_REFERENCE_MARKER = "Voice references:";
-
-/**
- * Whether the whole clip's recording set can ride: a recording is useless
- * beside a clip too long for the service to hear it.
- */
-function clipFits(seconds: number): boolean {
-  return (
-    Number.isFinite(seconds) &&
-    seconds > 0 &&
-    seconds <= AUDIO_REFERENCE_SECONDS
-  );
-}
 
 /**
  * The character a line belongs to, by id first and by the name it is called
@@ -120,12 +107,43 @@ export function voiceReferencesFor(
   return found;
 }
 
-/** Whether one video model's converter reads a recording beside a clip. */
-export function videoModelTakesVoiceReferences(model: string): boolean {
+/** What one video model's converter promises about a speaker's recording. */
+export interface VoiceReferenceAbility {
+  supported: boolean;
+  /**
+   * The longest clip it reads a recording over; null when it names no window
+   * of its own and the model's ordinary clip window is the only ceiling.
+   */
+  seconds: number | null;
+}
+
+/** The recording window one video model's converter declares. */
+export function videoModelVoiceReference(model: string): VoiceReferenceAbility {
   const { view, protocols } = useModelStore.getState();
   const held = view?.models.find((each) => each.id === model);
-  if (held === undefined) return false;
-  return protocolFeatures(protocols, held.protocol).audioReference === true;
+  if (held === undefined) return { supported: false, seconds: null };
+  const features = protocolFeatures(protocols, held.protocol);
+  const declared = features.audioReferenceSeconds;
+  return {
+    supported: features.audioReference === true,
+    seconds:
+      typeof declared === "number" && declared > 0
+        ? Math.floor(declared)
+        : null,
+  };
+}
+
+/**
+ * Whether a recording fits a clip at all: the converter reads one, and the
+ * clip is inside the window that converter names.
+ */
+export function voiceReferenceFits(
+  ability: VoiceReferenceAbility,
+  seconds: number,
+): boolean {
+  if (!ability.supported) return false;
+  if (ability.seconds === null) return Number.isFinite(seconds) && seconds > 0;
+  return seconds > 0 && seconds <= ability.seconds;
 }
 
 /**
@@ -144,37 +162,38 @@ export function actVideoCandidates(act: StoryAct): string[] {
   return fallback === null ? [] : [fallback];
 }
 
-/** Whether any model that may film this act reads a recording. */
-export function anyActVideoCandidateTakesVoiceReferences(
-  act: StoryAct,
-): boolean {
-  return actVideoCandidates(act).some(videoModelTakesVoiceReferences);
+/**
+ * The ability of the model a place's asks are shaped for: the act's own, the
+ * head of the step's list, or the deployment's default.
+ */
+export function actVideoVoiceReference(act: StoryAct): VoiceReferenceAbility {
+  const first = actVideoCandidates(act)[0];
+  return first === undefined
+    ? { supported: false, seconds: null }
+    : videoModelVoiceReference(first);
 }
 
 /**
  * The model an ask carrying recordings is sent to.
  *
- * A chosen model that reads them keeps the piece. One that does not is
- * replaced by the first candidate that does, so a list mixing models of
- * different abilities still films the clip with the speaker's voice. `null`
- * stands for the deployment's default, and is kept when that default itself
- * reads a recording.
+ * A chosen model that reads them, and reads them over a clip this long, keeps
+ * the piece. One that does not is replaced by a candidate that does, so a
+ * list mixing models of different abilities still films the clip with the
+ * speaker's voice. `null` stands for the deployment's default, and is kept
+ * when that default itself reads the recording at this length.
  */
 export function audioCapableVideoModel(
   act: StoryAct,
   chosen: string | null,
+  seconds: number,
 ): string | null {
-  if (chosen !== null && videoModelTakesVoiceReferences(chosen)) return chosen;
+  const fits = (model: string) =>
+    voiceReferenceFits(videoModelVoiceReference(model), seconds);
+  if (chosen !== null && fits(chosen)) return chosen;
   const own = (act.videoModel ?? "").trim();
-  if (own !== "" && videoModelTakesVoiceReferences(own)) return own;
-  const found = storyAskModels("actVideo").find(videoModelTakesVoiceReferences);
+  if (own !== "" && fits(own)) return own;
+  const found = storyAskModels("actVideo").find(fits);
   if (found !== undefined) return found;
-  if (chosen === null) {
-    const fallback = effectiveDefaultId(useModelStore.getState().view, "video");
-    if (fallback === null || videoModelTakesVoiceReferences(fallback))
-      return null;
-    return null;
-  }
   return chosen;
 }
 
@@ -186,17 +205,17 @@ export function carriesVoiceReferences(item: {
 }
 
 export type VoiceReferenceState =
-  | { state: "on"; voices: VoiceReference[] }
+  | { state: "on"; voices: VoiceReference[]; seconds: number | null }
   | { state: "noRecording" }
   | { state: "noModel" }
-  | { state: "tooLong"; voices: VoiceReference[] };
+  | { state: "tooLong"; voices: VoiceReference[]; seconds: number };
 
 /**
  * What a clip's voice recordings are doing, for the caller that has to say it.
  *
  * A place with no recorded speaker, a model that reads no recordings, and a
- * piece longer than the service hears are three different repairs, so they
- * are three different answers rather than one silence.
+ * piece longer than the converter's own window are three different repairs,
+ * so they are three different answers rather than one silence.
  */
 export function voiceReferenceState(
   story: StoryDocument,
@@ -206,10 +225,11 @@ export function voiceReferenceState(
 ): VoiceReferenceState {
   const voices = voiceReferencesFor(story, lines);
   if (voices.length === 0) return { state: "noRecording" };
-  if (!anyActVideoCandidateTakesVoiceReferences(act))
-    return { state: "noModel" };
-  if (!clipFits(seconds)) return { state: "tooLong", voices };
-  return { state: "on", voices };
+  const ability = actVideoVoiceReference(act);
+  if (!ability.supported) return { state: "noModel" };
+  if (ability.seconds !== null && seconds > ability.seconds)
+    return { state: "tooLong", voices, seconds: ability.seconds };
+  return { state: "on", voices, seconds: ability.seconds };
 }
 
 /** The sentence mapping each recording to the speaker it voices. */

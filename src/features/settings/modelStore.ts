@@ -174,7 +174,7 @@ export function protocolUrlExample(
 export function protocolFeatures(
   protocols: ProtocolGroups | null,
   id: string,
-): Record<string, boolean> {
+): Record<string, boolean | number> {
   return findProtocol(protocols, id)?.features ?? {};
 }
 

@@ -27,9 +27,6 @@ use super::{Args, ToolOutcome};
 const APP_VIDEO_SECONDS: u32 = 600;
 /// What one story batch may carry; the server refuses more.
 const MAX_ITEMS_PER_JOB: usize = 40;
-/// A clip carrying a voice reference conditions more rows per window, so the
-/// service caps it shorter than a picture-only clip: 277 frames at 24 fps.
-const AUDIO_REFERENCE_SECONDS: u32 = 11;
 
 struct Planned {
     model: Option<String>,
@@ -1711,20 +1708,20 @@ async fn plan_act_videos(
             let mut voices: Vec<(String, String)> = Vec::new();
             if !recorded.is_empty() {
                 match chosen.as_deref() {
-                    Some(id) if audio_reference_allowed(state, id).await => {
-                        if piece.seconds <= AUDIO_REFERENCE_SECONDS {
+                    Some(id) => match voice_reference_rule(state, id).await {
+                        VoiceReferenceRule::Unsupported => warnings.push(format!(
+                            "{} is filmed by {id}, whose converter takes no voice recordings; its speakers' recordings were left out",
+                            act.title
+                        )),
+                        VoiceReferenceRule::AnyLength => voices = recorded,
+                        VoiceReferenceRule::Capped(limit) if piece.seconds <= limit => {
                             voices = recorded;
-                        } else {
-                            warnings.push(format!(
-                                "{} is {} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
-                                act.title, piece.seconds, AUDIO_REFERENCE_SECONDS
-                            ));
                         }
-                    }
-                    Some(id) => warnings.push(format!(
-                        "{} is filmed by {id}, whose converter takes no voice recordings; its speakers' recordings were left out",
-                        act.title
-                    )),
+                        VoiceReferenceRule::Capped(limit) => warnings.push(format!(
+                            "{} is {} s; {id} reads a voice recording only in clips of {limit} s or less, so the reference voices were left out",
+                            act.title, piece.seconds
+                        )),
+                    },
                     None => {}
                 }
             }
@@ -1915,20 +1912,20 @@ async fn plan_keyframe_videos(
             let mut voices: Vec<(String, String)> = Vec::new();
             if !recorded.is_empty() {
                 match chosen.as_deref() {
-                    Some(id) if audio_reference_allowed(state, id).await => {
-                        if seconds <= AUDIO_REFERENCE_SECONDS {
+                    Some(id) => match voice_reference_rule(state, id).await {
+                        VoiceReferenceRule::Unsupported => warnings.push(format!(
+                            "{} is filmed by {id}, whose converter takes no voice recordings; its speaker's recording was left out",
+                            keyframe.title
+                        )),
+                        VoiceReferenceRule::AnyLength => voices = recorded,
+                        VoiceReferenceRule::Capped(limit) if seconds <= limit => {
                             voices = recorded;
-                        } else {
-                            warnings.push(format!(
-                                "{} is {seconds} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
-                                keyframe.title, AUDIO_REFERENCE_SECONDS
-                            ));
                         }
-                    }
-                    Some(id) => warnings.push(format!(
-                        "{} is filmed by {id}, whose converter takes no voice recordings; its speaker's recording was left out",
-                        keyframe.title
-                    )),
+                        VoiceReferenceRule::Capped(limit) => warnings.push(format!(
+                            "{} is {seconds} s; {id} reads a voice recording only in clips of {limit} s or less, so the reference voices were left out",
+                            keyframe.title
+                        )),
+                    },
                     None => {}
                 }
             }
@@ -3022,22 +3019,38 @@ async fn video_ceiling(state: &ApiState, model: &str) -> u32 {
         .clamp(1, APP_VIDEO_SECONDS)
 }
 
-/// Whether the protocol behind a video model can take reference recordings of
-/// its speakers beside the pictures.
-async fn audio_reference_allowed(state: &ApiState, model: &str) -> bool {
+/// How long a video model's converter reads a speaker's recording.
+///
+/// The window is the converter's own: a service that conditions more rows per
+/// window declares a shorter clip for a voice reference, and one that names no
+/// window is read at any length the model films.
+enum VoiceReferenceRule {
+    Unsupported,
+    AnyLength,
+    Capped(u32),
+}
+
+async fn voice_reference_rule(state: &ApiState, model: &str) -> VoiceReferenceRule {
     let Ok(snapshot) = state.models.snapshot().await else {
-        return false;
+        return VoiceReferenceRule::Unsupported;
     };
     let Some(held) = snapshot.models.iter().find(|held| held.id == model) else {
-        return false;
+        return VoiceReferenceRule::Unsupported;
     };
     let Some(root) = crate::converter::converter_root() else {
-        return false;
+        return VoiceReferenceRule::Unsupported;
     };
     let registry = crate::converter::ConverterRegistry::load(root);
-    registry
-        .find(held.protocol.wire_name())
-        .is_some_and(|entry| entry.features.audio_reference)
+    let Some(entry) = registry.find(held.protocol.wire_name()) else {
+        return VoiceReferenceRule::Unsupported;
+    };
+    if !entry.features.audio_reference {
+        return VoiceReferenceRule::Unsupported;
+    }
+    match entry.features.audio_reference_seconds {
+        Some(seconds) => VoiceReferenceRule::Capped(seconds),
+        None => VoiceReferenceRule::AnyLength,
+    }
 }
 
 /// The video model a batch takes when neither the ask nor the act names one:

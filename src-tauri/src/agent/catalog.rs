@@ -917,7 +917,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("chapterId", "string", "Limit to one chapter"),
             ("actId", "string", "Limit to one act"),
         ])),
-        command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent. A video plan carries each speaking character's reference recording as a referenceAudio input when the chosen model's converter declares audioReference and the piece is at most 11 seconds; the prompt gains the matching <Audio k> lines.", schema(&["storyId", "kind"], &[
+        command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent. A video plan carries each speaking character's reference recording as a referenceAudio input when the chosen model's converter declares audioReference and the piece fits the recording window that converter declares (MiniMax H3 names 11 seconds); the prompt gains the matching <Audio k> lines.", schema(&["storyId", "kind"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "outline (whole story, or chapterId for one chapter), elements, mergeElements, actPlan, storyboard, continuity, outlineRevision, elementArt, keyframeArt, pictureEdit, actVideo, keyframeVideo, lineVoice, voice, or music"),
             ("chapterId", "string", "Chapter to plan, where the kind is chapter-scoped"),

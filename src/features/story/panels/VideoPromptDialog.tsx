@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import {
   MAX_PROMPT_LENGTH,
   MAX_VIDEO_TAKES_PER_ASK,
-  AUDIO_REFERENCE_SECONDS,
 } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
 import { actAt, videoPromptOverride } from "../../../shared/domain/story";
@@ -21,7 +20,10 @@ import {
   planKeyframeVideoWaves,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
-import { voiceReferenceState } from "../jobs/voiceReferences";
+import {
+  actVideoVoiceReference,
+  voiceReferenceState,
+} from "../jobs/voiceReferences";
 import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { liveStory } from "./removeOldTake";
 import {
@@ -145,10 +147,13 @@ export function VideoPromptDialog({
   const voiceNote = (() => {
     if (carriedVoices.length > 0) {
       const names = [...new Set(carriedVoices.map((voice) => voice.name))];
-      return t("story:storyboard.voiceRefsOn", {
-        names: names.join("、"),
-        seconds: AUDIO_REFERENCE_SECONDS,
-      });
+      const ability = act === undefined ? null : actVideoVoiceReference(act);
+      return ability?.seconds === null || ability === null
+        ? t("story:storyboard.voiceRefsOn", { names: names.join("、") })
+        : t("story:storyboard.voiceRefsOnCapped", {
+            names: names.join("、"),
+            seconds: ability.seconds,
+          });
     }
     if (act === undefined || voiceLines.length === 0) return null;
     const outlook = voiceReferenceState(
@@ -161,7 +166,7 @@ export function VideoPromptDialog({
       return t("story:storyboard.voiceRefsNoModel");
     if (outlook.state === "tooLong")
       return t("story:storyboard.voiceRefsTooLong", {
-        seconds: AUDIO_REFERENCE_SECONDS,
+        seconds: outlook.seconds,
       });
     return null;
   })();

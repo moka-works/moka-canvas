@@ -20,7 +20,6 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import {
-  AUDIO_REFERENCE_SECONDS,
   MAX_IMAGES_PER_ASK,
   MAX_ITEMS_PER_STORY_JOB,
   MAX_VIDEO_SECONDS,
@@ -122,9 +121,10 @@ import {
   storyAskModels,
 } from "../stores/storyModels";
 import {
-  anyActVideoCandidateTakesVoiceReferences,
+  actVideoVoiceReference,
   audioCapableVideoModel,
   carriesVoiceReferences,
+  voiceReferenceFits,
   voiceReferencesFor,
   voiceSpeakerIds,
   withVoiceReferences,
@@ -1916,7 +1916,7 @@ export function planActVideos(
       act.continueFromPrevious === true
         ? neighbourVideos(story, chapter, chapter.acts.indexOf(act)).from
         : undefined;
-    const voiceCapable = anyActVideoCandidateTakesVoiceReferences(act);
+    const voiceAbility = actVideoVoiceReference(act);
     return pieces.map((piece, at) => {
       const held = piece.keyframes.flatMap((keyframe) => {
         const take = currentTake(keyframe.art);
@@ -1964,10 +1964,12 @@ export function planActVideos(
       const sound = soundFor(act.sound);
       // The speakers' own recordings ride when the model that films this
       // piece reads one and the piece is short enough for it to hear them.
-      const voices: VoiceReference[] =
-        voiceCapable && piece.seconds <= AUDIO_REFERENCE_SECONDS
-          ? voiceReferencesFor(story, lines)
-          : [];
+      const voices: VoiceReference[] = voiceReferenceFits(
+        voiceAbility,
+        piece.seconds,
+      )
+        ? voiceReferencesFor(story, lines)
+        : [];
       for (const voice of voices) {
         inputs.push({ role: "referenceAudio", assetId: voice.assetId });
       }
@@ -2061,7 +2063,7 @@ export function planKeyframeVideos(
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
   const ceiling = actVideoCeiling(act);
-  const voiceCapable = anyActVideoCandidateTakesVoiceReferences(act);
+  const voiceAbility = actVideoVoiceReference(act);
   return keyframeIds.flatMap((keyframeId) => {
     const keyframe = keyframeAt(story, { chapterId, actId, keyframeId });
     if (keyframe === undefined) return [];
@@ -2088,10 +2090,9 @@ export function planKeyframeVideos(
     }
     const id = jobKey(target);
     const sound = soundFor(act.sound);
-    const voices: VoiceReference[] =
-      voiceCapable && seconds <= AUDIO_REFERENCE_SECONDS
-        ? voiceReferencesFor(story, keyframe.dialogue)
-        : [];
+    const voices: VoiceReference[] = voiceReferenceFits(voiceAbility, seconds)
+      ? voiceReferencesFor(story, keyframe.dialogue)
+      : [];
     for (const voice of voices) {
       inputs.push({ role: "referenceAudio", assetId: voice.assetId });
     }
@@ -2173,7 +2174,7 @@ export function planActVideoWaves(
     // A piece carrying the speakers' recordings goes to a model that reads
     // them, even where the step's list has another model next in line.
     const model = carriesVoiceReferences(item)
-      ? audioCapableVideoModel(act, chosen)
+      ? audioCapableVideoModel(act, chosen, Number(item.params?.seconds ?? 0))
       : chosen;
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
@@ -2204,7 +2205,7 @@ export function planKeyframeVideoWaves(
   for (const item of planKeyframeVideos(story, chapterId, actId, keyframeIds)) {
     const chosen = own === "" ? storyAskModel("actVideo") : own;
     const model = carriesVoiceReferences(item)
-      ? audioCapableVideoModel(act, chosen)
+      ? audioCapableVideoModel(act, chosen, Number(item.params?.seconds ?? 0))
       : chosen;
     const key = model ?? "";
     const group = groups.get(key) ?? [];

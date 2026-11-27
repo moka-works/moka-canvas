@@ -357,13 +357,6 @@ export const MAX_IMAGES_PER_ASK = 3;
  * themselves hold up to {@link MAX_TAKES_PER_SLOT} takes per place.
  */
 export const MAX_VIDEO_TAKES_PER_ASK = 3;
-/**
- * The longest clip a video service hears a voice recording over.
- *
- * A clip carrying reference audio conditions more rows per window, so the
- * service caps it shorter than a picture-only clip: 277 frames at 24 fps.
- */
-export const AUDIO_REFERENCE_SECONDS = 11;
 export const MAX_ACTS_PER_CHAPTER = 300;
 export const MAX_KEYFRAMES_PER_ACT = 12;
 /** How many hand-written clip prompts one telling may keep. */

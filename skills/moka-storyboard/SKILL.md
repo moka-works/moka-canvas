@@ -211,9 +211,10 @@ Either clip plan carries the speakers' own voices with it. When the chosen
 video model's converter declares `audioReference`, every speaking character
 who has a recording on their card travels as a `referenceAudio` input, up to
 three speakers, one clip. The ask also gains the `<Audio k>` lines that tell
-the service which speaker each recording voices. A piece longer than 11
-seconds is filmed without them and the plan says so in `warnings`; split the
-act or the shot, or accept the picture-only clip. A model whose converter does
+the service which speaker each recording voices. A converter may narrow this
+to a recording window of its own — MiniMax H3 names 11 seconds — and a piece
+past that window is filmed without the recordings, with the plan saying so in
+`warnings`; split the act or the shot, or accept the picture-only clip. A model whose converter does
 not declare the feature is planned without voice references — choose another
 video model rather than writing the inputs by hand.
 

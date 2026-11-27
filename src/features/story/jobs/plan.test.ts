@@ -2381,6 +2381,7 @@ describe("the record a voice is copied from", () => {
 function videoWithVoiceReference(
   audioReference: boolean,
   maxSeconds = 15,
+  referenceSeconds: number | null = 11,
 ): { view: ModelsView; protocols: ProtocolGroups } {
   const view = settingsWithVideoSeconds(6);
   return {
@@ -2407,7 +2408,14 @@ function videoWithVoiceReference(
           script: "minimax-video.lua",
           displayName: "MiniMax",
           urlExample: "https://provider.test/v2/video_generation",
-          features: audioReference ? { audioReference: true } : {},
+          features: audioReference
+            ? {
+                audioReference: true,
+                ...(referenceSeconds === null
+                  ? {}
+                  : { audioReferenceSeconds: referenceSeconds }),
+              }
+            : {},
         },
       },
     },
@@ -2476,7 +2484,7 @@ describe("voice references", () => {
     expect(item.promptContext?.voices).toBeUndefined();
   });
 
-  it("leaves the recording out of a clip longer than the service hears", () => {
+  it("leaves the recording out of a clip longer than the converter's window", () => {
     const settings = videoWithVoiceReference(true, 20);
     useModelStore.setState(settings);
     const held = withRecording(plannedShot(12_000));
@@ -2489,6 +2497,22 @@ describe("voice references", () => {
       false,
     );
     expect(shot.prompt).not.toContain("Voice references:");
+  });
+
+  it("reads a longer clip when the converter names no window of its own", () => {
+    const settings = videoWithVoiceReference(true, 20, null);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(12_000));
+
+    const [shot] = planKeyframeVideos(held, ids.chapterFirst, ids.act, [
+      ids.frameFirst,
+    ]);
+    expect(shot.params?.seconds).toBe(12);
+    expect(shot.inputs).toContainEqual({
+      role: "referenceAudio",
+      assetId: "asset-hero-voice",
+    });
+    expect(shot.prompt).toContain("Voice references:");
   });
 
   it("leaves the recording out when the speaker has none on file", () => {
