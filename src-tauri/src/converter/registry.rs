@@ -205,6 +205,12 @@ pub struct Features {
     /// The voice is copied from a reference recording rather than named.
     #[serde(default, skip_serializing_if = "is_false")]
     pub needs_reference_audio: bool,
+    /// The protocol takes reference recordings of its speakers beside the
+    /// picture, so a film's voices can be guided clip by clip. A video
+    /// protocol sets this when its service accepts an audio reference; the
+    /// reference is optional, so a clip without one still renders.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub audio_reference: bool,
     /// The protocol can carry a mask beside the picture it edits.
     #[serde(default, skip_serializing_if = "is_false")]
     pub mask: bool,
@@ -229,6 +235,7 @@ impl Features {
         !self.tool_calling
             && !self.needs_voice
             && !self.needs_reference_audio
+            && !self.audio_reference
             && !self.mask
             && !self.image_input
             && !self.job

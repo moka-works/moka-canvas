@@ -27,6 +27,9 @@ use super::{Args, ToolOutcome};
 const APP_VIDEO_SECONDS: u32 = 600;
 /// What one story batch may carry; the server refuses more.
 const MAX_ITEMS_PER_JOB: usize = 40;
+/// A clip carrying a voice reference conditions more rows per window, so the
+/// service caps it shorter than a picture-only clip: 277 frames at 24 fps.
+const AUDIO_REFERENCE_SECONDS: u32 = 11;
 
 struct Planned {
     model: Option<String>,
@@ -1715,10 +1718,35 @@ async fn plan_act_videos(
             } else {
                 base
             };
-            let prompt = match video_prompt_override(story, &id) {
+            let mut prompt = match video_prompt_override(story, &id) {
                 Some(prompt) => prompt.to_string(),
                 None => render(Prompt::StoryActVideo, context)?,
             };
+            let mut inputs = piece.inputs.clone();
+            if piece.has_dialogue() {
+                let chosen = item_model.clone().or_else(|| none_if_empty(model));
+                if let Some(chosen) = chosen.as_deref() {
+                    if audio_reference_allowed(state, chosen).await {
+                        let voices = voice_references(story, &piece);
+                        if !voices.is_empty() {
+                            if piece.seconds <= AUDIO_REFERENCE_SECONDS {
+                                for (_, asset_id) in &voices {
+                                    inputs.push(json!({
+                                        "role": "referenceAudio",
+                                        "assetId": asset_id,
+                                    }));
+                                }
+                                prompt = with_voice_references(prompt, &voices);
+                            } else {
+                                warnings.push(format!(
+                                    "{} is {} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
+                                    act.title, piece.seconds, AUDIO_REFERENCE_SECONDS
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
             planned.push(Planned {
                 model: item_model.clone(),
                 value: job_item(
@@ -1727,7 +1755,7 @@ async fn plan_act_videos(
                     "video",
                     prompt,
                     None,
-                    piece.inputs.clone(),
+                    inputs,
                     json!({
                         "seconds": piece.seconds,
                         "ratio": story.brief.aspect.as_str(),
@@ -2899,6 +2927,82 @@ async fn video_ceiling(state: &ApiState, model: &str) -> u32 {
         .and_then(|held| held.max_video_seconds)
         .unwrap_or(APP_VIDEO_SECONDS)
         .clamp(1, APP_VIDEO_SECONDS)
+}
+
+/// Whether the protocol behind a video model can take reference recordings of
+/// its speakers beside the pictures.
+async fn audio_reference_allowed(state: &ApiState, model: &str) -> bool {
+    let Ok(snapshot) = state.models.snapshot().await else {
+        return false;
+    };
+    let Some(held) = snapshot.models.iter().find(|held| held.id == model) else {
+        return false;
+    };
+    let Some(root) = crate::converter::converter_root() else {
+        return false;
+    };
+    let registry = crate::converter::ConverterRegistry::load(root);
+    registry
+        .find(held.protocol.wire_name())
+        .is_some_and(|entry| entry.features.audio_reference)
+}
+
+/// The voice recordings a piece can travel with: one per speaking character
+/// that has a recording on file, in the order the speakers first appear. The
+/// number beside each is the speaker's place in that order, which is the S
+/// number a rewritten prompt gives the same speaker.
+fn voice_references(story: &StoryDocument, piece: &Piece<'_>) -> Vec<(usize, String)> {
+    let mut order: Vec<&str> = Vec::new();
+    for keyframe in &piece.keyframes {
+        for line in &keyframe.dialogue {
+            if let Some(id) = line.character_id.as_deref() {
+                if !order.contains(&id) {
+                    order.push(id);
+                }
+            }
+        }
+    }
+    let mut found = Vec::new();
+    for (index, id) in order.iter().enumerate() {
+        let asset = story
+            .elements
+            .iter()
+            .find(|element| element.id == *id)
+            .and_then(|element| element.voice.as_ref())
+            .and_then(|voice| voice.reference_asset_id.clone());
+        if let Some(asset) = asset {
+            found.push((index + 1, asset));
+            if found.len() == 3 {
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// Put the voice-reference paragraph inside the clip's description, where the
+/// service reads it, and number the recordings in the order they travel.
+fn with_voice_references(prompt: String, voices: &[(usize, String)]) -> String {
+    let mut sentences = Vec::new();
+    for (at, (speaker, _)) in voices.iter().enumerate() {
+        sentences.push(format!(
+            "<Audio {}> carries the voice of the speaker labelled (S{}); use its timbre, accent and delivery for every line that speaker says.",
+            at + 1,
+            speaker
+        ));
+    }
+    let paragraph = format!("Voice references: {}\n", sentences.join(" "));
+    if let Some(header) = prompt.find("integrated_multimodal_description:") {
+        let end = prompt[header..]
+            .find('\n')
+            .map(|offset| header + offset + 1)
+            .unwrap_or(prompt.len());
+        format!("{}\n{}{}", &prompt[..end], paragraph, &prompt[end..])
+    } else if let Some(header) = prompt.find("overall_soundscape:") {
+        format!("{}{}\n{}", &prompt[..header], paragraph, &prompt[header..])
+    } else {
+        format!("{prompt}\n\n{paragraph}")
+    }
 }
 
 fn none_if_empty(value: &str) -> Option<String> {
