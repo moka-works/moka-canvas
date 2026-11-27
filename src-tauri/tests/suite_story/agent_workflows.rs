@@ -1138,6 +1138,144 @@ async fn a_chapter_and_its_acts_can_be_restructured() {
 }
 
 #[tokio::test]
+async fn a_bridge_is_filmed_between_the_clips_beside_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(
+        &app,
+        "story.create",
+        json!({"name": "Lake", "brief": {"idea": "A keeper waits for the ice."}}),
+    )
+    .await;
+    let story_id = created["data"]["storyId"].as_str().unwrap().to_string();
+    let chapter = call(
+        &app,
+        "story.add_chapter",
+        json!({"storyId": story_id, "chapter": {"title": "One", "synopsis": "Ice."}}),
+    )
+    .await;
+    let chapter_id = chapter["data"]["chapterId"].as_str().unwrap().to_string();
+    for act in [
+        json!({"title": "Before"}),
+        json!({
+            "title": "Bridge",
+            "transition": {"prompt": "Snow crosses the lens.", "durationMs": 1500}
+        }),
+        json!({"title": "After"}),
+    ] {
+        call(
+            &app,
+            "story.add_act",
+            json!({"storyId": story_id, "chapterId": chapter_id, "act": act}),
+        )
+        .await;
+    }
+    let opened = current(&app).await;
+    let acts = opened["moka"]["stories"][0]["chapters"][0]["acts"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let id_of = |title: &str| {
+        acts.iter()
+            .find(|act| act["title"] == title)
+            .and_then(|act| act["id"].as_str())
+            .unwrap()
+            .to_string()
+    };
+    let (before, bridge, after) = (id_of("Before"), id_of("Bridge"), id_of("After"));
+    for (act, content) in [(&before, "Ahe at the edge."), (&after, "Ahe listens.")] {
+        call(
+            &app,
+            "story.add_keyframe",
+            json!({
+                "storyId": story_id,
+                "chapterId": chapter_id,
+                "actId": act,
+                "keyframe": {"title": "#1", "content": content, "durationMs": 4000}
+            }),
+        )
+        .await;
+    }
+    let opened = current(&app).await;
+    let acts = opened["moka"]["stories"][0]["chapters"][0]["acts"]
+        .as_array()
+        .unwrap();
+    let mut pictures = Vec::new();
+    for (name, rgba) in [
+        ("before", [30_u8, 90, 160, 255]),
+        ("after", [160, 90, 30, 255]),
+    ] {
+        let picture = temp.path().join(format!("{name}.png"));
+        image::RgbaImage::from_pixel(16, 16, image::Rgba(rgba))
+            .save(&picture)
+            .unwrap();
+        let imported = call(
+            &app,
+            "asset.import_path",
+            json!({"paths": [picture.to_string_lossy()]}),
+        )
+        .await;
+        pictures.push(
+            imported["assetsAdded"][0]["id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    for (index, act_id) in [&before, &after].into_iter().enumerate() {
+        let act = acts.iter().find(|act| act["id"] == act_id.as_str()).unwrap();
+        let keyframe_id = act["keyframes"][0]["id"].as_str().unwrap();
+        for target in [
+            json!({
+                "kind": "keyframe",
+                "chapterId": chapter_id,
+                "actId": act_id,
+                "keyframeId": keyframe_id
+            }),
+            json!({"kind": "actVideo", "chapterId": chapter_id, "actId": act_id}),
+        ] {
+            call(
+                &app,
+                "story.set_slot",
+                json!({
+                    "storyId": story_id,
+                    "target": target,
+                    "action": "append",
+                    "assetIds": [pictures[index].clone()]
+                }),
+            )
+            .await;
+        }
+    }
+
+    let plan = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "actVideo",
+            "chapterId": chapter_id,
+            "actId": bridge,
+            "includeExisting": true,
+            "model": "test-video"
+        }),
+    )
+    .await;
+    let items = plan["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{}", plan["data"]["warnings"]);
+    assert_eq!(items[0]["target"]["actId"], bridge.as_str());
+    let inputs = items[0]["inputs"].as_array().unwrap();
+    assert_eq!(inputs[0]["role"], "firstFrame");
+    assert_eq!(inputs[0]["assetId"], pictures[0].as_str());
+    assert_eq!(inputs[1]["role"], "lastFrame");
+    assert_eq!(inputs[1]["assetId"], pictures[1].as_str());
+}
+
+#[tokio::test]
 async fn a_board_can_be_checked_and_revised_after_the_outline_moves() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");

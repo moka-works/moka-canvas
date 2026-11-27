@@ -1595,7 +1595,10 @@ async fn plan_act_videos(
             if current_asset(&act.video).is_some() && !include_existing {
                 continue;
             }
-            let Some(from) = neighbour_video(story, chapter, index, Edge::End) else {
+            let Some(from) = index
+                .checked_sub(1)
+                .and_then(|previous| neighbour_video(story, chapter, previous, Edge::End))
+            else {
                 warnings.push(format!(
                     "{} is a bridge whose previous act has no clip yet",
                     act.title
