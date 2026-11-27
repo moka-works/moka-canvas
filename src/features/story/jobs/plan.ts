@@ -1968,7 +1968,7 @@ export function planActVideos(
         voiceAbility,
         piece.seconds,
       )
-        ? voiceReferencesFor(story, lines)
+        ? voiceReferencesFor(story, lines, voiceAbility.speakers)
         : [];
       for (const voice of voices) {
         inputs.push({ role: "referenceAudio", assetId: voice.assetId });
@@ -2091,7 +2091,7 @@ export function planKeyframeVideos(
     const id = jobKey(target);
     const sound = soundFor(act.sound);
     const voices: VoiceReference[] = voiceReferenceFits(voiceAbility, seconds)
-      ? voiceReferencesFor(story, keyframe.dialogue)
+      ? voiceReferencesFor(story, keyframe.dialogue, voiceAbility.speakers)
       : [];
     for (const voice of voices) {
       inputs.push({ role: "referenceAudio", assetId: voice.assetId });

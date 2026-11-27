@@ -7,11 +7,13 @@
  * card, so a clip asks for them itself: the speakers of the piece, in the
  * order they first speak, numbered with the same stable id the prompt gives
  * their lines. Nothing here is a reader's choice — a recording rides when the
- * model can read one and the clip is short enough for the service to hear it.
+ * model's converter reads one, the clip fits the window that converter names,
+ * and the speaker is within the count it reads.
  *
- * The cap is the service's, not the board's: 277 frames at 24 fps, which is
- * eleven seconds. A longer piece is filmed without the recordings, and the
- * caller says why rather than quietly dropping them.
+ * Both numbers are the converter's, not the board's: MiniMax H3 names eleven
+ * seconds and three speakers. A converter that names neither is read over the
+ * model's whole clip with every recorded speaker; one that names a number is
+ * respected, and the caller says why a recording stayed behind.
  */
 import type { AssetId } from "../../../shared/domain";
 import type {
@@ -36,9 +38,6 @@ export interface VoiceReference {
   name: string;
   assetId: AssetId;
 }
-
-/** At most this many recordings travel: the service reads no more. */
-const MAX_VOICE_REFERENCES = 3;
 
 /** The paragraph that tells the service which speaker each recording voices. */
 const VOICE_REFERENCE_MARKER = "Voice references:";
@@ -80,11 +79,13 @@ export function voiceSpeakerIds(story: StoryDocument): StorySpeakerIds {
 
 /**
  * The recordings a clip can carry: one per speaking character who has one on
- * file, in the order the speakers first speak, at most three.
+ * file, in the order the speakers first speak, keeping the converter's own
+ * count where it names one and every recorded speaker where it does not.
  */
 export function voiceReferencesFor(
   story: StoryDocument,
   lines: Iterable<StoryDialogueLine>,
+  limit: number | null = null,
 ): VoiceReference[] {
   const refs = characterRefs(story);
   const order: string[] = [];
@@ -102,7 +103,7 @@ export function voiceReferencesFor(
     if (element === undefined || assetId === undefined || speaker === undefined)
       continue;
     found.push({ speaker, name: element.name, assetId });
-    if (found.length === MAX_VOICE_REFERENCES) break;
+    if (limit !== null && found.length >= limit) break;
   }
   return found;
 }
@@ -115,20 +116,31 @@ export interface VoiceReferenceAbility {
    * of its own and the model's ordinary clip window is the only ceiling.
    */
   seconds: number | null;
+  /**
+   * How many speakers' recordings it reads in one clip; null when it names no
+   * count and every recorded speaker of the piece travels.
+   */
+  speakers: number | null;
 }
 
 /** The recording window one video model's converter declares. */
 export function videoModelVoiceReference(model: string): VoiceReferenceAbility {
   const { view, protocols } = useModelStore.getState();
   const held = view?.models.find((each) => each.id === model);
-  if (held === undefined) return { supported: false, seconds: null };
+  if (held === undefined)
+    return { supported: false, seconds: null, speakers: null };
   const features = protocolFeatures(protocols, held.protocol);
   const declared = features.audioReferenceSeconds;
+  const speakers = features.audioReferenceSpeakers;
   return {
     supported: features.audioReference === true,
     seconds:
       typeof declared === "number" && declared > 0
         ? Math.floor(declared)
+        : null,
+    speakers:
+      typeof speakers === "number" && speakers > 0
+        ? Math.floor(speakers)
         : null,
   };
 }
@@ -169,7 +181,7 @@ export function actVideoCandidates(act: StoryAct): string[] {
 export function actVideoVoiceReference(act: StoryAct): VoiceReferenceAbility {
   const first = actVideoCandidates(act)[0];
   return first === undefined
-    ? { supported: false, seconds: null }
+    ? { supported: false, seconds: null, speakers: null }
     : videoModelVoiceReference(first);
 }
 
@@ -223,9 +235,9 @@ export function voiceReferenceState(
   seconds: number,
   act: StoryAct,
 ): VoiceReferenceState {
-  const voices = voiceReferencesFor(story, lines);
-  if (voices.length === 0) return { state: "noRecording" };
   const ability = actVideoVoiceReference(act);
+  const voices = voiceReferencesFor(story, lines, ability.speakers);
+  if (voices.length === 0) return { state: "noRecording" };
   if (!ability.supported) return { state: "noModel" };
   if (ability.seconds !== null && seconds > ability.seconds)
     return { state: "tooLong", voices, seconds: ability.seconds };

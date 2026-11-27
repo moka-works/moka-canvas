@@ -208,9 +208,10 @@ moka --project <PROJECT> tools call story.plan_job --input '{
 ```
 
 Either clip plan carries the speakers' own voices with it. When the chosen
-video model's converter declares `audioReference`, every speaking character
-who has a recording on their card travels as a `referenceAudio` input, up to
-three speakers, one clip. The ask also gains the `<Audio k>` lines that tell
+video model's converter declares `audioReference`, the piece's speaking
+characters who have a recording on their card travel as `referenceAudio`
+inputs — as many as the converter reads, which MiniMax H3 names as three. The
+ask also gains the `<Audio k>` lines that tell
 the service which speaker each recording voices. A converter may narrow this
 to a recording window of its own — MiniMax H3 names 11 seconds — and a piece
 past that window is filmed without the recordings, with the plan saying so in

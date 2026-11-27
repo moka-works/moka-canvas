@@ -2382,6 +2382,7 @@ function videoWithVoiceReference(
   audioReference: boolean,
   maxSeconds = 15,
   referenceSeconds: number | null = 11,
+  referenceSpeakers: number | null = 3,
 ): { view: ModelsView; protocols: ProtocolGroups } {
   const view = settingsWithVideoSeconds(6);
   return {
@@ -2414,6 +2415,9 @@ function videoWithVoiceReference(
                 ...(referenceSeconds === null
                   ? {}
                   : { audioReferenceSeconds: referenceSeconds }),
+                ...(referenceSpeakers === null
+                  ? {}
+                  : { audioReferenceSpeakers: referenceSpeakers }),
               }
             : {},
         },
@@ -2513,6 +2517,40 @@ describe("voice references", () => {
       assetId: "asset-hero-voice",
     });
     expect(shot.prompt).toContain("Voice references:");
+  });
+
+  it("keeps the converter's own count of recordings", () => {
+    const settings = videoWithVoiceReference(true, 15, 11, 1);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(3_000));
+    const partner = held.elements.find(
+      (element) => element.id === ids.partner,
+    )!;
+    partner.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-partner-voice",
+    };
+    const act = held.chapters[0]!.acts[0]!;
+    act.keyframes[1]!.dialogue = [
+      {
+        id: "line-partner",
+        characterId: ids.partner,
+        speaker: "周",
+        text: "我也是。",
+      },
+    ];
+
+    const [item] = planActVideos(held, ids.chapterFirst, [ids.act]);
+    const carried = (item.inputs ?? []).filter(
+      (input) => input.role === "referenceAudio",
+    );
+    expect(carried).toEqual([
+      { role: "referenceAudio", assetId: "asset-hero-voice" },
+    ]);
+    expect(item.promptContext?.voices).toEqual([{ speaker: "S1", name: "林" }]);
+    expect(item.prompt).toContain("<Audio 1>");
+    expect(item.prompt).not.toContain("<Audio 2>");
   });
 
   it("leaves the recording out when the speaker has none on file", () => {

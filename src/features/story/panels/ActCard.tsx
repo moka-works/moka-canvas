@@ -291,6 +291,7 @@ export function ActCard({
             voiceReferencesFor(
               story,
               piece.keyframes.flatMap((keyframe) => keyframe.dialogue),
+              ability.speakers,
             ),
           )
           .map((voice) => voice.name),

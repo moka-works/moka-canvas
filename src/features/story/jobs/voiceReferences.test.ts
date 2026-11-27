@@ -80,7 +80,11 @@ function viewWithVideo(
           script: "minimax-video.lua",
           displayName: "MiniMax",
           urlExample: "https://provider.test/v2/video_generation",
-          features: { audioReference: true, audioReferenceSeconds: 11 },
+          features: {
+            audioReference: true,
+            audioReferenceSeconds: 11,
+            audioReferenceSpeakers: 3,
+          },
         },
         openaiVideos: {
           script: "openai-videos.lua",
@@ -179,6 +183,10 @@ describe("which recordings ride", () => {
     expect(voiceReferencesFor(held, lines)).toEqual([
       { speaker: "S1", name: "林", assetId: "asset-hero-voice" },
       { speaker: "S2", name: "周", assetId: "asset-partner-voice" },
+    ]);
+    // A converter that reads one recording takes the first speaker only.
+    expect(voiceReferencesFor(held, lines, 1)).toEqual([
+      { speaker: "S1", name: "林", assetId: "asset-hero-voice" },
     ]);
   });
 });

@@ -1696,32 +1696,43 @@ async fn plan_act_videos(
                 }
             }
             // The speakers' own recordings, when the model that films this
-            // piece can read one and the piece is short enough for the
-            // service to hear it. A recording that cannot travel is said out
+            // piece can read one, within the window and the count its
+            // converter names. A recording that cannot travel is said out
             // loud rather than dropped quietly.
             let chosen = item_model.clone().or_else(|| fallback_model.clone());
+            let rule = match chosen.as_deref() {
+                Some(id) => Some(voice_reference_rule(state, id).await),
+                None => None,
+            };
             let recorded = if piece.has_dialogue() {
-                voice_references(story, &piece, &refs)
+                voice_references_for(
+                    story,
+                    piece.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+                    &refs,
+                    rule.as_ref()
+                        .filter(|rule| rule.supported)
+                        .and_then(|rule| rule.speakers),
+                )
             } else {
                 Vec::new()
             };
             let mut voices: Vec<(String, String)> = Vec::new();
             if !recorded.is_empty() {
-                match chosen.as_deref() {
-                    Some(id) => match voice_reference_rule(state, id).await {
-                        VoiceReferenceRule::Unsupported => warnings.push(format!(
-                            "{} is filmed by {id}, whose converter takes no voice recordings; its speakers' recordings were left out",
-                            act.title
-                        )),
-                        VoiceReferenceRule::AnyLength => voices = recorded,
-                        VoiceReferenceRule::Capped(limit) if piece.seconds <= limit => {
-                            voices = recorded;
-                        }
-                        VoiceReferenceRule::Capped(limit) => warnings.push(format!(
+                match &rule {
+                    Some(rule) if rule.supported => match rule.seconds {
+                        Some(limit) if piece.seconds > limit => warnings.push(format!(
                             "{} is {} s; {id} reads a voice recording only in clips of {limit} s or less, so the reference voices were left out",
-                            act.title, piece.seconds
+                            act.title,
+                            piece.seconds,
+                            id = chosen.as_deref().unwrap_or_default()
                         )),
+                        _ => voices = recorded,
                     },
+                    Some(_) => warnings.push(format!(
+                        "{} is filmed by {id}, whose converter takes no voice recordings; its speakers' recordings were left out",
+                        act.title,
+                        id = chosen.as_deref().unwrap_or_default()
+                    )),
                     None => {}
                 }
             }
@@ -1908,24 +1919,34 @@ async fn plan_keyframe_videos(
                 inputs.push(json!({"role": "lastFrame", "assetId": last_frame}));
             }
             let chosen = item_model.clone().or_else(|| fallback_model.clone());
-            let recorded = voice_references_for(story, &keyframe.dialogue, &refs);
+            let rule = match chosen.as_deref() {
+                Some(id) => Some(voice_reference_rule(state, id).await),
+                None => None,
+            };
+            let recorded = voice_references_for(
+                story,
+                &keyframe.dialogue,
+                &refs,
+                rule.as_ref()
+                    .filter(|rule| rule.supported)
+                    .and_then(|rule| rule.speakers),
+            );
             let mut voices: Vec<(String, String)> = Vec::new();
             if !recorded.is_empty() {
-                match chosen.as_deref() {
-                    Some(id) => match voice_reference_rule(state, id).await {
-                        VoiceReferenceRule::Unsupported => warnings.push(format!(
-                            "{} is filmed by {id}, whose converter takes no voice recordings; its speaker's recording was left out",
-                            keyframe.title
-                        )),
-                        VoiceReferenceRule::AnyLength => voices = recorded,
-                        VoiceReferenceRule::Capped(limit) if seconds <= limit => {
-                            voices = recorded;
-                        }
-                        VoiceReferenceRule::Capped(limit) => warnings.push(format!(
+                match &rule {
+                    Some(rule) if rule.supported => match rule.seconds {
+                        Some(limit) if seconds > limit => warnings.push(format!(
                             "{} is {seconds} s; {id} reads a voice recording only in clips of {limit} s or less, so the reference voices were left out",
-                            keyframe.title
+                            keyframe.title,
+                            id = chosen.as_deref().unwrap_or_default()
                         )),
+                        _ => voices = recorded,
                     },
+                    Some(_) => warnings.push(format!(
+                        "{} is filmed by {id}, whose converter takes no voice recordings; its speaker's recording was left out",
+                        keyframe.title,
+                        id = chosen.as_deref().unwrap_or_default()
+                    )),
                     None => {}
                 }
             }
@@ -3019,37 +3040,41 @@ async fn video_ceiling(state: &ApiState, model: &str) -> u32 {
         .clamp(1, APP_VIDEO_SECONDS)
 }
 
-/// How long a video model's converter reads a speaker's recording.
+/// What a video model's converter promises about a speaker's recording.
 ///
-/// The window is the converter's own: a service that conditions more rows per
-/// window declares a shorter clip for a voice reference, and one that names no
-/// window is read at any length the model films.
-enum VoiceReferenceRule {
-    Unsupported,
-    AnyLength,
-    Capped(u32),
+/// Both numbers are the converter's own: a service that conditions more rows
+/// per window declares a shorter clip for a voice reference, and one that
+/// pays for each recording declares how many it reads. A protocol that names
+/// neither takes every recorded speaker over any clip the model films.
+struct VoiceReferenceRule {
+    supported: bool,
+    seconds: Option<u32>,
+    speakers: Option<u32>,
 }
 
 async fn voice_reference_rule(state: &ApiState, model: &str) -> VoiceReferenceRule {
+    let unsupported = VoiceReferenceRule {
+        supported: false,
+        seconds: None,
+        speakers: None,
+    };
     let Ok(snapshot) = state.models.snapshot().await else {
-        return VoiceReferenceRule::Unsupported;
+        return unsupported;
     };
     let Some(held) = snapshot.models.iter().find(|held| held.id == model) else {
-        return VoiceReferenceRule::Unsupported;
+        return unsupported;
     };
     let Some(root) = crate::converter::converter_root() else {
-        return VoiceReferenceRule::Unsupported;
+        return unsupported;
     };
     let registry = crate::converter::ConverterRegistry::load(root);
     let Some(entry) = registry.find(held.protocol.wire_name()) else {
-        return VoiceReferenceRule::Unsupported;
+        return unsupported;
     };
-    if !entry.features.audio_reference {
-        return VoiceReferenceRule::Unsupported;
-    }
-    match entry.features.audio_reference_seconds {
-        Some(seconds) => VoiceReferenceRule::Capped(seconds),
-        None => VoiceReferenceRule::AnyLength,
+    VoiceReferenceRule {
+        supported: entry.features.audio_reference,
+        seconds: entry.features.audio_reference_seconds,
+        speakers: entry.features.audio_reference_speakers,
     }
 }
 
@@ -3100,27 +3125,15 @@ fn speaker_element<'a>(
         })
 }
 
-/// The voice recordings a piece can travel with: one per speaking character
-/// that has a recording on file, in the order the speakers first speak, with
-/// the stable id the same speaker wears in the prompt. At most three travel,
-/// because that is what the service reads.
-fn voice_references(
-    story: &StoryDocument,
-    piece: &Piece<'_>,
-    refs: &BTreeMap<String, String>,
-) -> Vec<(String, String)> {
-    voice_references_for(
-        story,
-        piece.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
-        refs,
-    )
-}
-
-/// The same, for any run of lines — a piece's shots, or one shot on its own.
+/// The voice recordings a run of lines can travel with — a piece's shots, or
+/// one shot on its own — in the order the speakers first speak, with the
+/// stable id the same speaker wears in the prompt, keeping no more than the
+/// converter's own count where it names one.
 fn voice_references_for<'a>(
     story: &StoryDocument,
     lines: impl IntoIterator<Item = &'a crate::domain::story::StoryDialogueLine>,
     refs: &BTreeMap<String, String>,
+    limit: Option<u32>,
 ) -> Vec<(String, String)> {
     let mut order: Vec<String> = Vec::new();
     for line in lines {
@@ -3149,7 +3162,7 @@ fn voice_references_for<'a>(
             continue;
         };
         found.push((reference.clone(), asset));
-        if found.len() == 3 {
+        if limit.is_some_and(|limit| found.len() >= limit as usize) {
             break;
         }
     }
@@ -3443,19 +3456,28 @@ mod reference_audio_tests {
         assert_eq!(refs.get("bo").map(String::as_str), Some("S2"));
 
         let act = &story.chapters[0].acts[0];
-        let piece = Piece {
-            keyframes: act.keyframes.iter().collect(),
-            seconds: 4,
-            kind: PieceKind::Frame,
-            inputs: Vec::new(),
-        };
-        // First speaking order, not cast order: Bo speaks first.
+        // First speaking order, not cast order: Bo speaks first. A converter
+        // that reads one recording keeps that first speaker only.
         assert_eq!(
-            voice_references(&story, &piece, &refs),
+            voice_references_for(
+                &story,
+                act.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+                &refs,
+                None
+            ),
             vec![
                 ("S2".to_string(), "asset-bo".to_string()),
                 ("S1".to_string(), "asset-ahe".to_string())
             ]
+        );
+        assert_eq!(
+            voice_references_for(
+                &story,
+                act.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+                &refs,
+                Some(1)
+            ),
+            vec![("S2".to_string(), "asset-bo".to_string())]
         );
         assert!(
             labelled_spoken_lines(&story, &refs, &act.keyframes[0].dialogue)
@@ -3488,19 +3510,18 @@ mod reference_audio_tests {
     }
 
     #[test]
-    fn a_speaker_without_a_recording_is_left_out_and_at_most_three_travel() {
+    fn a_speaker_without_a_recording_is_left_out_and_the_converter_sets_the_count() {
         let mut story = story();
         story.elements[1].voice = None;
         let refs = character_refs(&story);
         let act = &story.chapters[0].acts[0];
-        let piece = Piece {
-            keyframes: act.keyframes.iter().collect(),
-            seconds: 4,
-            kind: PieceKind::Frame,
-            inputs: Vec::new(),
-        };
         assert_eq!(
-            voice_references(&story, &piece, &refs),
+            voice_references_for(
+                &story,
+                act.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+                &refs,
+                None
+            ),
             vec![("S1".to_string(), "asset-ahe".to_string())]
         );
     }

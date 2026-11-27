@@ -219,6 +219,13 @@ pub struct Features {
     /// any length, up to the model's own clip window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_reference_seconds: Option<u32>,
+    /// How many speakers' recordings the protocol reads in one clip.
+    ///
+    /// A service that conditions its lanes per recording takes only a few,
+    /// and the number is the converter's own: a protocol that names none is
+    /// given every recorded speaker the piece holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_reference_speakers: Option<u32>,
     /// The protocol can carry a mask beside the picture it edits.
     #[serde(default, skip_serializing_if = "is_false")]
     pub mask: bool,
@@ -245,6 +252,7 @@ impl Features {
             && !self.needs_reference_audio
             && !self.audio_reference
             && self.audio_reference_seconds.is_none()
+            && self.audio_reference_speakers.is_none()
             && !self.mask
             && !self.image_input
             && !self.job
@@ -605,7 +613,7 @@ mod tests {
               "script": "wan-image.lua",
               "order": 20,
               "auth": {"header": "x-api-key", "scheme": ""},
-              "features": {"mask": true, "imageInput": true, "audioReference": true, "audioReferenceSeconds": 11},
+              "features": {"mask": true, "imageInput": true, "audioReference": true, "audioReferenceSeconds": 11, "audioReferenceSpeakers": 3},
               "version": 1
             }"#,
             Some("wan-image.lua"),
@@ -629,6 +637,7 @@ mod tests {
         assert!(entry.features.image_input);
         assert!(entry.features.audio_reference);
         assert_eq!(entry.features.audio_reference_seconds, Some(11));
+        assert_eq!(entry.features.audio_reference_speakers, Some(3));
     }
 
     #[test]

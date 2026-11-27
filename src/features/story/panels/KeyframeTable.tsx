@@ -397,7 +397,9 @@ function KeyframeRow({
     }
     return [
       ...new Set(
-        voiceReferencesFor(story, keyframe.dialogue).map((voice) => voice.name),
+        voiceReferencesFor(story, keyframe.dialogue, ability.speakers).map(
+          (voice) => voice.name,
+        ),
       ),
     ];
   }, [story, act, keyframe]);
