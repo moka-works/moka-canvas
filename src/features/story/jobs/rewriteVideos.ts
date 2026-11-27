@@ -17,6 +17,7 @@ import { errorText } from "../../../api/client";
 import type { StoryDocument } from "../../../shared/domain/types";
 import { actAt, keyframeAt } from "../../../shared/domain/story";
 import { actVideoModel, jobKey, type VideoAskWave } from "./plan";
+import { refreshVoiceReferences } from "./voiceReferences";
 import { videoPromptRewrite, rewriteVideoPrompt } from "./promptRewrite";
 import type { RewriteFailure } from "./rewriteImages";
 import type { StoryPromptContext } from "../../../shared/prompts/story/promptContext";
@@ -126,7 +127,7 @@ export async function rewriteVideoWaves(
           ...(options.model === undefined ? {} : { model: options.model }),
           signal: options.signal,
         });
-        prompts.push(rewritten.prompt);
+        prompts.push(refreshVoiceReferences(rewritten.prompt, context?.voices));
       }
       place.rewritten = prompts;
     } catch (problem) {

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -58,6 +58,7 @@ import { fitShotToLines, planDubbing, type DubCue } from "../dubbing";
 import {
   actDefaultReferences,
   actVideoCeiling,
+  clampSeconds,
   drawnFrames,
   filmRoleOf,
   jobKey,
@@ -65,6 +66,11 @@ import {
   keyframeCastFor,
   settledRoleFrames,
 } from "../jobs/plan";
+import {
+  anyActVideoCandidateTakesVoiceReferences,
+  voiceReferencesFor,
+} from "../jobs/voiceReferences";
+import { AUDIO_REFERENCE_SECONDS } from "../../../shared/domain/constants";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { planLineVoiceAsks } from "../jobs/plan";
@@ -368,6 +374,31 @@ function KeyframeRow({
     keyframeId: keyframe.id,
   });
   const promptEdited = story.videoPromptOverrides?.[promptId] !== undefined;
+  // Whether this shot's own clip will carry its speaker's recording: the
+  // service hears one only over a short clip, and only a model that declares
+  // the ability reads one at all. Read once per row rather than on every
+  // keystroke.
+  const voiceNames = useMemo(() => {
+    if (
+      !story.elements.some(
+        (element) => element.voice?.referenceAssetId !== undefined,
+      )
+    ) {
+      return [];
+    }
+    if (
+      clampSeconds(keyframe.durationMs, actVideoCeiling(act)) >
+      AUDIO_REFERENCE_SECONDS
+    ) {
+      return [];
+    }
+    if (!anyActVideoCandidateTakesVoiceReferences(act)) return [];
+    return [
+      ...new Set(
+        voiceReferencesFor(story, keyframe.dialogue).map((voice) => voice.name),
+      ),
+    ];
+  }, [story, act, keyframe]);
   const imagePromptId = jobKey({
     kind: "keyframeArt",
     chapterId,
@@ -846,6 +877,19 @@ function KeyframeRow({
                 data-testid={`story-kf-video-prompt-edited-${index}`}
               >
                 {t("story:storyboard.promptHandEdited")}
+              </span>
+            )}
+            {voiceNames.length > 0 && (
+              <span
+                className="story-hint"
+                data-testid={`story-kf-voice-refs-${index}`}
+                title={t("story:storyboard.voiceRefsHint", {
+                  seconds: AUDIO_REFERENCE_SECONDS,
+                })}
+              >
+                {t("story:storyboard.voiceRefsShort", {
+                  names: voiceNames.join("、"),
+                })}
               </span>
             )}
           </td>

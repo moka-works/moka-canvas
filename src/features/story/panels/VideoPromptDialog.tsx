@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   MAX_PROMPT_LENGTH,
   MAX_VIDEO_TAKES_PER_ASK,
+  AUDIO_REFERENCE_SECONDS,
 } from "../../../shared/domain/constants";
 import { fnv1a } from "../../../shared/domain/digest";
 import { actAt, videoPromptOverride } from "../../../shared/domain/story";
@@ -20,6 +21,7 @@ import {
   planKeyframeVideoWaves,
 } from "../jobs/plan";
 import { videoPromptRewrite } from "../jobs/promptRewrite";
+import { voiceReferenceState } from "../jobs/voiceReferences";
 import { PromptIssues } from "../../../shared/prompts/PromptIssues";
 import { liveStory } from "./removeOldTake";
 import {
@@ -128,6 +130,41 @@ export function VideoPromptDialog({
     kind,
     act === undefined ? null : actVideoModel(act),
   );
+  // Whether the speakers' own recordings ride with these asks, and where they
+  // do not, which of the three repairs is the one: a recording nobody kept, a
+  // model that reads none, or a piece too long for the service to hear one.
+  const voiceLines =
+    place.kind === "act"
+      ? (act?.keyframes.flatMap((keyframe) => keyframe.dialogue) ?? [])
+      : (act?.keyframes.find((keyframe) => keyframe.id === place.keyframeId)
+          ?.dialogue ?? []);
+  const carriedVoices = shown.flatMap((ask) => ask.promptContext?.voices ?? []);
+  const timings = shown
+    .map((ask) => secondsOf(ask.params))
+    .filter((seconds) => seconds > 0);
+  const voiceNote = (() => {
+    if (carriedVoices.length > 0) {
+      const names = [...new Set(carriedVoices.map((voice) => voice.name))];
+      return t("story:storyboard.voiceRefsOn", {
+        names: names.join("、"),
+        seconds: AUDIO_REFERENCE_SECONDS,
+      });
+    }
+    if (act === undefined || voiceLines.length === 0) return null;
+    const outlook = voiceReferenceState(
+      live,
+      voiceLines,
+      timings.length === 0 ? Infinity : Math.min(...timings),
+      act,
+    );
+    if (outlook.state === "noModel")
+      return t("story:storyboard.voiceRefsNoModel");
+    if (outlook.state === "tooLong")
+      return t("story:storyboard.voiceRefsTooLong", {
+        seconds: AUDIO_REFERENCE_SECONDS,
+      });
+    return null;
+  })();
 
   const overrides = live.videoPromptOverrides ?? {};
   /** Keys written for the asks this place used to have, and no longer has. */
@@ -265,6 +302,12 @@ export function VideoPromptDialog({
             ? t("story:storyboard.videoPromptFilmHint")
             : t("story:storyboard.videoPromptHint")}
         </p>
+
+        {voiceNote !== null && (
+          <p className="story-hint" data-testid="story-video-prompt-voice-refs">
+            {voiceNote}
+          </p>
+        )}
 
         {shown.length === 0 ? (
           <p className="story-hint">

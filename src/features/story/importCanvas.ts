@@ -92,6 +92,7 @@ const PORT_OF_ROLE: Record<InputRole, string> = {
   reference: "images",
   firstFrame: "firstFrame",
   lastFrame: "lastFrame",
+  referenceAudio: "audios",
   mask: "mask",
   controlVideo: "videos",
   controlAudio: "audios",

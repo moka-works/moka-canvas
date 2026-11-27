@@ -57,6 +57,14 @@ export interface PromptContextPicture {
   description: string;
 }
 
+/** One recording that travels with a clip, and whose voice it carries. */
+export interface PromptContextVoice {
+  /** The speaker's stable id: `S1`, `S2`, … */
+  speaker: string;
+  /** The character's name, as the reader reads it. */
+  name: string;
+}
+
 /** What the clip is: an act filmed whole, one shot, or a bridge between acts. */
 export interface StoryPromptContext {
   kind: "act" | "shot" | "transition";
@@ -80,6 +88,8 @@ export interface StoryPromptContext {
   continues?: boolean;
   cast: PromptContextCast[];
   dialogue: PromptContextLine[];
+  /** The voice recordings that travel with the clip, in audio order. */
+  voices?: PromptContextVoice[];
   sound?: { music: string; sfx: string; ambience?: string };
   /** Its place among the pieces, when an act is filmed in several. */
   part?: number;

@@ -7,6 +7,7 @@ const ROLE_LABELS: Record<InputRole, string> = {
   reference: "editor:inputPreview.roleReference",
   firstFrame: "editor:inputPreview.roleFirstFrame",
   lastFrame: "editor:inputPreview.roleLastFrame",
+  referenceAudio: "editor:inputPreview.roleReferenceAudio",
   mask: "editor:inputPreview.roleMask",
   controlVideo: "editor:inputPreview.roleControlVideo",
   controlAudio: "editor:inputPreview.roleControlAudio",

@@ -20,6 +20,7 @@ import type {
   StoryTarget,
 } from "../../../api/story";
 import {
+  AUDIO_REFERENCE_SECONDS,
   MAX_IMAGES_PER_ASK,
   MAX_ITEMS_PER_STORY_JOB,
   MAX_VIDEO_SECONDS,
@@ -120,6 +121,15 @@ import {
   storyAskModelHead,
   storyAskModels,
 } from "../stores/storyModels";
+import {
+  anyActVideoCandidateTakesVoiceReferences,
+  audioCapableVideoModel,
+  carriesVoiceReferences,
+  voiceReferencesFor,
+  voiceSpeakerIds,
+  withVoiceReferences,
+  type VoiceReference,
+} from "./voiceReferences";
 
 /**
  * The name a piece is known by, which is also how its answer is recognised
@@ -1632,7 +1642,8 @@ export function keyframeArtCast(
   // walls behind the face). A frame with no pictures at all stays
   // reference-free — a title card or an insert is drawn from its words alone.
   const listed = carried.find((held) => held.element?.kind === "scene");
-  if (listed !== undefined) return { cast: carried, place: carried[0] === listed };
+  if (listed !== undefined)
+    return { cast: carried, place: carried[0] === listed };
   const placeElement =
     carried.length === 0 || act.sceneId === undefined
       ? undefined
@@ -1642,10 +1653,10 @@ export function keyframeArtCast(
       ? undefined
       : carriedElement(story, placeElement.name, keyframe.variantChoices ?? {});
   if (place === undefined) return { cast: carried, place: false };
-  const cast = [place, ...carried.filter((held) => held.assetId !== place.assetId)].slice(
-    0,
-    story.maxReferenceImages,
-  );
+  const cast = [
+    place,
+    ...carried.filter((held) => held.assetId !== place.assetId),
+  ].slice(0, story.maxReferenceImages);
   return { cast, place: cast[0] === place };
 }
 
@@ -1905,6 +1916,7 @@ export function planActVideos(
       act.continueFromPrevious === true
         ? neighbourVideos(story, chapter, chapter.acts.indexOf(act)).from
         : undefined;
+    const voiceCapable = anyActVideoCandidateTakesVoiceReferences(act);
     return pieces.map((piece, at) => {
       const held = piece.keyframes.flatMap((keyframe) => {
         const take = currentTake(keyframe.art);
@@ -1950,30 +1962,44 @@ export function planActVideos(
       const lines = piece.keyframes.flatMap((keyframe) => keyframe.dialogue);
       const refs = characterRefs(story);
       const sound = soundFor(act.sound);
+      // The speakers' own recordings ride when the model that films this
+      // piece reads one and the piece is short enough for it to hear them.
+      const voices: VoiceReference[] =
+        voiceCapable && piece.seconds <= AUDIO_REFERENCE_SECONDS
+          ? voiceReferencesFor(story, lines)
+          : [];
+      for (const voice of voices) {
+        inputs.push({ role: "referenceAudio", assetId: voice.assetId });
+      }
+      let prompt =
+        videoPromptOverride(story, id)?.prompt ??
+        storyActVideoPrompt({
+          ...look,
+          title: act.title,
+          summary: act.summary,
+          shots: piece.keyframes.map((keyframe, shot) => ({
+            at: starts[shot],
+            content: stripStoryMentions(keyframe.content),
+            ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+              ? {}
+              : { motion: stripStoryMentions(keyframe.motion) }),
+            move: keyframe.cameraMove,
+            dialogue: keyframe.dialogue,
+          })),
+          mode: references ? "references" : words ? "words" : "frames",
+          seconds: piece.seconds,
+          ...(several ? { part: at + 1, total: pieces.length } : {}),
+          ...(continues ? { continues: true } : {}),
+          ...(voices.length === 0
+            ? {}
+            : { speakerIds: voiceSpeakerIds(story) }),
+        });
+      if (voices.length > 0) prompt = withVoiceReferences(prompt, voices);
       return {
         id,
         target,
         capability: "video" as const,
-        prompt:
-          videoPromptOverride(story, id)?.prompt ??
-          storyActVideoPrompt({
-            ...look,
-            title: act.title,
-            summary: act.summary,
-            shots: piece.keyframes.map((keyframe, shot) => ({
-              at: starts[shot],
-              content: stripStoryMentions(keyframe.content),
-              ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
-                ? {}
-                : { motion: stripStoryMentions(keyframe.motion) }),
-              move: keyframe.cameraMove,
-              dialogue: keyframe.dialogue,
-            })),
-            mode: references ? "references" : words ? "words" : "frames",
-            seconds: piece.seconds,
-            ...(several ? { part: at + 1, total: pieces.length } : {}),
-            ...(continues ? { continues: true } : {}),
-          }),
+        prompt,
         inputs,
         promptContext: {
           kind: "act" as const,
@@ -2002,6 +2028,14 @@ export function planActVideos(
               shot: shot + 1,
             })),
           ),
+          ...(voices.length === 0
+            ? {}
+            : {
+                voices: voices.map(({ speaker, name }) => ({
+                  speaker,
+                  name,
+                })),
+              }),
           ...(sound === undefined ? {} : { sound }),
           ...(several ? { part: at + 1, total: pieces.length } : {}),
           ...(continues ? { continues: true } : {}),
@@ -2027,6 +2061,7 @@ export function planKeyframeVideos(
   const act = actAt(story, chapterId, actId);
   if (act === undefined) return [];
   const ceiling = actVideoCeiling(act);
+  const voiceCapable = anyActVideoCandidateTakesVoiceReferences(act);
   return keyframeIds.flatMap((keyframeId) => {
     const keyframe = keyframeAt(story, { chapterId, actId, keyframeId });
     if (keyframe === undefined) return [];
@@ -2053,24 +2088,34 @@ export function planKeyframeVideos(
     }
     const id = jobKey(target);
     const sound = soundFor(act.sound);
+    const voices: VoiceReference[] =
+      voiceCapable && seconds <= AUDIO_REFERENCE_SECONDS
+        ? voiceReferencesFor(story, keyframe.dialogue)
+        : [];
+    for (const voice of voices) {
+      inputs.push({ role: "referenceAudio", assetId: voice.assetId });
+    }
+    let prompt =
+      videoPromptOverride(story, id)?.prompt ??
+      storyKeyframeVideoPrompt({
+        ...look,
+        title: keyframe.title,
+        content: stripStoryMentions(keyframe.content),
+        ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
+          ? {}
+          : { motion: stripStoryMentions(keyframe.motion) }),
+        move: keyframe.cameraMove,
+        seconds,
+        dialogue: keyframe.dialogue,
+        ...(voices.length === 0 ? {} : { speakerIds: voiceSpeakerIds(story) }),
+      });
+    if (voices.length > 0) prompt = withVoiceReferences(prompt, voices);
     return [
       {
         id,
         target,
         capability: "video",
-        prompt:
-          videoPromptOverride(story, id)?.prompt ??
-          storyKeyframeVideoPrompt({
-            ...look,
-            title: keyframe.title,
-            content: stripStoryMentions(keyframe.content),
-            ...(keyframe.motion === undefined || keyframe.motion.trim() === ""
-              ? {}
-              : { motion: stripStoryMentions(keyframe.motion) }),
-            move: keyframe.cameraMove,
-            seconds,
-            dialogue: keyframe.dialogue,
-          }),
+        prompt,
         inputs,
         promptContext: {
           kind: "shot" as const,
@@ -2084,6 +2129,14 @@ export function planKeyframeVideos(
           shots: shotsFor([keyframe]),
           cast: castFor(story, act.characterIds, keyframe.dialogue),
           dialogue: linesFor(story, characterRefs(story), keyframe.dialogue),
+          ...(voices.length === 0
+            ? {}
+            : {
+                voices: voices.map(({ speaker, name }) => ({
+                  speaker,
+                  name,
+                })),
+              }),
           ...(sound === undefined ? {} : { sound }),
         },
         params: videoParams(story.brief.aspect, seconds),
@@ -2116,7 +2169,12 @@ export function planActVideoWaves(
     const act = actAt(story, item.target.chapterId, item.target.actId);
     if (act === undefined) continue;
     const own = (act.videoModel ?? "").trim();
-    const model = own === "" ? storyAskModel("actVideo") : own;
+    const chosen = own === "" ? storyAskModel("actVideo") : own;
+    // A piece carrying the speakers' recordings goes to a model that reads
+    // them, even where the step's list has another model next in line.
+    const model = carriesVoiceReferences(item)
+      ? audioCapableVideoModel(act, chosen)
+      : chosen;
     const key = model ?? "";
     const group = groups.get(key) ?? { model, items: [] };
     group.items.push(item);
@@ -2144,7 +2202,10 @@ export function planKeyframeVideoWaves(
   const own = (act.videoModel ?? "").trim();
   const groups = new Map<string, StoryJobItemDraft[]>();
   for (const item of planKeyframeVideos(story, chapterId, actId, keyframeIds)) {
-    const model = own === "" ? storyAskModel("actVideo") : own;
+    const chosen = own === "" ? storyAskModel("actVideo") : own;
+    const model = carriesVoiceReferences(item)
+      ? audioCapableVideoModel(act, chosen)
+      : chosen;
     const key = model ?? "";
     const group = groups.get(key) ?? [];
     group.push(item);

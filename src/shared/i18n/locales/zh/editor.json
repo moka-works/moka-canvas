@@ -640,6 +640,7 @@
     "roleReference": "参考",
     "roleFirstFrame": "首帧",
     "roleLastFrame": "尾帧",
+    "roleReferenceAudio": "参考音频",
     "roleMask": "蒙版",
     "roleControlVideo": "控制视频",
     "roleControlAudio": "控制音频",

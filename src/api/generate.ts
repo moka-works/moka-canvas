@@ -9,6 +9,7 @@ export type InputRole =
   | "reference"
   | "firstFrame"
   | "lastFrame"
+  | "referenceAudio"
   | "mask"
   | "controlVideo"
   | "controlAudio";

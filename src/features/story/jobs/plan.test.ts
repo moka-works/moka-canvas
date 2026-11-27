@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { ModelsView } from "../../../api/models";
+import type { ModelsView, ProtocolGroups } from "../../../api/models";
 import { buildStoryMokaFile, storyIds } from "../../../shared/domain/fixtures";
 import type {
   StoryDocument,
@@ -262,7 +262,7 @@ function withContent(
 }
 
 beforeEach(() => {
-  useModelStore.setState({ view: null });
+  useModelStore.setState({ view: null, protocols: null });
   useStoryModels.setState({ choices: {} });
 });
 
@@ -2374,5 +2374,133 @@ describe("the record a voice is copied from", () => {
     expect(params.pitch).toBe(0.9);
     expect(typeof params.instructions).toBe("string");
     expect((params.instructions as string).length).toBeGreaterThan(0);
+  });
+});
+
+/** Settings with one video model whose converter may read voice recordings. */
+function videoWithVoiceReference(
+  audioReference: boolean,
+  maxSeconds = 15,
+): { view: ModelsView; protocols: ProtocolGroups } {
+  const view = settingsWithVideoSeconds(6);
+  return {
+    view: {
+      ...view,
+      models: [
+        {
+          id: "filmer",
+          category: "video",
+          protocol: "minimaxVideo",
+          url: "https://provider.test/v2/video_generation",
+          model: "MiniMax-Hailuo-2.3",
+          displayName: "H3",
+          maxVideoSeconds: maxSeconds,
+          enabled: true,
+          apiKey: { set: false, masked: null },
+        },
+      ],
+      defaults: { ...view.defaults, video: "filmer" },
+    },
+    protocols: {
+      video: {
+        minimaxVideo: {
+          script: "minimax-video.lua",
+          displayName: "MiniMax",
+          urlExample: "https://provider.test/v2/video_generation",
+          features: audioReference ? { audioReference: true } : {},
+        },
+      },
+    },
+  };
+}
+
+/** The drawn board with a recording kept on the hero's character card. */
+function withRecording(held: StoryDocument): StoryDocument {
+  const elements = held.elements.map((element) =>
+    element.id !== ids.hero
+      ? element
+      : {
+          ...element,
+          voice: { model: "", voice: "", referenceAssetId: "asset-hero-voice" },
+        },
+  );
+  return { ...held, elements };
+}
+
+describe("voice references", () => {
+  it("carries the speaker's own recording into an act clip", () => {
+    const settings = videoWithVoiceReference(true);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(3_000));
+
+    const [item] = planActVideos(held, ids.chapterFirst, [ids.act]);
+    expect(item.inputs).toContainEqual({
+      role: "referenceAudio",
+      assetId: "asset-hero-voice",
+    });
+    expect(item.promptContext?.voices).toEqual([{ speaker: "S1", name: "林" }]);
+    // The mapping names the same id the line itself wears.
+    expect(item.prompt).toContain(
+      "<Audio 1> carries the voice of the speaker labelled (S1)",
+    );
+    expect(item.prompt).toContain('林 (S1) (平静): "车已经停运了。"');
+    expect(item.prompt).toContain("Voice references:");
+  });
+
+  it("carries the recording into a shot filmed on its own", () => {
+    const settings = videoWithVoiceReference(true);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(3_000));
+
+    const [shot] = planKeyframeVideos(held, ids.chapterFirst, ids.act, [
+      ids.frameFirst,
+    ]);
+    expect(shot.inputs).toContainEqual({
+      role: "referenceAudio",
+      assetId: "asset-hero-voice",
+    });
+    expect(shot.prompt).toContain("Voice references:");
+    expect(shot.prompt).toContain("(S1)");
+  });
+
+  it("leaves the recording out for a model that does not declare it", () => {
+    const settings = videoWithVoiceReference(false);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(3_000));
+
+    const [item] = planActVideos(held, ids.chapterFirst, [ids.act]);
+    expect(item.inputs?.some((input) => input.role === "referenceAudio")).toBe(
+      false,
+    );
+    expect(item.prompt).not.toContain("Voice references:");
+    expect(item.promptContext?.voices).toBeUndefined();
+  });
+
+  it("leaves the recording out of a clip longer than the service hears", () => {
+    const settings = videoWithVoiceReference(true, 20);
+    useModelStore.setState(settings);
+    const held = withRecording(plannedShot(12_000));
+
+    const [shot] = planKeyframeVideos(held, ids.chapterFirst, ids.act, [
+      ids.frameFirst,
+    ]);
+    expect(shot.params?.seconds).toBe(12);
+    expect(shot.inputs?.some((input) => input.role === "referenceAudio")).toBe(
+      false,
+    );
+    expect(shot.prompt).not.toContain("Voice references:");
+  });
+
+  it("leaves the recording out when the speaker has none on file", () => {
+    const settings = videoWithVoiceReference(true);
+    useModelStore.setState(settings);
+
+    const [item] = planActVideos(plannedShot(3_000), ids.chapterFirst, [
+      ids.act,
+    ]);
+    expect(item.inputs?.some((input) => input.role === "referenceAudio")).toBe(
+      false,
+    );
+    expect(item.prompt).not.toContain("Voice references:");
   });
 });

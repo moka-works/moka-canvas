@@ -640,6 +640,7 @@
     "roleReference": "Reference",
     "roleFirstFrame": "First frame",
     "roleLastFrame": "Last frame",
+    "roleReferenceAudio": "Reference audio",
     "roleMask": "Mask",
     "roleControlVideo": "Control video",
     "roleControlAudio": "Control audio",

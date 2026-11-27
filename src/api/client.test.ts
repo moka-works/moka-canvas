@@ -107,6 +107,11 @@ describe("what a reader repairs in settings", () => {
       true,
     );
     expect(isConfigurationTrouble(thrown("MODEL_VOICE_REQUIRED"))).toBe(true);
+    // A model that reads no recordings is repaired by choosing one that does,
+    // which is a configuration change rather than another ask.
+    expect(
+      isConfigurationTrouble(thrown("MODEL_REFERENCE_AUDIO_UNSUPPORTED")),
+    ).toBe(true);
   });
 
   it("leaves a trouble that time or a second ask might fix alone", () => {

@@ -432,3 +432,99 @@ describe("a clip's prompt before it is filmed", () => {
     text.mockRestore();
   });
 });
+
+/** A machine whose one video model reads a voice recording beside the clip. */
+function voiceAwareVideo() {
+  const base: ModelsView = {
+    version: 1,
+    revision: 1,
+    models: [],
+    defaults: {
+      text: null,
+      image: null,
+      speech: null,
+      music: null,
+      video: null,
+      asr: null,
+    },
+    preferences: {
+      systemPrompt: "",
+      reasoningEffort: "auto",
+      image: { size: "1024x1024", quality: "auto", background: "", count: 1 },
+      video: {
+        seconds: 6,
+        resolution: "",
+        generateAudio: false,
+        watermark: false,
+        mode: "auto",
+        ratio: "",
+      },
+      speech: {
+        voice: "",
+        format: "",
+        speed: 1,
+        instructions: "",
+        sampleRate: 22_050,
+        volume: 50,
+        rate: 1,
+        pitch: 1,
+      },
+      music: { format: "mp3", watermark: false },
+      story: { splitChars: 12_000 },
+    },
+    secretStorage: "unset",
+  };
+  return {
+    view: {
+      ...base,
+      models: [
+        {
+          id: "filmer",
+          category: "video" as const,
+          protocol: "minimaxVideo",
+          url: "https://provider.test/v2/video_generation",
+          model: "MiniMax-Hailuo-2.3",
+          displayName: "H3",
+          maxVideoSeconds: 15,
+          enabled: true,
+          apiKey: { set: false, masked: null },
+        },
+      ],
+      defaults: { ...base.defaults, video: "filmer" },
+    },
+    protocols: {
+      video: {
+        minimaxVideo: {
+          script: "minimax-video.lua",
+          displayName: "MiniMax",
+          urlExample: "https://provider.test/v2/video_generation",
+          features: { audioReference: true },
+        },
+      },
+    },
+  };
+}
+
+describe("a clip carrying the speaker's voice", () => {
+  it("shows the recording travelling and names it in the words", () => {
+    useModelStore.setState(voiceAwareVideo());
+    const moka = buildStoryMokaFile();
+    const hero = moka.stories![0]!.elements.find(
+      (element) => element.id === ids.hero,
+    )!;
+    hero.voice = {
+      model: "",
+      voice: "",
+      referenceAssetId: "asset-hero-voice",
+    };
+
+    open(moka);
+    expect(
+      screen.getByTestId("story-video-prompt-voice-refs").textContent,
+    ).toContain("林");
+    expect(
+      (screen.getByTestId("story-video-prompt-text-0") as HTMLTextAreaElement)
+        .value,
+    ).toContain("Voice references:");
+  });
+});

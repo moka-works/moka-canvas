@@ -191,6 +191,20 @@ export interface StoryLook {
   style: string;
 }
 
+/**
+ * The stable id each speaker of a clip wears beside their name.
+ *
+ * A clip filmed with reference audio names the speakers, and the mapping to
+ * the recordings is written by id, so the words the prompt puts beside a line
+ * and the words the voice mapping uses are the same. The maps are built from
+ * the telling's own cast: by character id first, by the name a line calls
+ * them second.
+ */
+export interface StorySpeakerIds {
+  byCharacter: ReadonlyMap<string, string>;
+  byName: ReadonlyMap<string, string>;
+}
+
 /** What a written step is told about the telling it is writing. */
 export interface StoryFacts extends StoryLook {
   genre: string;
@@ -648,6 +662,8 @@ export function storyActVideoPrompt(
     total?: number;
     /** Whether the piece opens on the last frame of the act before it. */
     continues?: boolean;
+    /** The speakers' stable ids, for a clip that carries reference audio. */
+    speakerIds?: StorySpeakerIds;
   },
 ): string {
   const shots = input.shots.map((shot) => ({
@@ -655,7 +671,7 @@ export function storyActVideoPrompt(
     content: shot.content,
     motion: shot.motion ?? "",
     move: shot.move,
-    dialogue: storySpokenLines(shot.dialogue ?? []),
+    dialogue: storySpokenLines(shot.dialogue ?? [], input.speakerIds),
   }));
   return render(storyActVideo, {
     ...input,
@@ -750,11 +766,13 @@ export function storyKeyframeVideoPrompt(
     seconds: number;
     /** The lines the shot mouths, in the order they are said. */
     dialogue?: StoryDialogueLine[];
+    /** The speakers' stable ids, for a clip that carries reference audio. */
+    speakerIds?: StorySpeakerIds;
   },
 ): string {
   return render(storyKeyframeVideo, {
     ...input,
-    dialogue: storySpokenLines(input.dialogue ?? []),
+    dialogue: storySpokenLines(input.dialogue ?? [], input.speakerIds),
   });
 }
 
@@ -767,17 +785,25 @@ export function storyKeyframeVideoPrompt(
  * afterwards line up with the mouths. An empty line is left out: there is
  * nothing to mouth.
  */
-function storySpokenLines(lines: StoryDialogueLine[]): string {
+function storySpokenLines(
+  lines: StoryDialogueLine[],
+  ids?: StorySpeakerIds,
+): string {
   return lines
     .filter((line) => line.text.trim() !== "")
     .map((line) => {
       const said = `"${line.text.trim()}"`;
       const speaker = line.speaker.trim();
       if (speaker === "") return said;
+      const reference =
+        line.characterId !== undefined
+          ? ids?.byCharacter.get(line.characterId)
+          : ids?.byName.get(speaker);
+      const id = reference === undefined ? "" : ` (${reference})`;
       const tone = line.tone?.trim();
       return tone === undefined || tone === ""
-        ? `${speaker}: ${said}`
-        : `${speaker} (${tone}): ${said}`;
+        ? `${speaker}${id}: ${said}`
+        : `${speaker}${id} (${tone}): ${said}`;
     })
     .join("; ");
 }

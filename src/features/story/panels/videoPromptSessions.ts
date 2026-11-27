@@ -32,6 +32,7 @@ import type { StoryDocument } from "../../../shared/domain/types";
 import { actVideoModel, planActVideos, planKeyframeVideos } from "../jobs/plan";
 import type { PromptContractIssue } from "../../../shared/prompts/promptContract";
 import { rewriteVideoPrompt, videoPromptRewrite } from "../jobs/promptRewrite";
+import { refreshVoiceReferences } from "../jobs/voiceReferences";
 import { liveStory } from "../panels/removeOldTake";
 
 /** The place whose clip prompts are being edited. */
@@ -253,7 +254,10 @@ export const useVideoPromptSessions = create<VideoPromptSessionsState>()(
               model: session.rewriteModel,
               signal: controller.signal,
             });
-            next[at] = rewritten.prompt;
+            next[at] = refreshVoiceReferences(
+              rewritten.prompt,
+              ask.promptContext?.voices,
+            );
             found.push(...rewritten.issues);
             // The session was let go while this piece was on its way — saved,
             // or replaced by a new one — and nothing here belongs to it now.

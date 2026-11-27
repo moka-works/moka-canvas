@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -47,6 +47,11 @@ import {
   planKeyframeArtWaves,
   planLineVoiceAsks,
 } from "../jobs/plan";
+import {
+  anyActVideoCandidateTakesVoiceReferences,
+  voiceReferencesFor,
+} from "../jobs/voiceReferences";
+import { AUDIO_REFERENCE_SECONDS } from "../../../shared/domain/constants";
 import { placeText, type PlaceBusy } from "../jobs/places";
 import {
   useStoryRun,
@@ -263,6 +268,34 @@ export function ActCard({
   const askedSeconds = pieces.reduce((sum, piece) => sum + piece.seconds, 0);
   const split = pieces.length > 1;
   const adjusted = pieces.length > 0 && askedSeconds * 1000 !== plannedMs;
+  // The speakers whose own recordings ride with this act's clip, piece by
+  // piece: a recording only travels over a short piece, and only on a model
+  // that reads one. Read once per board rather than on every keystroke.
+  const voiceNames = useMemo(() => {
+    if (perShot) return [];
+    if (
+      !story.elements.some(
+        (element) => element.voice?.referenceAssetId !== undefined,
+      )
+    ) {
+      return [];
+    }
+    if (!anyActVideoCandidateTakesVoiceReferences(act)) return [];
+    const held = actClipPieces(act, actVideoCeiling(act));
+    return [
+      ...new Set(
+        held
+          .filter((piece) => piece.seconds <= AUDIO_REFERENCE_SECONDS)
+          .flatMap((piece) =>
+            voiceReferencesFor(
+              story,
+              piece.keyframes.flatMap((keyframe) => keyframe.dialogue),
+            ),
+          )
+          .map((voice) => voice.name),
+      ),
+    ];
+  }, [story, act, perShot]);
   // The asks this act's clip is made of, which is also where hand-written
   // words are kept: a piece that is no longer planned simply has none.
   const promptBase = jobKey({
@@ -850,6 +883,20 @@ export function ActCard({
                   ? t("story:storyboard.noClip")
                   : t("story:storyboard.clipReady")}
             </span>
+
+            {voiceNames.length > 0 && (
+              <span
+                className="story-hint"
+                data-testid={`story-act-voice-refs-${index}`}
+                title={t("story:storyboard.voiceRefsHint", {
+                  seconds: AUDIO_REFERENCE_SECONDS,
+                })}
+              >
+                {t("story:storyboard.voiceRefsShort", {
+                  names: voiceNames.join("、"),
+                })}
+              </span>
+            )}
 
             {clipPromptDrifted && (
               <span
