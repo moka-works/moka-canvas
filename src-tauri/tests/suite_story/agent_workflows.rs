@@ -787,6 +787,8 @@ async fn a_story_batch_can_be_planned_from_the_document() {
         .find(|model| model["id"] == "h3")
         .unwrap();
     assert_eq!(h3["audioReference"], true);
+    assert_eq!(h3["audioReferenceSeconds"], 11);
+    assert_eq!(h3["audioReferenceSpeakers"], 3);
     call(
         &app,
         "story.update_element",

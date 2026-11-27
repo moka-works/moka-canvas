@@ -376,7 +376,7 @@ fn core_tools() -> Vec<ToolSpec> {
             "project.describe_models",
             "core",
             ToolRisk::Read,
-            "List configured models by capability. Never returns credentials or endpoint addresses. A video model whose converter declares audioReference is reported with audioReference: true.",
+            "List configured models by capability. Never returns credentials or endpoint addresses. A video model whose converter declares audioReference is reported with audioReference: true, plus audioReferenceSeconds and audioReferenceSpeakers where the converter names them.",
             schema(
                 &[],
                 &[("capability", "string", "text, image, speech, music, video, or asr")],

@@ -15,15 +15,33 @@ use super::super::context::{chat_context, AgentScope};
 use super::super::error::ToolError;
 use super::{Args, ToolOutcome};
 
-/// Whether a video model's converter reads a speaker's recording beside the
-/// clip, as the converter registry declares it.
-fn audio_reference(protocol: &crate::metadata::Protocol) -> bool {
-    let Some(root) = crate::converter::converter_root() else {
-        return false;
+/// What a video model's converter declares about a speaker's recording: that
+/// it reads one, how long a clip it reads it over, and how many speakers it
+/// takes in that clip. A protocol with no converter here declares nothing.
+struct AudioReference {
+    supported: bool,
+    seconds: Option<u32>,
+    speakers: Option<u32>,
+}
+
+fn audio_reference(protocol: &crate::metadata::Protocol) -> AudioReference {
+    let nothing = AudioReference {
+        supported: false,
+        seconds: None,
+        speakers: None,
     };
-    crate::converter::ConverterRegistry::load(root)
-        .find(protocol.wire_name())
-        .is_some_and(|entry| entry.features.audio_reference)
+    let Some(root) = crate::converter::converter_root() else {
+        return nothing;
+    };
+    let registry = crate::converter::ConverterRegistry::load(root);
+    let Some(entry) = registry.find(protocol.wire_name()) else {
+        return nothing;
+    };
+    AudioReference {
+        supported: entry.features.audio_reference,
+        seconds: entry.features.audio_reference_seconds,
+        speakers: entry.features.audio_reference_speakers,
+    }
 }
 
 pub async fn command(
@@ -105,6 +123,11 @@ pub async fn command(
                         .unwrap_or(true)
                 })
                 .map(|model| {
+                    // A video model's recording ability, with the window and
+                    // count its converter names: the planner attaches the
+                    // cast's recordings to such a model's asks.
+                    let audio = (model.category == Capability::Video)
+                        .then(|| audio_reference(&model.protocol));
                     json!({
                         "id": model.id,
                         "label": model.display_name,
@@ -115,11 +138,9 @@ pub async fn command(
                         "maxTokens": model.max_tokens,
                         "reasoningEffort": model.reasoning_effort,
                         "temperature": model.temperature,
-                        // A video model whose converter reads a speaker's
-                        // recording beside the clip: the planner attaches the
-                        // cast's recordings to such a model's asks.
-                        "audioReference": model.category == Capability::Video
-                            && audio_reference(&model.protocol),
+                        "audioReference": audio.as_ref().is_some_and(|held| held.supported),
+                        "audioReferenceSeconds": audio.as_ref().and_then(|held| held.seconds),
+                        "audioReferenceSpeakers": audio.as_ref().and_then(|held| held.speakers),
                     })
                 })
                 .collect();
