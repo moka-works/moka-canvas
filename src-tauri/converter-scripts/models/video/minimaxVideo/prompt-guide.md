@@ -70,6 +70,16 @@ in the order the material gives them and refer to each as `reference image 1`,
 audio are counted separately. Refer to a person or thing by the reference that
 carries it, and keep the appearance and clothing it shows.
 
+When the material carries voice references, the recordings are copies of the
+speakers' voices rather than sounds in the scene. Name each one `<Audio 1>`,
+`<Audio 2>`, … in the order the material attaches them, and say which speaker
+it voices in the same sentence, for example:
+`<Audio 1> carries the voice of the speaker labelled (S1); use its timbre,
+accent and delivery for every line that speaker says.` Never describe the
+recording's own words as dialogue, and never let it become a sound in the
+`overall_soundscape`. A speaker without a recording is voiced by the model
+from their description alone.
+
 Refer to a frame given as input as `<Picture N>` in the narration, and keep the
 person and place as the picture shows them.
 

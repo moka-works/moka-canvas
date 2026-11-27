@@ -1251,6 +1251,7 @@ fn lua_inputs(inputs: &[serde_json::Value]) -> Result<Vec<GenerateInput>, String
             Some("reference") => InputRole::Reference,
             Some("firstFrame") => InputRole::FirstFrame,
             Some("lastFrame") => InputRole::LastFrame,
+            Some("referenceAudio") => InputRole::ReferenceAudio,
             Some("mask") => InputRole::Mask,
             Some("controlVideo") => InputRole::ControlVideo,
             Some("controlAudio") => InputRole::ControlAudio,

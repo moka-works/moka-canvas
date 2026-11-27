@@ -508,6 +508,7 @@ impl Gateway {
         let resolved = resolve_within(&snapshot, &request.model, capability, scene)?;
         let request = with_model_params(request, &snapshot, &resolved, &explicit);
         speakable(&resolved, &request)?;
+        audible(&resolved, &request)?;
         let inputs = load_inputs(
             session.as_ref(),
             &request,
@@ -578,8 +579,18 @@ pub fn scene_of(request: &GenerateRequest) -> Option<Scene> {
             InputRole::Reference | InputRole::FirstFrame | InputRole::LastFrame | InputRole::Mask
         )
     });
+    // A recording of a speaker's voice is not a picture, but a clip made to
+    // speak in that voice is a reference ask: the service reads the recording
+    // as one more reference rather than as a frame, and a configuration that
+    // routes scenes should answer it from the scene that serves them.
+    let voices = request
+        .inputs_in(InputRole::ReferenceAudio)
+        .next()
+        .is_some();
     match request.capability {
-        Capability::Video => Some(if !pictures {
+        Capability::Video => Some(if voices {
+            Scene::ReferenceToVideo
+        } else if !pictures {
             Scene::TextToVideo
         } else if request.text_param("mode") == Some("reference") {
             Scene::ReferenceToVideo
@@ -775,6 +786,49 @@ fn speakable(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), 
     Ok(())
 }
 
+/// Refuses a video ask carrying a voice recording its converter cannot read.
+///
+/// A protocol declares `audioReference` when its service takes the speakers'
+/// recordings beside the pictures. A converter that says nothing is not
+/// guessed at: an ask carrying one is refused here, before a credential is
+/// fetched, naming the model that would have dropped or misread it. A
+/// recording belongs to a clip: a picture or a speech ask carrying one is a
+/// request built from the wrong role.
+fn audible(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), ProviderError> {
+    reference_audio_refusal(
+        &converter_features(&resolved.protocol),
+        &resolved.config_id,
+        request,
+    )
+}
+
+/// The same decision, read off declarations that are handed in rather than
+/// looked up, so what the rule is can be tested without a models tree.
+fn reference_audio_refusal(
+    features: &Features,
+    model: &str,
+    request: &GenerateRequest,
+) -> Result<(), ProviderError> {
+    if request
+        .inputs_in(InputRole::ReferenceAudio)
+        .next()
+        .is_none()
+    {
+        return Ok(());
+    }
+    if request.capability != Capability::Video {
+        return Err(ProviderError::Invalid(
+            "a voice reference rides only with a video ask".to_string(),
+        ));
+    }
+    if !features.audio_reference {
+        return Err(ProviderError::ReferenceAudioUnsupported {
+            model: model.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// What the converter behind a protocol declares about the asks it can make a
 /// sound for.
 ///
@@ -785,6 +839,7 @@ fn speakable(resolved: &ResolvedModel, request: &GenerateRequest) -> Result<(), 
 struct Features {
     needs_voice: bool,
     needs_reference_audio: bool,
+    audio_reference: bool,
     job: bool,
 }
 
@@ -799,6 +854,7 @@ fn converter_features(protocol: &Protocol) -> Features {
     Features {
         needs_voice: entry.features.needs_voice,
         needs_reference_audio: entry.features.needs_reference_audio,
+        audio_reference: entry.features.audio_reference,
         job: entry.features.job,
     }
 }
@@ -1155,6 +1211,24 @@ mod tests {
             Some(Scene::ImageToVideo),
             "unlabelled pictures are frames until the mode says otherwise"
         );
+        // A voice recording is not a picture, but the clip it rides with is a
+        // reference ask: the service reads the recording as one more reference.
+        assert_eq!(
+            scene_of(&with(Capability::Video, &[InputRole::ReferenceAudio])),
+            Some(Scene::ReferenceToVideo)
+        );
+        assert_eq!(
+            scene_of(&with(
+                Capability::Video,
+                &[
+                    InputRole::FirstFrame,
+                    InputRole::LastFrame,
+                    InputRole::ReferenceAudio,
+                ]
+            )),
+            Some(Scene::ReferenceToVideo),
+            "a recording beside frames still makes the clip a reference ask"
+        );
 
         // The mode is the caller saying what its pictures mean, and it wins
         // over the positions they arrived in.
@@ -1183,6 +1257,46 @@ mod tests {
 
         // A capability with one shape has no scene to route.
         assert_eq!(scene_of(&with(Capability::Text, &[])), None);
+    }
+
+    #[test]
+    fn a_voice_reference_is_refused_for_a_converter_that_does_not_declare_it() {
+        let voice = |capability: Capability| {
+            let mut held = request(capability, json!({}));
+            held.inputs = vec![super::super::GenerateInput {
+                role: InputRole::ReferenceAudio,
+                asset_id: "asset-voice".into(),
+                window: None,
+                frame: None,
+            }];
+            held
+        };
+        let declared = Features {
+            audio_reference: true,
+            ..Features::default()
+        };
+        assert!(
+            reference_audio_refusal(&declared, "filmer", &voice(Capability::Video)).is_ok()
+        );
+
+        // A converter that says nothing is not guessed at: the recording would
+        // be dropped or misread, so the ask is refused with the model's name.
+        let undeclared = Features::default();
+        let refused = reference_audio_refusal(&undeclared, "filmer", &voice(Capability::Video));
+        assert!(matches!(
+            refused,
+            Err(ProviderError::ReferenceAudioUnsupported { model }) if model == "filmer"
+        ));
+
+        // A recording belongs to a clip, not to a picture or a voice ask.
+        assert!(matches!(
+            reference_audio_refusal(&declared, "filmer", &voice(Capability::Speech)),
+            Err(ProviderError::Invalid(_))
+        ));
+
+        // An ask carrying none is untouched.
+        let none = request(Capability::Video, json!({}));
+        assert!(reference_audio_refusal(&undeclared, "filmer", &none).is_ok());
     }
 
     #[test]

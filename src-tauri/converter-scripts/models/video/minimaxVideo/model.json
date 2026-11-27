@@ -4,6 +4,7 @@
   "urlExample": "https://api.minimax.io/v2/video_generation",
   "script": "minimax-video.lua",
   "order": 50,
+  "features": { "audioReference": true },
   "promptRewrite": {
     "guide": "prompt-guide.md",
     "checks": {
@@ -13,5 +14,5 @@
     },
     "version": 2
   },
-  "version": 3
+  "version": 4
 }

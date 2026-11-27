@@ -247,6 +247,10 @@ pub enum InputRole {
     Reference,
     FirstFrame,
     LastFrame,
+    /// A recording of a speaker's voice, carried beside a clip so the model
+    /// can copy its timbre and delivery. Unlike `Reference`, it is not a
+    /// picture: it neither anchors a frame nor counts as one.
+    ReferenceAudio,
     Mask,
     ControlVideo,
     ControlAudio,
@@ -258,6 +262,7 @@ impl InputRole {
             Self::Reference => "reference",
             Self::FirstFrame => "firstFrame",
             Self::LastFrame => "lastFrame",
+            Self::ReferenceAudio => "referenceAudio",
             Self::Mask => "mask",
             Self::ControlVideo => "controlVideo",
             Self::ControlAudio => "controlAudio",
@@ -1037,5 +1042,16 @@ mod tests {
         assert_eq!(wire["inputs"][0]["assetId"], "a1");
         assert_eq!(wire["inputs"][0]["role"], "firstFrame");
         assert!(wire.get("system").is_none());
+    }
+
+    #[test]
+    fn a_voice_reference_round_trips_under_its_own_role() {
+        let input: GenerateInput = serde_json::from_value(serde_json::json!({
+            "role": "referenceAudio",
+            "assetId": "voice-1",
+        }))
+        .expect("a voice reference must decode");
+        assert_eq!(input.role, InputRole::ReferenceAudio);
+        assert_eq!(InputRole::ReferenceAudio.as_str(), "referenceAudio");
     }
 }

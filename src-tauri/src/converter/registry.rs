@@ -596,7 +596,7 @@ mod tests {
               "script": "wan-image.lua",
               "order": 20,
               "auth": {"header": "x-api-key", "scheme": ""},
-              "features": {"mask": true, "imageInput": true},
+              "features": {"mask": true, "imageInput": true, "audioReference": true},
               "version": 1
             }"#,
             Some("wan-image.lua"),
@@ -618,6 +618,7 @@ mod tests {
         );
         assert!(entry.features.mask);
         assert!(entry.features.image_input);
+        assert!(entry.features.audio_reference);
     }
 
     #[test]

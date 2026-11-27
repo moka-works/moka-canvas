@@ -878,7 +878,13 @@ fn read_inputs(_lua: &Lua, table: Table) -> mlua::Result<Vec<Json>> {
         let role = object.get("role").and_then(Json::as_str).unwrap_or("");
         if !matches!(
             role,
-            "reference" | "firstFrame" | "lastFrame" | "mask" | "controlVideo" | "controlAudio"
+            "reference"
+                | "firstFrame"
+                | "lastFrame"
+                | "referenceAudio"
+                | "mask"
+                | "controlVideo"
+                | "controlAudio"
         ) {
             return Err(mlua::Error::RuntimeError(format!(
                 "generate.inputs[{index}].role \"{role}\" is not a reference role"

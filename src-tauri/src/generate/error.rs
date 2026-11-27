@@ -47,6 +47,13 @@ pub enum ProviderError {
     #[error("the model {model} reads a voice from a reference recording, and none was sent")]
     ReferenceAudioRequired { model: String },
 
+    /// A video ask carrying a speaker's recording, sent to a converter that
+    /// does not declare it can read one. Refused here rather than sent on:
+    /// the service would either drop the recording silently or answer with a
+    /// complaint that names neither the missing declaration nor the repair.
+    #[error("the model {model} cannot take a reference recording of a voice")]
+    ReferenceAudioUnsupported { model: String },
+
     #[error("{reference} generates {found}, not {capability}")]
     CapabilityMismatch {
         reference: String,
@@ -145,6 +152,7 @@ impl ProviderError {
             Self::KeyMissing { .. } => "PROVIDER_KEY_MISSING",
             Self::VoiceRequired { .. } => "MODEL_VOICE_REQUIRED",
             Self::ReferenceAudioRequired { .. } => "MODEL_REFERENCE_AUDIO_REQUIRED",
+            Self::ReferenceAudioUnsupported { .. } => "MODEL_REFERENCE_AUDIO_UNSUPPORTED",
             Self::CapabilityMismatch { .. } => "MODEL_CAPABILITY_MISMATCH",
             Self::SceneUnconfigured { .. } => "MODEL_SCENE_UNCONFIGURED",
             Self::Auth(_) => "PROVIDER_AUTH",
@@ -190,7 +198,10 @@ impl ProviderError {
             })),
             Self::KeyMissing { model }
             | Self::VoiceRequired { model }
-            | Self::ReferenceAudioRequired { model } => Some(serde_json::json!({ "model": model })),
+            | Self::ReferenceAudioRequired { model }
+            | Self::ReferenceAudioUnsupported { model } => {
+                Some(serde_json::json!({ "model": model }))
+            }
             Self::CapabilityMismatch {
                 reference,
                 capability,
