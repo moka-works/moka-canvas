@@ -735,6 +735,8 @@
     "writing": "撰写中",
     "empty": "这一集还没有分镜",
     "actIndex": "幕 {{index}}",
+    "actNav": "跳到某一幕",
+    "actNavTo": "跳到第 {{index}} 幕 · {{title}}",
     "foldAct": "折叠第 {{index}} 幕",
     "unfoldAct": "展开第 {{index}} 幕",
     "actTitle": "这一幕的名字",

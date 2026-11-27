@@ -305,6 +305,23 @@ export function withASecondAct(): MokaFile {
   return moka;
 }
 
+/**
+ * The same telling whose open episode holds this many acts, each a single
+ * shot: a board long enough that pointing at an act beats scrolling to it.
+ */
+export function withActs(count: number): MokaFile {
+  const moka = withEveryFrame();
+  const chapter = moka.stories![0].chapters[0]!;
+  while (chapter.acts.length < count) {
+    const at = chapter.acts.length;
+    chapter.acts.push({
+      ...createAct(`第 ${at + 1} 幕 车厢`, "灯亮着，没有人说话。"),
+      keyframes: [createKeyframe(0)],
+    });
+  }
+  return moka;
+}
+
 /** Two acts, every frame of both drawn, with nothing bridged between them yet. */
 export function withTwoDrawnActs(): MokaFile {
   const moka = withEveryFrame();

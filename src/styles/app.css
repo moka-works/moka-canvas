@@ -7152,6 +7152,21 @@ body.is-dragging-split {
   width: 100%;
 }
 
+/* A board long enough to be pointed through keeps its acts in the same column
+   the other steps are read in, with a rail of act numbers in the gutter beside
+   it. The rail costs its own width and the gap: the board is the one step wide
+   enough to spare them. What is not the rail — the dialogs — keeps its own
+   place, since a fixed element takes no room in this grid. */
+.story-step-scroll.with-act-rail {
+  align-items: start;
+  display: grid;
+  gap: 16px 14px;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  margin: 0 auto;
+  max-width: 1192px;
+  width: 100%;
+}
+
 /* A band of a step's head: what it says on the left, what it is read against
    on the right — the step's words and the way out of it, the models and the
    numbers they are asked with, the step's own choices and its buttons. */
@@ -9423,6 +9438,57 @@ button > .story-spin {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/*
+  The acts of one episode as a rail of numbers, beside the board rather than in
+  it: it stays in view while the acts go past, marks the act being read, and
+  puts the reader at any act's head in one press. A board of twenty acts is
+  longer than its own list, so the rail keeps its own window and scrolls the
+  mark into it as the reading moves.
+*/
+.story-act-nav {
+  align-self: start;
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 3px;
+  position: sticky;
+  top: 20px;
+}
+
+.story-act-nav-chip {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 5px 0;
+  text-align: center;
+  width: 100%;
+}
+
+.story-act-nav-chip:hover {
+  border-color: var(--primary);
+  color: var(--ink);
+}
+
+.story-act-nav-chip.is-on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
 }
 
 .story-act {

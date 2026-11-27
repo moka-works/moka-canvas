@@ -42,6 +42,7 @@ import { StoryModelPicks } from "../components/StoryModelPicks";
 import { FoldChevron } from "../components/StoryIcons";
 import { StoryImportButton } from "../components/StoryImportButton";
 import { StepConfirm } from "../components/StepConfirm";
+import { STORY_ACT_NAV_MIN, StoryActNav } from "../components/StoryActNav";
 import { ActCard } from "../panels/ActCard";
 import { TransitionCard } from "../panels/TransitionCard";
 import { addTransitionAt, mergeActsAt, writeActs } from "../panels/writeBoard";
@@ -466,6 +467,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   }
 
   const cost = actsRegenerationCost(chapter);
+  // A long board is read by pointing at an act rather than by scrolling to it:
+  // the rail of act numbers stands beside the column only when the board holds
+  // enough acts for that to be the shorter way.
+  const showActNav = chapter.acts.length >= STORY_ACT_NAV_MIN;
   // One ask for the board stands in the header whichever state the episode is
   // in: with no board it writes one straight away, and with one standing it
   // takes the name of writing it again and asks first, since that replaces
@@ -649,7 +654,10 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
   };
 
   return (
-    <div className="story-step-scroll" data-testid="story-step-storyboard-body">
+    <div
+      className={`story-step-scroll${showActNav ? " with-act-rail" : ""}`}
+      data-testid="story-step-storyboard-body"
+    >
       <div className="story-step-wide">
         <div className="story-step-bar">
           <p className="story-step-lead">{t("story:storyboard.lead")}</p>
@@ -1192,6 +1200,8 @@ export function StoryboardStep({ story }: { story: StoryDocument }) {
           </ol>
         )}
       </div>
+
+      {showActNav && <StoryActNav acts={chapter.acts} chapterId={chapter.id} />}
 
       {asking && (
         <ConfirmDialog

@@ -735,6 +735,8 @@
     "writing": "Writing",
     "empty": "This episode has no board yet",
     "actIndex": "Act {{index}}",
+    "actNav": "Jump to an act",
+    "actNavTo": "Go to act {{index}} · {{title}}",
     "foldAct": "Fold act {{index}}",
     "unfoldAct": "Unfold act {{index}}",
     "actTitle": "What this act is called",

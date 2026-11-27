@@ -36,6 +36,7 @@ import {
   withoutThePlace,
   withThreeUndrawnShots,
   withASecondAct,
+  withActs,
   withTwoMissingClips,
   withAMissingClipAndAnUndrawnAct,
   withoutTheClip,
@@ -1623,5 +1624,32 @@ describe("writing an episode's board", () => {
     expect(starts[0]!.items[0]?.id).toBe(
       `keyframeVideo:${ids.chapterFirst}:${ids.act}:${ids.frameFirst}`,
     );
+  });
+});
+
+describe("finding one's way through a long board", () => {
+  it("keeps the rail away from a board short enough to read by scrolling", () => {
+    openAtBoard(withASecondAct());
+    expect(screen.queryByTestId("story-act-nav")).toBeNull();
+  });
+
+  it("names every act of a long board and marks the one pointed at", () => {
+    openAtBoard(withActs(5));
+    expect(screen.getByTestId("story-act-nav")).toBeDefined();
+    for (let at = 0; at < 5; at += 1) {
+      expect(screen.getByTestId(`story-act-nav-${at}`)).toBeDefined();
+    }
+    // The rail names an act the way the board does, in the reader's language.
+    expect(
+      screen.getByTestId("story-act-nav-2").getAttribute("aria-label"),
+    ).toContain("3");
+
+    fireEvent.click(screen.getByTestId("story-act-nav-3"));
+    expect(
+      screen.getByTestId("story-act-nav-3").getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("story-act-nav-0").getAttribute("aria-current"),
+    ).toBeNull();
   });
 });
