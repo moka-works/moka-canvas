@@ -427,6 +427,48 @@ describe("the captions of an assembly", () => {
     );
   });
 
+  it("ends a long reading's caption where the next line starts", () => {
+    const moka = filmed({ secondAct: true });
+    moka.resources.voice = [sound("said-a", 900), sound("said-long", 5_000)];
+    const held = story(moka);
+    const act = held.chapters[0]!.acts[0]!;
+    act.keyframes[0]!.dialogue = [
+      { id: "line-a", speaker: "Keeper", text: "First." },
+      { id: "line-b", speaker: "", text: "Second." },
+    ];
+    act.keyframes[0]!.voices = [
+      {
+        lineId: "line-a",
+        text: "First.",
+        voice: "Reader",
+        slot: { takes: [{ assetIds: ["said-a"], createdAt: T0 }] },
+      },
+      {
+        lineId: "line-b",
+        text: "Second.",
+        voice: "",
+        slot: { takes: [{ assetIds: ["said-long"], createdAt: T0 }] },
+      },
+    ];
+    act.keyframes[1]!.dialogue = [
+      { id: "line-c", speaker: "", text: "Third." },
+    ];
+    const plan = planAssembly(held, moka);
+    const { commands } = assemblyCommands(held, moka, plan, {
+      withSubtitles: true,
+    });
+    const command = commands[0];
+    if (command?.type !== "addTimeline") throw new Error("a timeline is added");
+    const captions = command.timeline.clips.filter(
+      (clip) => clip.kind === "text",
+    );
+    expect(captions.map((clip) => [clip.startMs, clip.durationMs])).toEqual([
+      [0, 1_000],
+      [1_000, 1_000],
+      [2_000, 3_000],
+    ]);
+  });
+
   it("writes no words at all when the reader asked for none", () => {
     const moka = filmed();
     const act = story(moka).chapters[0]!.acts[0]!;

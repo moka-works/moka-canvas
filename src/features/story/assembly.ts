@@ -650,8 +650,8 @@ function layDown(
  * where its reading does and lasts as long as it does — the words on screen and
  * the words in the ear are the same words — and one too long for its share of
  * the shot keeps it to the end of what was said rather than vanishing under the
- * voice. The plan is deliberate: a clip that came back longer than it was asked
- * for must not drag the last line of a shot into the mouth of the next one.
+ * voice. It never runs into the line that follows: the next line's start is the
+ * hard end, so a long reading cannot write one caption over another.
  */
 function captions(
   story: StoryDocument,
@@ -659,7 +659,13 @@ function captions(
   cues: DubCue[],
   trackId: string,
 ): Array<{ actId: string; clip: TimelineClip }> {
-  const lines: Array<{ actId: string; clip: TimelineClip }> = [];
+  interface Draft {
+    actId: string;
+    words: string;
+    startMs: number;
+    endMs: number;
+  }
+  const drafts: Draft[] = [];
   const cued = new Map(cues.map((cue) => [cue.lineId, cue]));
   for (const chapter of story.chapters) {
     for (const act of chapter.acts) {
@@ -686,14 +692,27 @@ function captions(
                   held.startMs + held.durationMs,
                   window.startMs + share * (at + 1),
                 );
-          lines.push({
-            actId: act.id,
-            clip: createTextClip(words, trackId, startMs, endMs - startMs),
-          });
+          drafts.push({ actId: act.id, words, startMs, endMs });
         });
       }
     }
   }
+  const lines: Array<{ actId: string; clip: TimelineClip }> = [];
+  drafts.forEach((draft, at) => {
+    const next = drafts[at + 1];
+    const endMs =
+      next === undefined ? draft.endMs : Math.min(draft.endMs, next.startMs);
+    if (endMs <= draft.startMs) return;
+    lines.push({
+      actId: draft.actId,
+      clip: createTextClip(
+        draft.words,
+        trackId,
+        draft.startMs,
+        endMs - draft.startMs,
+      ),
+    });
+  });
   return lines;
 }
 
