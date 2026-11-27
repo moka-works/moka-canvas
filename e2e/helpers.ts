@@ -270,6 +270,7 @@ export async function openSeededStory(
   page: Page,
   home: string,
   drawn = true,
+  beforeOpen?: () => Promise<void>,
 ): Promise<void> {
   const root = join(home, "project");
   cpSync(drawn ? SEEDED_STORIES.drawn : SEEDED_STORIES.board, root, {
@@ -289,6 +290,10 @@ export async function openSeededStory(
       `opening the seeded story: ${response.status} ${await response.text()}`,
     );
   }
+  // A test that has to change the document before the room reads it does so
+  // here: the window is opened after the change, so what it shows is what the
+  // server holds rather than a copy from before it.
+  if (beforeOpen !== undefined) await beforeOpen();
   await page.goto("/");
   await openRecent(page, "Story Seed", "Story");
   await page
@@ -504,6 +509,7 @@ const CONVERTER_ENDPOINTS: Record<string, string> = {
   bailianMusic: "/api/v1/services/audio/music/generation",
   e2eCloneSpeech: "/v1/audio/speech",
   openaiH3: "/v1/videos",
+  minimaxVideo: "/v2/video_generation",
 };
 
 /**
