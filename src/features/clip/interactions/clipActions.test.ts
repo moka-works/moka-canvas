@@ -353,7 +353,7 @@ describe("duplicating", () => {
 
     expect(useProjectStore.getState().moka).toEqual(moka);
     expect(entryCount()).toBe(0);
-    expect(messages().join(" ")).toContain("hold the same place on one track");
+    expect(messages().join(" ")).toContain("overlap in time on the");
   });
 });
 

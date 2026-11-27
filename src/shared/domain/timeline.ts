@@ -274,10 +274,25 @@ function isSeamOverlap(
   });
 }
 
-function describeOverlap(a: TimelineClip, b: TimelineClip): string {
+function clipName(clip: TimelineClip): string {
+  const label = clip.label?.trim();
+  return label === undefined || label === "" ? clip.id : label;
+}
+
+function trackNameOf(timeline: TimelineDocument, clip: TimelineClip): string {
+  const track = timeline.tracks.find((held) => held.id === clip.trackId);
+  return track?.name ?? clip.trackId;
+}
+
+function describeOverlap(
+  a: TimelineClip,
+  b: TimelineClip,
+  trackName: string,
+): string {
   return i18n.t("errors:timeline.overlap", {
-    aId: a.id,
-    bId: b.id,
+    track: trackName,
+    a: clipName(a),
+    b: clipName(b),
     aStart: a.startMs,
     aEnd: a.startMs + a.durationMs,
     bStart: b.startMs,
@@ -298,7 +313,24 @@ function describeOverlap(a: TimelineClip, b: TimelineClip): string {
 function firstOverlap(
   clips: TimelineClip[],
   transitions: TimelineTransition[],
+  newIds?: ReadonlySet<string>,
 ): [TimelineClip, TimelineClip] | undefined {
+  // Only a pair this batch touches is refused: scan each new clip against
+  // every neighbour on its track, including ones an old overlap hides from
+  // the neighbour walk below.
+  if (newIds !== undefined) {
+    for (const clip of clips) {
+      if (!newIds.has(clip.id)) continue;
+      for (const other of clips) {
+        if (other.id === clip.id || other.trackId !== clip.trackId) continue;
+        if (!intervalsOverlap(clipInterval(clip), clipInterval(other)))
+          continue;
+        if (isSeamOverlap(clip, other, transitions)) continue;
+        return [clip, other];
+      }
+    }
+    return undefined;
+  }
   const byTrack = new Map<TrackId, TimelineClip[]>();
   for (const clip of clips) {
     const list = byTrack.get(clip.trackId) ?? [];
@@ -333,16 +365,32 @@ export function checkNoOverlap(
   {
     excludingIds = [],
     seams = [],
-  }: { excludingIds?: string[]; seams?: TimelineTransition[] } = {},
+    ignoreExistingOverlaps = false,
+  }: {
+    excludingIds?: string[];
+    seams?: TimelineTransition[];
+    /** Refuse only pairs that involve a clip this batch is adding. */
+    ignoreExistingOverlaps?: boolean;
+  } = {},
 ): void {
   const excluded = new Set(excludingIds);
   const world = [
     ...timeline.clips.filter((clip) => !excluded.has(clip.id)),
     ...clips,
   ];
-  const overlap = firstOverlap(world, [...timeline.transitions, ...seams]);
-  if (overlap)
-    throw new CommandError("CLIP_OVERLAP", describeOverlap(...overlap));
+  const newIds = new Set(clips.map((clip) => clip.id));
+  const overlap = firstOverlap(
+    world,
+    [...timeline.transitions, ...seams],
+    ignoreExistingOverlaps ? newIds : undefined,
+  );
+  if (overlap) {
+    const [a, b] = overlap;
+    throw new CommandError(
+      "CLIP_OVERLAP",
+      describeOverlap(a, b, trackNameOf(timeline, a)),
+    );
+  }
 }
 
 interface SeamFailure {
@@ -506,8 +554,13 @@ export function checkTimeline(
   for (const transition of timeline.transitions)
     checkExistingTransition(timeline, transition);
   const overlap = firstOverlap(timeline.clips, timeline.transitions);
-  if (overlap)
-    throw new CommandError("CLIP_OVERLAP", describeOverlap(...overlap));
+  if (overlap) {
+    const [a, b] = overlap;
+    throw new CommandError(
+      "CLIP_OVERLAP",
+      describeOverlap(a, b, trackNameOf(timeline, a)),
+    );
+  }
 }
 
 /**
@@ -649,12 +702,14 @@ export function validateTimeline(
       });
   }
   const overlap = firstOverlap(timeline.clips, timeline.transitions);
-  if (overlap)
+  if (overlap) {
+    const [a, b] = overlap;
     issues.push({
       code: "CLIP_OVERLAP",
-      message: describeOverlap(...overlap),
+      message: describeOverlap(a, b, trackNameOf(timeline, a)),
       timelineId: timeline.id,
-      clipId: overlap[0].id,
+      clipId: a.id,
     });
+  }
   return issues;
 }

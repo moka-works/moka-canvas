@@ -154,7 +154,7 @@
     "imageClipWindow": "An image clip's window is its own duration",
     "materialClipCarriesText": "A material clip carries no text",
     "materialClipNoAsset": "A material clip names no asset",
-    "overlap": "Clips {{aId}} and {{bId}} hold the same place on one track ({{aStart}}–{{aEnd}}ms and {{bStart}}–{{bEnd}}ms)",
+    "overlap": "Two clips overlap in time on the “{{track}}” track: “{{a}}” holds {{aStart}}–{{aEnd}}ms and “{{b}}” holds {{bStart}}–{{bEnd}}ms",
     "seamNotButted": "A transition lands on a butted seam; the clip behind is not against the one it follows",
     "seamTaken": "That seam already carries a transition",
     "storedSeamBroken": "A stored transition no longer holds its seam: {{message}}",

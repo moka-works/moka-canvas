@@ -336,6 +336,74 @@ describe("clip commands", () => {
     expect(code).toBe("CLIP_OVERLAP");
   });
 
+  it("names the track and the clips in the overlap it refuses", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const overlapping = clipOf(moka, ids.followerAsset, ids.videoTrack, 2_000);
+    try {
+      apply(moka, {
+        type: "addClips",
+        timelineId: ids.timeline,
+        clips: [overlapping],
+      });
+      throw new Error("expected an overlap");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CommandError);
+      const message = (error as CommandError).message;
+      expect(message).toContain("Video 1");
+      expect(message).toContain("opening.mp4");
+    }
+  });
+
+  it("still refuses a new clip that an old overlap hides from the neighbour walk", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const held = moka.timelines![0].clips[0]!;
+    moka.timelines![0].clips.push({
+      ...held,
+      id: "clip-held-short",
+      label: "held.mp4",
+      startMs: 2_000,
+      durationMs: 500,
+      outPointMs: 500,
+    });
+    const hidden = {
+      ...held,
+      id: "clip-new-hidden",
+      label: "new.mp4",
+      startMs: 3_500,
+      durationMs: 300,
+      outPointMs: 300,
+    };
+    const code = codeOf(() =>
+      apply(moka, {
+        type: "addClips",
+        timelineId: ids.timeline,
+        clips: [hidden],
+      }),
+    );
+    expect(code).toBe("CLIP_OVERLAP");
+  });
+
+  it("still lands a clip when another track already carries an overlap", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const held = moka.timelines![0].clips[0]!;
+    moka.timelines![0].clips.push({
+      ...held,
+      id: "clip-held-overlap",
+      label: "held.mp4",
+      startMs: 2_000,
+    });
+    const caption = createTextClip("Caption", ids.textTrack, 0, 1_000);
+    const next = apply(moka, {
+      type: "addClips",
+      timelineId: ids.timeline,
+      clips: [caption],
+    }).next;
+    expect(next.timelines![0].clips).toContainEqual(caption);
+  });
+
   it("lets two clips touch end to start, which a seam may want", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

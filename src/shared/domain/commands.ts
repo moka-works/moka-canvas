@@ -1757,7 +1757,12 @@ function applyOne(
         seamLeaders.add(seam.afterClipId);
         checkTransitionRestoration(world, seam);
       }
-      checkNoOverlap(timeline, command.clips, { seams });
+      // A cut that already carries an overlap must still accept new material
+      // on other rows; only an overlap this batch makes or lands on is refused.
+      checkNoOverlap(timeline, command.clips, {
+        seams,
+        ignoreExistingOverlaps: true,
+      });
       const clips = [...timeline.clips, ...command.clips];
       return {
         next: replaceTimeline(moka, {

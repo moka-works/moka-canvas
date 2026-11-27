@@ -154,7 +154,7 @@
     "imageClipWindow": "图像片段的窗口应等于自身时长",
     "materialClipCarriesText": "素材片段不应带有文本",
     "materialClipNoAsset": "素材片段没有指定资源",
-    "overlap": "片段 {{aId}} 与 {{bId}} 在同一轨道上占据同一位置（{{aStart}}–{{aEnd}}ms 与 {{bStart}}–{{bEnd}}ms）",
+    "overlap": "轨道「{{track}}」上的两个片段时间重叠：「{{a}}」占 {{aStart}}–{{aEnd}}ms，「{{b}}」占 {{bStart}}–{{bEnd}}ms",
     "seamNotButted": "转场只能落在首尾相接的接缝上；后一个片段并未紧贴前一个片段",
     "seamTaken": "该接缝已有转场",
     "storedSeamBroken": "已存储的转场不再保持其接缝：{{message}}",
