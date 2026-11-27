@@ -15,6 +15,17 @@ use super::super::context::{chat_context, AgentScope};
 use super::super::error::ToolError;
 use super::{Args, ToolOutcome};
 
+/// Whether a video model's converter reads a speaker's recording beside the
+/// clip, as the converter registry declares it.
+fn audio_reference(protocol: &crate::metadata::Protocol) -> bool {
+    let Some(root) = crate::converter::converter_root() else {
+        return false;
+    };
+    crate::converter::ConverterRegistry::load(root)
+        .find(protocol.wire_name())
+        .is_some_and(|entry| entry.features.audio_reference)
+}
+
 pub async fn command(
     state: &ApiState,
     _root: &Path,
@@ -104,6 +115,11 @@ pub async fn command(
                         "maxTokens": model.max_tokens,
                         "reasoningEffort": model.reasoning_effort,
                         "temperature": model.temperature,
+                        // A video model whose converter reads a speaker's
+                        // recording beside the clip: the planner attaches the
+                        // cast's recordings to such a model's asks.
+                        "audioReference": model.category == Capability::Video
+                            && audio_reference(&model.protocol),
                     })
                 })
                 .collect();

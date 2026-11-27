@@ -3280,16 +3280,24 @@ pub async fn effect(
             .and_then(Value::as_str)
             .filter(|prompt| !prompt.trim().is_empty())
             .ok_or_else(|| ToolError::validation("every item needs a prompt"))?;
-        let inputs: Vec<crate::generate::GenerateInput> = item
-            .get("inputs")
-            .and_then(Value::as_array)
-            .map(|inputs| {
-                inputs
+        let inputs: Vec<crate::generate::GenerateInput> = match item.get("inputs") {
+            Some(value) => {
+                let listed = value
+                    .as_array()
+                    .ok_or_else(|| ToolError::validation("an item's inputs are not a list"))?;
+                listed
                     .iter()
-                    .filter_map(|input| serde_json::from_value(input.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+                    .map(|input| {
+                        serde_json::from_value(input.clone()).map_err(|error| {
+                            ToolError::validation(format!(
+                                "an input is not a reference this build reads: {error}"
+                            ))
+                        })
+                    })
+                    .collect::<Result<_, _>>()?
+            }
+            None => Vec::new(),
+        };
         let mut queued = crate::story::StoryJobItem::queued(
             item.get("id")
                 .and_then(Value::as_str)

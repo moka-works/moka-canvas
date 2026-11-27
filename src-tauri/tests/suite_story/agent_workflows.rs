@@ -22,6 +22,23 @@ fn test_app(root: &Path) -> axum::Router {
     moka_canvas::server::router(open_state(parse_test_config(root)))
 }
 
+/// The built-in converters, deployed once for this binary.
+///
+/// The registry is process-wide, and it is what a model's protocol is checked
+/// against when a planner asks whether it can read a voice recording.
+async fn converters() {
+    static ROOT: tokio::sync::OnceCell<tempfile::TempDir> =
+        tokio::sync::OnceCell::const_new();
+    ROOT.get_or_init(|| async {
+        let dir = tempfile::TempDir::new().expect("a temporary models root");
+        moka_canvas::converter::deploy::ensure_deployed(dir.path())
+            .await
+            .expect("the built-in converters deploy");
+        dir
+    })
+    .await;
+}
+
 async fn body_json(response: axum::http::Response<Body>) -> Value {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&bytes).expect("response body must be JSON")
@@ -734,6 +751,107 @@ async fn a_story_batch_can_be_planned_from_the_document() {
         .as_str()
         .unwrap()
         .contains("The shot, from \"Edge\""));
+
+    // A model whose converter declares audioReference takes the speaker's own
+    // recording beside the clip, under the id the prompt gives the speaker.
+    converters().await;
+    let stored = app
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/v1/models",
+            json!({
+                "id": "h3",
+                "category": "video",
+                "protocol": "minimaxVideo",
+                "url": "https://provider.test/v2/video_generation",
+                "model": "MiniMax-Hailuo-2.3",
+                "displayName": "H3",
+                "maxVideoSeconds": 15,
+                "enabled": true
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(stored.status(), StatusCode::OK);
+    let described = call(
+        &app,
+        "project.describe_models",
+        json!({"capability": "video"}),
+    )
+    .await;
+    let h3 = described["data"]["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|model| model["id"] == "h3")
+        .unwrap();
+    assert_eq!(h3["audioReference"], true);
+    call(
+        &app,
+        "story.update_element",
+        json!({
+            "storyId": story_id,
+            "elementId": element_id,
+            "patch": {"voice": {"model": "", "voice": "", "referenceAssetId": "asset-voice"}}
+        }),
+    )
+    .await;
+    let voiced = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "actVideo",
+            "chapterId": chapter_id,
+            "model": "h3"
+        }),
+    )
+    .await;
+    let item = &voiced["data"]["items"][0];
+    assert!(
+        item["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|input| input["role"] == "referenceAudio"
+                && input["assetId"] == "asset-voice"),
+        "{}",
+        item["inputs"]
+    );
+    let prompt = item["prompt"].as_str().unwrap();
+    assert!(prompt.contains(
+        "<Audio 1> carries the voice of the speaker labelled (S1)"
+    ));
+    assert!(prompt.contains("Ahe (S1): \"Quiet.\""), "{prompt}");
+
+    let shot_voice = call(
+        &app,
+        "story.plan_job",
+        json!({
+            "storyId": story_id,
+            "kind": "keyframeVideo",
+            "chapterId": chapter_id,
+            "keyframeIds": [keyframe_id],
+            "model": "h3"
+        }),
+    )
+    .await;
+    let item = &shot_voice["data"]["items"][0];
+    assert!(
+        item["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|input| input["role"] == "referenceAudio"
+                && input["assetId"] == "asset-voice"),
+        "{}",
+        item["inputs"]
+    );
+    assert!(item["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("<Audio 1> carries the voice of the speaker labelled (S1)"));
 
     let lines = call(
         &app,

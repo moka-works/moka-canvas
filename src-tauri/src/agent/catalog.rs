@@ -376,7 +376,7 @@ fn core_tools() -> Vec<ToolSpec> {
             "project.describe_models",
             "core",
             ToolRisk::Read,
-            "List configured models by capability. Never returns credentials or endpoint addresses.",
+            "List configured models by capability. Never returns credentials or endpoint addresses. A video model whose converter declares audioReference is reported with audioReference: true.",
             schema(
                 &[],
                 &[("capability", "string", "text, image, speech, music, video, or asr")],
@@ -917,7 +917,7 @@ fn story_tools() -> Vec<ToolSpec> {
             ("chapterId", "string", "Limit to one chapter"),
             ("actId", "string", "Limit to one act"),
         ])),
-        command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent.", schema(&["storyId", "kind"], &[
+        command("story.plan_job", "story", ToolRisk::Read, "Plan the next story batch from the document: prompts, target, inputs and model, grouped into waves. Start each wave with story.start_job; nothing is written or spent. A video plan carries each speaking character's reference recording as a referenceAudio input when the chosen model's converter declares audioReference and the piece is at most 11 seconds; the prompt gains the matching <Audio k> lines.", schema(&["storyId", "kind"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "outline (whole story, or chapterId for one chapter), elements, mergeElements, actPlan, storyboard, continuity, outlineRevision, elementArt, keyframeArt, pictureEdit, actVideo, keyframeVideo, lineVoice, voice, or music"),
             ("chapterId", "string", "Chapter to plan, where the kind is chapter-scoped"),
@@ -1144,7 +1144,7 @@ fn story_tools() -> Vec<ToolSpec> {
         effect("story.start_job", "story", ToolRisk::Spend, "Start a batch of story generations and return a storyJob task. Does not wait. With models, pieces take turns and each model's pieces start as their own batch; jobs lists every batch, the task covers the first.", schema(&["storyId", "kind", "items"], &[
             ("storyId", "string", "Story id"),
             ("kind", "string", "Job kind"),
-            ("items", "array", "Targets to generate: id, target, capability, prompt, optional system, inputs, params"),
+            ("items", "array", "Targets to generate: id, target, capability, prompt, optional system, inputs (roles reference, firstFrame, lastFrame, referenceAudio, mask, controlVideo, controlAudio), params"),
             ("model", "string", "Configured model id; omitted asks the capability's default"),
             ("models", "array", "Configured model ids to answer in turns; pieces are spread over them round-robin, one batch per model"),
             ("parallel", "integer", "How many pieces may be in flight at once"),

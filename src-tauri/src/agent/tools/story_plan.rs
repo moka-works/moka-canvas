@@ -1579,6 +1579,8 @@ async fn plan_act_videos(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<Planned>, ToolError> {
     let chapter = chapter_of(story, chapter_id)?;
+    let refs = character_refs(story);
+    let fallback_model = default_video_model(state).await;
     let mut planned = Vec::new();
     for (index, act) in chapter.acts.iter().enumerate() {
         if act_id.is_some_and(|id| act.id != id) {
@@ -1696,13 +1698,47 @@ async fn plan_act_videos(
                     });
                 }
             }
+            // The speakers' own recordings, when the model that films this
+            // piece can read one and the piece is short enough for the
+            // service to hear it. A recording that cannot travel is said out
+            // loud rather than dropped quietly.
+            let chosen = item_model.clone().or_else(|| fallback_model.clone());
+            let recorded = if piece.has_dialogue() {
+                voice_references(story, &piece, &refs)
+            } else {
+                Vec::new()
+            };
+            let mut voices: Vec<(String, String)> = Vec::new();
+            if !recorded.is_empty() {
+                match chosen.as_deref() {
+                    Some(id) if audio_reference_allowed(state, id).await => {
+                        if piece.seconds <= AUDIO_REFERENCE_SECONDS {
+                            voices = recorded;
+                        } else {
+                            warnings.push(format!(
+                                "{} is {} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
+                                act.title, piece.seconds, AUDIO_REFERENCE_SECONDS
+                            ));
+                        }
+                    }
+                    Some(id) => warnings.push(format!(
+                        "{} is filmed by {id}, whose converter takes no voice recordings; its speakers' recordings were left out",
+                        act.title
+                    )),
+                    None => {}
+                }
+            }
             let mut context = json!({
                 "aspect": story.brief.aspect.as_str(),
                 "style": story.brief.style,
                 "title": act.title,
                 "summary": act.summary,
                 "seconds": piece.seconds,
-                "shots": piece.prompt_shots(),
+                "shots": piece.prompt_shots(if voices.is_empty() {
+                    None
+                } else {
+                    Some((story, &refs))
+                }),
                 "hasDialogue": piece.has_dialogue(),
                 "words": piece.kind == PieceKind::Words,
                 "references": piece.kind == PieceKind::Reference,
@@ -1726,29 +1762,14 @@ async fn plan_act_videos(
                 None => render(Prompt::StoryActVideo, context)?,
             };
             let mut inputs = piece.inputs.clone();
-            if piece.has_dialogue() {
-                let chosen = item_model.clone().or_else(|| none_if_empty(model));
-                if let Some(chosen) = chosen.as_deref() {
-                    if audio_reference_allowed(state, chosen).await {
-                        let voices = voice_references(story, &piece);
-                        if !voices.is_empty() {
-                            if piece.seconds <= AUDIO_REFERENCE_SECONDS {
-                                for (_, asset_id) in &voices {
-                                    inputs.push(json!({
-                                        "role": "referenceAudio",
-                                        "assetId": asset_id,
-                                    }));
-                                }
-                                prompt = with_voice_references(prompt, &voices);
-                            } else {
-                                warnings.push(format!(
-                                    "{} is {} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
-                                    act.title, piece.seconds, AUDIO_REFERENCE_SECONDS
-                                ));
-                            }
-                        }
-                    }
+            if !voices.is_empty() {
+                for (_, asset_id) in &voices {
+                    inputs.push(json!({
+                        "role": "referenceAudio",
+                        "assetId": asset_id,
+                    }));
                 }
+                prompt = with_voice_references(prompt, &voices);
             }
             planned.push(Planned {
                 model: item_model.clone(),
@@ -1851,6 +1872,8 @@ async fn plan_keyframe_videos(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<Planned>, ToolError> {
     let chapter = chapter_of(story, chapter_id)?;
+    let refs = character_refs(story);
+    let fallback_model = default_video_model(state).await;
     let mut planned = Vec::new();
     for act in &chapter.acts {
         if act_id.is_some_and(|id| act.id != id) {
@@ -1887,8 +1910,30 @@ async fn plan_keyframe_videos(
             if let Some(last_frame) = last_frame {
                 inputs.push(json!({"role": "lastFrame", "assetId": last_frame}));
             }
+            let chosen = item_model.clone().or_else(|| fallback_model.clone());
+            let recorded = voice_references_for(story, &keyframe.dialogue, &refs);
+            let mut voices: Vec<(String, String)> = Vec::new();
+            if !recorded.is_empty() {
+                match chosen.as_deref() {
+                    Some(id) if audio_reference_allowed(state, id).await => {
+                        if seconds <= AUDIO_REFERENCE_SECONDS {
+                            voices = recorded;
+                        } else {
+                            warnings.push(format!(
+                                "{} is {seconds} s; a voice-reference clip is capped at {} s, so the reference voices were left out",
+                                keyframe.title, AUDIO_REFERENCE_SECONDS
+                            ));
+                        }
+                    }
+                    Some(id) => warnings.push(format!(
+                        "{} is filmed by {id}, whose converter takes no voice recordings; its speaker's recording was left out",
+                        keyframe.title
+                    )),
+                    None => {}
+                }
+            }
             let id = format!("keyframeVideo:{}:{}:{}", chapter.id, act.id, keyframe.id);
-            let prompt = match video_prompt_override(story, &id) {
+            let mut prompt = match video_prompt_override(story, &id) {
                 Some(prompt) => prompt.to_string(),
                 None => render(
                     Prompt::StoryKeyframeVideo,
@@ -1900,10 +1945,23 @@ async fn plan_keyframe_videos(
                         "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
                         "move": keyframe.camera_move.as_str(),
                         "seconds": seconds,
-                        "dialogue": spoken_lines(&keyframe.dialogue),
+                        "dialogue": if voices.is_empty() {
+                            spoken_lines(&keyframe.dialogue)
+                        } else {
+                            labelled_spoken_lines(story, &refs, &keyframe.dialogue)
+                        },
                     }),
                 )?,
             };
+            if !voices.is_empty() {
+                for (_, asset_id) in &voices {
+                    inputs.push(json!({
+                        "role": "referenceAudio",
+                        "assetId": asset_id,
+                    }));
+                }
+                prompt = with_voice_references(prompt, &voices);
+            }
             planned.push(Planned {
                 model: item_model.clone(),
                 value: job_item(
@@ -1954,7 +2012,10 @@ impl Piece<'_> {
             .any(|keyframe| !spoken_lines(&keyframe.dialogue).is_empty())
     }
 
-    fn prompt_shots(&self) -> Vec<Value> {
+    fn prompt_shots(
+        &self,
+        label: Option<(&StoryDocument, &BTreeMap<String, String>)>,
+    ) -> Vec<Value> {
         let mut held = 0_i64;
         self.keyframes
             .iter()
@@ -1968,12 +2029,18 @@ impl Piece<'_> {
                 } else {
                     json!(tenths as f64 / 10.0)
                 };
+                let dialogue = match label {
+                    Some((story, refs)) => {
+                        labelled_spoken_lines(story, refs, &keyframe.dialogue)
+                    }
+                    None => spoken_lines(&keyframe.dialogue),
+                };
                 json!({
                     "at": at,
                     "content": strip_mentions(&keyframe.content),
                     "motion": keyframe.motion.as_deref().map(strip_mentions).unwrap_or_default(),
                     "move": keyframe.camera_move.as_str(),
-                    "dialogue": spoken_lines(&keyframe.dialogue),
+                    "dialogue": dialogue,
                 })
             })
             .collect()
@@ -2817,6 +2884,23 @@ fn elements_list(story: &StoryDocument) -> String {
 }
 
 fn spoken_lines(lines: &[crate::domain::story::StoryDialogueLine]) -> String {
+    spoken_lines_labelled(lines, None)
+}
+
+/// The same lines with the speaker's stable id beside their name, for a clip
+/// whose voice recordings name those ids.
+fn labelled_spoken_lines(
+    story: &StoryDocument,
+    refs: &BTreeMap<String, String>,
+    lines: &[crate::domain::story::StoryDialogueLine],
+) -> String {
+    spoken_lines_labelled(lines, Some((story, refs)))
+}
+
+fn spoken_lines_labelled(
+    lines: &[crate::domain::story::StoryDialogueLine],
+    label: Option<(&StoryDocument, &BTreeMap<String, String>)>,
+) -> String {
     lines
         .iter()
         .filter(|line| !line.text.trim().is_empty())
@@ -2826,14 +2910,20 @@ fn spoken_lines(lines: &[crate::domain::story::StoryDialogueLine]) -> String {
             if speaker.is_empty() {
                 said
             } else {
+                let reference = label
+                    .and_then(|(story, refs)| {
+                        speaker_element(story, line).and_then(|element| refs.get(&element.id))
+                    })
+                    .map(|reference| format!(" ({reference})"))
+                    .unwrap_or_default();
                 match line
                     .tone
                     .as_deref()
                     .map(str::trim)
                     .filter(|tone| !tone.is_empty())
                 {
-                    Some(tone) => format!("{speaker} ({tone}): {said}"),
-                    None => format!("{speaker}: {said}"),
+                    Some(tone) => format!("{speaker}{reference} ({tone}): {said}"),
+                    None => format!("{speaker}{reference}: {said}"),
                 }
             }
         })
@@ -2950,34 +3040,104 @@ async fn audio_reference_allowed(state: &ApiState, model: &str) -> bool {
         .is_some_and(|entry| entry.features.audio_reference)
 }
 
+/// The video model a batch takes when neither the ask nor the act names one:
+/// the deployment's own default, which is what the job will be started with.
+async fn default_video_model(state: &ApiState) -> Option<String> {
+    let snapshot = state.models.snapshot().await.ok()?;
+    snapshot
+        .defaults
+        .video
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
+/// The stable id each character of a telling goes by, in the order the cast is
+/// kept. A speaker keeps the same number in every clip of the film, which is
+/// what lets the voice instructions and a rewritten prompt agree.
+fn character_refs(story: &StoryDocument) -> BTreeMap<String, String> {
+    story
+        .elements
+        .iter()
+        .filter(|element| element.kind.as_str() == "character")
+        .enumerate()
+        .map(|(at, element)| (element.id.clone(), format!("S{}", at + 1)))
+        .collect()
+}
+
+/// The character a line belongs to, by id first and by the name it is called
+/// when the board kept no id.
+fn speaker_element<'a>(
+    story: &'a StoryDocument,
+    line: &crate::domain::story::StoryDialogueLine,
+) -> Option<&'a StoryElement> {
+    line.character_id
+        .as_deref()
+        .and_then(|id| {
+            story
+                .elements
+                .iter()
+                .find(|element| element.id == id && element.kind.as_str() == "character")
+        })
+        .or_else(|| {
+            story.elements.iter().find(|element| {
+                element.kind.as_str() == "character" && element.name == line.speaker.trim()
+            })
+        })
+}
+
 /// The voice recordings a piece can travel with: one per speaking character
-/// that has a recording on file, in the order the speakers first appear. The
-/// number beside each is the speaker's place in that order, which is the S
-/// number a rewritten prompt gives the same speaker.
-fn voice_references(story: &StoryDocument, piece: &Piece<'_>) -> Vec<(usize, String)> {
-    let mut order: Vec<&str> = Vec::new();
-    for keyframe in &piece.keyframes {
-        for line in &keyframe.dialogue {
-            if let Some(id) = line.character_id.as_deref() {
-                if !order.contains(&id) {
-                    order.push(id);
-                }
-            }
+/// that has a recording on file, in the order the speakers first speak, with
+/// the stable id the same speaker wears in the prompt. At most three travel,
+/// because that is what the service reads.
+fn voice_references(
+    story: &StoryDocument,
+    piece: &Piece<'_>,
+    refs: &BTreeMap<String, String>,
+) -> Vec<(String, String)> {
+    voice_references_for(
+        story,
+        piece.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+        refs,
+    )
+}
+
+/// The same, for any run of lines — a piece's shots, or one shot on its own.
+fn voice_references_for<'a>(
+    story: &StoryDocument,
+    lines: impl IntoIterator<Item = &'a crate::domain::story::StoryDialogueLine>,
+    refs: &BTreeMap<String, String>,
+) -> Vec<(String, String)> {
+    let mut order: Vec<String> = Vec::new();
+    for line in lines {
+        if line.text.trim().is_empty() {
+            continue;
+        }
+        let Some(element) = speaker_element(story, line) else {
+            continue;
+        };
+        if !order.contains(&element.id) {
+            order.push(element.id.clone());
         }
     }
     let mut found = Vec::new();
-    for (index, id) in order.iter().enumerate() {
-        let asset = story
+    for id in order {
+        let Some(asset) = story
             .elements
             .iter()
-            .find(|element| element.id == *id)
+            .find(|element| element.id == id)
             .and_then(|element| element.voice.as_ref())
-            .and_then(|voice| voice.reference_asset_id.clone());
-        if let Some(asset) = asset {
-            found.push((index + 1, asset));
-            if found.len() == 3 {
-                break;
-            }
+            .and_then(|voice| voice.reference_asset_id.clone())
+        else {
+            continue;
+        };
+        let Some(reference) = refs.get(&id) else {
+            continue;
+        };
+        found.push((reference.clone(), asset));
+        if found.len() == 3 {
+            break;
         }
     }
     found
@@ -2985,11 +3145,11 @@ fn voice_references(story: &StoryDocument, piece: &Piece<'_>) -> Vec<(usize, Str
 
 /// Put the voice-reference paragraph inside the clip's description, where the
 /// service reads it, and number the recordings in the order they travel.
-fn with_voice_references(prompt: String, voices: &[(usize, String)]) -> String {
+fn with_voice_references(prompt: String, voices: &[(String, String)]) -> String {
     let mut sentences = Vec::new();
     for (at, (speaker, _)) in voices.iter().enumerate() {
         sentences.push(format!(
-            "<Audio {}> carries the voice of the speaker labelled (S{}); use its timbre, accent and delivery for every line that speaker says.",
+            "<Audio {}> carries the voice of the speaker labelled ({}); use its timbre, accent and delivery for every line that speaker says.",
             at + 1,
             speaker
         ));
@@ -3191,5 +3351,144 @@ mod inventory_tests {
     fn a_cut_falls_back_to_a_line_boundary() {
         let text = "甲".repeat(10) + "\n" + &"乙".repeat(10);
         assert_eq!(paragraph_cut_at(&text, 15), 11);
+    }
+}
+
+#[cfg(test)]
+mod reference_audio_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn story() -> StoryDocument {
+        serde_json::from_value(json!({
+            "id": "story",
+            "name": "Lake",
+            "schemaVersion": 1,
+            "brief": {
+                "idea": "A keeper waits.",
+                "totalDurationMs": 10_000,
+                "aspect": "16:9",
+                "genre": "drama",
+                "style": "cold"
+            },
+            "chapters": [{
+                "id": "chapter",
+                "title": "Before the freeze",
+                "synopsis": "The lake closes.",
+                "targetDurationMs": 10_000,
+                "acts": [{
+                    "id": "act",
+                    "title": "The shore",
+                    "summary": "Ahe walks out.",
+                    "characterIds": ["ahe", "bo"],
+                    "propIds": [],
+                    "sound": {"music": "", "sfx": ""},
+                    "keyframes": [{
+                        "id": "shot",
+                        "title": "Edge",
+                        "shotSize": "wide",
+                        "cameraMove": "static",
+                        "angle": "eyeLevel",
+                        "content": "Ahe at the edge.",
+                        "dialogue": [
+                            {"characterId": "bo", "speaker": "Bo", "text": "Quiet.", "tone": "calm"},
+                            {"characterId": "ahe", "speaker": "Ahe", "text": "Wait."}
+                        ],
+                        "durationMs": 4_000,
+                        "art": {"takes": []},
+                        "video": {"takes": []}
+                    }],
+                    "video": {"takes": []}
+                }]
+            }],
+            "elements": [
+                {
+                    "id": "ahe", "kind": "character", "name": "Ahe",
+                    "description": "The keeper.", "chapterIds": [],
+                    "main": {"takes": []},
+                    "voice": {"model": "", "voice": "", "referenceAssetId": "asset-ahe"}
+                },
+                {
+                    "id": "bo", "kind": "character", "name": "Bo",
+                    "description": "A fisher.", "chapterIds": [],
+                    "main": {"takes": []},
+                    "voice": {"model": "", "voice": "", "referenceAssetId": "asset-bo"}
+                }
+            ],
+            "shotGranularity": "shot",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z"
+        }))
+        .expect("the test story decodes")
+    }
+
+    #[test]
+    fn a_speakers_recording_travels_under_their_stable_id() {
+        let story = story();
+        let refs = character_refs(&story);
+        assert_eq!(refs.get("ahe").map(String::as_str), Some("S1"));
+        assert_eq!(refs.get("bo").map(String::as_str), Some("S2"));
+
+        let act = &story.chapters[0].acts[0];
+        let piece = Piece {
+            keyframes: act.keyframes.iter().collect(),
+            seconds: 4,
+            kind: PieceKind::Frame,
+            inputs: Vec::new(),
+        };
+        // First speaking order, not cast order: Bo speaks first.
+        assert_eq!(
+            voice_references(&story, &piece, &refs),
+            vec![
+                ("S2".to_string(), "asset-bo".to_string()),
+                ("S1".to_string(), "asset-ahe".to_string())
+            ]
+        );
+        assert!(
+            labelled_spoken_lines(&story, &refs, &act.keyframes[0].dialogue)
+                .contains("Bo (S2) (calm): \"Quiet.\""),
+            "the id sits beside the name the line is written under"
+        );
+
+        let prompt = with_voice_references(
+            "integrated_multimodal_description: Ahe waits.\n\noverall_soundscape: N/A".into(),
+            &[
+                ("S2".to_string(), "asset-bo".to_string()),
+                ("S1".to_string(), "asset-ahe".to_string()),
+            ],
+        );
+        assert!(prompt.contains(
+            "<Audio 1> carries the voice of the speaker labelled (S2); use its timbre"
+        ));
+        assert!(prompt.contains(
+            "<Audio 2> carries the voice of the speaker labelled (S1); use its timbre"
+        ));
+        assert!(
+            prompt.find("Voice references:").unwrap()
+                > prompt.find("integrated_multimodal_description:").unwrap(),
+            "the mapping sits inside the description the service reads"
+        );
+        assert!(
+            prompt.find("Voice references:").unwrap()
+                < prompt.find("overall_soundscape:").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_speaker_without_a_recording_is_left_out_and_at_most_three_travel() {
+        let mut story = story();
+        story.elements[1].voice = None;
+        let refs = character_refs(&story);
+        let act = &story.chapters[0].acts[0];
+        let piece = Piece {
+            keyframes: act.keyframes.iter().collect(),
+            seconds: 4,
+            kind: PieceKind::Frame,
+            inputs: Vec::new(),
+        };
+        assert_eq!(
+            voice_references(&story, &piece, &refs),
+            vec![("S1".to_string(), "asset-ahe".to_string())]
+        );
     }
 }
