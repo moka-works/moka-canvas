@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ClipAdjust, TimelineClip } from "../../../shared/domain";
+import {
+  MAX_CLIPS_PER_COMMAND,
+  type ClipAdjust,
+  type TimelineClip,
+} from "../../../shared/domain";
 import type { TrimMaterial } from "../interactions/gestures";
 import {
   adjustFromSlider,
@@ -205,20 +209,20 @@ describe("fades, names and grades", () => {
 
 describe("writing many clips at once", () => {
   it("splits a wide selection into the patches one command may hold", () => {
-    const patches = Array.from({ length: 120 }, (_, index) => ({
+    const total = MAX_CLIPS_PER_COMMAND + 20;
+    const patches = Array.from({ length: total }, (_, index) => ({
       clipId: `clip-${index}`,
       patch: { volume: 0.5 },
     }));
     const commands = patchCommands("timeline-1", patches);
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(2);
     expect(commands.map((command) => command.type)).toEqual([
-      "updateClips",
       "updateClips",
       "updateClips",
     ]);
     const sizes = commands.map((command) =>
       command.type === "updateClips" ? command.patches.length : 0,
     );
-    expect(sizes).toEqual([50, 50, 20]);
+    expect(sizes).toEqual([MAX_CLIPS_PER_COMMAND, 20]);
   });
 });
