@@ -41,8 +41,10 @@ import {
   dropAssetOnTrack,
   dropPreview,
   duplicateSelection,
+  insertVideoInGap,
   materialOf,
   nearestClipEdgeMs,
+  nearestGapMs,
   pasteAtPlayhead,
   rangeBetween,
   removeTrack,
@@ -1232,5 +1234,82 @@ describe("freezing and reversing", () => {
     const frozen = clips.find((clip) => clip.freeze === true)!;
     expect([frozen.startMs, frozen.durationMs]).toEqual([2_000, 2_000]);
     expect(frozen.outPointMs).toBeGreaterThan(frozen.inPointMs);
+  });
+});
+
+describe("inserting a video into the nearest gap", () => {
+  /** A cut whose video row runs A at 0–4s, then B at 8–10s, with a real gap. */
+  function gappedCut() {
+    const ids = cutFixtureIds();
+    const moka = buildCutMokaFile();
+    const timeline = moka.timelines![0];
+    timeline.transitions = [];
+    // The fixture's sound row is locked; a ripple over every row cannot move
+    // a locked row, so this cut unlocks it to watch the ripple happen.
+    timeline.tracks = timeline.tracks.map((track) =>
+      track.id === ids.audioTrack ? { ...track, locked: false } : track,
+    );
+    timeline.clips = timeline.clips.map((clip) =>
+      clip.id === ids.clipB ? { ...clip, startMs: 8_000 } : clip,
+    );
+    return { ids, moka, timeline };
+  }
+
+  it("takes a moment inside a gap as it stands, and snaps a clip to the nearer gap", () => {
+    const { ids, timeline } = gappedCut();
+    expect(nearestGapMs(timeline, ids.videoTrack, 5_000)).toBe(5_000);
+    // Halfway into A, the gap after it is nearer than the head.
+    expect(nearestGapMs(timeline, ids.videoTrack, 3_000)).toBe(4_000);
+    // Near A's head, the head gap wins.
+    expect(nearestGapMs(timeline, ids.videoTrack, 500)).toBe(0);
+    // Past the last block the open tail is where the pointer stands.
+    expect(nearestGapMs(timeline, ids.videoTrack, 15_000)).toBe(15_000);
+    // An empty row is one open gap.
+    expect(
+      nearestGapMs({ ...timeline, clips: [] }, ids.videoTrack, 2_500),
+    ).toBe(2_500);
+  });
+
+  it("lands the video in the gap and moves every row after it in one step", () => {
+    const { ids, moka } = gappedCut();
+    const before = new Set(moka.timelines![0].clips.map((clip) => clip.id));
+    open(moka, { timelineId: ids.timeline });
+
+    insertVideoInGap(ids.videoAssetA, {
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      atMs: 5_000,
+    });
+
+    const after = cut();
+    const landed = after.clips.find(
+      (clip) => clip.trackId === ids.videoTrack && !before.has(clip.id),
+    )!;
+    expect(landed).toMatchObject({
+      trackId: ids.videoTrack,
+      startMs: 5_000,
+      durationMs: 4_000,
+    });
+    // The following picture, the sound split at the landing point and its
+    // tail all move by the block's length; the words that end before it stay.
+    expect(after.clips.find((clip) => clip.id === ids.clipB)!.startMs).toBe(
+      12_000,
+    );
+    const sound = after.clips
+      .filter((clip) => clip.trackId === ids.audioTrack)
+      .sort((a, b) => a.startMs - b.startMs)
+      .map((clip) => [clip.startMs, clip.durationMs]);
+    expect(sound).toEqual([
+      [0, 5_000],
+      [9_000, 3_000],
+    ]);
+    expect(after.clips.find((clip) => clip.id === ids.clipD)).toMatchObject({
+      startMs: 0,
+      durationMs: 2_000,
+    });
+    expect(useClipStore.getState().selection.clipIds).toEqual([landed.id]);
+
+    undo();
+    expect(cut().clips).toHaveLength(before.size);
   });
 });

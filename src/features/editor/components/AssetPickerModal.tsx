@@ -14,7 +14,10 @@ import {
   attachAssetsToNode,
   replaceNodeWithAsset,
 } from "../interactions/actions";
-import { addAssetsAtPlayhead } from "../../clip/interactions/clipActions";
+import {
+  addAssetsAtPlayhead,
+  insertVideoInGap,
+} from "../../clip/interactions/clipActions";
 import { useClampedMenuPosition } from "../panels/useClampedMenuPosition";
 import {
   OPEN_SHELF_FILTER,
@@ -261,13 +264,17 @@ export function AssetPickerModal() {
         return null;
     }
   }, [ask, moka, activeCanvasId]);
+  // A video asked for a place on the cut is the only kind that place takes,
+  // just as a swap is the only kind the node being replaced can hold.
+  const wantedKind: AssetKind | null =
+    ask?.mode === "timelineVideo" ? "video" : replaceKind;
   const entries = useMemo(() => {
     if (!moka) return [];
     const shown = filterShelf(moka.resources, filter);
-    return replaceKind
-      ? shown.filter((entry) => kindOf(entry) === replaceKind)
+    return wantedKind
+      ? shown.filter((entry) => kindOf(entry) === wantedKind)
       : shown;
-  }, [moka, filter, replaceKind]);
+  }, [moka, filter, wantedKind]);
   const words = useMemo(() => (moka ? shelfTags(moka.resources) : []), [moka]);
 
   if (!ask) return null;
@@ -277,7 +284,7 @@ export function AssetPickerModal() {
   // ticking another file moves the tick rather than adding to it.
   const toggle = (assetId: AssetId) =>
     setChosen((seen) => {
-      if (ask.mode === "replace") {
+      if (ask.mode === "replace" || ask.mode === "timelineVideo") {
         return seen.includes(assetId) ? [] : [assetId];
       }
       return seen.includes(assetId)
@@ -294,6 +301,15 @@ export function AssetPickerModal() {
       } else if (ask.mode === "replace") {
         const [first] = chosen;
         if (first) await replaceNodeWithAsset(ask.nodeId, first);
+      } else if (ask.mode === "timelineVideo") {
+        const [first] = chosen;
+        if (first) {
+          insertVideoInGap(first, {
+            timelineId: ask.timelineId,
+            trackId: ask.trackId,
+            atMs: ask.atMs,
+          });
+        }
       } else {
         // Placing lands clips on the open cut, one after another from the
         // playhead; the room says what it did, so the dialog just closes.
@@ -324,12 +340,14 @@ export function AssetPickerModal() {
             )
           : ask.mode === "replace"
             ? t("editor:picker.replaceCount")
-            : t(
-                chosen.length === 1
-                  ? "editor:picker.placeCountOne"
-                  : "editor:picker.placeCountMany",
-                { count: chosen.length },
-              );
+            : ask.mode === "timelineVideo"
+              ? t("editor:picker.videoInsertCount")
+              : t(
+                  chosen.length === 1
+                    ? "editor:picker.placeCountOne"
+                    : "editor:picker.placeCountMany",
+                  { count: chosen.length },
+                );
   const title =
     ask.mode === "nodes"
       ? t("editor:picker.insertTitle")
@@ -337,7 +355,9 @@ export function AssetPickerModal() {
         ? t("editor:picker.addTitle")
         : ask.mode === "replace"
           ? t("editor:picker.replaceTitle")
-          : t("editor:picker.placeTitle");
+          : ask.mode === "timelineVideo"
+            ? t("editor:picker.videoInsertTitle")
+            : t("editor:picker.placeTitle");
 
   return (
     <div className="dialog-backdrop" onClick={close} role="presentation">
@@ -490,7 +510,9 @@ export function AssetPickerModal() {
                   ? t("editor:action.add")
                   : ask.mode === "replace"
                     ? t("editor:action.replace")
-                    : t("editor:action.place")}
+                    : ask.mode === "timelineVideo"
+                      ? t("editor:action.insert")
+                      : t("editor:action.place")}
           </button>
         </footer>
       </div>

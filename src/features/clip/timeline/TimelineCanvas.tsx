@@ -1092,20 +1092,22 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
         anchorRef.current = hit.clip.id;
       }
     }
+    const atMs = Math.max(0, msAt(local.x, viewNow()));
     setMenu({
       x: event.clientX,
       y: event.clientY,
       target: {
         kind: "clips",
         onClip: hit.kind === "clip",
+        // The row and moment under the pointer, which the menu needs whether
+        // it landed on a block or on the blank beside it.
+        trackId: hit.kind === "clip" ? hit.clip.trackId : hit.trackId,
+        atMs,
         // A blank a right-click landed on is where a cue could go: the menu
         // offers the writing there, and the moment is the plan's to clamp.
         blank:
           hit.kind === "empty" && hit.trackId !== null
-            ? {
-                trackId: hit.trackId,
-                atMs: Math.max(0, msAt(local.x, viewNow())),
-              }
+            ? { trackId: hit.trackId, atMs }
             : null,
       },
     });

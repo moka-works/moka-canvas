@@ -8,6 +8,8 @@ import type {
   EdgeId,
   NodeId,
   Point,
+  TimelineId,
+  TrackId,
   Viewport,
 } from "../../../shared/domain";
 import { openCanvas } from "../interactions/canvasTree";
@@ -136,7 +138,14 @@ export type AssetPickerState =
   | { mode: "nodes"; at: Point | null }
   | { mode: "reference"; nodeId: NodeId }
   | { mode: "replace"; nodeId: NodeId }
-  | { mode: "place" };
+  | { mode: "place" }
+  | {
+      /** A video for one place on the open cut, chosen from the shelf. */
+      mode: "timelineVideo";
+      timelineId: TimelineId;
+      trackId: TrackId | null;
+      atMs: number;
+    };
 
 interface EditorState {
   tool: EditorTool;

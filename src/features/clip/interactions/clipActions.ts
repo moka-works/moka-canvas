@@ -14,6 +14,7 @@ import {
   type ResourceEntry,
   type TimelineClip,
   type TimelineDocument,
+  type TimelineId,
   type TimelineTrack,
   type TimelineTransition,
   type TrackId,
@@ -821,6 +822,111 @@ export function addAssetsAtPlayhead(assetIds: AssetId[]): void {
   if (landed > 1) {
     toast("success", i18n.t("clip:actions.addedInOrder", { count: landed }));
   }
+}
+
+/** What the cutting room asks of the shelf when a video is to land in a gap. */
+export interface VideoInsertAsk {
+  timelineId: TimelineId;
+  /** The row the reader pointed at, honoured when it is a video row. */
+  trackId: TrackId | null;
+  /** The moment the pointer named. */
+  atMs: number;
+}
+
+/**
+ * The nearest place on a row where a new clip may butt in without cutting
+ * anything: a gap between clips, or the open tail after the last one.
+ *
+ * A moment inside a gap is taken as it stands; a moment inside a clip snaps
+ * to the nearer edge of the nearest gap, so inserting never splits a block.
+ * The tail's far end is open, which is what lets a moment past the cut sit
+ * where the pointer put it.
+ */
+export function nearestGapMs(
+  timeline: TimelineDocument,
+  trackId: TrackId,
+  atMs: number,
+): number {
+  const clips = timeline.clips
+    .filter((clip) => clip.trackId === trackId)
+    .sort((a, b) => a.startMs - b.startMs);
+  const gaps: { startMs: number; endMs: number }[] = [];
+  let cursor = 0;
+  for (const clip of clips) {
+    // A crossfade's pull-back makes a negative "gap"; there is no place to
+    // butt in there, so it is skipped rather than read as room.
+    if (clip.startMs >= cursor) {
+      gaps.push({ startMs: cursor, endMs: clip.startMs });
+    }
+    cursor = Math.max(cursor, clip.startMs + clip.durationMs);
+  }
+  gaps.push({ startMs: cursor, endMs: Number.POSITIVE_INFINITY });
+  let best = gaps[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const gap of gaps) {
+    const distance =
+      atMs < gap.startMs
+        ? gap.startMs - atMs
+        : atMs > gap.endMs
+          ? atMs - gap.endMs
+          : 0;
+    if (distance < bestDistance) {
+      best = gap;
+      bestDistance = distance;
+    }
+  }
+  if (atMs < best.startMs) return best.startMs;
+  if (atMs > best.endMs) return best.endMs;
+  return atMs;
+}
+
+/**
+ * Lands a video chosen for a place on the cut, into the nearest gap, and
+ * moves everything at or after that gap on every row — pictures, sound and
+ * words alike — by the new block's length.
+ *
+ * The room's toolbar placement is deliberately not read: an insertion from
+ * the menu says "make room" by its name, so it is a ripple over every row
+ * rather than whatever the last drag was set to.
+ */
+export function insertVideoInGap(assetId: AssetId, ask: VideoInsertAsk): void {
+  const moka = useProjectStore.getState().moka;
+  const timeline = moka?.timelines?.find((each) => each.id === ask.timelineId);
+  if (!moka || !timeline) return;
+  const entry = findAsset(moka, assetId);
+  if (!entry) return;
+  const pointed = ask.trackId === null ? null : trackOf(timeline, ask.trackId);
+  const target =
+    pointed?.kind === "video" && !pointed.locked
+      ? pointed
+      : firstAcceptingTrack(timeline, "video");
+  if (!target) {
+    const hasVideoRow = timeline.tracks.some((track) => track.kind === "video");
+    toast(
+      "error",
+      i18n.t(
+        hasVideoRow ? "clip:actions.trackLocked" : "clip:actions.noVideoTrack",
+      ),
+    );
+    return;
+  }
+  // The pointer's moment is put on the frame clock before the gap is read,
+  // so a click just short of a block cannot round into it and split it.
+  const atMs = frameAligned(Math.max(0, ask.atMs), timeline.settings.fps);
+  const startMs = nearestGapMs(timeline, target.id, atMs);
+  const clip = createClipFromAsset(entry, target.id, startMs);
+  const done = execute(i18n.t("clip:history.insertVideo"), [
+    {
+      type: "insertClips",
+      timelineId: timeline.id,
+      clips: [clip],
+      mode: "ripple",
+      rippleScope: "all",
+    },
+  ]);
+  if (!done) return;
+  useClipStore.getState().select({ clipIds: [clip.id], transitionId: null });
+  toast("success", i18n.t("clip:actions.added", { name: entry.name }));
 }
 
 // ---------------------------------------------------------------------------

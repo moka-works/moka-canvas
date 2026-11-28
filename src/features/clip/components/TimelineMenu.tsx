@@ -7,6 +7,7 @@ import type {
   TrackKind,
 } from "../../../shared/domain";
 import { useClampedMenuPosition } from "../../editor/panels/useClampedMenuPosition";
+import { useEditorStore } from "../../editor/stores/editorStore";
 import { PlusIcon } from "./ClipIcons";
 import {
   addTrackOfKind,
@@ -50,6 +51,9 @@ export type TimelineMenuTarget =
   | {
       kind: "clips";
       onClip: boolean;
+      /** The row and the moment the pointer named, whichever piece it hit. */
+      trackId: TrackId | null;
+      atMs: number;
       /**
        * The blank of a row it landed on, and the moment under the pointer:
        * where a cue can be written if the row takes words. Null on a clip.
@@ -102,6 +106,18 @@ export function TimelineMenu({
     ? (timeline.tracks.find((row) => row.id === blank.trackId) ?? null)
     : null;
   const takesWords = blankTrack?.kind === "text";
+  const canInsertVideo = timeline.tracks.some(
+    (row) => row.kind === "video" && !row.locked,
+  );
+  const insertVideoHere = () => {
+    onClose();
+    useEditorStore.getState().openAssetPicker({
+      mode: "timelineVideo",
+      timelineId: timeline.id,
+      trackId: target.trackId,
+      atMs: target.atMs,
+    });
+  };
   return (
     <MenuPanel
       label={t("clip:menu.timelineMenu")}
@@ -111,6 +127,15 @@ export function TimelineMenu({
     >
       {target.onClip ? (
         <>
+          {canInsertVideo && (
+            <>
+              <MenuItem
+                label={t("clip:menu.insertVideoHere")}
+                onSelect={insertVideoHere}
+              />
+              <div className="menu-sep" />
+            </>
+          )}
           {chosen.length === 1 && chosen[0].kind === "text" && (
             <MenuItem
               label={t("clip:menu.editSubtitle")}
@@ -215,6 +240,15 @@ export function TimelineMenu({
         </>
       ) : (
         <>
+          {canInsertVideo && (
+            <>
+              <MenuItem
+                label={t("clip:menu.insertVideoHere")}
+                onSelect={insertVideoHere}
+              />
+              <div className="menu-sep" />
+            </>
+          )}
           {takesWords && blank && (
             <>
               <MenuItem

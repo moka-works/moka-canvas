@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "./fixtures";
 import {
   createProject,
@@ -15,6 +17,7 @@ const TINY_PNG = Buffer.from(
   "base64",
 );
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const ASSET_DRAG_MIME = "application/x-moka-asset";
 
 /**
@@ -900,6 +903,65 @@ test("a fade dot dragged from a clip's head sets its fade in", async ({
   await expect
     .poll(() => timeline(page).getAttribute("data-fades"))
     .toContain("@1000:");
+
+  forgetHome(home);
+});
+
+test("the right-click menu inserts a video into the nearest gap", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Editing Insert Video");
+  await newTimeline(page, "Timeline 1");
+  await page.getByLabel("Import files", { exact: true }).setInputFiles({
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    buffer: readFileSync(join(HERE, "fixtures", "clip.mp4")),
+  });
+  // The shelf files it under videos; the picker reads the project, so the row
+  // does not have to be on screen for the menu's question to find it.
+  await expect.poll(() => filedId(page, "clip.mp4")).not.toBe("");
+
+  const assetId = await filedId(page, "clip.mp4");
+  expect(assetId).not.toBe("");
+  const box = await canvasBox(page);
+  const video = await rowCenter(page, "Video 1");
+  // Two blocks five and ten seconds in: the gap between them is where the
+  // menu's insertion has to land.
+  await dropAssetOnTimeline(page, assetId, {
+    x: DROP_X,
+    y: video.y - box.y,
+  });
+  await dropAssetOnTimeline(page, assetId, {
+    x: SECOND_DROP_X,
+    y: video.y - box.y,
+  });
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "2");
+
+  await page.mouse.click(box.x + 540, video.y, { button: "right" });
+  const menu = page.getByRole("menu", { name: "Timeline menu" });
+  await menu
+    .getByRole("menuitem", { name: "Insert video here", exact: true })
+    .click();
+
+  const picker = page.getByTestId("asset-picker");
+  await expect(picker).toBeVisible();
+  await picker.getByTestId(`asset-pick-${assetId}`).check();
+  await picker.getByRole("button", { name: "Insert", exact: true }).click();
+
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "3");
+  const sorted = (await spans(page)).sort((a, b) => a.startMs - b.startMs);
+  // The pointer stood at 9s inside the gap on a 60px/s scale; the block
+  // after the gap moves by the three-second video's length.
+  expect(Math.abs(sorted[0].startMs - 5_000)).toBeLessThanOrEqual(50);
+  expect(Math.abs(sorted[1].startMs - 9_000)).toBeLessThanOrEqual(50);
+  expect(Math.abs(sorted[2].startMs - 13_000)).toBeLessThanOrEqual(50);
+
+  // The mode buttons carry two characters each, so they are wider than the
+  // square every icon button gets — the words never wrap into one another.
+  const placement = await page
+    .getByTestId("clip-placement-insert")
+    .boundingBox();
+  expect(placement?.width ?? 0).toBeGreaterThan(28);
 
   forgetHome(home);
 });
