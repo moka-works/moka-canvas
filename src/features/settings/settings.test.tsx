@@ -127,6 +127,17 @@ const REGISTRY: ProtocolGroups = {
         "https://generativelanguage.googleapis.com/v1beta/models/veo-3:predictLongRunning",
       order: 20,
     },
+    minimaxVideo: {
+      script: "video/minimax-video.lua",
+      displayName: "MiniMax · Video Generation (Hailuo)",
+      urlExample: "https://api.minimax.io/v2/video_generation",
+      order: 50,
+      features: {
+        audioReference: true,
+        audioReferenceSeconds: 11,
+        audioReferenceSpeakers: 3,
+      },
+    },
     bailianVideo: {
       script: "video/bailian-video.lua",
       displayName: "Alibaba Cloud · Bailian Video",
@@ -505,6 +516,17 @@ describe("model settings", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Image" }));
     expect(await screen.findByText("Painter")).toBeTruthy();
     expect(screen.queryByText("Writer")).toBeNull();
+  });
+
+  it("shows a video model's recording window and speaker count", async () => {
+    view.models.push(model("filmer", "video", "minimaxVideo", "Filmer", false));
+    await openSettings();
+    fireEvent.click(screen.getByRole("tab", { name: "Video" }));
+    const card = (await screen.findByText("Filmer")).closest("li");
+    if (!card) throw new Error("no card for Filmer");
+    expect(within(card).getByText("Voice refs ≤11s · 3 speakers")).toBeTruthy();
+    expect(within(card).getByTitle(/window and count are the converter/)) //
+      .toBeTruthy();
   });
 
   it("shows what may be disclosed about a credential and nothing more", async () => {
@@ -1012,6 +1034,7 @@ describe("model settings", () => {
       "openaiVideos",
       "geminiVideo",
       "bailianVideo",
+      "minimaxVideo",
     ]);
 
     // Picking the other shape offers its own complete address.

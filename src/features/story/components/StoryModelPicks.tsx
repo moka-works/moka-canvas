@@ -8,6 +8,10 @@ import {
   useModelStore,
 } from "../../settings/modelStore";
 import {
+  audioReferenceLabel,
+  modelAudioReference,
+} from "../../settings/modelAudioReference";
+import {
   STORY_ASK_PLACES,
   useStoryModels,
   type StoryAskPlace,
@@ -118,6 +122,7 @@ function ModelPoolPicker({
 }) {
   const { t } = useTranslation();
   const view = useModelStore((state) => state.view);
+  const protocols = useModelStore((state) => state.protocols);
   const menu = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);
   const options = useMemo(
@@ -210,6 +215,13 @@ function ModelPoolPicker({
           </button>
           {options.map((option) => {
             const at = value.indexOf(option.reference);
+            const model = view?.models.find(
+              (held) => held.id === option.reference,
+            );
+            const ability = audioReferenceLabel(
+              t,
+              modelAudioReference(model, protocols),
+            );
             return (
               <label
                 className={`story-model-pool-row${at >= 0 ? " is-on" : ""}`}
@@ -222,6 +234,9 @@ function ModelPoolPicker({
                   type="checkbox"
                 />
                 <span>{option.label}</span>
+                {ability !== null && (
+                  <span className="story-hint">{ability}</span>
+                )}
                 {value.length > 1 && at >= 0 && (
                   <span className="story-model-pool-turn">
                     {t("story:models.turn", { at: at + 1 })}

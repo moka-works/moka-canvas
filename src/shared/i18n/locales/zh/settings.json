@@ -107,6 +107,13 @@
     "none": "无默认",
     "unavailable": "{{value}}（不可用）"
   },
+  "audioReference": {
+    "scale": "参考音频 ≤{{seconds}} 秒 · {{speakers}} 人",
+    "seconds": "参考音频 ≤{{seconds}} 秒",
+    "speakers": "参考音频 · {{speakers}} 人",
+    "any": "参考音频",
+    "hint": "说话角色的录音可随片段发送；时长与人数上限由转换器声明"
+  },
   "system": {
     "storage": "API 密钥存储",
     "tierFile": "文件 — 元数据目录中的 master.key",

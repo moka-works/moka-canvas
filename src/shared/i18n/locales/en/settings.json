@@ -107,6 +107,13 @@
     "none": "No default",
     "unavailable": "{{value}} (unavailable)"
   },
+  "audioReference": {
+    "scale": "Voice refs ≤{{seconds}}s · {{speakers}} speakers",
+    "seconds": "Voice refs ≤{{seconds}}s",
+    "speakers": "Voice refs · {{speakers}} speakers",
+    "any": "Voice refs",
+    "hint": "A speaker's recording can travel with the clip; the window and count are the converter's own"
+  },
   "system": {
     "storage": "API key storage",
     "tierFile": "File — a master.key inside the metadata directory",

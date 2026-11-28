@@ -9,6 +9,10 @@ import {
   protocolLabel,
   useModelStore,
 } from "./modelStore";
+import {
+  audioReferenceLabel,
+  modelAudioReference,
+} from "./modelAudioReference";
 import { SecretStorageNote } from "./SecretStorageNote";
 
 /** What a card needs to take part in arranging its category's list. */
@@ -36,6 +40,10 @@ function ModelCard({
   const saving = useModelStore((state) => state.saving);
   const protocols = useModelStore((state) => state.protocols);
   const lower = t(CAPABILITY_LABELS[category]).toLowerCase();
+  const audioReference = audioReferenceLabel(
+    t,
+    modelAudioReference(model, protocols),
+  );
 
   const remove = () => {
     if (
@@ -72,6 +80,14 @@ function ModelCard({
         <span className="model-card-tag">
           {protocolLabel(protocols, model.protocol)}
         </span>
+        {audioReference !== null && (
+          <span
+            className="model-card-tag"
+            title={t("settings:audioReference.hint")}
+          >
+            {audioReference}
+          </span>
+        )}
         {!model.enabled && (
           <span className="model-card-tag">{t("settings:card.off")}</span>
         )}

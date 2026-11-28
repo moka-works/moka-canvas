@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { CAPABILITY_LABELS, type Capability } from "../../shared/domain";
+import {
+  audioReferenceLabel,
+  modelAudioReference,
+} from "./modelAudioReference";
 import { modelOptionsFor, useModelStore } from "./modelStore";
 
 interface Props {
@@ -43,6 +47,7 @@ export function ModelPicker({
 }: Props) {
   const { t } = useTranslation();
   const view = useModelStore((state) => state.view);
+  const protocols = useModelStore((state) => state.protocols);
   const options = useMemo(
     () => modelOptionsFor(view, capability),
     [view, capability],
@@ -65,11 +70,20 @@ export function ModelPicker({
         value={value ?? ""}
       >
         <option value="">{noneLabel ?? t("settings:picker.none")}</option>
-        {options.map((option) => (
-          <option key={option.reference} value={option.reference}>
-            {option.label}
-          </option>
-        ))}
+        {options.map((option) => {
+          const model = view?.models.find(
+            (held) => held.id === option.reference,
+          );
+          const ability = audioReferenceLabel(
+            t,
+            modelAudioReference(model, protocols),
+          );
+          return (
+            <option key={option.reference} value={option.reference}>
+              {ability === null ? option.label : `${option.label} — ${ability}`}
+            </option>
+          );
+        })}
         {orphan && (
           <option value={value ?? ""}>
             {t("settings:picker.unavailable", { value: value ?? "" })}

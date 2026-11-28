@@ -121,6 +121,13 @@ test("a clip carries each speaking character's own recording", async ({
     await expect(firstAct.getByTestId("story-table")).toBeVisible({
       timeout: 30_000,
     });
+    // The model menu names the recording window and count the converter
+    // declares, so the choice is made on what the model can do.
+    await page.getByTestId("story-model-video-toggle").click();
+    await expect(
+      page.getByTestId("story-model-video-option-h3"),
+    ).toHaveAccessibleName("H3 Voice refs ≤11s · 3 speakers");
+    await page.getByTestId("story-model-video-toggle").click();
     await expect(firstAct.getByTestId("story-act-voice-refs-0")).toContainText(
       speaker,
     );

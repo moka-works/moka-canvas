@@ -23,10 +23,11 @@ import type {
 } from "../../../shared/domain/types";
 import { characterRefs } from "../../../shared/prompts/story/promptContext";
 import type { StorySpeakerIds } from "../../../shared/prompts";
+import { effectiveDefaultId } from "../../settings/modelStore";
 import {
-  effectiveDefaultId,
-  protocolFeatures,
-} from "../../settings/modelStore";
+  modelAudioReference,
+  type AudioReferenceAbility,
+} from "../../settings/modelAudioReference";
 import { useModelStore } from "../../settings/modelStore";
 import { storyAskModels } from "../stores/storyModels";
 
@@ -109,40 +110,15 @@ export function voiceReferencesFor(
 }
 
 /** What one video model's converter promises about a speaker's recording. */
-export interface VoiceReferenceAbility {
-  supported: boolean;
-  /**
-   * The longest clip it reads a recording over; null when it names no window
-   * of its own and the model's ordinary clip window is the only ceiling.
-   */
-  seconds: number | null;
-  /**
-   * How many speakers' recordings it reads in one clip; null when it names no
-   * count and every recorded speaker of the piece travels.
-   */
-  speakers: number | null;
-}
+export type VoiceReferenceAbility = AudioReferenceAbility;
 
 /** The recording window one video model's converter declares. */
 export function videoModelVoiceReference(model: string): VoiceReferenceAbility {
   const { view, protocols } = useModelStore.getState();
-  const held = view?.models.find((each) => each.id === model);
-  if (held === undefined)
-    return { supported: false, seconds: null, speakers: null };
-  const features = protocolFeatures(protocols, held.protocol);
-  const declared = features.audioReferenceSeconds;
-  const speakers = features.audioReferenceSpeakers;
-  return {
-    supported: features.audioReference === true,
-    seconds:
-      typeof declared === "number" && declared > 0
-        ? Math.floor(declared)
-        : null,
-    speakers:
-      typeof speakers === "number" && speakers > 0
-        ? Math.floor(speakers)
-        : null,
-  };
+  return modelAudioReference(
+    view?.models.find((each) => each.id === model),
+    protocols,
+  );
 }
 
 /**
