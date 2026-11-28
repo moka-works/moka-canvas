@@ -391,6 +391,24 @@ export function withFilmedShot(): MokaFile {
   act.keyframes[0]!.video = {
     takes: [{ assetIds: ["asset-first-shot-clip"], createdAt: T0 }],
   };
+  moka.resources.videos.push({
+    id: "asset-first-shot-clip",
+    name: "first-shot-clip",
+    path: "assets/videos/first-shot-clip-00000000.mp4",
+    mime: "video/mp4",
+    bytes: 240_000,
+    createdAt: T0,
+    updatedAt: T0,
+    probe: {
+      mime: "video/mp4",
+      bytes: 240_000,
+      sha256: "d".repeat(64),
+      width: 1920,
+      height: 1080,
+      durationMs: 3_000,
+      codecSummary: "avc1",
+    },
+  });
   return moka;
 }
 
