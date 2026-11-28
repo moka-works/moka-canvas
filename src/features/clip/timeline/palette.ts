@@ -40,6 +40,8 @@ export interface TimelinePalette {
   lock: string;
   /** The guide a snapped edge lands on, and the mark the edge wears. */
   snap: string;
+  /** A ghost over a place the release would refuse. */
+  refuse: string;
   /** The wash inside a marquee's rectangle. */
   marqueeFill: string;
 }
@@ -70,5 +72,6 @@ export const TIMELINE_PALETTE: TimelinePalette = {
   playhead: "#f5f5f7",
   lock: "#9a9aa4",
   snap: "#f2ce7a",
+  refuse: "#ff8a80",
   marqueeFill: "rgba(245, 245, 247, 0.07)",
 };

@@ -61,7 +61,13 @@ export type TimelineDraft =
       rowTrackId: TrackId | null;
     }
   | { kind: "trim"; clip: DraftClip; edge: ClipEdge; guideMs: number | null }
-  | { kind: "drop"; clip: DraftClip; guideMs: number | null }
+  | {
+      kind: "drop";
+      clip: DraftClip;
+      guideMs: number | null;
+      /** Set where the release would be refused for the place it asks for. */
+      conflict: "overlap" | null;
+    }
   | { kind: "marquee"; rect: Rect }
   | { kind: "seam"; transitionId: TransitionId; durationMs: number };
 

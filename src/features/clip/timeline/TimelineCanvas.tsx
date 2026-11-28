@@ -1054,7 +1054,6 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     // Saying the canvas can take the drop is what makes the drop arrive; the
     // copy is the shelf's own promise, not the room moving anything.
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
     setDropping(true);
     // The file's own ghost, drawn where the release would leave it: the row
     // it hangs over, the frame under the pointer, the magnet's catch.
@@ -1067,8 +1066,15 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
           target.startMs,
         )
       : null;
+    event.dataTransfer.dropEffect =
+      preview?.conflict === "overlap" ? "none" : "copy";
     draftRef.current = preview
-      ? { kind: "drop", clip: preview.clip, guideMs: preview.guideMs }
+      ? {
+          kind: "drop",
+          clip: preview.clip,
+          guideMs: preview.guideMs,
+          conflict: preview.conflict,
+        }
       : null;
     schedule();
   };

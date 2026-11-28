@@ -471,22 +471,37 @@ describe("the ghost a hanging file draws", () => {
     const ids = timelineIds();
     open(buildTimelineMokaFile(), { timelineId: ids.timeline });
 
-    // A hand's width clear of the block already there: the pointer's own
-    // frame, and the file's own four seconds.
-    const free = dropPreview(cut(), ids.videoAsset, ids.videoTrack, 3_000);
+    // A place the timeline does not hold: the pointer's own frame, and the
+    // file's own four seconds.
+    const free = dropPreview(cut(), ids.videoAsset, ids.videoTrack, 5_000);
     expect(free?.clip).toMatchObject({
       trackId: ids.videoTrack,
       kind: "video",
-      startMs: 3_000,
+      startMs: 5_000,
       durationMs: 4_000,
     });
     expect(free?.guideMs).toBeNull();
+    expect(free?.conflict).toBeNull();
 
     // Within the magnet's reach of the block's tail, the head is caught by
     // it: the ghost butts the block rather than drawing an overlap.
     const caught = dropPreview(cut(), ids.videoAsset, ids.videoTrack, 3_950);
     expect(caught?.clip.startMs).toBe(4_000);
     expect(caught?.guideMs).toBe(4_000);
+    expect(caught?.conflict).toBeNull();
+  });
+
+  it("marks a ghost that would land on a held place, and the release refuses it", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), { timelineId: ids.timeline });
+
+    const blocked = dropPreview(cut(), ids.videoAsset, ids.videoTrack, 3_000);
+    expect(blocked?.clip.startMs).toBe(3_000);
+    expect(blocked?.conflict).toBe("overlap");
+
+    dropAssetOnTrack(cut(), ids.videoAsset, ids.videoTrack, 3_000);
+    expect(cut().clips).toHaveLength(1);
+    expect(messages().join(" ")).toContain("overlap");
   });
 
   it("lands exactly the block the ghost drew", () => {

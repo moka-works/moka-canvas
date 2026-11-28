@@ -675,7 +675,7 @@ function drawDraft(
     // moment its head was caught on. A ghost over a piece already there draws
     // the overlap the reader is about to ask for, which is the one thing a
     // drop's own words could only say after the fact.
-    drawGhost(ctx, model, rows, draft.clip, palette);
+    drawGhost(ctx, model, rows, draft.clip, palette, draft.conflict !== null);
     if (draft.guideMs !== null)
       drawGuide(ctx, model, rows, draft.guideMs, [draft.clip], palette);
     drawDurationBubble(
@@ -811,6 +811,7 @@ function drawGhost(
   rows: TrackRow[],
   ghost: DraftClip,
   palette: TimelinePalette,
+  blocked = false,
 ): void {
   const row = rows.find((each) => each.track.id === ghost.trackId);
   if (!row) return;
@@ -821,15 +822,15 @@ function drawGhost(
   const w = (ghost.durationMs / 1_000) * model.view.pxPerSec;
   if (x + w < 0 || x > width) return;
   ctx.save();
-  ctx.globalAlpha = 0.45;
+  ctx.globalAlpha = blocked ? 0.18 : 0.45;
   ctx.beginPath();
   ctx.roundRect(x, y + 0.5, w, row.height - 1, CLIP_RADIUS);
-  ctx.fillStyle = palette.clip[ghost.kind];
+  ctx.fillStyle = blocked ? palette.refuse : palette.clip[ghost.kind];
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.setLineDash([5, 3]);
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = palette.snap;
+  ctx.strokeStyle = blocked ? palette.refuse : palette.snap;
   ctx.stroke();
   ctx.restore();
 }

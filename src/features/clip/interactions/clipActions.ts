@@ -336,7 +336,11 @@ export function dropPreview(
   assetId: AssetId,
   trackId: TrackId | null,
   startMs: number,
-): { clip: DraftClip; guideMs: number | null } | null {
+): {
+  clip: DraftClip;
+  guideMs: number | null;
+  conflict: "overlap" | null;
+} | null {
   const entry = findAsset(useProjectStore.getState().moka, assetId);
   if (!entry) return null;
   const track = trackId === null ? null : trackOf(timeline, trackId);
@@ -345,6 +349,15 @@ export function dropPreview(
   if (kind === null || track.locked || !trackAccepts(track, kind)) return null;
   const landed = landingMs(timeline, startMs);
   const clip = createClipFromAsset(entry, track.id, landed.startMs);
+  const endMs = clip.startMs + clip.durationMs;
+  // A drop asks for a place as it stands: unlike a move, it brings no seam
+  // of its own, so any overlap at all is a place the release will refuse.
+  const conflict = timeline.clips.some(
+    (other) =>
+      other.trackId === track.id &&
+      other.startMs < endMs &&
+      clip.startMs < other.startMs + other.durationMs,
+  );
   return {
     clip: {
       clipId: clip.id,
@@ -354,6 +367,7 @@ export function dropPreview(
       durationMs: clip.durationMs,
     },
     guideMs: landed.guideMs,
+    conflict: conflict ? "overlap" : null,
   };
 }
 
