@@ -832,8 +832,12 @@ async fn interrupted_runs_are_failed_on_open() {
     )
     .unwrap();
 
-    // Reopening sweeps the orphan into a failed record.
-    let response = app
+    // A new process opens the project: the sweep is for work a dead process
+    // left behind, so it must be one that does not already hold this root.
+    let mut reopened_config = parse_test_config(temp.path());
+    reopened_config.metadata.dir = Some(temp.path().join("metadata-reopened"));
+    let reopened = test_app_with(reopened_config);
+    let response = reopened
         .clone()
         .oneshot(json_request(
             "POST",
@@ -843,7 +847,7 @@ async fn interrupted_runs_are_failed_on_open() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let swept = run_state(&app, "0192b7d4-7f2a-7c53-9d21-5a4b3c2d1e0f").await;
+    let swept = run_state(&reopened, "0192b7d4-7f2a-7c53-9d21-5a4b3c2d1e0f").await;
     assert_eq!(swept["status"], "failed");
     assert!(swept["error"].as_str().unwrap().contains("stopped"));
     assert_eq!(swept["steps"][0]["status"], "failed");
