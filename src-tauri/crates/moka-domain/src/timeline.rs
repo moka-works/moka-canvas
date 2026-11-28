@@ -603,6 +603,45 @@ pub fn check_timeline(moka: &MokaFile, timeline: &TimelineDocument) -> Result<()
     Ok(())
 }
 
+/// Refuses a material clip whose window runs past the end of its file.
+///
+/// A window the file cannot fill is not a longer clip: the renderer simply has
+/// no more frames, and the export would hold or go black at the tail without
+/// saying why. Read when material is added or re-timed, so an old document that
+/// already carries one stays readable and its other fields stay editable.
+fn check_clip_within_asset(moka: &MokaFile, clip: &TimelineClip) -> Result<(), CommandError> {
+    if clip.kind == TrackKind::Text {
+        return Ok(());
+    }
+    let Some(asset_id) = clip.asset_id.as_deref() else {
+        return Ok(());
+    };
+    let asset = moka
+        .resources
+        .find(asset_id)
+        .ok_or_else(|| CommandError::new("ASSET_MISSING", "Clip's asset is not in the project"))?;
+    if asset
+        .mime
+        .as_deref()
+        .is_some_and(|mime| mime.starts_with("image/"))
+    {
+        return Ok(());
+    }
+    let Some(duration) = asset.probe.as_ref().and_then(|probe| probe.duration_ms) else {
+        return Ok(());
+    };
+    if clip.out_point_ms > duration {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            format!(
+                "Clip “{}” reads to {}ms, past the {}ms of its file",
+                asset.name, clip.out_point_ms, duration
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// The transitions on the seams of the given clips, which is what removing
 /// those clips takes with them. A seam belongs to both of its clips: the clip
 /// the transition follows, and the clip pulled back behind it — take away
@@ -1323,6 +1362,9 @@ pub fn apply_timeline_command(
                 check_transition_restoration(&world, seam)?;
             }
             check_no_overlap(timeline, clips, &[], seams)?;
+            for clip in clips {
+                check_clip_within_asset(moka, clip)?;
+            }
             let mut next = timeline.clone();
             next.clips.extend(clips.iter().cloned());
             next.transitions.extend(seams.iter().cloned());
@@ -1414,6 +1456,7 @@ pub fn apply_timeline_command(
                 .map(|clip| (clip.id.as_str(), clip))
                 .collect();
             let mut updated: HashMap<String, TimelineClip> = HashMap::new();
+            let mut material_checked: Vec<TimelineClip> = Vec::new();
             let mut inverses: Vec<DocumentCommand> = Vec::new();
             for entry in patches {
                 let clip = by_id
@@ -1429,6 +1472,14 @@ pub fn apply_timeline_command(
                 }
                 let merged = merge_clip_patch(clip, &entry.patch);
                 check_clip(moka, timeline, &merged)?;
+                if entry.patch.asset_id.is_some()
+                    || entry.patch.duration_ms.is_some()
+                    || entry.patch.in_point_ms.is_some()
+                    || entry.patch.out_point_ms.is_some()
+                    || entry.patch.speed.is_some()
+                {
+                    material_checked.push(merged.clone());
+                }
                 updated.insert(entry.clip_id.clone(), merged);
                 // The inverse patch carries back what this one moved, and
                 // nothing else — a field this patch brought in goes with a null.
@@ -1455,6 +1506,9 @@ pub fn apply_timeline_command(
             // neighbour is CLIP_OVERLAP and one that tears a seam is
             // TRANSITION_SEAM (R5, R7).
             check_timeline(moka, &next)?;
+            for clip in &material_checked {
+                check_clip_within_asset(moka, clip)?;
+            }
             inverses.reverse();
             Ok((replace_timeline(moka, next), inverses))
         }

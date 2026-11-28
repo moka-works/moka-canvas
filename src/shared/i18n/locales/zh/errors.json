@@ -141,6 +141,7 @@
     "clipOnWrongTrack": "{{kind}} 片段不能放在 {{trackKind}} 轨道上",
     "clipOpacityOutside": "片段不透明度超出 0–1",
     "clipOutPointNotAfterIn": "片段出点等于或早于入点",
+    "clipPastMaterial": "片段「{{name}}」的出点 {{out}}ms 超出素材时长 {{duration}}ms",
     "clipSpeedOutside": "片段速度超出 {{min}}–{{max}}",
     "clipStartNotWholeMs": "片段起点不是整数毫秒",
     "clipTooShort": "片段时长至少 {{count}}ms",

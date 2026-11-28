@@ -104,6 +104,7 @@ import {
 } from "./folders";
 import {
   checkClip,
+  checkClipWithinAsset,
   checkHexColor,
   checkNoOverlap,
   checkTimeline,
@@ -1803,6 +1804,7 @@ function applyOne(
         seams,
         ignoreExistingOverlaps: true,
       });
+      for (const clip of command.clips) checkClipWithinAsset(moka, clip);
       const clips = [...timeline.clips, ...command.clips];
       return {
         next: replaceTimeline(moka, {
@@ -1880,6 +1882,7 @@ function applyOne(
         );
       const byId = new Map(timeline.clips.map((clip) => [clip.id, clip]));
       const updated = new Map<string, TimelineClip>();
+      const materialChecked: TimelineClip[] = [];
       const inverses: DocumentCommand[] = [];
       for (const { clipId, patch } of command.patches) {
         const clip = byId.get(clipId);
@@ -1895,6 +1898,14 @@ function applyOne(
             i18n.t("errors:command.clipPatchedTwice"),
           );
         const next = checkClip(moka, timeline, mergeClipPatch(clip, patch));
+        if (
+          patch.assetId !== undefined ||
+          patch.durationMs !== undefined ||
+          patch.inPointMs !== undefined ||
+          patch.outPointMs !== undefined ||
+          patch.speed !== undefined
+        )
+          materialChecked.push(next);
         updated.set(clipId, next);
         // The inverse patch carries back what this one moved, and nothing
         // else — undoing a volume change does not touch the text the same
@@ -1910,6 +1921,7 @@ function applyOne(
       // neighbour is CLIP_OVERLAP and one that tears a seam is
       // TRANSITION_SEAM — the same re-check the move ends on (R5, R7).
       checkTimeline(moka, { ...timeline, clips });
+      for (const clip of materialChecked) checkClipWithinAsset(moka, clip);
       return {
         next: replaceTimeline(moka, { ...timeline, clips }),
         inverse: inverses.reverse(),

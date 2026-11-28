@@ -626,6 +626,53 @@ describe("clip commands", () => {
     expect(code).toBe("VALIDATION_FAILED");
   });
 
+  it("refuses a window past the end of its file, but leaves an old one's other fields editable", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const past = {
+      ...clipOf(moka, ids.videoAsset, ids.videoTrack, 8_000),
+      durationMs: 5_000,
+      outPointMs: 5_000,
+    };
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "addClips",
+          timelineId: ids.timeline,
+          clips: [past],
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+
+    const legacy = buildTimelineMokaFile();
+    const held = legacy.timelines![0].clips[0]!;
+    held.durationMs = 5_000;
+    held.outPointMs = 5_000;
+    expect(
+      codeOf(() =>
+        apply(legacy, {
+          type: "updateClips",
+          timelineId: ids.timeline,
+          patches: [{ clipId: held.id, patch: { volume: 0.5 } }],
+        }),
+      ),
+    ).toBe("NO_ERROR");
+    expect(
+      codeOf(() =>
+        apply(legacy, {
+          type: "updateClips",
+          timelineId: ids.timeline,
+          patches: [
+            {
+              clipId: held.id,
+              patch: { durationMs: 4_500, outPointMs: 4_500 },
+            },
+          ],
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+
   it("refuses a material clip that names no asset and a text clip that carries none", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

@@ -141,6 +141,7 @@
     "clipOnWrongTrack": "A {{kind}} clip cannot sit on a {{trackKind}} track",
     "clipOpacityOutside": "Clip opacity is outside 0–1",
     "clipOutPointNotAfterIn": "Clip out point is at or before its in point",
+    "clipPastMaterial": "Clip “{{name}}” reads to {{out}}ms, past the {{duration}}ms of its file",
     "clipSpeedOutside": "Clip speed is outside {{min}}–{{max}}",
     "clipStartNotWholeMs": "Clip start is not a whole number of milliseconds",
     "clipTooShort": "Clips run at least {{count}}ms",

@@ -276,6 +276,32 @@ export function checkClip(
 }
 
 /**
+ * Refuses a material clip whose window runs past the end of its file.
+ *
+ * A window the file cannot fill is not a longer clip: the renderer simply has
+ * no more frames, and the export would hold or go black at the tail without
+ * saying why. The check is read when material is added or re-timed, so an old
+ * document that already carries one stays readable and its other fields stay
+ * editable.
+ */
+export function checkClipWithinAsset(moka: MokaFile, clip: TimelineClip): void {
+  if (clip.kind === "text" || !clip.assetId) return;
+  const asset = findAsset(moka, clip.assetId);
+  if (asset.mime?.startsWith("image/")) return;
+  const duration = asset.probe?.durationMs;
+  if (duration === undefined) return;
+  if (clip.outPointMs > duration)
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:timeline.clipPastMaterial", {
+        name: asset.name,
+        duration,
+        out: clip.outPointMs,
+      }),
+    );
+}
+
+/**
  * Whether two clips hold the one overlap a track may carry: a transition
  * after the leader whose window is exactly how far the follower is pulled
  * back into it. The pair is given in track order, so adjacency has already

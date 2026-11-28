@@ -896,6 +896,54 @@ fn refuses_a_clip_whose_duration_disagrees_with_its_window_over_its_speed() {
 }
 
 #[test]
+fn refuses_a_window_past_the_end_of_its_file_but_leaves_an_old_one_editable() {
+    let moka = timeline_fixture();
+    let mut past = clip_of(&moka, VIDEO_ASSET, VIDEO_TRACK, 8_000);
+    past.duration_ms = 5_000;
+    past.out_point_ms = 5_000;
+    assert_eq!(code_of(&moka, add_clips(vec![past])), "VALIDATION_FAILED");
+
+    let mut legacy = timeline_fixture();
+    let held = legacy.timelines.as_mut().unwrap()[0]
+        .clips
+        .iter_mut()
+        .find(|clip| clip.id == VIDEO_CLIP)
+        .unwrap();
+    held.duration_ms = 5_000;
+    held.out_point_ms = 5_000;
+    apply(
+        &legacy,
+        vec![DocumentCommand::UpdateClips {
+            timeline_id: TIMELINE.into(),
+            patches: vec![ClipPatchEntry {
+                clip_id: VIDEO_CLIP.into(),
+                patch: ClipPatch {
+                    volume: Some(0.5),
+                    ..Default::default()
+                },
+            }],
+        }],
+    );
+    assert_eq!(
+        code_of(
+            &legacy,
+            DocumentCommand::UpdateClips {
+                timeline_id: TIMELINE.into(),
+                patches: vec![ClipPatchEntry {
+                    clip_id: VIDEO_CLIP.into(),
+                    patch: ClipPatch {
+                        duration_ms: Some(4_500),
+                        out_point_ms: Some(4_500),
+                        ..Default::default()
+                    },
+                }],
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+}
+
+#[test]
 fn refuses_a_material_clip_that_names_no_asset_and_a_text_clip_that_carries_none() {
     let moka = timeline_fixture();
     let mut assetless = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 10_000);
