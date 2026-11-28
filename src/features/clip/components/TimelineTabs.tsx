@@ -6,8 +6,9 @@ import {
   type TimelineDocument,
   type TimelineId,
 } from "../../../shared/domain";
-import { execute, historyBoundary } from "../../editor/commands/execute";
+import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
+import { switchTimeline } from "../interactions/timelineSwitch";
 import { useClipStore } from "../stores/clipStore";
 
 /** The tab being renamed, and the words it is being renamed with. */
@@ -37,13 +38,7 @@ export function TimelineTabs() {
   const [removing, setRemoving] = useState<TimelineId | null>(null);
   const timelines = moka?.timelines ?? [];
 
-  const switchTo = (timeline: TimelineDocument) => {
-    if (timeline.id === activeTimelineId) return;
-    setActiveTimeline(timeline.id);
-    // Undoing a cut on one timeline is not undoing a cut on another: the seam
-    // between them is the name of the timeline the reader stepped onto.
-    historyBoundary(timeline.name);
-  };
+  const switchTo = switchTimeline;
 
   const commitRename = () => {
     if (!renaming) return;

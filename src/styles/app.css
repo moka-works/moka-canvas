@@ -4876,6 +4876,80 @@ button.danger:hover:not(:disabled) {
   overflow-y: auto;
 }
 
+/* The rail's selector: every cut the project holds, read down the column. The
+   row that is open says so rather than being the only one left clickable, and
+   the way to begin another cut stands under the list. */
+.clip-timeline-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.clip-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.clip-timeline-row {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.clip-timeline-row:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: var(--stroke);
+}
+
+.clip-timeline-row.is-active {
+  background: var(--surface-raised);
+  border-color: var(--stroke);
+}
+
+.clip-timeline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-timeline-count {
+  color: var(--muted);
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.clip-timeline-new {
+  align-items: center;
+  background: none;
+  border: 1px dashed var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  padding: 7px 10px;
+}
+
+.clip-timeline-new:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--ink);
+}
+
 /* A media face's head, and the shelf filling what the head leaves. The shelf
    itself is the canvas column's, styles and all; a face only says which
    question it is reading, and gives the shelf the room the column has. */

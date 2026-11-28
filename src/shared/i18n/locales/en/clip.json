@@ -148,6 +148,12 @@
     "rename": "Rename {{name}}",
     "renameHint": "Double-click to rename"
   },
+  "timelinePicker": {
+    "empty": "No timeline yet",
+    "list": "All timelines",
+    "new": "New timeline",
+    "openHint": "Open {{name}} in the stage"
+  },
   "timelineDialog": {
     "create": "Create timeline",
     "frameRate": "Frame rate",
@@ -183,7 +189,9 @@
     "filtersHint": "The look a clip wears",
     "label": "Clip panels",
     "text": "Text",
-    "textHint": "Words on the cut"
+    "textHint": "Words on the cut",
+    "timelines": "Timelines",
+    "timelinesHint": "Choose a timeline to open"
   },
   "mediaColumn": {
     "addAria": "Add {{name}} at the playhead",
@@ -197,7 +205,8 @@
     "playAria": "Play {{name}}",
     "previewSound": "Preview this sound",
     "previewVideo": "Preview this video",
-    "text": "Text"
+    "text": "Text",
+    "timelines": "Timelines"
   },
   "mediaLenses": {
     "cut": "This cut holds no material yet — import files, or take them from the project"

@@ -17,8 +17,10 @@ import {
   useMediaPreview,
 } from "./mediaPreview";
 import { TextPanel } from "./TextPanel";
+import { TimelinePicker } from "./TimelinePicker";
 
 const TITLES: Record<ClipFace, string> = {
+  timelines: "clip:mediaColumn.timelines",
   cut: "clip:mediaColumn.cut",
   text: "clip:mediaColumn.text",
   filters: "clip:mediaColumn.filters",
@@ -188,7 +190,9 @@ export function MediaColumn() {
             <h2>{title}</h2>
           </div>
           <div className="clip-column-body">
-            {face === "text" ? (
+            {face === "timelines" ? (
+              <TimelinePicker />
+            ) : face === "text" ? (
               <TextPanel />
             ) : face === "filters" ? (
               <FiltersPanel />

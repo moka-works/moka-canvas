@@ -148,6 +148,12 @@
     "rename": "重命名 {{name}}",
     "renameHint": "双击重命名"
   },
+  "timelinePicker": {
+    "empty": "还没有时间线",
+    "list": "全部时间线",
+    "new": "新建时间线",
+    "openHint": "在舞台打开「{{name}}」"
+  },
   "timelineDialog": {
     "create": "创建时间线",
     "frameRate": "帧率",
@@ -183,7 +189,9 @@
     "filtersHint": "片段的观感",
     "label": "剪辑面板",
     "text": "文字",
-    "textHint": "剪辑上的文字"
+    "textHint": "剪辑上的文字",
+    "timelines": "时间轴选择",
+    "timelinesHint": "选择要打开的时间轴"
   },
   "mediaColumn": {
     "addAria": "在播放头处添加 {{name}}",
@@ -197,7 +205,8 @@
     "playAria": "播放 {{name}}",
     "previewSound": "试听这段声音",
     "previewVideo": "预览这段视频",
-    "text": "文字"
+    "text": "文字",
+    "timelines": "时间轴"
   },
   "mediaLenses": {
     "cut": "此剪辑还没有素材——导入文件，或从项目中添加"

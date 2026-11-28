@@ -138,6 +138,39 @@ test("the ruler places the playhead, and the wheel moves the view under it", asy
   forgetHome(home);
 });
 
+test("the rail's selector opens a cut from the list", async ({ page }) => {
+  const home = await clippedProject(page);
+  await newTimeline(page, "Timeline 1");
+  await newTimeline(page, "Timeline 2");
+
+  // The selector stands at the top of the rail, above the cut's own material.
+  await page.getByTestId("clip-face-timelines").click();
+  const list = page.getByRole("list", { name: "All timelines" });
+  await expect(list.getByRole("button")).toHaveCount(2);
+  await expect(page.getByTestId("timeline-picker-Timeline 2")).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // Pressing a row opens that cut: the tab it already has turns over rather
+  // than a second one standing beside it.
+  await page.getByTestId("timeline-picker-Timeline 1").click();
+  await expect(page.getByTestId("timeline-tab-Timeline 1")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByTestId("timeline-picker-Timeline 1")).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // The material the open cut is made of is one press away again.
+  await page.getByTestId("clip-face-cut").click();
+  await expect(page.getByTestId("clip-from-project")).toBeVisible();
+
+  forgetHome(home);
+});
+
 test("each timeline keeps its own view, and the machine keeps them across a reload", async ({
   page,
 }) => {

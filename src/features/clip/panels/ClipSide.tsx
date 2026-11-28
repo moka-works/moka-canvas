@@ -8,6 +8,7 @@ import {
   CutIcon,
   FiltersIcon,
   TextIcon,
+  TimelineIcon,
 } from "../components/ClipIcons";
 import { MediaColumn } from "./MediaColumn";
 
@@ -15,8 +16,16 @@ interface RailFace extends WorkspaceFace {
   id: ClipFace;
 }
 
-/** The material a cut is made of, above the tools laid over it. */
+/** Every cut the project holds, above the material of the one that is open. */
 const GROUPS: readonly (readonly RailFace[])[] = [
+  [
+    {
+      id: "timelines",
+      label: "clip:rail.timelines",
+      hint: "clip:rail.timelinesHint",
+      icon: TimelineIcon,
+    },
+  ],
   [
     {
       id: "cut",
@@ -51,7 +60,8 @@ const GROUPS: readonly (readonly RailFace[])[] = [
  * The cutting room's left side: its rail of faces and the column they turn.
  *
  * The material and the three tools that work on it are one column with a rail
- * of drawers rather than four panels of their own, and the corner folds the
+ * of drawers rather than four panels of their own, and the selector above them
+ * turns the same column over to the project's other cuts. The corner folds the
  * whole side away — rail and all — when the cut wants the room.
  */
 export function ClipSide() {

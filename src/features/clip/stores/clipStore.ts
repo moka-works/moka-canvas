@@ -31,10 +31,10 @@ import {
 } from "../timeline/geometry";
 
 /**
- * The four faces the left column turns over between: the cut's own material,
- * and the three tools that work on it.
+ * The faces the left column turns over between: the timelines a reader can
+ * open, the cut's own material, and the three tools that work on it.
  */
-export type ClipFace = "cut" | "text" | "filters" | "adjust";
+export type ClipFace = "timelines" | "cut" | "text" | "filters" | "adjust";
 
 /** How material lands on an occupied place: move what follows, or trim it. */
 export type PlacementMode = "insert" | "overwrite";
