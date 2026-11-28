@@ -4336,6 +4336,25 @@ function applyOne(
           "VALIDATION_FAILED",
           i18n.t("errors:command.storyDigestShape"),
         );
+      for (const cut of command.patch.chapterCuts ?? []) {
+        if (
+          !(moka.timelines ?? []).some(
+            (timeline) => timeline.id === cut.timelineId,
+          )
+        )
+          throw new CommandError(
+            "TIMELINE_NOT_FOUND",
+            i18n.t("errors:command.timelineNotFound"),
+          );
+        if (
+          cut.assembledDigest !== undefined &&
+          !/^[0-9a-f]{8}$/.test(cut.assembledDigest)
+        )
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.storyDigestShape"),
+          );
+      }
       const previous: typeof command.patch = {};
       const edit = { ...story.edit };
       for (const key of Object.keys(

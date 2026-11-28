@@ -8,12 +8,12 @@
 
 use moka_canvas::domain::commands::apply_commands;
 use moka_canvas::domain::story::{
-    self, StoryAct, StoryActSound, StoryBrief, StoryChapter, StoryDialogueLine, StoryDocument,
-    StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind, StoryElementPatch,
-    StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryPending, StoryPromptOverride,
-    StoryShotGranularity, StoryShotSize, StorySlot, StorySlotTarget, StoryTake,
-    MAX_ACTS_PER_CHAPTER, MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY, MAX_KEYFRAMES_PER_ACT,
-    MAX_STORIES_PER_PROJECT, MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
+    self, StoryAct, StoryActSound, StoryBrief, StoryChapter, StoryChapterCut, StoryDialogueLine,
+    StoryDocument, StoryEdit, StoryEditClip, StoryEditPatch, StoryElement, StoryElementKind,
+    StoryElementPatch, StoryElementView, StoryKeyframe, StoryKeyframePatch, StoryPending,
+    StoryPromptOverride, StoryShotGranularity, StoryShotSize, StorySlot, StorySlotTarget,
+    StoryTake, MAX_ACTS_PER_CHAPTER, MAX_CHAPTERS_PER_STORY, MAX_ELEMENTS_PER_STORY,
+    MAX_KEYFRAMES_PER_ACT, MAX_STORIES_PER_PROJECT, MAX_TAKES_PER_SLOT, STORY_NAME_MAX,
 };
 use moka_canvas::domain::validate::{validate_moka_file, MAX_PROMPT_LENGTH};
 use moka_canvas::domain::{
@@ -406,6 +406,7 @@ fn story_document() -> MokaFile {
                 clip_id: "clip-video".into(),
             }]),
             assembled_digest: None,
+            chapter_cuts: None,
         },
         narrator: None,
         video_prompt_overrides: None,
@@ -2355,6 +2356,7 @@ fn remembers_what_a_story_was_assembled_into_and_refuses_a_timeline_nobody_holds
                     clip_id: "clip-cut-a".into(),
                 }])),
                 assembled_digest: Some(Some("0f3a91cd".into())),
+                chapter_cuts: None,
             },
         }],
     );
@@ -2400,6 +2402,64 @@ fn remembers_what_a_story_was_assembled_into_and_refuses_a_timeline_nobody_holds
                 story_id: STORY.into(),
                 patch: StoryEditPatch {
                     timeline_id: Some(Some("timeline-gone".into())),
+                    ..Default::default()
+                },
+            }
+        ),
+        "TIMELINE_NOT_FOUND"
+    );
+}
+
+#[test]
+fn remembers_one_cut_per_episode_and_refuses_a_timeline_nobody_holds() {
+    let moka = story_document();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SetStoryEdit {
+            story_id: STORY.into(),
+            patch: StoryEditPatch {
+                chapter_cuts: Some(Some(vec![StoryChapterCut {
+                    chapter_id: CHAPTER_FIRST.into(),
+                    timeline_id: TIMELINE.into(),
+                    clip_by_act: vec![StoryEditClip {
+                        act_id: ACT.into(),
+                        keyframe_id: None,
+                        clip_id: "clip-cut-a".into(),
+                    }],
+                    assembled_digest: Some("0f3a91cd".into()),
+                }])),
+                ..Default::default()
+            },
+        }],
+    );
+    let story = story_of(&next);
+    assert_eq!(
+        story.chapter_cut(CHAPTER_FIRST).unwrap().timeline_id,
+        TIMELINE
+    );
+    assert_eq!(
+        story
+            .chapter_cut(CHAPTER_FIRST)
+            .unwrap()
+            .assembled_digest
+            .as_deref(),
+        Some("0f3a91cd")
+    );
+    // The other episode is still uncomposed.
+    assert_eq!(story.chapter_cut(CHAPTER_SECOND), None);
+
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::SetStoryEdit {
+                story_id: STORY.into(),
+                patch: StoryEditPatch {
+                    chapter_cuts: Some(Some(vec![StoryChapterCut {
+                        chapter_id: CHAPTER_FIRST.into(),
+                        timeline_id: "timeline-gone".into(),
+                        clip_by_act: Vec::new(),
+                        assembled_digest: None,
+                    }])),
                     ..Default::default()
                 },
             }

@@ -324,17 +324,43 @@ describe("storyProgress", () => {
     expect(storyProgress(story).storyboard.done).toBe(2);
   });
 
-  it("reads the assembly as empty until a timeline is named, and done once it is", () => {
+  it("reads a cut per episode, and the step as done once every episode has one", () => {
     const story = createStory("新的故事", { idea: "一句话" });
+    const first = createChapter("一", "他等车。");
+    const second = createChapter("二", "车门打开。");
+    story.chapters = [first, second];
     expect(storyProgress(story).edit.state).toBe("empty");
+    expect(storyProgress(story).edit).toMatchObject({ done: 0, total: 2 });
+
+    story.edit = {
+      chapterCuts: [
+        { chapterId: first.id, timelineId: "timeline-1", clipByAct: [] },
+      ],
+    };
+    expect(storyProgress(story).edit.state).toBe("working");
+    expect(storyProgress(story).edit).toMatchObject({ done: 1, total: 2 });
+
+    story.edit = {
+      chapterCuts: [
+        { chapterId: first.id, timelineId: "timeline-1", clipByAct: [] },
+        { chapterId: second.id, timelineId: "timeline-2", clipByAct: [] },
+      ],
+    };
+    expect(storyProgress(story).edit.state).toBe("ready");
+    expect(storyProgress(story).edit).toMatchObject({ done: 2, total: 2 });
+
+    // A step the reader settled stays settled, whatever the document holds now.
+    story.confirmedSteps = ["edit"];
+    expect(storyProgress(story).edit.state).toBe("confirmed");
+  });
+
+  it("reads a one-episode telling's old whole-story timeline as that episode's cut", () => {
+    const story = createStory("新的故事", { idea: "一句话" });
+    const only = createChapter("一", "他等车。");
+    story.chapters = [only];
     story.edit = { timelineId: "timeline-1" };
     expect(storyProgress(story).edit.state).toBe("ready");
     expect(storyProgress(story).edit.done).toBe(1);
-
-    // The assembly is the whole of the step: an old document that once had to
-    // confirm it reads the same as one that never did.
-    story.confirmedSteps = ["edit"];
-    expect(storyProgress(story).edit.state).toBe("ready");
   });
 });
 
@@ -440,10 +466,16 @@ describe("what a step is still waiting for", () => {
     ]);
   });
 
-  it("asks for the timeline, and for nothing after it", () => {
+  it("asks for the episode's timeline, and for nothing after it", () => {
     const story = createStory("新的故事", { idea: "一句话" });
+    const chapter = createChapter("一", "他等车。");
+    story.chapters = [chapter];
     expect(stepGaps(story, "edit")).toEqual([{ kind: "noTimeline" }]);
-    story.edit = { timelineId: "timeline-1" };
+    story.edit = {
+      chapterCuts: [
+        { chapterId: chapter.id, timelineId: "timeline-1", clipByAct: [] },
+      ],
+    };
     expect(stepGaps(story, "edit")).toEqual([]);
   });
 });

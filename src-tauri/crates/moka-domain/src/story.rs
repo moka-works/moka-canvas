@@ -756,18 +756,73 @@ pub struct StoryEditClip {
     pub clip_id: ClipId,
 }
 
+/// One episode's cut: the timeline it owns and what its assembly put there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryChapterCut {
+    pub chapter_id: String,
+    pub timeline_id: TimelineId,
+    pub clip_by_act: Vec<StoryEditClip>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembled_digest: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryEdit {
+    /// The whole telling's timeline, before cuts were kept by episode. Only
+    /// read for a one-episode story that has no `chapter_cuts` yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline_id: Option<TimelineId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip_by_act: Option<Vec<StoryEditClip>>,
-    /// What the timeline was laid down from, as one short reading of it. A
-    /// document written before this existed carries none, which the room reads
-    /// as "the film is behind the telling".
+    /// What the old whole-telling timeline was laid down from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assembled_digest: Option<String>,
+    /// One cut per episode, in the order the episodes were assembled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_cuts: Option<Vec<StoryChapterCut>>,
+}
+
+impl StoryDocument {
+    /// The cut one episode owns, if it has been assembled.
+    ///
+    /// A one-episode telling written before cuts were kept by episode holds a
+    /// whole-telling timeline instead, which is that episode's cut.
+    pub fn chapter_cut(&self, chapter_id: &str) -> Option<StoryChapterCut> {
+        if let Some(found) = self
+            .edit
+            .chapter_cuts
+            .iter()
+            .flatten()
+            .find(|cut| cut.chapter_id == chapter_id)
+        {
+            return Some(found.clone());
+        }
+        let legacy = self
+            .edit
+            .chapter_cuts
+            .as_ref()
+            .is_none_or(|cuts| cuts.is_empty());
+        if legacy && self.chapters.len() == 1 {
+            let timeline_id = self.edit.timeline_id.clone()?;
+            return Some(StoryChapterCut {
+                chapter_id: chapter_id.to_string(),
+                timeline_id,
+                clip_by_act: self.edit.clip_by_act.clone().unwrap_or_default(),
+                assembled_digest: self.edit.assembled_digest.clone(),
+            });
+        }
+        None
+    }
+
+    /// Every episode of the telling that has a cut, in episode order.
+    pub fn chapter_cuts(&self) -> Vec<StoryChapterCut> {
+        self.chapters
+            .iter()
+            .filter_map(|chapter| self.chapter_cut(&chapter.id))
+            .collect()
+    }
 }
 
 /// One clip prompt a reader wrote by hand, and the automatic prompt it
@@ -1056,6 +1111,12 @@ pub struct StoryEditPatch {
         deserialize_with = "super::deserialize_double_option"
     )]
     pub assembled_digest: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::deserialize_double_option"
+    )]
+    pub chapter_cuts: Option<Option<Vec<StoryChapterCut>>>,
 }
 
 impl StoryDocument {
@@ -3149,6 +3210,33 @@ pub fn apply_story_command(
                     ));
                 }
             }
+            let shaped_digest = |digest: &str| {
+                digest.len() == 8
+                    && digest
+                        .chars()
+                        .all(|at| at.is_ascii_digit() || ('a'..='f').contains(&at))
+            };
+            for cut in patch.chapter_cuts.iter().flatten().flatten() {
+                let held = moka
+                    .timelines
+                    .iter()
+                    .flatten()
+                    .any(|timeline| timeline.id == cut.timeline_id);
+                if !held {
+                    return Err(CommandError::new(
+                        "TIMELINE_NOT_FOUND",
+                        "Timeline not found",
+                    ));
+                }
+                if let Some(digest) = &cut.assembled_digest {
+                    if !shaped_digest(digest) {
+                        return Err(CommandError::new(
+                            "VALIDATION_FAILED",
+                            "An assembly's digest is eight hexadecimal digits",
+                        ));
+                    }
+                }
+            }
             let previous = StoryEditPatch {
                 timeline_id: patch
                     .timeline_id
@@ -3162,6 +3250,10 @@ pub fn apply_story_command(
                     .assembled_digest
                     .as_ref()
                     .map(|_| story.edit.assembled_digest.clone()),
+                chapter_cuts: patch
+                    .chapter_cuts
+                    .as_ref()
+                    .map(|_| story.edit.chapter_cuts.clone()),
             };
             let mut edit = story.edit.clone();
             if let Some(timeline_id) = &patch.timeline_id {
@@ -3172,11 +3264,7 @@ pub fn apply_story_command(
             }
             if let Some(digest) = &patch.assembled_digest {
                 if let Some(digest) = digest {
-                    let shaped = digest.len() == 8
-                        && digest
-                            .chars()
-                            .all(|at| at.is_ascii_digit() || ('a'..='f').contains(&at));
-                    if !shaped {
+                    if !shaped_digest(digest) {
                         return Err(CommandError::new(
                             "VALIDATION_FAILED",
                             "An assembly's digest is eight hexadecimal digits",
@@ -3184,6 +3272,9 @@ pub fn apply_story_command(
                     }
                 }
                 edit.assembled_digest = digest.clone();
+            }
+            if let Some(cuts) = &patch.chapter_cuts {
+                edit.chapter_cuts = cuts.clone();
             }
             let mut next = story.clone();
             next.edit = edit;

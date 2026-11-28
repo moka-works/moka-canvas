@@ -1387,6 +1387,19 @@ export function validateMokaFile(moka: MokaFile): ValidationIssue[] {
           id: story.edit.timelineId,
         }),
       });
+    for (const cut of story.edit.chapterCuts ?? []) {
+      if (
+        !(moka.timelines ?? []).some(
+          (timeline) => timeline.id === cut.timelineId,
+        )
+      )
+        issues.push({
+          code: "STORY_TARGET_INVALID",
+          message: i18n.t("errors:validate.storyTimelineMissing", {
+            id: cut.timelineId,
+          }),
+        });
+    }
   }
 
   const scenes = moka.directorScenes ?? [];

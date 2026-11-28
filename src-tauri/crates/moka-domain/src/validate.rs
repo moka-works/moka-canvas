@@ -1204,6 +1204,22 @@ pub fn validate_moka_file(moka: &MokaFile) -> Vec<ValidationIssue> {
                 ));
             }
         }
+        for cut in held.edit.chapter_cuts.iter().flatten() {
+            let known = moka
+                .timelines
+                .iter()
+                .flatten()
+                .any(|timeline| timeline.id == cut.timeline_id);
+            if !known {
+                issues.push(story::issue(
+                    "STORY_TARGET_INVALID",
+                    format!(
+                        "Story points at timeline {}, which is not here",
+                        cut.timeline_id
+                    ),
+                ));
+            }
+        }
     }
 
     let scenes = moka.director_scenes.iter().flatten().collect::<Vec<_>>();

@@ -1294,28 +1294,58 @@ export interface StoryElement {
 export const STORY_SHOT_GRANULARITIES = ["act", "keyframe"] as const;
 export type StoryShotGranularity = (typeof STORY_SHOT_GRANULARITIES)[number];
 
-/** What step five assembled the story into. */
-export interface StoryEdit {
-  /** The timeline the acts were laid down on. */
-  timelineId?: TimelineId;
+/** One clip an assembly laid down, and which act it belongs to. */
+export interface StoryEditClip {
+  actId: string;
+  keyframeId?: string;
+  clipId: ClipId;
+}
+
+/** One episode's cut: the timeline it owns and what its assembly put there. */
+export interface StoryChapterCut {
+  chapterId: string;
+  timelineId: TimelineId;
   /**
-   * Which clips this story's assembly put on that timeline.
+   * Which clips this episode's assembly put on that timeline.
    *
    * Kept so a re-assembly overwrites its own work and nothing else: clips a
-   * reader moved there by hand, or a different story laid down, are not this
-   * story's to take away.
+   * reader moved there by hand are not this episode's to take away.
    */
-  clipByAct?: Array<{ actId: string; keyframeId?: string; clipId: ClipId }>;
+  clipByAct: StoryEditClip[];
   /**
    * What the timeline was laid down from, as one short reading of it.
    *
    * The telling changes after it is assembled — a line re-read, a shot refilmed
    * — and what is on the timeline is then behind it. This is how the room
-   * notices: the film card plans the assembly the telling would make now and
-   * compares. A document written before this existed carries none, which reads
-   * as "behind", and the next assembly writes it.
+   * notices: the film card plans the assembly the episode would make now and
+   * compares. A cut written before this existed carries none, which reads as
+   * "behind", and the next assembly writes it.
    */
   assembledDigest?: string;
+}
+
+/** What step five assembled the story into: a cut per episode. */
+export interface StoryEdit {
+  /**
+   * The timeline the whole telling was laid down on, before cuts were kept by
+   * episode.
+   *
+   * Only read for a one-episode story that has no `chapterCuts` yet; a
+   * multi-episode telling's old whole-story timeline is left standing and is
+   * no longer what step five opens.
+   */
+  timelineId?: TimelineId;
+  /** The clips the old whole-telling assembly put on that timeline. */
+  clipByAct?: StoryEditClip[];
+  /** The old whole-telling assembly's reading. */
+  assembledDigest?: string;
+  /**
+   * One cut per episode, in the order the episodes were assembled.
+   *
+   * An episode is composed on a timeline of its own, so re-assembling one
+   * episode never walks over another's cut.
+   */
+  chapterCuts?: StoryChapterCut[];
 }
 
 export interface StoryDocument {
@@ -1581,12 +1611,9 @@ export interface StoryBriefPatch {
 /** The fields a caller may move on the assembly, for `setStoryEdit`. */
 export interface StoryEditPatch {
   timelineId?: TimelineId | null;
-  clipByAct?: Array<{
-    actId: string;
-    keyframeId?: string;
-    clipId: ClipId;
-  }> | null;
+  clipByAct?: StoryEditClip[] | null;
   assembledDigest?: string | null;
+  chapterCuts?: StoryChapterCut[] | null;
 }
 
 export interface NodePatch {

@@ -26,6 +26,7 @@ import type {
   StoryCameraAngle,
   StoryCameraMove,
   StoryChapter,
+  StoryChapterCut,
   StoryDialogueLine,
   StoryDocument,
   StoryElement,
@@ -578,6 +579,46 @@ export function elementComplete(element: StoryElement): boolean {
 }
 
 /**
+ * The cut one episode owns, if it has been assembled.
+ *
+ * A document written before cuts were kept by episode holds one whole-telling
+ * timeline instead. That timeline is the first episode's cut when the telling
+ * has only one episode; for a longer telling it is left standing as a timeline
+ * of its own and is not what step five opens.
+ */
+export function chapterCut(
+  story: StoryDocument,
+  chapterId: string,
+): StoryChapterCut | undefined {
+  const cuts = story.edit.chapterCuts;
+  const found = cuts?.find((cut) => cut.chapterId === chapterId);
+  if (found !== undefined) return found;
+  if (
+    (cuts === undefined || cuts.length === 0) &&
+    story.chapters.length === 1 &&
+    story.edit.timelineId !== undefined
+  ) {
+    return {
+      chapterId,
+      timelineId: story.edit.timelineId,
+      clipByAct: story.edit.clipByAct ?? [],
+      ...(story.edit.assembledDigest === undefined
+        ? {}
+        : { assembledDigest: story.edit.assembledDigest }),
+    };
+  }
+  return undefined;
+}
+
+/** Every episode of the telling that has a cut, in episode order. */
+export function storyChapterCuts(story: StoryDocument): StoryChapterCut[] {
+  return story.chapters.flatMap((chapter) => {
+    const cut = chapterCut(story, chapter.id);
+    return cut === undefined ? [] : [cut];
+  });
+}
+
+/**
  * The five steps' progress through one story, read from the document alone.
  *
  * A step that is waiting on a job is not something a document can say — what
@@ -626,6 +667,18 @@ export function storyProgress(
   ).length;
   const everyActComplete = acts.length > 0 && completeActs === acts.length;
 
+  // A cut is kept by episode: the step has what it makes for an episode once
+  // that episode's own timeline is laid down, and the count says how many of
+  // the telling's episodes are there.
+  const cutChapters = new Set(
+    storyChapterCuts(story).map((cut) => cut.chapterId),
+  );
+  const cutTotal = Math.max(chapters.length, 1);
+  const cutDone = chapters.filter((chapter) =>
+    cutChapters.has(chapter.id),
+  ).length;
+  const everyChapterCut = cutDone > 0 && cutDone === chapters.length;
+
   return {
     idea: {
       step: "idea",
@@ -665,11 +718,12 @@ export function storyProgress(
     },
     edit: {
       step: "edit",
-      // The fifth step is the assembly itself: a timeline laid down is the
-      // whole of what it makes, and there is nothing left to confirm.
-      state: story.edit.timelineId === undefined ? "empty" : "ready",
-      done: story.edit.timelineId === undefined ? 0 : 1,
-      total: 1,
+      // The fifth step is the assembly itself: a cut laid down for every
+      // episode is the whole of what it makes, and there is nothing left to
+      // confirm.
+      state: stepState(cutDone === 0, everyChapterCut, settled("edit")),
+      done: cutDone,
+      total: cutTotal,
     },
   };
 }
@@ -783,7 +837,7 @@ export function stepGaps(
       return gaps;
     }
     case "edit": {
-      if (story.edit.timelineId === undefined) return [{ kind: "noTimeline" }];
+      if (storyChapterCuts(story).length === 0) return [{ kind: "noTimeline" }];
       return [];
     }
   }

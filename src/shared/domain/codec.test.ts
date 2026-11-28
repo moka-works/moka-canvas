@@ -74,6 +74,20 @@ describe("moka codec", () => {
     expect(back.stories![0]!.edit.assembledDigest).toBe("0f3a91cd");
   });
 
+  it("carries one cut per episode through the codec", () => {
+    const moka = buildStoryMokaFile();
+    const story = moka.stories![0]!;
+    const cut = {
+      chapterId: story.chapters[0]!.id,
+      timelineId: "timeline-cut-1",
+      clipByAct: [{ actId: "act-1", clipId: "clip-1" }],
+      assembledDigest: "0f3a91cd",
+    };
+    story.edit = { ...story.edit, chapterCuts: [cut] };
+    const back = decodeMokaFile(encodeMokaFile(moka));
+    expect(back.stories![0]!.edit.chapterCuts).toEqual([cut]);
+  });
+
   it("carries a set of drawings waiting to be chosen between", () => {
     const moka = buildStoryMokaFile();
     const frame = moka.stories![0]!.chapters[0]!.acts[0]!.keyframes[0]!;

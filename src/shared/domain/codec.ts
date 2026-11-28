@@ -60,9 +60,11 @@ import type {
   StoryKeyframeReference,
   StoryBrief,
   StoryChapter,
+  StoryChapterCut,
   StoryDialogueLine,
   StoryDocument,
   StoryEdit,
+  StoryEditClip,
   StoryElement,
   StoryElementVariant,
   StoryPictureReference,
@@ -690,19 +692,30 @@ function encodeStoryBrief(brief: StoryBrief): Record<string, unknown> {
   return doc;
 }
 
+function encodeStoryEditClip(entry: StoryEditClip): Record<string, unknown> {
+  return {
+    actId: entry.actId,
+    clipId: entry.clipId,
+    ...(entry.keyframeId !== undefined ? { keyframeId: entry.keyframeId } : {}),
+  };
+}
+
 function encodeStoryEdit(edit: StoryEdit): Record<string, unknown> {
   const doc: Record<string, unknown> = {};
   if (edit.timelineId !== undefined) doc.timelineId = edit.timelineId;
   if (edit.clipByAct !== undefined)
-    doc.clipByAct = edit.clipByAct.map((entry) => ({
-      actId: entry.actId,
-      clipId: entry.clipId,
-      ...(entry.keyframeId !== undefined
-        ? { keyframeId: entry.keyframeId }
-        : {}),
-    }));
+    doc.clipByAct = edit.clipByAct.map(encodeStoryEditClip);
   if (edit.assembledDigest !== undefined)
     doc.assembledDigest = edit.assembledDigest;
+  if (edit.chapterCuts !== undefined)
+    doc.chapterCuts = edit.chapterCuts.map((cut) => ({
+      chapterId: cut.chapterId,
+      timelineId: cut.timelineId,
+      clipByAct: cut.clipByAct.map(encodeStoryEditClip),
+      ...(cut.assembledDigest === undefined
+        ? {}
+        : { assembledDigest: cut.assembledDigest }),
+    }));
   return doc;
 }
 
@@ -2157,25 +2170,46 @@ function decodeStoryBrief(value: unknown): StoryBrief {
   return brief;
 }
 
+function decodeStoryEditClips(value: unknown, where: string): StoryEditClip[] {
+  return asArray(value, where).map((entry) => {
+    const row = asRecord(entry, `${where}[]`);
+    const held: StoryEditClip = {
+      actId: asString(row.actId, `${where}[].actId`),
+      clipId: asString(row.clipId, `${where}[].clipId`),
+    };
+    if (row.keyframeId !== undefined)
+      held.keyframeId = optionalString(row.keyframeId);
+    return held;
+  });
+}
+
 function decodeStoryEdit(value: unknown): StoryEdit {
   const doc = asRecord(value ?? {}, "stories[].edit");
   const edit: StoryEdit = {};
   if (doc.timelineId !== undefined)
     edit.timelineId = optionalString(doc.timelineId);
-  if (doc.clipByAct !== undefined) {
-    edit.clipByAct = asArray(doc.clipByAct, "edit.clipByAct").map((entry) => {
-      const row = asRecord(entry, "edit.clipByAct[]");
-      const held: { actId: string; keyframeId?: string; clipId: string } = {
-        actId: asString(row.actId, "clipByAct[].actId"),
-        clipId: asString(row.clipId, "clipByAct[].clipId"),
-      };
-      if (row.keyframeId !== undefined)
-        held.keyframeId = optionalString(row.keyframeId);
-      return held;
-    });
-  }
+  if (doc.clipByAct !== undefined)
+    edit.clipByAct = decodeStoryEditClips(doc.clipByAct, "edit.clipByAct");
   if (doc.assembledDigest !== undefined)
     edit.assembledDigest = optionalString(doc.assembledDigest);
+  if (doc.chapterCuts !== undefined) {
+    edit.chapterCuts = asArray(doc.chapterCuts, "edit.chapterCuts").map(
+      (entry): StoryChapterCut => {
+        const row = asRecord(entry, "edit.chapterCuts[]");
+        const cut: StoryChapterCut = {
+          chapterId: asString(row.chapterId, "chapterCuts[].chapterId"),
+          timelineId: asString(row.timelineId, "chapterCuts[].timelineId"),
+          clipByAct: decodeStoryEditClips(
+            row.clipByAct,
+            "chapterCuts[].clipByAct",
+          ),
+        };
+        if (row.assembledDigest !== undefined)
+          cut.assembledDigest = optionalString(row.assembledDigest);
+        return cut;
+      },
+    );
+  }
   return edit;
 }
 
