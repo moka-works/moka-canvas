@@ -1,9 +1,34 @@
-import { useTranslation } from "react-i18next";
-import { PanelFold } from "../components/PanelFold";
-import { useEditorStore } from "../stores/editorStore";
+import {
+  WorkspaceSide,
+  type WorkspaceFace,
+} from "../../workspace/WorkspaceSide";
+import { AssetsIcon, CanvasesIcon } from "../../workspace/icons";
+import { useEditorStore, type LeftPanelTab } from "../stores/editorStore";
 import { useProjectStore } from "../stores/projectStore";
 import { AssetsPanel } from "./AssetsPanel";
 import { ProjectTree } from "./ProjectTree";
+
+interface RailFace extends WorkspaceFace {
+  id: LeftPanelTab;
+}
+
+/** What the column beside the canvas can show, in the order the rail reads. */
+const GROUPS: readonly (readonly RailFace[])[] = [
+  [
+    {
+      id: "project",
+      label: "editor:sidePanel.project",
+      hint: "editor:sidePanel.projectHint",
+      icon: CanvasesIcon,
+    },
+    {
+      id: "assets",
+      label: "editor:sidePanel.assets",
+      hint: "editor:sidePanel.assetsHint",
+      icon: AssetsIcon,
+    },
+  ],
+];
 
 /**
  * The column on the left of the canvas, and the choice of what it shows.
@@ -18,52 +43,26 @@ import { ProjectTree } from "./ProjectTree";
  * opening anything, which is the point of two faces of one thing: what a reader
  * was looking at is still beside what they were looking at it in.
  *
- * The corner of the column folds the whole of it away, for a canvas that wants
- * the room; what is left in that corner of the window brings it back.
+ * The corner of the column folds the whole side away — rail and all — for a
+ * canvas that wants the room; what is left in that corner of the window brings
+ * it back.
  */
 export function SidePanel() {
-  const { t } = useTranslation();
   const moka = useProjectStore((state) => state.moka);
   const tab = useEditorStore((state) => state.leftPanelTab);
   const setTab = useEditorStore((state) => state.setLeftPanelTab);
   if (!moka) return null;
 
   return (
-    <aside
-      aria-label={t("editor:sidePanel.project")}
-      className="editor-side"
-      id="panel-left"
+    <WorkspaceSide
+      active={tab}
+      columnClassName="editor-side"
+      groups={GROUPS}
+      label="editor:sidePanel.columnShows"
+      onSelect={(id) => setTab(id as LeftPanelTab)}
+      testIdPrefix="left-tab"
     >
-      <PanelFold side="left" />
-      <div
-        aria-label={t("editor:sidePanel.columnShows")}
-        className="side-panel-tabs"
-        role="tablist"
-      >
-        <button
-          aria-selected={tab === "project"}
-          className={tab === "project" ? "is-active" : ""}
-          data-testid="left-tab-project"
-          onClick={() => setTab("project")}
-          role="tab"
-          title={t("editor:sidePanel.projectHint")}
-          type="button"
-        >
-          {t("editor:sidePanel.project")}
-        </button>
-        <button
-          aria-selected={tab === "assets"}
-          className={tab === "assets" ? "is-active" : ""}
-          data-testid="left-tab-assets"
-          onClick={() => setTab("assets")}
-          role="tab"
-          title={t("editor:sidePanel.assetsHint")}
-          type="button"
-        >
-          {t("editor:sidePanel.assets")}
-        </button>
-      </div>
       {tab === "project" ? <ProjectTree /> : <AssetsPanel />}
-    </aside>
+    </WorkspaceSide>
   );
 }

@@ -1504,10 +1504,11 @@ button.room-choice:hover .room-choice-arrow,
    falling back to a width that suits what they show. A column nobody has
    dragged is a column still at that fallback. Both columns turn over between
    the faces their tabs offer rather than scrolling as one, so the choice of
-   face stays put and the face chosen scrolls on its own. */
-.editor-side,
+   face stays put and the face chosen scrolls on its own. The left column's
+   frame is the shared workspace column's; only its width is its own. */
 .editor-right {
   background: var(--surface);
+  border-left: 1px solid var(--stroke);
   display: flex;
   flex: none;
   flex-direction: column;
@@ -1515,16 +1516,11 @@ button.room-choice:hover .room-choice-arrow,
   overflow: hidden;
   padding: 16px;
   position: relative;
+  width: var(--panel-right-width, 300px);
 }
 
 .editor-side {
-  border-right: 1px solid var(--stroke);
   width: var(--panel-left-width, 240px);
-}
-
-.editor-right {
-  border-left: 1px solid var(--stroke);
-  width: var(--panel-right-width, 300px);
 }
 
 /* The face a column is showing fills what is left under its tabs, and keeps
@@ -1667,11 +1663,8 @@ body.is-dragging-panel {
   right: 0;
 }
 
-/* The head of a column keeps clear of the triangle standing in its corner. */
-.editor-side > .side-panel-tabs {
-  padding-right: 10px;
-}
-
+/* The head of the right column keeps clear of the triangle standing in its
+   corner. */
 .editor-right > .side-panel-tabs {
   padding-left: 10px;
 }

@@ -162,7 +162,7 @@
     "saveImageTitle": "Save the image"
   },
   "sidePanel": {
-    "project": "Project",
+    "project": "Canvases",
     "columnShows": "What the column shows",
     "projectHint": "The project's canvases and the folders they are filed in",
     "assets": "Assets",

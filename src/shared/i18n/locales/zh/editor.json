@@ -162,7 +162,7 @@
     "saveImageTitle": "保存图片"
   },
   "sidePanel": {
-    "project": "项目",
+    "project": "画布",
     "columnShows": "此栏显示的内容",
     "projectHint": "项目的画布及其所在文件夹",
     "assets": "素材",

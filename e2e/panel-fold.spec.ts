@@ -108,12 +108,17 @@ test("both columns fold away from a corner and come back to it", async ({
   );
 
   const canvasBefore = await widthOf(canvas);
+  const railWidth = Math.round(
+    (await page.locator(".work-rail").boundingBox())!.width,
+  );
 
-  // Folding a column away hands its room to the canvas and leaves the corner
-  // it stood in offering the way back — the edge it was dragged by goes too,
-  // since there is no longer a column there to drag.
+  // Folding a column away hands its room to the canvas — the rail goes with
+  // the column it turns — and leaves the corner it stood in offering the way
+  // back; the edge it was dragged by goes too, since there is no longer a
+  // column there to drag.
   await foldLeft.click();
   await expect(left).toHaveCount(0);
+  await expect(page.locator(".work-rail")).toHaveCount(0);
   await expect(page.getByTestId("panel-resizer-left")).toHaveCount(0);
   await expect(foldLeft).toHaveCount(0);
   const unfoldLeft = page.getByTestId("panel-unfold-left");
@@ -126,14 +131,16 @@ test("both columns fold away from a corner and come back to it", async ({
   expect(await filledHalf(page, unfoldLeft, "left")).toBe(true);
   expect(await filledHalf(page, unfoldLeft, "right")).toBe(false);
   expect(await widthOf(canvas)).toBe(
-    canvasBefore + Math.round(leftPanel!.width),
+    canvasBefore + railWidth + Math.round(leftPanel!.width),
   );
   // The column on the other side was not asked about, so it still stands.
   await expect(right).toBeVisible();
 
-  // The corner brings the column back, and its dragged edge comes with it.
+  // The corner brings the column back, and its rail and dragged edge come
+  // with it.
   await unfoldLeft.click();
   await expect(left).toBeVisible();
+  await expect(page.locator(".work-rail")).toBeVisible();
   await expect(page.getByTestId("panel-resizer-left")).toBeVisible();
   await expect(foldLeft).toBeVisible();
   await expect(unfoldLeft).toHaveCount(0);
