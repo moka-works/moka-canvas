@@ -126,7 +126,7 @@ export const RESYNC_HARD_MS = 400;
 const STALLED_MOVE_MS = 20;
 
 /** The most elements that may sound at once. */
-export const MAX_VOICES = 4;
+export const MAX_VOICES = 8;
 
 /** A clip that can be heard at a moment, with the row it sits on. */
 export interface AudibleClip {
@@ -136,7 +136,7 @@ export interface AudibleClip {
 
 /**
  * The clips whose sound covers a moment, nearest the playhead first, at most
- * four of them.
+ * eight of them.
  *
  * A row sounds what it shows: outside a seam window that is its one clip,
  * and inside one it is both — the window is exactly where the two sides cross
@@ -161,7 +161,7 @@ export function audibleClipsAt(
     }
   }
   // Nearest first: the clip the playhead walked into most recently is the one
-  // whose voice matters, and the four nearest are all that sound.
+  // whose voice matters, and the nearest few are all that sound.
   sounding.sort((a, b) => b.clip.startMs - a.clip.startMs);
   return sounding.slice(0, MAX_VOICES);
 }
@@ -221,9 +221,9 @@ function makeVoice(ctx: AudioContext): Voice | null {
   let node: MediaElementAudioSourceNode;
   try {
     element = document.createElement("audio");
-    // A voice is pointed at a whole 27–37MB picture file, and four voices can
-    // hold three of them: told to preload everything, the elements spend the
-    // cut's six connections fetching minutes of sound nobody will hear. The
+    // A voice is pointed at a whole 27–37MB picture file, and a pool of them can
+    // hold several: told to preload everything, the elements spend the cut's
+    // connections fetching minutes of sound nobody will hear. The
     // file is asked for as the voice is assigned — the position is set and it
     // plays — which is enough for a source that starts where the clock stands.
     element.preload = "metadata";
@@ -375,7 +375,7 @@ function assign(voice: Voice, entry: AudibleClip, atMs: number): void {
   if (!assetId) return;
   if (voice.assetId !== assetId) {
     // The element is recycled: the old file's sound is dropped and the new
-    // one is fetched, which is the whole "pool of ≤4" in one line. What it
+    // one is fetched, which is the whole "pool of ≤8" in one line. What it
     // is pointed at is the sound alone — a whole picture file streamed for
     // its sound is what the server's own copy of it exists to spare.
     voice.element.src = assetAudioUrl(assetId);

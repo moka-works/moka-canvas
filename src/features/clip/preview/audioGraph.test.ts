@@ -171,6 +171,22 @@ describe("the clips that sound at a moment", () => {
     ).toEqual(["b"]);
   });
 
+  it("sounds more than four at once when the cut has them", () => {
+    const tracks = Array.from({ length: 6 }, (_, index) =>
+      track({ id: `track-${index}`, name: `Audio ${index}` }),
+    );
+    const clips = tracks.map((row, index) =>
+      clip({ id: `clip-${index}`, trackId: row.id }),
+    );
+    const timeline: TimelineDocument = {
+      ...seamed(),
+      tracks,
+      clips,
+      transitions: [],
+    };
+    expect(audibleClipsAt(timeline, 1_000)).toHaveLength(6);
+  });
+
   it("leaves a muted side out of the window's pair", () => {
     const timeline = seamed();
     timeline.clips = timeline.clips.map((entry) =>
