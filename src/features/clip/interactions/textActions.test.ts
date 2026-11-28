@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MAX_CLIPS_PER_COMMAND,
   defaultTextStyle,
   type MokaFile,
   type TimelineClip,
@@ -363,7 +364,7 @@ describe("srtImportPlan", () => {
     expect(second.clips[0].trackId).toBe(first.track.id);
   });
 
-  it("cuts a wide batch into addClips steps of at most fifty", () => {
+  it("cuts a wide batch into addClips steps the command layer accepts", () => {
     const many = Array.from({ length: 120 }, (_, index) =>
       cue(index * 1_000, index * 1_000 + 1_000, `cue ${index}`),
     );
@@ -372,10 +373,10 @@ describe("srtImportPlan", () => {
     if (!plan.ok) return;
     expect(plan.clips).toHaveLength(120);
     const adds = plan.commands.filter((command) => command.type === "addClips");
-    expect(adds).toHaveLength(3);
+    expect(adds).toHaveLength(Math.ceil(120 / MAX_CLIPS_PER_COMMAND));
     for (const command of adds) {
       if (command.type !== "addClips") continue;
-      expect(command.clips.length).toBeLessThanOrEqual(50);
+      expect(command.clips.length).toBeLessThanOrEqual(MAX_CLIPS_PER_COMMAND);
     }
   });
 
