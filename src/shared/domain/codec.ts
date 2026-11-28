@@ -363,6 +363,8 @@ function encodeClip(clip: TimelineClip): Record<string, unknown> {
   };
   if (clip.assetId !== undefined) doc.assetId = clip.assetId;
   if (clip.adjust !== undefined) doc.adjust = encodeAdjust(clip.adjust);
+  if (clip.freeze === true) doc.freeze = true;
+  if (clip.reversed === true) doc.reversed = true;
   if (clip.transform !== undefined)
     doc.transform = {
       scale: asDouble(clip.transform.scale),
@@ -1482,6 +1484,8 @@ function decodeClip(value: unknown): TimelineClip {
   if (doc.assetId !== undefined)
     clip.assetId = asString(doc.assetId, "clips[].assetId");
   if (doc.adjust !== undefined) clip.adjust = decodeAdjust(doc.adjust);
+  if (doc.freeze === true) clip.freeze = true;
+  if (doc.reversed === true) clip.reversed = true;
   if (doc.transform !== undefined) {
     const transform = asRecord(doc.transform, "clips[].transform");
     const crop =

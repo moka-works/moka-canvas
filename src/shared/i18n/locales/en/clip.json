@@ -125,6 +125,8 @@
     "deleteGap": "Delete the gap here",
     "rippleDelete": "Ripple delete",
     "closeGapsOnTrack": "Close the gaps on this row",
+    "freezeFrame": "Freeze frame at the playhead",
+    "reverse": "Reverse / play forwards",
     "timelineMenu": "Timeline menu",
     "trackAudio": "Audio track",
     "trackMenu": "Track menu",
@@ -465,6 +467,8 @@
     "overlapEachOther": "The subtitles overlap each other at {{timecode}}"
   },
   "history": {
+    "freezeFrame": "Freeze a frame",
+    "reverseClips": "Reverse clips",
     "fadeClip": "Change a clip's fade",
     "setTrackGain": "Set a row's level to {{db}} dB",
     "soloTrack": "Solo a row",

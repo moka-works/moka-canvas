@@ -459,6 +459,7 @@ fn is_audible(
 ) -> bool {
     let Some(track) = track else { return false };
     if clip.kind == TrackKind::Text
+        || clip.freeze == Some(true)
         || track.muted
         || clip.muted
         || clip.volume <= 0.0
@@ -565,16 +566,42 @@ fn picture_filters(
     in_chain: bool,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if !input.seeked() {
+    if clip.freeze == Some(true) {
+        let frame_s = 1.0 / fps as f64;
+        let start_s = if input.seeked() {
+            0.0
+        } else {
+            clip.in_point_ms as f64 / 1000.0
+        };
         parts.push(format!(
             "trim=start={start}:end={end}",
-            start = num(clip.in_point_ms as f64 / 1000.0),
-            end = num(clip.out_point_ms as f64 / 1000.0)
+            start = num(start_s),
+            end = num(start_s + frame_s)
         ));
         parts.push("setpts=PTS-STARTPTS".to_string());
-    }
-    if clip.speed != 1.0 {
-        parts.push(format!("setpts=PTS/{}", num(clip.speed)));
+        parts.push(format!(
+            "tpad=stop_mode=clone:stop_duration={duration}",
+            duration = num(clip.duration_ms as f64 / 1000.0)
+        ));
+        parts.push(format!(
+            "trim=duration={duration}",
+            duration = num(clip.duration_ms as f64 / 1000.0)
+        ));
+    } else {
+        if !input.seeked() {
+            parts.push(format!(
+                "trim=start={start}:end={end}",
+                start = num(clip.in_point_ms as f64 / 1000.0),
+                end = num(clip.out_point_ms as f64 / 1000.0)
+            ));
+            parts.push("setpts=PTS-STARTPTS".to_string());
+        }
+        if clip.reversed == Some(true) {
+            parts.push("reverse".to_string());
+        }
+        if clip.speed != 1.0 {
+            parts.push(format!("setpts=PTS/{}", num(clip.speed)));
+        }
     }
     if let Some(transform) = &clip.transform {
         if let Some(crop) = &transform.crop {
@@ -679,6 +706,9 @@ fn audio_filters(
             end = num(clip.out_point_ms as f64 / 1000.0)
         ));
         parts.push("asetpts=PTS-STARTPTS".to_string());
+    }
+    if clip.reversed == Some(true) {
+        parts.push("areverse".to_string());
     }
     if clip.speed != 1.0 {
         // `atempo` only takes 0.5–2, so a bigger change is a short chain of
@@ -935,6 +965,40 @@ mod tests {
         assert!(plan.graph.contains("rotate=15*PI/180"), "{}", plan.graph);
         assert!(plan.graph.contains("scale=iw*0.5:ih*0.5"), "{}", plan.graph);
         assert!(plan.graph.contains("pad=1920:1080:min("), "{}", plan.graph);
+    }
+
+    #[test]
+    fn a_reversed_clip_reads_backwards_and_a_freeze_holds_one_frame() {
+        let world = world(&[video()]);
+        let mut reversed = fixtures::material("c1", "t1", TrackKind::Video, "a1", 0, 2000);
+        reversed.reversed = Some(true);
+        let timeline = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Video)],
+            vec![reversed],
+            Vec::new(),
+        );
+        let plan = ok(&world, &timeline, &fixtures::caps(&["fade"], true));
+        assert!(plan.graph.contains("reverse"), "{}", plan.graph);
+        assert!(plan.graph.contains("areverse"), "{}", plan.graph);
+
+        let mut frozen = fixtures::material("c1", "t1", TrackKind::Video, "a1", 0, 2000);
+        frozen.freeze = Some(true);
+        frozen.in_point_ms = 500;
+        frozen.out_point_ms = 534;
+        let timeline = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Video)],
+            vec![frozen],
+            Vec::new(),
+        );
+        let plan = ok(&world, &timeline, &fixtures::caps(&["fade"], true));
+        assert!(
+            plan.graph.contains("tpad=stop_mode=clone"),
+            "{}",
+            plan.graph
+        );
+        assert!(!plan.audio, "{}", plan.graph);
     }
 
     #[test]

@@ -209,6 +209,8 @@ fn clip_of(moka: &MokaFile, asset_id: &str, track_id: &str, start_ms: i64) -> Ti
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
         asset_id: Some(asset.id.clone()),
@@ -255,6 +257,8 @@ fn text_clip(content: &str, track_id: &str, start_ms: i64) -> TimelineClip {
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
         asset_id: None,
@@ -331,6 +335,8 @@ fn timeline_fixture() -> MokaFile {
             muted: false,
             opacity: 1.0,
             transform: None,
+            freeze: None,
+            reversed: None,
             created_at: NOW.into(),
             updated_at: NOW.into(),
             asset_id: Some(VIDEO_ASSET.into()),
@@ -2153,6 +2159,45 @@ fn refuses_a_transform_outside_the_frame_and_a_crop_that_empties_it() {
         ),
         "VALIDATION_FAILED"
     );
+}
+
+#[test]
+fn reverses_a_clip_and_holds_a_frame_for_a_couple_of_seconds() {
+    let moka = timeline_fixture();
+    let reversed = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateClips {
+            timeline_id: TIMELINE.into(),
+            patches: vec![ClipPatchEntry {
+                clip_id: VIDEO_CLIP.into(),
+                patch: ClipPatch {
+                    reversed: Some(true),
+                    ..Default::default()
+                },
+            }],
+        }],
+    );
+    assert_eq!(clip_at(&reversed, 0, VIDEO_CLIP).reversed, Some(true));
+
+    let frozen = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateClips {
+            timeline_id: TIMELINE.into(),
+            patches: vec![ClipPatchEntry {
+                clip_id: VIDEO_CLIP.into(),
+                patch: ClipPatch {
+                    freeze: Some(true),
+                    duration_ms: Some(2_000),
+                    in_point_ms: Some(1_000),
+                    out_point_ms: Some(1_034),
+                    ..Default::default()
+                },
+            }],
+        }],
+    );
+    let clip = clip_at(&frozen, 0, VIDEO_CLIP);
+    assert_eq!(clip.freeze, Some(true));
+    assert_eq!(clip.duration_ms, 2_000);
 }
 
 #[test]

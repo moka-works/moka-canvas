@@ -63,6 +63,13 @@ moka --project ./lake tools call timeline.get --input '{"timelineId":"tl_1"}'
 # 写（command 可撤销）
 moka --project ./lake tools call clip.trim \
   --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","durationMs":4000}]}'
+moka --project ./lake tools call clip.update \
+  --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"transform":{"scale":0.5,"x":0.2,"y":-0.1,"rotation":15}}}'
+moka --project ./lake tools call clip.reverse --input '{"timelineId":"tl_1","clipIds":["cl_1"]}'
+moka --project ./lake tools call clip.freeze --input '{"timelineId":"tl_1","clipId":"cl_1","atMs":12000,"durationMs":2000}'
+moka --project ./lake tools call clip.slip --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","byMs":500}]}'
+moka --project ./lake tools call clip.slide --input '{"timelineId":"tl_1","moves":[{"clipId":"cl_2","byMs":200}]}'
+moka --project ./lake tools call clip.roll --input '{"timelineId":"tl_1","afterClipId":"cl_1","byMs":200}'
 # 在任意位置落片：fit 只接受空位；overwrite 裁/切底下；ripple 整体后移
 moka --project ./lake tools call clip.add \
   --input '{"timelineId":"tl_1","kind":"video","assetId":"a_1","startMs":12000,"placement":"ripple","rippleScope":"all"}'

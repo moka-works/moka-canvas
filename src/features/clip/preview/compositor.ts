@@ -140,10 +140,11 @@ function leaderAt(
 
 /** The moment of the material a clip reads, by its own clock and its speed. */
 export function materialMoment(clip: TimelineClip, atMs: number): number {
-  return Math.max(
-    0,
-    Math.round(clip.inPointMs + (atMs - clip.startMs) * clip.speed),
-  );
+  if (clip.freeze === true) return clip.inPointMs;
+  const offset = (atMs - clip.startMs) * clip.speed;
+  if (clip.reversed === true)
+    return Math.max(clip.inPointMs, Math.round(clip.outPointMs - 1 - offset));
+  return Math.max(0, Math.round(clip.inPointMs + offset));
 }
 
 /** How much of a clip's own presence a moment shows, from its two fades. */

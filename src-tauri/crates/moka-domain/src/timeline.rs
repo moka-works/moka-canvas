@@ -222,8 +222,20 @@ pub fn check_clip(
     // The timing identity: duration on the timeline is the material window over
     // speed, so a clip that breaks it would play back the wrong material. Read
     // in f64 like the TypeScript twin, which is where the rounding happens.
+    if clip.freeze == Some(true) && clip.kind != TrackKind::Video {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "Only a picture can be held on one frame",
+        ));
+    }
+    if clip.reversed == Some(true) && clip.kind == TrackKind::Text {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "Only a picture or a sound can play backwards",
+        ));
+    }
     let window = clip.out_point_ms as f64 - clip.in_point_ms as f64;
-    if (clip.duration_ms as f64 * clip.speed).round() != window {
+    if clip.freeze != Some(true) && (clip.duration_ms as f64 * clip.speed).round() != window {
         return Err(CommandError::new(
             "VALIDATION_FAILED",
             "Clip duration does not match its in/out window over its speed",
@@ -1040,6 +1052,16 @@ pub fn merge_clip_patch(clip: &TimelineClip, patch: &ClipPatch) -> TimelineClip 
     } else if let Some(transform) = &patch.transform {
         merged.transform = Some(transform.clone());
     }
+    if patch.clear_freeze == Some(true) {
+        merged.freeze = None;
+    } else if let Some(freeze) = patch.freeze {
+        merged.freeze = Some(freeze);
+    }
+    if patch.clear_reversed == Some(true) {
+        merged.reversed = None;
+    } else if let Some(reversed) = patch.reversed {
+        merged.reversed = Some(reversed);
+    }
     // The double layer: left off leaves the grade, null clears it, a value sets
     // it. A plain Option could not tell the first two apart.
     if let Some(adjust) = &patch.adjust {
@@ -1114,6 +1136,14 @@ pub fn invert_clip_patch(clip: &TimelineClip, patch: &ClipPatch) -> ClipPatch {
     if patch.transform.is_some() || patch.clear_transform == Some(true) {
         inverse.transform = clip.transform.clone();
         inverse.clear_transform = Some(clip.transform.is_none());
+    }
+    if patch.freeze.is_some() || patch.clear_freeze == Some(true) {
+        inverse.freeze = clip.freeze;
+        inverse.clear_freeze = Some(clip.freeze.is_none());
+    }
+    if patch.reversed.is_some() || patch.clear_reversed == Some(true) {
+        inverse.reversed = clip.reversed;
+        inverse.clear_reversed = Some(clip.reversed.is_none());
     }
     if let Some(adjust) = &patch.adjust {
         // A grade the patch brought in from nothing goes back out as null; one

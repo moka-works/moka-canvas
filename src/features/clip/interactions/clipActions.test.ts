@@ -37,6 +37,7 @@ import {
   cutSelection,
   deleteSelection,
   detachAudio,
+  freezeAtPlayhead,
   dropAssetOnTrack,
   dropPreview,
   duplicateSelection,
@@ -45,6 +46,7 @@ import {
   pasteAtPlayhead,
   rangeBetween,
   removeTrack,
+  reverseSelection,
   rippleDeleteSelection,
   rippleTrimToPlayhead,
   setRangeEdge,
@@ -1207,5 +1209,28 @@ describe("a row's level and solo", () => {
     expect(
       cut().tracks.find((track) => track.id === ids.audioTrack)!.solo,
     ).toBeUndefined();
+  });
+});
+
+describe("freezing and reversing", () => {
+  it("turns a clip around and holds one of its frames", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      playheadMs: 2_000,
+    });
+
+    reverseSelection();
+    expect(
+      cut().clips.find((clip) => clip.id === ids.videoClip)!.reversed,
+    ).toBe(true);
+
+    freezeAtPlayhead();
+    const clips = cut().clips;
+    expect(clips).toHaveLength(3);
+    const frozen = clips.find((clip) => clip.freeze === true)!;
+    expect([frozen.startMs, frozen.durationMs]).toEqual([2_000, 2_000]);
+    expect(frozen.outPointMs).toBeGreaterThan(frozen.inPointMs);
   });
 });

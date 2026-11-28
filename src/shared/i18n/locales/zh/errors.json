@@ -170,6 +170,8 @@
     "duplicateTrackId": "轨道 ID 重复：{{id}}",
     "duplicateTransitionId": "转场 ID 重复：{{id}}",
     "followerNotPulledBack": "后一个片段没有被转场窗口拉回",
+    "freezeNeedsPicture": "只有画面片段可以定格",
+    "reverseNeedsMaterial": "只有画面或声音片段可以倒放",
     "imageClipWindow": "图像片段的窗口应等于自身时长",
     "materialClipCarriesText": "素材片段不应带有文本",
     "materialClipNoAsset": "素材片段没有指定资源",

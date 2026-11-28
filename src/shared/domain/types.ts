@@ -335,6 +335,10 @@ export interface TimelineClip {
   opacity: number;
   /** Position, scale, rotation and crop of a picture; absent means fitted. */
   transform?: ClipTransform;
+  /** Holds the frame at the in point for the clip's whole length. */
+  freeze?: boolean;
+  /** Plays the material backwards. */
+  reversed?: boolean;
   /** Present exactly on text clips. */
   text?: TextClipData;
   createdAt: IsoTimestamp;

@@ -125,6 +125,8 @@
     "deleteGap": "删除此处空隙",
     "rippleDelete": "波纹删除",
     "closeGapsOnTrack": "合拢本轨空隙",
+    "freezeFrame": "在播放头定格",
+    "reverse": "倒放 / 正放",
     "timelineMenu": "时间线菜单",
     "trackAudio": "音频轨道",
     "trackMenu": "轨道菜单",
@@ -465,6 +467,8 @@
     "overlapEachOther": "字幕在 {{timecode}} 处相互重叠"
   },
   "history": {
+    "freezeFrame": "定格一帧",
+    "reverseClips": "倒放片段",
     "fadeClip": "调整片段淡化",
     "setTrackGain": "把轨道音量设为 {{db}} dB",
     "soloTrack": "独奏轨道",

@@ -1142,6 +1142,12 @@ pub struct TimelineClip {
     /// Position, scale, rotation and crop of a picture; absent means fitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<ClipTransform>,
+    /// Holds the frame at the in point for the clip's whole length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freeze: Option<bool>,
+    /// Plays the material backwards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reversed: Option<bool>,
     pub created_at: IsoTimestamp,
     pub updated_at: IsoTimestamp,
     /// The material the clip reads; a text clip names none.
@@ -1467,6 +1473,14 @@ pub struct ClipPatch {
     pub opacity: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<ClipTransform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freeze: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reversed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_freeze: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_reversed: Option<bool>,
     /// Put back a picture that had no transform of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clear_transform: Option<bool>,

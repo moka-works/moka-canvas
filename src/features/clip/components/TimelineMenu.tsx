@@ -19,10 +19,12 @@ import {
   deleteGapOn,
   deleteSelection,
   duplicateSelection,
+  freezeAtPlayhead,
   removeTrack,
   renameTrack,
   selectAll,
   pasteAtPlayhead,
+  reverseSelection,
   rippleDeleteSelection,
   selectedClips,
   splitSelectionAtPlayhead,
@@ -148,6 +150,22 @@ export function TimelineMenu({
             onSelect={() => {
               onClose();
               duplicateSelection();
+            }}
+          />
+          <MenuItem
+            disabled={!chosen.some((clip) => clip.kind !== "text")}
+            label={t("clip:menu.reverse")}
+            onSelect={() => {
+              onClose();
+              reverseSelection();
+            }}
+          />
+          <MenuItem
+            disabled={!crosses}
+            label={t("clip:menu.freezeFrame")}
+            onSelect={() => {
+              onClose();
+              freezeAtPlayhead();
             }}
           />
           <MenuItem

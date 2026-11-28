@@ -171,11 +171,24 @@ export function checkClip(
         max: MAX_CLIP_SPEED,
       }),
     );
+  if (clip.freeze === true && clip.kind !== "video")
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:timeline.freezeNeedsPicture"),
+    );
+  if (clip.reversed === true && clip.kind === "text")
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:timeline.reverseNeedsMaterial"),
+    );
   // The timing identity: duration on the timeline is the material window
   // over speed, so a clip that breaks it would play back the wrong material.
+  // A freeze holds one frame for its whole length, so it is the one clip whose
+  // window is not its length over speed.
   if (
+    clip.freeze !== true &&
     Math.round(clip.durationMs * clip.speed) !==
-    clip.outPointMs - clip.inPointMs
+      clip.outPointMs - clip.inPointMs
   ) {
     throw new CommandError(
       "VALIDATION_FAILED",

@@ -791,6 +791,17 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("inMs", "integer", "Range start; omit both to clear"),
             ("outMs", "integer", "Range end"),
         ])),
+        command("clip.reverse", "clip", ToolRisk::Write, "Play pictures and sounds backwards, or forwards again.", schema(&["timelineId", "clipIds"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("clipIds", "array", "Clips to turn"),
+            ("reversed", "boolean", "Set rather than toggle"),
+        ])),
+        command("clip.freeze", "clip", ToolRisk::Write, "Hold a picture's frame for a stretch of time.", schema(&["timelineId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("clipId", "string", "Picture to freeze; the clip under atMs when omitted"),
+            ("atMs", "integer", "The frame to hold"),
+            ("durationMs", "integer", "How long to hold it, default 2000"),
+        ])),
         command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, transform, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
             ("timelineId", "string", "Timeline id"),
             ("clipId", "string", "Clip id"),

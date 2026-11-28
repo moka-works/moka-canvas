@@ -162,6 +162,7 @@ export function audibleClipsAt(
     for (const clip of timeline.clips) {
       if (clip.trackId !== track.id) continue;
       if (clip.kind === "text" || !clip.assetId) continue;
+      if (clip.freeze === true || clip.reversed === true) continue;
       if (clip.muted || clip.volume <= 0) continue;
       if (atMs < clip.startMs || atMs >= clip.startMs + clip.durationMs)
         continue;

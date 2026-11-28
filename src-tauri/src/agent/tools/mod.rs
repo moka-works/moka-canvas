@@ -253,6 +253,8 @@ pub async fn run_command(
         | "clip.update_marker"
         | "clip.remove_markers"
         | "timeline.set_range"
+        | "clip.reverse"
+        | "clip.freeze"
         | "clip.update"
         | "clip.move"
         | "clip.trim"

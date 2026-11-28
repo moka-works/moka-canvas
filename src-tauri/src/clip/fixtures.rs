@@ -64,6 +64,8 @@ pub fn clip(
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
         asset_id: None,

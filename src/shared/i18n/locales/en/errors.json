@@ -170,6 +170,8 @@
     "duplicateTrackId": "Duplicate track id {{id}}",
     "duplicateTransitionId": "Duplicate transition id {{id}}",
     "followerNotPulledBack": "The clip behind is not pulled back by the transition's window",
+    "freezeNeedsPicture": "Only a picture can be held on one frame",
+    "reverseNeedsMaterial": "Only a picture or a sound can play backwards",
     "imageClipWindow": "An image clip's window is its own duration",
     "materialClipCarriesText": "A material clip carries no text",
     "materialClipNoAsset": "A material clip names no asset",

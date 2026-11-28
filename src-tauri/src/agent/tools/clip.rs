@@ -251,6 +251,8 @@ pub async fn command(
         "clip.update_marker" => clip_update_marker(moka, &args),
         "clip.remove_markers" => clip_remove_markers(moka, &args),
         "timeline.set_range" => timeline_set_range(moka, &args),
+        "clip.reverse" => clip_reverse(moka, &args),
+        "clip.freeze" => clip_freeze(moka, &args),
         "clip.update" => clip_update(moka, &args),
         "clip.move" => clip_move(moka, &args),
         "clip.trim" => clip_trim(moka, &args),
@@ -578,6 +580,8 @@ fn clip_add(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: now.clone(),
         updated_at: now,
         asset_id,
@@ -879,6 +883,113 @@ fn timeline_set_range(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, T
             timeline_id: timeline.id.clone(),
             in_ms,
             out_ms,
+        }],
+    ))
+}
+
+fn clip_reverse(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let clip_ids = args.req_strings("clipIds")?;
+    let reversed = args.raw("reversed").and_then(Value::as_bool);
+    let mut patches = Vec::new();
+    for clip_id in &clip_ids {
+        let clip = timeline
+            .clips
+            .iter()
+            .find(|clip| &clip.id == clip_id)
+            .ok_or_else(|| ToolError::new("CLIP_NOT_FOUND", "Clip not found"))?;
+        if clip.kind == TrackKind::Text {
+            return Err(ToolError::validation("a text clip cannot play backwards"));
+        }
+        patches.push(ClipPatchEntry {
+            clip_id: clip.id.clone(),
+            patch: ClipPatch {
+                reversed: Some(reversed.unwrap_or(clip.reversed != Some(true))),
+                ..Default::default()
+            },
+        });
+    }
+    Ok(ToolOutcome::write(
+        format!("Reversed {} clips", patches.len()),
+        json!({"clipIds": clip_ids}),
+        vec![DocumentCommand::UpdateClips {
+            timeline_id: timeline.id.clone(),
+            patches,
+        }],
+    ))
+}
+
+fn clip_freeze(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let at_ms = args.opt_i64("atMs");
+    let clip = match args.opt_str("clipId") {
+        Some(id) => timeline
+            .clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .cloned()
+            .ok_or_else(|| ToolError::new("CLIP_NOT_FOUND", "Clip not found"))?,
+        None => {
+            let at =
+                at_ms.ok_or_else(|| ToolError::validation("clip.freeze needs clipId or atMs"))?;
+            timeline
+                .clips
+                .iter()
+                .filter(|clip| {
+                    clip.track_id != ""
+                        && clip.start_ms <= at
+                        && at < clip.start_ms + clip.duration_ms
+                })
+                .max_by_key(|clip| clip.start_ms)
+                .cloned()
+                .ok_or_else(|| ToolError::new("CLIP_NOT_FOUND", "No clip under that moment"))?
+        }
+    };
+    if clip.kind != TrackKind::Video {
+        return Err(ToolError::validation("only a picture can be frozen"));
+    }
+    let at = at_ms.unwrap_or(clip.start_ms + clip.duration_ms / 2);
+    let offset = (at - clip.start_ms) as f64 * clip.speed;
+    let source_ms = if clip.reversed == Some(true) {
+        (clip.out_point_ms as f64 - 1.0 - offset).max(clip.in_point_ms as f64) as i64
+    } else {
+        (clip.in_point_ms as f64 + offset).min((clip.out_point_ms - 1) as f64) as i64
+    };
+    let duration = args.opt_i64("durationMs").unwrap_or(2_000);
+    let now = now_iso();
+    let freeze = TimelineClip {
+        id: crate::domain::new_id(),
+        track_id: clip.track_id.clone(),
+        kind: TrackKind::Video,
+        label: format!("{} (freeze)", clip.label),
+        start_ms: at,
+        duration_ms: duration,
+        in_point_ms: source_ms,
+        out_point_ms: source_ms + 34,
+        speed: 1.0,
+        volume: clip.volume,
+        fade_in_ms: 0,
+        fade_out_ms: 0,
+        muted: clip.muted,
+        opacity: clip.opacity,
+        transform: clip.transform.clone(),
+        freeze: Some(true),
+        reversed: None,
+        created_at: now.clone(),
+        updated_at: now,
+        asset_id: clip.asset_id.clone(),
+        adjust: clip.adjust,
+        filter: clip.filter.clone(),
+        text: None,
+    };
+    Ok(ToolOutcome::write(
+        format!("Froze a frame of {}", clip.label),
+        json!({"clipId": freeze.id}),
+        vec![DocumentCommand::InsertClips {
+            timeline_id: timeline.id.clone(),
+            clips: vec![freeze],
+            mode: InsertMode::Ripple,
+            ripple_scope: Some(RippleScope::All),
         }],
     ))
 }
@@ -1376,6 +1487,8 @@ fn clip_add_text(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolEr
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: now.clone(),
         updated_at: now,
         asset_id: None,
@@ -1533,6 +1646,8 @@ fn clip_import_srt(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, Tool
             muted: false,
             opacity: 1.0,
             transform: None,
+            freeze: None,
+            reversed: None,
             created_at: now.clone(),
             updated_at: now.clone(),
             asset_id: None,
@@ -1648,6 +1763,8 @@ async fn clip_apply_transcript(
             muted: false,
             opacity: 1.0,
             transform: None,
+            freeze: None,
+            reversed: None,
             created_at: now.clone(),
             updated_at: now.clone(),
             asset_id: None,
@@ -1820,6 +1937,8 @@ fn clip_detach_audio(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, To
         muted: false,
         opacity: 1.0,
         transform: None,
+        freeze: None,
+        reversed: None,
         created_at: now.clone(),
         updated_at: now,
         asset_id: Some(asset_id),

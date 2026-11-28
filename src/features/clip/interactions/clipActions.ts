@@ -416,6 +416,86 @@ export function rippleTrimToPlayhead(edge: "start" | "end"): void {
   );
 }
 
+/** Plays the chosen pictures and sounds backwards, or forwards again. */
+export function reverseSelection(): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const clips = selectedClips(
+    timeline,
+    useClipStore.getState().selection,
+  ).filter((clip) => clip.kind !== "text");
+  if (clips.length === 0) return;
+  execute(i18n.t("clip:history.reverseClips"), [
+    {
+      type: "updateClips",
+      timelineId: timeline.id,
+      patches: clips.map((clip) => ({
+        clipId: clip.id,
+        patch: { reversed: clip.reversed !== true },
+      })),
+    },
+  ]);
+}
+
+/** Holds the picture under the playhead for a couple of seconds. */
+export function freezeAtPlayhead(): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const playhead = frameAligned(
+    useClipStore.getState().playheadMs,
+    timeline.settings.fps,
+  );
+  const chosen = new Set(useClipStore.getState().selection.clipIds);
+  const crossing = clipsCrossingPlayhead(timeline, playhead);
+  const source =
+    crossing.find((clip) => chosen.has(clip.id) && clip.kind === "video") ??
+    crossing.find((clip) => clip.kind === "video");
+  if (!source) return;
+  const sourceMs = source.reversed
+    ? Math.max(
+        source.inPointMs,
+        Math.round(
+          source.outPointMs - 1 - (playhead - source.startMs) * source.speed,
+        ),
+      )
+    : Math.min(
+        source.outPointMs - 1,
+        Math.round(
+          source.inPointMs + (playhead - source.startMs) * source.speed,
+        ),
+      );
+  const now = nowIso();
+  const freeze = {
+    ...source,
+    id: newId(),
+    label: `${source.label} (freeze)`,
+    startMs: playhead,
+    durationMs: 2_000,
+    inPointMs: sourceMs,
+    outPointMs:
+      sourceMs + Math.max(1, Math.round(1000 / timeline.settings.fps)),
+    speed: 1,
+    fadeInMs: 0,
+    fadeOutMs: 0,
+    freeze: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const done = execute(i18n.t("clip:history.freezeFrame"), [
+    {
+      type: "insertClips",
+      timelineId: timeline.id,
+      clips: [freeze],
+      mode: "ripple",
+      rippleScope: useClipStore.getState().rippleScope,
+    },
+  ]);
+  if (done)
+    useClipStore
+      .getState()
+      .select({ clipIds: [freeze.id], transitionId: null });
+}
+
 /** Deletes the chosen clips and pulls what followed them back. */
 export function rippleDeleteSelection(): void {
   const timeline = activeTimeline();
