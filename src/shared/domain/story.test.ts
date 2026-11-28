@@ -2623,7 +2623,8 @@ describe("filing a drawing at a place", () => {
       storyId: ids.story,
       elements: storyOfFile(moka).elements.map((held) => {
         if (held.id !== ids.hero) return held;
-        const { turnaround: _sheet, ...rest } = held;
+        const rest = { ...held };
+        delete rest.turnaround;
         return rest;
       }),
     }).next;
