@@ -235,26 +235,50 @@ function drawPictureClip(
   if (filter) ctx.filter = filter;
   // The file asks for its turn and WebCodecs never applies it; ffmpeg
   // autorotates from the same matrix, so both sides agree. The clip's own
-  // rotation is added to it.
-  ctx.translate(destX + destWidth / 2, destY + destHeight / 2);
-  if (totalRotation !== 0) ctx.rotate((totalRotation * Math.PI) / 180);
-  ctx.drawImage(
-    picture.source,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    -destWidth / 2,
-    -destHeight / 2,
-    destWidth,
-    destHeight,
-  );
-  if (filter) ctx.filter = "none";
-  if (veil) {
-    ctx.globalAlpha = alpha * veil.alpha * carried;
-    ctx.globalCompositeOperation = "soft-light";
-    ctx.fillStyle = veil.color;
-    ctx.fillRect(-destWidth / 2, -destHeight / 2, destWidth, destHeight);
+  // rotation is added to it. A clip with no transform keeps the plain fitted
+  // draw it always had, which also keeps the source rect out of its path.
+  if (transform === undefined) {
+    if (picture.rotationDeg !== 0) {
+      ctx.translate(box.x + box.width / 2, box.y + box.height / 2);
+      ctx.rotate((picture.rotationDeg * Math.PI) / 180);
+      ctx.drawImage(
+        picture.source,
+        -box.width / 2,
+        -box.height / 2,
+        box.width,
+        box.height,
+      );
+    } else {
+      ctx.drawImage(picture.source, box.x, box.y, box.width, box.height);
+    }
+    if (filter) ctx.filter = "none";
+    if (veil) {
+      ctx.globalAlpha = alpha * veil.alpha * carried;
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.fillStyle = veil.color;
+      ctx.fillRect(box.x, box.y, box.width, box.height);
+    }
+  } else {
+    ctx.translate(destX + destWidth / 2, destY + destHeight / 2);
+    if (totalRotation !== 0) ctx.rotate((totalRotation * Math.PI) / 180);
+    ctx.drawImage(
+      picture.source,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      -destWidth / 2,
+      -destHeight / 2,
+      destWidth,
+      destHeight,
+    );
+    if (filter) ctx.filter = "none";
+    if (veil) {
+      ctx.globalAlpha = alpha * veil.alpha * carried;
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.fillStyle = veil.color;
+      ctx.fillRect(-destWidth / 2, -destHeight / 2, destWidth, destHeight);
+    }
   }
   ctx.restore();
   return { coloursSkipped, drew: true };
