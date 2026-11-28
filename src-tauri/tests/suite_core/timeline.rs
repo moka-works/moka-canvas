@@ -1135,6 +1135,40 @@ fn removes_a_clip_and_the_undo_clears_the_timeline_to_what_it_was() {
 }
 
 #[test]
+fn lands_a_hundred_clips_in_one_step_past_the_old_fifty() {
+    let moka = timeline_fixture();
+    let timeline = create_timeline("Bulk");
+    let timeline_id = timeline.id.clone();
+    let track_id = timeline.tracks[0].id.clone();
+    let (with_timeline, _) = apply(
+        &moka,
+        vec![DocumentCommand::AddTimeline {
+            timeline,
+            index: None,
+        }],
+    );
+    let many: Vec<TimelineClip> = (0..100)
+        .map(|index| clip_of(&with_timeline, VIDEO_ASSET, &track_id, index * 8_000))
+        .collect();
+    let (next, _) = apply(
+        &with_timeline,
+        vec![DocumentCommand::AddClips {
+            timeline_id: timeline_id.clone(),
+            clips: many,
+            seams: None,
+        }],
+    );
+    let held = next
+        .timelines
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|held| held.id == timeline_id)
+        .unwrap();
+    assert_eq!(held.clips.len(), 100);
+}
+
+#[test]
 fn lands_no_more_clips_than_one_step_of_history_may_hold() {
     let moka = timeline_fixture();
     let many: Vec<TimelineClip> = (0..=MAX_CLIPS_PER_COMMAND)

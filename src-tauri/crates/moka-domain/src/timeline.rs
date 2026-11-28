@@ -32,8 +32,9 @@ pub const TIMELINE_NAME_MAX: usize = 80;
 pub const CLIP_LABEL_MAX: usize = 80;
 /// The most one text clip may say, kept to the size a card may hold.
 pub const MAX_TIMELINE_TEXT_CONTENT: usize = 2_000;
-/// How many clips one command may land, which is one step of history.
-pub const MAX_CLIPS_PER_COMMAND: usize = 50;
+/// How many clips one command may land, which is one step of history. Kept at
+/// the timeline's own ceiling so a whole cut can arrive in one step.
+pub const MAX_CLIPS_PER_COMMAND: usize = 400;
 /// Clip timing bounds: milliseconds are whole and positive, speed and volume
 /// live in their working ranges, and a clip shorter than this cannot be seen.
 pub const MIN_CLIP_DURATION_MS: i64 = 100;

@@ -912,6 +912,24 @@ describe("clip commands", () => {
     expect(landed.outPointMs).toBe(3_000);
   });
 
+  it("lands a hundred clips in one step, past the old fifty", () => {
+    const moka = buildTimelineMokaFile();
+    const timeline = createTimeline("Bulk");
+    const withTimeline = apply(moka, { type: "addTimeline", timeline }).next;
+    const trackId = timeline.tracks[0]!.id;
+    const many = Array.from({ length: 100 }, (_, index) =>
+      clipOf(withTimeline, timelineIds().videoAsset, trackId, index * 8_000),
+    );
+    const next = apply(withTimeline, {
+      type: "addClips",
+      timelineId: timeline.id,
+      clips: many,
+    }).next;
+    expect(
+      next.timelines!.find((held) => held.id === timeline.id)!.clips,
+    ).toHaveLength(100);
+  });
+
   it("lands no more clips than one step of history may hold", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

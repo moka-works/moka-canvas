@@ -156,8 +156,9 @@ export const TIMELINE_NAME_MAX = 80;
 export const CLIP_LABEL_MAX = 80;
 /** The most one text clip may say, kept to the size a card may hold. */
 export const MAX_TIMELINE_TEXT_CONTENT = 2_000;
-/** How many clips one command may land, which is one step of history. */
-export const MAX_CLIPS_PER_COMMAND = 50;
+/** How many clips one command may land, which is one step of history. Kept at
+ * the timeline's own ceiling so a whole cut can arrive in one step. */
+export const MAX_CLIPS_PER_COMMAND = 400;
 /** Clip timing bounds: milliseconds are whole and positive, speed and volume
  * live in their working ranges, and a clip shorter than this cannot be seen. */
 export const MIN_CLIP_DURATION_MS = 100;
