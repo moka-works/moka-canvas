@@ -4782,8 +4782,6 @@ button.danger:hover:not(:disabled) {
 }
 
 .clip-body {
-  /* The rail's width, which the way back from a folded column stands beside. */
-  --clip-rail-width: 56px;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -4793,15 +4791,14 @@ button.danger:hover:not(:disabled) {
   z-index: 0;
 }
 
-/* The corner a folded column leaves in the cutting room: the rail holds the
-   page's left edge, so the way back stands at the rail's right edge — where
-   the column stood — rather than over the faces the rail carries. */
-.clip-body > .panel-unfold-left {
-  left: var(--clip-rail-width);
-}
+/* The rail a room's faces stand in, and the column it turns over.
 
-/* The rail: five faces of the column beside it, sources above tools. */
-.clip-rail {
+   Every room that holds more than one face down its left edge keeps them the
+   same way: a rail of marks and one column beside it. The rail is a row of
+   drawers, so each mark carries its name and its purpose in its title; the
+   column is the drawer that is open. Folding the column away folds the rail
+   with it — a rail with no column to turn has nothing to open. */
+.work-rail {
   align-items: center;
   background: var(--surface);
   border-right: 1px solid var(--stroke);
@@ -4811,15 +4808,15 @@ button.danger:hover:not(:disabled) {
   gap: 18px;
   overflow-y: auto;
   padding: 12px 8px;
-  width: var(--clip-rail-width);
+  width: 56px;
 }
 
-.clip-rail-group {
+.work-rail-group {
   display: grid;
   gap: 4px;
 }
 
-.clip-rail-item {
+.work-rail-item {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
@@ -4832,21 +4829,21 @@ button.danger:hover:not(:disabled) {
   width: 40px;
 }
 
-.clip-rail-item:hover:not(:disabled) {
+.work-rail-item:hover:not(:disabled) {
   background: var(--surface-raised);
   border-color: var(--stroke);
   color: var(--ink);
 }
 
-.clip-rail-item.is-active {
+.work-rail-item.is-active {
   background: var(--surface-raised);
   border-color: var(--stroke);
   color: var(--ink);
 }
 
-/* The column the rail turns over: the same column the canvas has, with the
-   width property the dragged edge writes into. */
-.clip-column {
+/* The column a rail turns over: the face it shows fills what is left under the
+   head, and the corner keeps the triangle that puts the whole side away. */
+.work-column {
   background: var(--surface);
   border-right: 1px solid var(--stroke);
   display: flex;
@@ -4856,6 +4853,11 @@ button.danger:hover:not(:disabled) {
   overflow: hidden;
   padding: 16px;
   position: relative;
+}
+
+/* The column the clip rail turns over: the same column the canvas has, with the
+   width property the dragged edge writes into. */
+.clip-column {
   width: var(--panel-left-width, 260px);
 }
 
@@ -5564,10 +5566,9 @@ body.is-dragging-split {
 }
 
 @media (max-width: 900px) {
-  .clip-column,
+  .work-column,
+  .work-rail,
   .clip-inspector,
-  .clip-rail,
-  .editor-side,
   .editor-right,
   .panel-resizer,
   .panel-unfold {

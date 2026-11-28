@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { AssetId, ResourceEntry } from "../../../shared/domain";
 import { timelineAssetIds } from "../../../shared/domain";
-import { PanelFold } from "../../editor/components/PanelFold";
 import { AssetShelf } from "../../editor/panels/AssetShelf";
 import { useEditorStore } from "../../editor/stores/editorStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
@@ -148,8 +147,7 @@ export function MediaColumn() {
   }, [playing]);
 
   return (
-    <aside aria-label={title} className="clip-column" id="clip-panel-left">
-      <PanelFold side="left" />
+    <>
       {shelf ? (
         <>
           <div className="clip-media-head">
@@ -200,6 +198,6 @@ export function MediaColumn() {
           </div>
         </>
       )}
-    </aside>
+    </>
   );
 }

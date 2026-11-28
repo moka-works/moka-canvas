@@ -18,9 +18,8 @@ import { StageSplit } from "./components/StageSplit";
 import { TimelineDialog } from "./components/TimelineDialog";
 import { useClipShortcuts } from "./interactions/clipShortcuts";
 import { ClipInspector } from "./panels/ClipInspector";
-import { ClipRail } from "./panels/ClipRail";
+import { ClipSide } from "./panels/ClipSide";
 import { ExportDialog } from "./panels/ExportDialog";
-import { MediaColumn } from "./panels/MediaColumn";
 import { PreviewStage } from "./panels/PreviewStage";
 import { TimelineArea } from "./panels/TimelineArea";
 import { useTransport } from "./preview/transport";
@@ -140,8 +139,7 @@ export function ClipPage() {
     <div className="clip-page" data-testid="clip-page">
       <ClipTopBar onHome={() => void goHome()} />
       <div className="clip-body" style={panelWidthStyle(leftWidth, rightWidth)}>
-        <ClipRail />
-        {leftFolded ? <PanelUnfold side="left" /> : <MediaColumn />}
+        {leftFolded ? <PanelUnfold side="left" /> : <ClipSide />}
         {!leftFolded && <PanelResizer side="left" />}
         <main
           className="clip-stage"

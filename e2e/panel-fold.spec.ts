@@ -201,21 +201,24 @@ test("the cutting room folds its columns beside its rail", async ({ page }) => {
   expect(await filledHalf(page, foldRight, "left")).toBe(true);
   expect(await filledHalf(page, foldRight, "right")).toBe(false);
 
-  // Folding the column away leaves the way back at the rail's right edge,
-  // where the column stood, rather than over the faces the rail carries.
+  // Folding the column away takes the rail with it: a rail with no column to
+  // turn is a row of dead buttons, so the way back stands at the page's own
+  // left edge rather than beside faces nobody can open.
   await foldLeft.click();
   const unfoldLeft = page.getByTestId("panel-unfold-left");
   await expect(unfoldLeft).toBeVisible();
-  const rail = await page.locator(".clip-rail").boundingBox();
+  await expect(page.locator(".work-rail")).toHaveCount(0);
+  await expect(page.locator(".clip-column")).toHaveCount(0);
   const back = await cornerOf(unfoldLeft);
-  expect(back.x).toBe(Math.round(rail!.x + rail!.width));
-  expect(back.y).toBe(Math.round(rail!.y));
+  expect(back.x).toBe(0);
+  expect(back.y).toBe(Math.round(column!.y));
   expect(await filledHalf(page, unfoldLeft, "left")).toBe(true);
   expect(await filledHalf(page, unfoldLeft, "right")).toBe(false);
 
-  // And the click there stands the column up again.
+  // And the click there stands the whole side up again.
   await unfoldLeft.click();
   await expect(page.locator(".clip-column")).toBeVisible();
+  await expect(page.locator(".work-rail")).toBeVisible();
   await expect(page.getByTestId("panel-fold-left")).toBeVisible();
 });
 
