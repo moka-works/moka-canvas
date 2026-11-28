@@ -1547,6 +1547,7 @@ fn apply_one(
         | DocumentCommand::RemoveTrack { .. }
         | DocumentCommand::UpdateTrack { .. }
         | DocumentCommand::AddClips { .. }
+        | DocumentCommand::InsertClips { .. }
         | DocumentCommand::RemoveClips { .. }
         | DocumentCommand::UpdateClips { .. }
         | DocumentCommand::MoveClips { .. }

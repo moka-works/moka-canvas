@@ -14,6 +14,7 @@
     "clipPatchedTwice": "同一步中重复修改了同一片段",
     "clipStartNotWholeMs": "片段起点不是整数毫秒",
     "clipTrackNotFound": "片段所在轨道不存在",
+    "insertModeUnknown": "放置模式不是覆盖或插入",
     "duplicateGroupMember": "分组成员重复",
     "edgeIdExists": "连线 ID 已存在",
     "edgeLimitReached": "画布连线数已达上限",

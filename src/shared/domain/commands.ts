@@ -35,6 +35,7 @@ import {
   MAX_VIDEO_PROMPT_KEY_LENGTH,
   MAX_VIDEO_PROMPT_OVERRIDES,
   MIN_CHAPTER_MS,
+  MIN_CLIP_DURATION_MS,
   MIN_KEYFRAME_MS,
   MIN_TOTAL_DURATION_MS,
   REFERENCE_IMAGES_MAX,
@@ -134,6 +135,7 @@ import {
 } from "./director";
 import { directorSceneBytes } from "./directorCodec";
 import { i18n } from "../i18n";
+import { newId, nowIso } from "./ids";
 
 export class CommandError extends Error {
   readonly code: string;
@@ -489,6 +491,241 @@ function checkDirectorScene(scene: DirectorScene): void {
       }),
     );
   }
+}
+
+/**
+ * The material a clip's own timing reads after a new edge is asked for.
+ *
+ * The document's identity is `round(duration × speed) = out − in`, so a
+ * shortened window has to derive one side from the other rather than keep a
+ * source point that no longer agrees with the length. A crop that would land
+ * past the material's own out point is pulled back to the last whole
+ * millisecond that fits, and a clip shorter than the floor is refused.
+ */
+function fitFades(clip: TimelineClip): TimelineClip {
+  const fadeInMs = Math.min(clip.fadeInMs, clip.durationMs);
+  const fadeOutMs = Math.min(clip.fadeOutMs, clip.durationMs - fadeInMs);
+  return { ...clip, fadeInMs, fadeOutMs };
+}
+
+function tooShort(): CommandError {
+  return new CommandError(
+    "VALIDATION_FAILED",
+    i18n.t("errors:timeline.clipTooShort", { count: MIN_CLIP_DURATION_MS }),
+  );
+}
+
+function trimTailTo(clip: TimelineClip, endMs: number): TimelineClip {
+  let durationMs = endMs - clip.startMs;
+  if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  let outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+  if (outPointMs > clip.outPointMs) {
+    durationMs = Math.floor((clip.outPointMs - clip.inPointMs) / clip.speed);
+    outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+    if (outPointMs > clip.outPointMs) {
+      durationMs -= 1;
+      outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+    }
+    if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  }
+  return fitFades({ ...clip, durationMs, outPointMs });
+}
+
+function trimHeadTo(clip: TimelineClip, startMs: number): TimelineClip {
+  let durationMs = clip.startMs + clip.durationMs - startMs;
+  if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  const inPointMs =
+    clip.inPointMs + Math.round((startMs - clip.startMs) * clip.speed);
+  let outPointMs = inPointMs + Math.round(durationMs * clip.speed);
+  if (outPointMs > clip.outPointMs) {
+    durationMs = Math.floor((clip.outPointMs - inPointMs) / clip.speed);
+    outPointMs = inPointMs + Math.round(durationMs * clip.speed);
+    if (outPointMs > clip.outPointMs) {
+      durationMs -= 1;
+      outPointMs = inPointMs + Math.round(durationMs * clip.speed);
+    }
+    if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  }
+  return fitFades({ ...clip, startMs, durationMs, inPointMs, outPointMs });
+}
+
+/** The two pieces a landing at `atMs` leaves, the right one with a fresh id. */
+function splitClipAt(
+  clip: TimelineClip,
+  atMs: number,
+): [TimelineClip, TimelineClip] {
+  const left = trimTailTo(clip, atMs);
+  let durationMs = clip.startMs + clip.durationMs - atMs;
+  let outPointMs = left.outPointMs + Math.round(durationMs * clip.speed);
+  if (outPointMs > clip.outPointMs) {
+    durationMs = Math.floor((clip.outPointMs - left.outPointMs) / clip.speed);
+    outPointMs = left.outPointMs + Math.round(durationMs * clip.speed);
+    if (outPointMs > clip.outPointMs) {
+      durationMs -= 1;
+      outPointMs = left.outPointMs + Math.round(durationMs * clip.speed);
+    }
+    if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  }
+  const right = fitFades({
+    ...clip,
+    id: newId(),
+    startMs: atMs,
+    durationMs,
+    inPointMs: left.outPointMs,
+    outPointMs,
+    createdAt: nowIso(),
+  });
+  right.updatedAt = right.createdAt;
+  return [left, right];
+}
+
+function intervalsOverlap(
+  a: { startMs: number; durationMs: number },
+  b: { startMs: number; durationMs: number },
+): boolean {
+  return (
+    a.startMs < b.startMs + b.durationMs && b.startMs < a.startMs + a.durationMs
+  );
+}
+
+function overlapError(
+  timeline: TimelineDocument,
+  a: TimelineClip,
+  b: TimelineClip,
+): CommandError {
+  const track = timeline.tracks.find((held) => held.id === a.trackId);
+  return new CommandError(
+    "CLIP_OVERLAP",
+    i18n.t("errors:timeline.overlap", {
+      track: track?.name ?? a.trackId,
+      a: a.label,
+      b: b.label,
+      aStart: a.startMs,
+      aEnd: a.startMs + a.durationMs,
+      bStart: b.startMs,
+      bEnd: b.startMs + b.durationMs,
+    }),
+  );
+}
+
+/** Replaces what the incoming clip covers, trimming or splitting what is left. */
+function overlayClips(
+  timeline: TimelineDocument,
+  incoming: TimelineClip[],
+): TimelineClip[] {
+  let list = timeline.clips;
+  for (const added of incoming) {
+    const startMs = added.startMs;
+    const endMs = startMs + added.durationMs;
+    const next: TimelineClip[] = [];
+    for (const held of list) {
+      if (held.trackId !== added.trackId) {
+        next.push(held);
+        continue;
+      }
+      const heldEnd = held.startMs + held.durationMs;
+      if (heldEnd <= startMs || held.startMs >= endMs) {
+        next.push(held);
+        continue;
+      }
+      if (held.startMs >= startMs && heldEnd <= endMs) continue;
+      if (held.startMs < startMs && heldEnd > endMs) {
+        const [left, middle] = splitClipAt(held, startMs);
+        const [, right] = splitClipAt(middle, endMs);
+        next.push(left, right);
+        continue;
+      }
+      if (held.startMs < startMs) {
+        next.push(trimTailTo(held, startMs));
+        continue;
+      }
+      next.push(trimHeadTo(held, endMs));
+    }
+    next.push(added);
+    list = next;
+  }
+  return list;
+}
+
+/** Moves what follows the landing point by the block's length. */
+function rippleClips(
+  timeline: TimelineDocument,
+  incoming: TimelineClip[],
+  scope: "all" | "track",
+): TimelineClip[] {
+  const startMs = Math.min(...incoming.map((clip) => clip.startMs));
+  const endMs = Math.max(
+    ...incoming.map((clip) => clip.startMs + clip.durationMs),
+  );
+  const total = endMs - startMs;
+  const tracks =
+    scope === "all"
+      ? new Set(timeline.tracks.map((track) => track.id))
+      : new Set(incoming.map((clip) => clip.trackId));
+  const next: TimelineClip[] = [];
+  for (const held of timeline.clips) {
+    if (!tracks.has(held.trackId)) {
+      next.push(held);
+      continue;
+    }
+    const heldEnd = held.startMs + held.durationMs;
+    if (heldEnd <= startMs) {
+      next.push(held);
+      continue;
+    }
+    if (held.startMs >= startMs) {
+      next.push({ ...held, startMs: held.startMs + total });
+      continue;
+    }
+    const [left, right] = splitClipAt(held, startMs);
+    next.push(left, { ...right, startMs: right.startMs + total });
+  }
+  next.push(...incoming);
+  return next;
+}
+
+function timingOf(clip: TimelineClip): {
+  startMs: number;
+  durationMs: number;
+  inPointMs: number;
+  outPointMs: number;
+  speed: number;
+  fadeInMs: number;
+  fadeOutMs: number;
+} {
+  return {
+    startMs: clip.startMs,
+    durationMs: clip.durationMs,
+    inPointMs: clip.inPointMs,
+    outPointMs: clip.outPointMs,
+    speed: clip.speed,
+    fadeInMs: clip.fadeInMs,
+    fadeOutMs: clip.fadeOutMs,
+  };
+}
+
+function timingChanged(a: TimelineClip, b: TimelineClip): boolean {
+  return (
+    a.startMs !== b.startMs ||
+    a.durationMs !== b.durationMs ||
+    a.inPointMs !== b.inPointMs ||
+    a.outPointMs !== b.outPointMs ||
+    a.speed !== b.speed ||
+    a.fadeInMs !== b.fadeInMs ||
+    a.fadeOutMs !== b.fadeOutMs
+  );
+}
+
+function timingPatch(a: TimelineClip, b: TimelineClip): ClipPatch {
+  const patch: ClipPatch = {};
+  if (a.startMs !== b.startMs) patch.startMs = b.startMs;
+  if (a.durationMs !== b.durationMs) patch.durationMs = b.durationMs;
+  if (a.inPointMs !== b.inPointMs) patch.inPointMs = b.inPointMs;
+  if (a.outPointMs !== b.outPointMs) patch.outPointMs = b.outPointMs;
+  if (a.speed !== b.speed) patch.speed = b.speed;
+  if (a.fadeInMs !== b.fadeInMs) patch.fadeInMs = b.fadeInMs;
+  if (a.fadeOutMs !== b.fadeOutMs) patch.fadeOutMs = b.fadeOutMs;
+  return patch;
 }
 
 function applyOne(
@@ -1926,6 +2163,97 @@ function applyOne(
         next: replaceTimeline(moka, { ...timeline, clips }),
         inverse: inverses.reverse(),
       };
+    }
+
+    case "insertClips": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.clips.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToAdd"),
+        );
+      if (command.clips.length > MAX_CLIPS_PER_COMMAND)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.oneStepLandsAtMost", {
+            count: MAX_CLIPS_PER_COMMAND,
+          }),
+        );
+      if (command.mode !== "overwrite" && command.mode !== "ripple")
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.insertModeUnknown"),
+        );
+      const known = new Set(timeline.clips.map((clip) => clip.id));
+      for (const clip of command.clips) {
+        if (known.has(clip.id))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.clipIdExists"),
+          );
+        known.add(clip.id);
+        checkClip(moka, timeline, clip);
+        checkClipWithinAsset(moka, clip);
+      }
+      for (let at = 0; at < command.clips.length; at += 1) {
+        for (let other = at + 1; other < command.clips.length; other += 1) {
+          const a = command.clips[at];
+          const b = command.clips[other];
+          if (a.trackId === b.trackId && intervalsOverlap(a, b))
+            throw overlapError(timeline, a, b);
+        }
+      }
+      const start = Math.min(...command.clips.map((clip) => clip.startMs));
+      if (!Number.isInteger(start) || start < 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:timeline.clipStartNotWholeMs"),
+        );
+      const finalClips =
+        command.mode === "ripple"
+          ? rippleClips(timeline, command.clips, command.rippleScope ?? "all")
+          : overlayClips(timeline, command.clips);
+      if (finalClips.length > MAX_CLIPS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.clipLimitReached"),
+        );
+      const originalById = new Map(
+        timeline.clips.map((clip) => [clip.id, clip]),
+      );
+      const finalById = new Map(finalClips.map((clip) => [clip.id, clip]));
+      const removed = timeline.clips.filter((clip) => !finalById.has(clip.id));
+      const added = finalClips.filter((clip) => !originalById.has(clip.id));
+      const changed = finalClips.filter((clip) => {
+        const held = originalById.get(clip.id);
+        return held !== undefined && timingChanged(held, clip);
+      });
+      const commands: DocumentCommand[] = [];
+      if (removed.length > 0)
+        commands.push({
+          type: "removeClips",
+          timelineId: command.timelineId,
+          clipIds: removed.map((clip) => clip.id),
+        });
+      if (changed.length > 0)
+        commands.push({
+          type: "updateClips",
+          timelineId: command.timelineId,
+          patches: changed.map((clip) => ({
+            clipId: clip.id,
+            patch: timingPatch(originalById.get(clip.id)!, clip),
+          })),
+        });
+      if (added.length > 0)
+        commands.push({
+          type: "addClips",
+          timelineId: command.timelineId,
+          clips: added,
+        });
+      // The three steps reuse the commands that already know how to validate
+      // and undo themselves, so a landing's history is exactly the trim,
+      // removal, and addition it took.
+      return applyCommands(moka, commands);
     }
 
     case "moveClips": {

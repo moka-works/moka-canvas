@@ -1750,6 +1750,20 @@ export type DocumentCommand =
       patches: ClipPatchEntry[];
     }
   /**
+   * Material lands at the place it names. `overwrite` trims or splits whatever
+   * already holds that place; `ripple` splits a clip the insertion point falls
+   * inside and moves everything at or after it on the chosen rows by the
+   * block's own length. Both keep the document's timing identity; a seam whose
+   * geometry the landing breaks is refused by the whole-timeline check.
+   */
+  | {
+      type: "insertClips";
+      timelineId: TimelineId;
+      clips: TimelineClip[];
+      mode: "overwrite" | "ripple";
+      rippleScope?: "all" | "track";
+    }
+  /**
    * Only where a clip sits: `startMs` on the timeline's clock and, when the
    * clip is named for a different track, the `trackId` it lands on. A move
    * re-checks against the clips already on the track it lands on.

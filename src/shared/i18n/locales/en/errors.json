@@ -14,6 +14,7 @@
     "clipPatchedTwice": "A clip is patched twice in one step",
     "clipStartNotWholeMs": "Clip start is not a whole number of milliseconds",
     "clipTrackNotFound": "Clip's track not found",
+    "insertModeUnknown": "The placement mode is not overwrite or ripple",
     "duplicateGroupMember": "Duplicate group member",
     "edgeIdExists": "Edge id already exists",
     "edgeLimitReached": "Canvas edge limit reached",

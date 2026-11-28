@@ -10,8 +10,8 @@ use moka_canvas::domain::timeline::{
 use moka_canvas::domain::validate::validate_moka_file;
 use moka_canvas::domain::{
     new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand,
-    MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry, TextAlign, TextClipData,
-    TextClipStyle, TextPosition, TimelineClip, TimelineDocument, TimelineSettings,
+    InsertMode, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry, RippleScope, TextAlign,
+    TextClipData, TextClipStyle, TextPosition, TimelineClip, TimelineDocument, TimelineSettings,
     TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind, TrackPatch,
     TransitionKind, MOKA_FILE_VERSION,
 };
@@ -1230,6 +1230,154 @@ fn lands_no_more_clips_than_one_step_of_history_may_hold() {
         })
         .collect();
     assert_eq!(code_of(&moka, add_clips(many)), "VALIDATION_FAILED");
+}
+
+#[test]
+fn inserts_a_block_and_moves_what_follows_and_the_undo_puts_the_cut_back() {
+    let moka = timeline_fixture();
+    let (paired, follower) = pair_at(&moka, 4_000);
+    let mut inserted = clip_of(&paired, FOLLOWER_ASSET, VIDEO_TRACK, 4_000);
+    inserted.duration_ms = 2_000;
+    inserted.out_point_ms = 2_000;
+    let next = round_trip(
+        &paired,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![inserted.clone()],
+            mode: InsertMode::Ripple,
+            ripple_scope: None,
+        }],
+    );
+    let clips = &next.timelines.as_ref().unwrap()[0].clips;
+    assert_eq!(clips.len(), 3);
+    assert_eq!(clip_at(&next, 0, &follower.id).start_ms, 6_000);
+    assert_eq!(clip_at(&next, 0, &inserted.id).start_ms, 4_000);
+}
+
+#[test]
+fn splits_a_clip_the_insertion_point_falls_inside() {
+    let moka = timeline_fixture();
+    let mut inserted = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 2_000);
+    inserted.duration_ms = 2_000;
+    inserted.out_point_ms = 2_000;
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![inserted.clone()],
+            mode: InsertMode::Ripple,
+            ripple_scope: None,
+        }],
+    );
+    let clips = &next.timelines.as_ref().unwrap()[0].clips;
+    assert_eq!(clips.len(), 3);
+    assert_eq!(clip_at(&next, 0, VIDEO_CLIP).duration_ms, 2_000);
+    assert_eq!(clip_at(&next, 0, &inserted.id).start_ms, 2_000);
+    let tail = clips
+        .iter()
+        .find(|clip| clip.id != VIDEO_CLIP && clip.id != inserted.id)
+        .unwrap();
+    assert_eq!(tail.start_ms, 4_000);
+    assert_eq!(tail.duration_ms, 2_000);
+}
+
+#[test]
+fn overwrites_the_place_it_lands_on_trimming_or_splitting_around_it() {
+    let moka = timeline_fixture();
+    let mut inside = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 1_000);
+    inside.duration_ms = 1_000;
+    inside.out_point_ms = 1_000;
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![inside.clone()],
+            mode: InsertMode::Overwrite,
+            ripple_scope: None,
+        }],
+    );
+    let clips = &next.timelines.as_ref().unwrap()[0].clips;
+    assert_eq!(clips.len(), 3);
+    assert_eq!(clip_at(&next, 0, VIDEO_CLIP).duration_ms, 1_000);
+    assert_eq!(clip_at(&next, 0, &inside.id).start_ms, 1_000);
+
+    let mut tail_only = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 3_000);
+    tail_only.duration_ms = 2_000;
+    tail_only.out_point_ms = 2_000;
+    let trimmed = round_trip(
+        &moka,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![tail_only],
+            mode: InsertMode::Overwrite,
+            ripple_scope: None,
+        }],
+    );
+    assert_eq!(clip_at(&trimmed, 0, VIDEO_CLIP).duration_ms, 3_000);
+}
+
+#[test]
+fn moves_every_row_for_a_ripple_or_only_the_row_it_names() {
+    let moka = timeline_fixture();
+    let caption = text_clip("Caption", TEXT_TRACK, 5_000);
+    let caption_id = caption.id.clone();
+    let (with_caption, _) = apply(&moka, vec![add_clips(vec![caption])]);
+    let mut inserted = clip_of(&with_caption, FOLLOWER_ASSET, VIDEO_TRACK, 2_000);
+    inserted.duration_ms = 1_000;
+    inserted.out_point_ms = 1_000;
+
+    let (all, _) = apply(
+        &with_caption,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![inserted.clone()],
+            mode: InsertMode::Ripple,
+            ripple_scope: Some(RippleScope::All),
+        }],
+    );
+    assert_eq!(clip_at(&all, 0, &caption_id).start_ms, 6_000);
+
+    let (track, _) = apply(
+        &with_caption,
+        vec![DocumentCommand::InsertClips {
+            timeline_id: TIMELINE.into(),
+            clips: vec![inserted],
+            mode: InsertMode::Ripple,
+            ripple_scope: Some(RippleScope::Track),
+        }],
+    );
+    assert_eq!(clip_at(&track, 0, &caption_id).start_ms, 5_000);
+}
+
+#[test]
+fn refuses_a_landing_on_a_locked_row() {
+    let moka = timeline_fixture();
+    let (locked, _) = apply(
+        &moka,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: VIDEO_TRACK.into(),
+            patch: TrackPatch {
+                locked: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    let mut inserted = clip_of(&locked, FOLLOWER_ASSET, VIDEO_TRACK, 2_000);
+    inserted.duration_ms = 1_000;
+    inserted.out_point_ms = 1_000;
+    assert_eq!(
+        code_of(
+            &locked,
+            DocumentCommand::InsertClips {
+                timeline_id: TIMELINE.into(),
+                clips: vec![inserted],
+                mode: InsertMode::Ripple,
+                ripple_scope: None,
+            }
+        ),
+        "TRACK_LOCKED"
+    );
 }
 
 // Transitions -----------------------------------------------------------

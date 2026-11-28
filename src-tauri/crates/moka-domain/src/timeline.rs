@@ -9,9 +9,9 @@ use std::collections::{HashMap, HashSet};
 
 use super::commands::CommandError;
 use super::{
-    ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, MokaFile, TimelineClip, TimelineDocument,
-    TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind, TrackPatch,
-    TransitionKind,
+    new_id, now_iso, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, InsertMode, MokaFile,
+    RippleScope, TimelineClip, TimelineDocument, TimelineSettingsPatch, TimelineTrack,
+    TimelineTransition, TrackKind, TrackPatch, TransitionKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -578,6 +578,228 @@ pub fn check_existing_transition(
         ));
     }
     Ok(())
+}
+
+fn clip_too_short() -> CommandError {
+    CommandError::new(
+        "VALIDATION_FAILED",
+        format!("Clips run at least {MIN_CLIP_DURATION_MS}ms"),
+    )
+}
+
+fn fit_fades(mut clip: TimelineClip) -> TimelineClip {
+    clip.fade_in_ms = clip.fade_in_ms.min(clip.duration_ms);
+    clip.fade_out_ms = clip
+        .fade_out_ms
+        .min((clip.duration_ms - clip.fade_in_ms).max(0));
+    clip
+}
+
+fn trim_tail_to(clip: &TimelineClip, end_ms: i64) -> Result<TimelineClip, CommandError> {
+    let mut duration = end_ms - clip.start_ms;
+    if duration < MIN_CLIP_DURATION_MS {
+        return Err(clip_too_short());
+    }
+    let mut out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+    if out_point > clip.out_point_ms {
+        duration = (((clip.out_point_ms - clip.in_point_ms) as f64) / clip.speed).floor() as i64;
+        out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+        if out_point > clip.out_point_ms {
+            duration -= 1;
+            out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+        }
+        if duration < MIN_CLIP_DURATION_MS {
+            return Err(clip_too_short());
+        }
+    }
+    let mut next = clip.clone();
+    next.duration_ms = duration;
+    next.out_point_ms = out_point;
+    Ok(fit_fades(next))
+}
+
+fn trim_head_to(clip: &TimelineClip, start_ms: i64) -> Result<TimelineClip, CommandError> {
+    let mut duration = clip.start_ms + clip.duration_ms - start_ms;
+    if duration < MIN_CLIP_DURATION_MS {
+        return Err(clip_too_short());
+    }
+    let in_point =
+        clip.in_point_ms + ((start_ms - clip.start_ms) as f64 * clip.speed).round() as i64;
+    let mut out_point = in_point + (duration as f64 * clip.speed).round() as i64;
+    if out_point > clip.out_point_ms {
+        duration = (((clip.out_point_ms - in_point) as f64) / clip.speed).floor() as i64;
+        out_point = in_point + (duration as f64 * clip.speed).round() as i64;
+        if out_point > clip.out_point_ms {
+            duration -= 1;
+            out_point = in_point + (duration as f64 * clip.speed).round() as i64;
+        }
+        if duration < MIN_CLIP_DURATION_MS {
+            return Err(clip_too_short());
+        }
+    }
+    let mut next = clip.clone();
+    next.start_ms = start_ms;
+    next.duration_ms = duration;
+    next.in_point_ms = in_point;
+    next.out_point_ms = out_point;
+    Ok(fit_fades(next))
+}
+
+fn split_clip_at(
+    clip: &TimelineClip,
+    at_ms: i64,
+) -> Result<(TimelineClip, TimelineClip), CommandError> {
+    let left = trim_tail_to(clip, at_ms)?;
+    let mut duration = clip.start_ms + clip.duration_ms - at_ms;
+    let mut out_point = left.out_point_ms + (duration as f64 * clip.speed).round() as i64;
+    if out_point > clip.out_point_ms {
+        duration = (((clip.out_point_ms - left.out_point_ms) as f64) / clip.speed).floor() as i64;
+        out_point = left.out_point_ms + (duration as f64 * clip.speed).round() as i64;
+        if out_point > clip.out_point_ms {
+            duration -= 1;
+            out_point = left.out_point_ms + (duration as f64 * clip.speed).round() as i64;
+        }
+        if duration < MIN_CLIP_DURATION_MS {
+            return Err(clip_too_short());
+        }
+    }
+    let mut right = clip.clone();
+    right.id = new_id();
+    right.start_ms = at_ms;
+    right.duration_ms = duration;
+    right.in_point_ms = left.out_point_ms;
+    right.out_point_ms = out_point;
+    right.created_at = now_iso();
+    right.updated_at = right.created_at.clone();
+    Ok((left, fit_fades(right)))
+}
+
+fn clips_overlap(a: &TimelineClip, b: &TimelineClip) -> bool {
+    a.start_ms < b.start_ms + b.duration_ms && b.start_ms < a.start_ms + a.duration_ms
+}
+
+fn overlay_clips(
+    timeline: &TimelineDocument,
+    incoming: &[TimelineClip],
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let mut list = timeline.clips.clone();
+    for added in incoming {
+        let start = added.start_ms;
+        let end = start + added.duration_ms;
+        let mut next = Vec::with_capacity(list.len() + 1);
+        for held in &list {
+            if held.track_id != added.track_id {
+                next.push(held.clone());
+                continue;
+            }
+            let held_end = held.start_ms + held.duration_ms;
+            if held_end <= start || held.start_ms >= end {
+                next.push(held.clone());
+                continue;
+            }
+            if held.start_ms >= start && held_end <= end {
+                continue;
+            }
+            if held.start_ms < start && held_end > end {
+                let (left, middle) = split_clip_at(held, start)?;
+                let (_, right) = split_clip_at(&middle, end)?;
+                next.push(left);
+                next.push(right);
+                continue;
+            }
+            if held.start_ms < start {
+                next.push(trim_tail_to(held, start)?);
+                continue;
+            }
+            next.push(trim_head_to(held, end)?);
+        }
+        next.push(added.clone());
+        list = next;
+    }
+    Ok(list)
+}
+
+fn ripple_clips(
+    timeline: &TimelineDocument,
+    incoming: &[TimelineClip],
+    scope: RippleScope,
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let start = incoming.iter().map(|clip| clip.start_ms).min().unwrap_or(0);
+    let end = incoming
+        .iter()
+        .map(|clip| clip.start_ms + clip.duration_ms)
+        .max()
+        .unwrap_or(start);
+    let total = end - start;
+    let tracks: HashSet<&str> = match scope {
+        RippleScope::All => timeline
+            .tracks
+            .iter()
+            .map(|track| track.id.as_str())
+            .collect(),
+        RippleScope::Track => incoming.iter().map(|clip| clip.track_id.as_str()).collect(),
+    };
+    let mut next = Vec::with_capacity(timeline.clips.len() + incoming.len());
+    for held in &timeline.clips {
+        if !tracks.contains(held.track_id.as_str()) {
+            next.push(held.clone());
+            continue;
+        }
+        let held_end = held.start_ms + held.duration_ms;
+        if held_end <= start {
+            next.push(held.clone());
+            continue;
+        }
+        if held.start_ms >= start {
+            let mut shifted = held.clone();
+            shifted.start_ms += total;
+            next.push(shifted);
+            continue;
+        }
+        let (left, right) = split_clip_at(held, start)?;
+        next.push(left);
+        let mut shifted = right;
+        shifted.start_ms += total;
+        next.push(shifted);
+    }
+    next.extend(incoming.iter().cloned());
+    Ok(next)
+}
+
+fn timing_changed(a: &TimelineClip, b: &TimelineClip) -> bool {
+    a.start_ms != b.start_ms
+        || a.duration_ms != b.duration_ms
+        || a.in_point_ms != b.in_point_ms
+        || a.out_point_ms != b.out_point_ms
+        || a.speed != b.speed
+        || a.fade_in_ms != b.fade_in_ms
+        || a.fade_out_ms != b.fade_out_ms
+}
+
+fn timing_patch(a: &TimelineClip, b: &TimelineClip) -> ClipPatch {
+    let mut patch = ClipPatch::default();
+    if a.start_ms != b.start_ms {
+        patch.start_ms = Some(b.start_ms);
+    }
+    if a.duration_ms != b.duration_ms {
+        patch.duration_ms = Some(b.duration_ms);
+    }
+    if a.in_point_ms != b.in_point_ms {
+        patch.in_point_ms = Some(b.in_point_ms);
+    }
+    if a.out_point_ms != b.out_point_ms {
+        patch.out_point_ms = Some(b.out_point_ms);
+    }
+    if a.speed != b.speed {
+        patch.speed = Some(b.speed);
+    }
+    if a.fade_in_ms != b.fade_in_ms {
+        patch.fade_in_ms = Some(b.fade_in_ms);
+    }
+    if a.fade_out_ms != b.fade_out_ms {
+        patch.fade_out_ms = Some(b.fade_out_ms);
+    }
+    patch
 }
 
 /// Re-checks a whole timeline as it would be: every clip against its own rules,
@@ -1511,6 +1733,123 @@ pub fn apply_timeline_command(
             }
             inverses.reverse();
             Ok((replace_timeline(moka, next), inverses))
+        }
+
+        DocumentCommand::InsertClips {
+            timeline_id,
+            clips,
+            mode,
+            ripple_scope,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if clips.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to add"));
+            }
+            if clips.len() > MAX_CLIPS_PER_COMMAND {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    format!("One step lands at most {MAX_CLIPS_PER_COMMAND} clips"),
+                ));
+            }
+            let mut known: HashSet<&str> =
+                timeline.clips.iter().map(|clip| clip.id.as_str()).collect();
+            for clip in clips {
+                if !known.insert(clip.id.as_str()) {
+                    return Err(CommandError::new("CONFLICT", "Clip id already exists"));
+                }
+                check_clip(moka, timeline, clip)?;
+                check_clip_within_asset(moka, clip)?;
+            }
+            for at in 0..clips.len() {
+                for other in at + 1..clips.len() {
+                    let a = &clips[at];
+                    let b = &clips[other];
+                    if a.track_id == b.track_id && clips_overlap(a, b) {
+                        return Err(CommandError::new("CLIP_OVERLAP", describe_overlap(a, b)));
+                    }
+                }
+            }
+            let start = clips.iter().map(|clip| clip.start_ms).min().unwrap_or(0);
+            if start < 0 {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Clip start is not a whole number of milliseconds",
+                ));
+            }
+            let final_clips = match mode {
+                InsertMode::Overwrite => overlay_clips(timeline, clips)?,
+                InsertMode::Ripple => {
+                    ripple_clips(timeline, clips, ripple_scope.unwrap_or(RippleScope::All))?
+                }
+            };
+            if final_clips.len() > MAX_CLIPS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Timeline clip limit reached",
+                ));
+            }
+            let original: HashMap<&str, &TimelineClip> = timeline
+                .clips
+                .iter()
+                .map(|clip| (clip.id.as_str(), clip))
+                .collect();
+            let final_ids: HashSet<&str> =
+                final_clips.iter().map(|clip| clip.id.as_str()).collect();
+            let removed: Vec<String> = timeline
+                .clips
+                .iter()
+                .filter(|clip| !final_ids.contains(clip.id.as_str()))
+                .map(|clip| clip.id.clone())
+                .collect();
+            let added: Vec<TimelineClip> = final_clips
+                .iter()
+                .filter(|clip| !original.contains_key(clip.id.as_str()))
+                .cloned()
+                .collect();
+            let mut patches: Vec<ClipPatchEntry> = Vec::new();
+            for clip in &final_clips {
+                if let Some(held) = original.get(clip.id.as_str()) {
+                    if timing_changed(held, clip) {
+                        patches.push(ClipPatchEntry {
+                            clip_id: clip.id.clone(),
+                            patch: timing_patch(held, clip),
+                        });
+                    }
+                }
+            }
+            let mut commands: Vec<DocumentCommand> = Vec::new();
+            if !removed.is_empty() {
+                commands.push(DocumentCommand::RemoveClips {
+                    timeline_id: timeline_id.clone(),
+                    clip_ids: removed,
+                });
+            }
+            if !patches.is_empty() {
+                commands.push(DocumentCommand::UpdateClips {
+                    timeline_id: timeline_id.clone(),
+                    patches,
+                });
+            }
+            if !added.is_empty() {
+                commands.push(DocumentCommand::AddClips {
+                    timeline_id: timeline_id.clone(),
+                    clips: added,
+                    seams: None,
+                });
+            }
+            // The landing is expressed through the commands that already know
+            // how to validate and undo themselves, so its history is exactly
+            // the trims, removals, and additions it took.
+            let mut current = moka.clone();
+            let mut inverses: Vec<DocumentCommand> = Vec::new();
+            for command in commands {
+                let (next, inverse) = apply_timeline_command(&current, &command)?;
+                current = next;
+                let mut combined = inverse;
+                combined.extend(inverses);
+                inverses = combined;
+            }
+            Ok((current, inverses))
         }
 
         DocumentCommand::MoveClips { timeline_id, moves } => {

@@ -991,6 +991,158 @@ describe("clip commands", () => {
 });
 
 describe("transition commands", () => {
+  it("inserts a block and moves what follows, and the undo puts the cut back", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const paired = pairAt(moka, ids, 4_000);
+    const follower = paired.timelines![0].clips.find(
+      (clip) => clip.startMs === 4_000,
+    )!;
+    const inserted = {
+      ...clipOf(paired, ids.followerAsset, ids.videoTrack, 4_000),
+      durationMs: 2_000,
+      outPointMs: 2_000,
+    };
+    const next = expectRoundTrip(paired, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [inserted],
+      mode: "ripple",
+    });
+    const clips = next.timelines![0].clips;
+    expect(clips).toHaveLength(3);
+    expect(clips.find((clip) => clip.id === follower.id)!.startMs).toBe(6_000);
+    expect(clips.find((clip) => clip.id === inserted.id)!.startMs).toBe(4_000);
+  });
+
+  it("splits a clip the insertion point falls inside", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const inserted = {
+      ...clipOf(moka, ids.followerAsset, ids.videoTrack, 2_000),
+      durationMs: 2_000,
+      outPointMs: 2_000,
+    };
+    const next = expectRoundTrip(moka, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [inserted],
+      mode: "ripple",
+    });
+    const clips = next.timelines![0].clips;
+    expect(clips).toHaveLength(3);
+    expect(clips.find((clip) => clip.id === ids.videoClip)!.durationMs).toBe(
+      2_000,
+    );
+    expect(clips.find((clip) => clip.id === inserted.id)!.startMs).toBe(2_000);
+    const tail = clips.find(
+      (clip) => clip.id !== ids.videoClip && clip.id !== inserted.id,
+    )!;
+    expect(tail.startMs).toBe(4_000);
+    expect(tail.durationMs).toBe(2_000);
+  });
+
+  it("overwrites the place it lands on, trimming or splitting around it", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const inside = {
+      ...clipOf(moka, ids.followerAsset, ids.videoTrack, 1_000),
+      durationMs: 1_000,
+      outPointMs: 1_000,
+    };
+    const next = expectRoundTrip(moka, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [inside],
+      mode: "overwrite",
+    });
+    const clips = next.timelines![0].clips;
+    expect(clips).toHaveLength(3);
+    expect(clips.find((clip) => clip.id === ids.videoClip)!.durationMs).toBe(
+      1_000,
+    );
+    expect(clips.find((clip) => clip.id === inside.id)!.startMs).toBe(1_000);
+
+    const tailOnly = {
+      ...clipOf(moka, ids.followerAsset, ids.videoTrack, 3_000),
+      durationMs: 2_000,
+      outPointMs: 2_000,
+    };
+    const trimmed = expectRoundTrip(moka, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [tailOnly],
+      mode: "overwrite",
+    });
+    expect(
+      trimmed.timelines![0].clips.find((clip) => clip.id === ids.videoClip)!
+        .durationMs,
+    ).toBe(3_000);
+  });
+
+  it("moves every row for a ripple, or only the row it names", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const caption = createTextClip("Caption", ids.textTrack, 5_000);
+    const withCaption = apply(moka, {
+      type: "addClips",
+      timelineId: ids.timeline,
+      clips: [caption],
+    }).next;
+    const inserted = {
+      ...clipOf(withCaption, ids.followerAsset, ids.videoTrack, 2_000),
+      durationMs: 1_000,
+      outPointMs: 1_000,
+    };
+    const all = apply(withCaption, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [inserted],
+      mode: "ripple",
+      rippleScope: "all",
+    }).next;
+    expect(
+      all.timelines![0].clips.find((clip) => clip.id === caption.id)!.startMs,
+    ).toBe(6_000);
+
+    const track = apply(withCaption, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [inserted],
+      mode: "ripple",
+      rippleScope: "track",
+    }).next;
+    expect(
+      track.timelines![0].clips.find((clip) => clip.id === caption.id)!.startMs,
+    ).toBe(5_000);
+  });
+
+  it("refuses a landing on a locked row", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const locked = apply(moka, {
+      type: "updateTrack",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      patch: { locked: true },
+    }).next;
+    const inserted = {
+      ...clipOf(locked, ids.followerAsset, ids.videoTrack, 2_000),
+      durationMs: 1_000,
+      outPointMs: 1_000,
+    };
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "insertClips",
+          timelineId: ids.timeline,
+          clips: [inserted],
+          mode: "ripple",
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+  });
+
   it("lands a transition on a butted seam, pulling the follower back itself, and the undo puts it back", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

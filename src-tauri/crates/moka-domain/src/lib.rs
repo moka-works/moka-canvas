@@ -1451,6 +1451,23 @@ pub struct ClipMove {
     pub track_id: Option<TrackId>,
 }
 
+/// How `insertClips` treats the place it lands on: trim or split what is
+/// already there, or move everything after it by the block's own length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InsertMode {
+    Overwrite,
+    Ripple,
+}
+
+/// Which rows a ripple moves: every row, or only the ones the clips land on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RippleScope {
+    All,
+    Track,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum DocumentCommand {
@@ -1650,6 +1667,17 @@ pub enum DocumentCommand {
         clips: Vec<TimelineClip>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seams: Option<Vec<TimelineTransition>>,
+    },
+    /// Material lands at the place it names. `overwrite` trims or splits what
+    /// already holds that place; `ripple` splits a clip the landing point falls
+    /// inside and moves everything at or after it on the chosen rows.
+    #[serde(rename_all = "camelCase")]
+    InsertClips {
+        timeline_id: TimelineId,
+        clips: Vec<TimelineClip>,
+        mode: InsertMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ripple_scope: Option<RippleScope>,
     },
     #[serde(rename_all = "camelCase")]
     RemoveClips {
