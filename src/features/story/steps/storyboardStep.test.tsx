@@ -1604,12 +1604,35 @@ describe("writing an episode's board", () => {
       "asset-first-shot-clip",
     );
     fireEvent.click(preview);
-    expect(
-      screen
-        .getByTestId("story-lightbox")
-        .querySelector("video")
-        ?.getAttribute("src"),
-    ).toContain("asset-first-shot-clip");
+    const shotLightbox = screen.getByTestId("story-lightbox");
+    const shotVideo = shotLightbox.querySelector("video") as HTMLVideoElement;
+    expect(shotVideo.getAttribute("src")).toContain("asset-first-shot-clip");
+    // A shot is watched the way an act is: the picture takes the window and
+    // the trimmer under it marks what is played and what the cut keeps.
+    expect(shotVideo.controls).toBe(false);
+    expect(screen.getByTestId("story-trim")).toBeDefined();
+
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    Object.defineProperty(shotVideo, "currentTime", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: () => {},
+    });
+    const track = screen.getByTestId("story-trim-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 1_000,
+    } as DOMRect);
+    const inHandle = screen.getByTestId("story-trim-in");
+    fireEvent.pointerDown(inHandle, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(inHandle, { clientX: 200, pointerId: 1 });
+    fireEvent.pointerUp(inHandle, { clientX: 200, pointerId: 1 });
+    // A fifth of the three-second shot: the window lands on the shot's own take.
+    expect(acts()[0]?.keyframes[0]?.video.takes.at(-1)?.inMs).toBe(600);
     fireEvent.click(screen.getByTestId("story-lightbox-close"));
     const again = within(first).getByTestId(
       "story-kf-video-again-0",

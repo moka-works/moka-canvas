@@ -37,6 +37,9 @@ const TRANSITION_MAX_S = 60;
 /** How wide a bridge's clip poster is asked for: its preview is drawn 160 px. */
 const TRANSITION_POSTER_WIDTH = 320;
 
+/** How wide a bridge's poster is asked for where the clip is watched full-size. */
+const TRANSITION_PREVIEW_WIDTH = 1024;
+
 /**
  * A bridge between two acts, as a card of its own.
  *
@@ -156,6 +159,14 @@ export function TransitionCard({
       : videos.from === undefined
         ? undefined
         : assetFrameUrl(videos.from.assetId, "last", TRANSITION_POSTER_WIDTH);
+  // A bridge opened for watching is drawn as large as the window takes it, so
+  // the still it opens on is asked for at that size rather than the card's.
+  const previewPoster =
+    clip?.assetIds[0] !== undefined
+      ? assetThumbUrl(clip.assetIds[0], TRANSITION_PREVIEW_WIDTH)
+      : videos.from === undefined
+        ? undefined
+        : assetFrameUrl(videos.from.assetId, "last", TRANSITION_PREVIEW_WIDTH);
   const ceiling = actVideoCeiling(act);
   const plannedSeconds = Math.round((transition.durationMs / 1000) * 10) / 10;
   const askedSeconds = Math.min(
@@ -434,7 +445,7 @@ export function TransitionCard({
             trimTake(story.id, clipPlace, { inMs, outMs })
           }
           outMs={clip.outMs}
-          poster={clipPoster}
+          poster={previewPoster}
           video
         />
       )}

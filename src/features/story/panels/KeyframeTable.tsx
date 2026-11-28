@@ -91,7 +91,7 @@ import { StoryLibraryPicker } from "./StoryLibraryPicker";
 import { StoryLightbox } from "./StoryLightbox";
 import { StoryPicks } from "./StoryPicks";
 import { StorySlotView } from "./StorySlotView";
-import { keepTake, removeTake, type TakePlace } from "./takePicks";
+import { keepTake, removeTake, trimTake, type TakePlace } from "./takePicks";
 import { clipChoiceKey, useClipChoiceStore } from "../stores/clipChoiceStore";
 import { useField } from "./useField";
 import { ImagePromptDialog } from "./ImagePromptDialog";
@@ -105,6 +105,9 @@ const REF_THUMB_WIDTH = 128;
 
 /** How wide a shot's clip poster is asked for: its preview is drawn 96 px. */
 const CLIP_POSTER_WIDTH = 192;
+
+/** How wide a shot's clip poster is asked for where the clip is watched full-size. */
+const CLIP_PREVIEW_WIDTH = 1024;
 import { moved, splitAct, writeKeyframes } from "./writeBoard";
 
 /** The longest and shortest a shot may be, in seconds. */
@@ -366,6 +369,12 @@ function KeyframeRow({
     framePoster === undefined || failedPoster === framePoster
       ? drawnPosterUrl
       : framePoster;
+  // A shot opened for watching is drawn as large as the window takes it, so
+  // the still it opens on is asked for at that size rather than the row's.
+  const clipPreviewPoster =
+    clipFrame === undefined || failedPoster === framePoster
+      ? drawnPosterUrl
+      : assetThumbUrl(clipFrame, CLIP_PREVIEW_WIDTH);
   const clipStale = shotClipStale(keyframe);
   const promptId = jobKey({
     kind: "keyframeVideo",
@@ -1006,9 +1015,14 @@ function KeyframeRow({
       {playing && clip !== undefined && (
         <StoryLightbox
           assetIds={clip.assetIds}
+          inMs={clip.inMs}
           label={t("story:storyboard.playClip")}
           onClose={() => setPlaying(false)}
-          poster={clipPosterUrl}
+          onTrim={(inMs, outMs) =>
+            trimTake(story.id, clipPlace, { inMs, outMs })
+          }
+          outMs={clip.outMs}
+          poster={clipPreviewPoster}
           video
         />
       )}

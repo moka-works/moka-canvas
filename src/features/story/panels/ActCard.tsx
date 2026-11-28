@@ -92,6 +92,9 @@ const ACT_TITLE_MAX = 40;
 /** How wide a clip's poster is asked for: its preview is drawn 160 px wide. */
 const CLIP_POSTER_WIDTH = 320;
 
+/** How wide a clip's poster is asked for where the clip is watched full-size. */
+const CLIP_PREVIEW_WIDTH = 1024;
+
 /** The two ways an act's clip may be made, in the order the room shows them. */
 const GRANULARITY_OPTIONS: StoryShotGranularity[] = ["act", "keyframe"];
 
@@ -253,6 +256,12 @@ export function ActCard({
     framePoster === undefined || failedPoster === framePoster
       ? drawnPoster
       : framePoster;
+  // A clip opened for watching is drawn as large as the window takes it, so
+  // the still it opens on is asked for at that size rather than the card's.
+  const previewPoster =
+    clipFrame === undefined || failedPoster === framePoster
+      ? drawnPoster
+      : assetThumbUrl(clipFrame, CLIP_PREVIEW_WIDTH);
   const clipStale = actClipStale(act);
   const voice = act.voice === undefined ? undefined : currentTake(act.voice);
   const music = act.music === undefined ? undefined : currentTake(act.music);
@@ -1347,7 +1356,7 @@ export function ActCard({
             trimTake(story.id, clipPlace, { inMs, outMs })
           }
           outMs={clip.outMs}
-          poster={clipPoster}
+          poster={previewPoster}
           video
         />
       )}

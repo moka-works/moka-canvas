@@ -8833,10 +8833,15 @@ button > .story-spin {
   z-index: 60;
 }
 
+/* The viewer is as wide as a picture may be rather than as wide as its own
+   words are: left to shrink to fit, a tall clip is read at the width of its
+   foot line, and two previews of the same telling open at two sizes. */
 .story-lightbox-body {
   display: grid;
   gap: 10px;
+  justify-items: center;
   max-width: min(1100px, 92vw);
+  width: min(1100px, 92vw);
 }
 
 .story-lightbox-body img {
@@ -8848,13 +8853,17 @@ button > .story-spin {
   object-fit: contain;
 }
 
-/* A clip as large as the window will take it, like the pictures beside it. */
+/* A clip opens as large as the window will take it, above the trimmer that
+   marks the part kept. The box is the window's, not the poster's, so a clip
+   whose nearest take is a small thumbnail is still read at the size of the
+   screen rather than at the size of the thumbnail. */
 .story-lightbox-body video {
   border-radius: var(--radius-sm);
   display: block;
-  margin: 0 auto;
-  max-height: 82vh;
+  height: min(78vh, calc(100vh - 165px));
   max-width: 100%;
+  object-fit: contain;
+  width: 100%;
 }
 
 /* The window a clip is kept to: one bar, a playhead, and two ends to drag. */
