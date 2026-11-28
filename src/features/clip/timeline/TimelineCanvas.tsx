@@ -1058,12 +1058,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     // The file's own ghost, drawn where the release would leave it: the row
     // it hangs over, the frame under the pointer, the magnet's catch.
     const target = dropTargetAt(event);
+    const current = useClipStore.getState().placement;
+    const placement = event.shiftKey
+      ? current === "insert"
+        ? "overwrite"
+        : "insert"
+      : current;
     const preview = target
       ? dropPreview(
           timeline,
           draggedAssetRef.current,
           target.trackId,
           target.startMs,
+          placement,
         )
       : null;
     event.dataTransfer.dropEffect =
@@ -1094,7 +1101,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     const assetId = carriedAssetId(event);
     const target = dropTargetAt(event);
     if (!assetId || !target) return;
-    dropAssetOnTrack(timeline, assetId, target.trackId, target.startMs);
+    const current = useClipStore.getState().placement;
+    const placement = event.shiftKey
+      ? current === "insert"
+        ? "overwrite"
+        : "insert"
+      : current;
+    dropAssetOnTrack(
+      timeline,
+      assetId,
+      target.trackId,
+      target.startMs,
+      placement,
+    );
   };
 
   const canvasClass = [

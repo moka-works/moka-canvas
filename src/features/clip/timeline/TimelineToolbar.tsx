@@ -50,6 +50,10 @@ export function TimelineToolbar({ timeline }: TimelineToolbarProps) {
   const fit = useClipStore((state) => state.fit);
   const snapEnabled = useClipStore((state) => state.snapEnabled);
   const setSnapEnabled = useClipStore((state) => state.setSnapEnabled);
+  const placement = useClipStore((state) => state.placement);
+  const setPlacement = useClipStore((state) => state.setPlacement);
+  const rippleScope = useClipStore((state) => state.rippleScope);
+  const setRippleScope = useClipStore((state) => state.setRippleScope);
   const canUndo = useCanUndo();
   const canRedo = useHistoryStore((state) => state.redoStack.length > 0);
 
@@ -115,6 +119,76 @@ export function TimelineToolbar({ timeline }: TimelineToolbarProps) {
         >
           <RedoIcon size={16} />
         </button>
+        <div
+          aria-label={t("clip:toolbar.placement")}
+          className="clip-tl-modes"
+          role="group"
+        >
+          <button
+            aria-pressed={placement === "insert"}
+            className={
+              placement === "insert"
+                ? "clip-tl-button is-active"
+                : "clip-tl-button"
+            }
+            data-testid="clip-placement-insert"
+            onClick={() => setPlacement("insert")}
+            title={t("clip:toolbar.insertHint")}
+            type="button"
+          >
+            {t("clip:toolbar.insert")}
+          </button>
+          <button
+            aria-pressed={placement === "overwrite"}
+            className={
+              placement === "overwrite"
+                ? "clip-tl-button is-active"
+                : "clip-tl-button"
+            }
+            data-testid="clip-placement-overwrite"
+            onClick={() => setPlacement("overwrite")}
+            title={t("clip:toolbar.overwriteHint")}
+            type="button"
+          >
+            {t("clip:toolbar.overwrite")}
+          </button>
+        </div>
+        <div
+          aria-label={t("clip:toolbar.scope")}
+          className="clip-tl-modes"
+          role="group"
+        >
+          <button
+            aria-pressed={rippleScope === "all"}
+            className={
+              rippleScope === "all"
+                ? "clip-tl-button is-active"
+                : "clip-tl-button"
+            }
+            data-testid="clip-scope-all"
+            disabled={placement !== "insert"}
+            onClick={() => setRippleScope("all")}
+            title={t("clip:toolbar.scopeAllHint")}
+            type="button"
+          >
+            {t("clip:toolbar.scopeAll")}
+          </button>
+          <button
+            aria-pressed={rippleScope === "track"}
+            className={
+              rippleScope === "track"
+                ? "clip-tl-button is-active"
+                : "clip-tl-button"
+            }
+            data-testid="clip-scope-track"
+            disabled={placement !== "insert"}
+            onClick={() => setRippleScope("track")}
+            title={t("clip:toolbar.scopeTrackHint")}
+            type="button"
+          >
+            {t("clip:toolbar.scopeTrack")}
+          </button>
+        </div>
         <button
           aria-label={t("clip:toolbar.snapping")}
           aria-pressed={snapEnabled}

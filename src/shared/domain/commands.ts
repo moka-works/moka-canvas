@@ -68,6 +68,7 @@ import type {
   AssistantSession,
   CanvasDocument,
   CanvasFolder,
+  ClipPatch,
   DocumentCommand,
   DocumentSettings,
   FolderId,
@@ -731,26 +732,6 @@ function rippleClips(
   }
   next.push(...incoming);
   return next;
-}
-
-function timingOf(clip: TimelineClip): {
-  startMs: number;
-  durationMs: number;
-  inPointMs: number;
-  outPointMs: number;
-  speed: number;
-  fadeInMs: number;
-  fadeOutMs: number;
-} {
-  return {
-    startMs: clip.startMs,
-    durationMs: clip.durationMs,
-    inPointMs: clip.inPointMs,
-    outPointMs: clip.outPointMs,
-    speed: clip.speed,
-    fadeInMs: clip.fadeInMs,
-    fadeOutMs: clip.fadeOutMs,
-  };
 }
 
 function timingChanged(a: TimelineClip, b: TimelineClip): boolean {

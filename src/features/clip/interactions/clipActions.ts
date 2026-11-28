@@ -30,7 +30,11 @@ import { shelfOf } from "../../editor/panels/canvasAssets";
 import { useAppStore } from "../../editor/stores/appStore";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { i18n } from "../../../shared/i18n";
-import { useClipStore, type ClipSelection } from "../stores/clipStore";
+import {
+  useClipStore,
+  type ClipSelection,
+  type PlacementMode,
+} from "../stores/clipStore";
 import type { TimelineHit } from "../timeline/geometry";
 import { frameAligned } from "../timeline/timecode";
 import { alignMoves, type AlignMode } from "./alignment";
@@ -278,6 +282,7 @@ function landOnTrack(
   entry: ResourceEntry,
   track: TimelineTrack,
   startMs: number,
+  placement: PlacementMode = useClipStore.getState().placement,
 ): TimelineClip | null {
   const kind = clipKindFor(entry);
   if (kind === null) {
@@ -296,9 +301,24 @@ function landOnTrack(
     toast("info", i18n.t("clip:actions.durationUnknown"));
   }
   const clip = createClipFromAsset(entry, track.id, startMs);
-  const done = execute(i18n.t("clip:history.addClip"), [
-    { type: "addClips", timelineId: timeline.id, clips: [clip] },
-  ]);
+  const mode: "ripple" | "overwrite" =
+    placement === "insert" ? "ripple" : "overwrite";
+  const done = execute(
+    i18n.t(
+      placement === "insert"
+        ? "clip:history.insertClip"
+        : "clip:history.overwriteClip",
+    ),
+    [
+      {
+        type: "insertClips",
+        timelineId: timeline.id,
+        clips: [clip],
+        mode,
+        rippleScope: useClipStore.getState().rippleScope,
+      },
+    ],
+  );
   return done ? clip : null;
 }
 
@@ -336,6 +356,7 @@ export function dropPreview(
   assetId: AssetId,
   trackId: TrackId | null,
   startMs: number,
+  placement: "fit" | PlacementMode = "fit",
 ): {
   clip: DraftClip;
   guideMs: number | null;
@@ -350,14 +371,16 @@ export function dropPreview(
   const landed = landingMs(timeline, startMs);
   const clip = createClipFromAsset(entry, track.id, landed.startMs);
   const endMs = clip.startMs + clip.durationMs;
-  // A drop asks for a place as it stands: unlike a move, it brings no seam
-  // of its own, so any overlap at all is a place the release will refuse.
-  const conflict = timeline.clips.some(
-    (other) =>
-      other.trackId === track.id &&
-      other.startMs < endMs &&
-      clip.startMs < other.startMs + other.durationMs,
-  );
+  // Only a fit drop asks for the place as it stands; an insert or an overwrite
+  // is exactly the answer to an occupied place, so it is never refused for it.
+  const conflict =
+    placement === "fit" &&
+    timeline.clips.some(
+      (other) =>
+        other.trackId === track.id &&
+        other.startMs < endMs &&
+        clip.startMs < other.startMs + other.durationMs,
+    );
   return {
     clip: {
       clipId: clip.id,
@@ -384,6 +407,7 @@ export function dropAssetOnTrack(
   assetId: AssetId,
   trackId: TrackId | null,
   startMs: number,
+  placement: PlacementMode = useClipStore.getState().placement,
 ): void {
   const entry = findAsset(useProjectStore.getState().moka, assetId);
   if (!entry) return;
@@ -394,6 +418,7 @@ export function dropAssetOnTrack(
     entry,
     track,
     landingMs(timeline, startMs).startMs,
+    placement,
   );
   if (clip) {
     useClipStore.getState().select({ clipIds: [clip.id], transitionId: null });

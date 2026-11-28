@@ -36,6 +36,12 @@ import {
  */
 export type ClipFace = "cut" | "text" | "filters" | "adjust";
 
+/** How material lands on an occupied place: move what follows, or trim it. */
+export type PlacementMode = "insert" | "overwrite";
+
+/** Which rows a ripple moves: every row, or only the ones the material names. */
+export type RippleScopeMode = "all" | "track";
+
 /**
  * Which timeline a project was last left looking at, kept in the interface
  * preferences beside the project rather than inside it.
@@ -286,6 +292,10 @@ interface ClipState {
    * drag, which is the gesture's own business and never written down.
    */
   snapEnabled: boolean;
+  /** How a drop on an occupied place behaves; insert is the room's default. */
+  placement: PlacementMode;
+  /** Which rows an insert moves with it. */
+  rippleScope: RippleScopeMode;
   /**
    * Whether the end of the cut comes back round to its head.
    *
@@ -339,6 +349,8 @@ interface ClipState {
   setQuality: (quality: PreviewQuality) => void;
   setMasterVolume: (volume: number) => void;
   setSnapEnabled: (enabled: boolean) => void;
+  setPlacement: (placement: PlacementMode) => void;
+  setRippleScope: (scope: RippleScopeMode) => void;
   toggleLoop: () => void;
 }
 
@@ -416,6 +428,8 @@ export const useClipStore = create<ClipState>()((set, get) => {
     quality: rememberedQuality(),
     masterVolume: rememberedMasterVolume(),
     snapEnabled: rememberedSnapEnabled(),
+    placement: "insert",
+    rippleScope: "all",
     loop: false,
     viewportPx: 0,
 
@@ -611,6 +625,14 @@ export const useClipStore = create<ClipState>()((set, get) => {
     setSnapEnabled(enabled) {
       rememberUiPrefs({ clipSnap: enabled });
       set({ snapEnabled: enabled });
+    },
+
+    setPlacement(placement) {
+      set({ placement });
+    },
+
+    setRippleScope(scope) {
+      set({ rippleScope: scope });
     },
 
     toggleLoop() {

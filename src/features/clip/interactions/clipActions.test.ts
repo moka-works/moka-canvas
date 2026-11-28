@@ -61,6 +61,8 @@ beforeEach(() => {
     activeTimelineId: null,
     selection: { clipIds: [], transitionId: null },
     playheadMs: 0,
+    placement: "insert",
+    rippleScope: "all",
   });
 });
 
@@ -491,17 +493,31 @@ describe("the ghost a hanging file draws", () => {
     expect(caught?.conflict).toBeNull();
   });
 
-  it("marks a ghost that would land on a held place, and the release refuses it", () => {
+  it("marks a fit ghost as refused, while the default insert lands it", () => {
     const ids = timelineIds();
     open(buildTimelineMokaFile(), { timelineId: ids.timeline });
 
-    const blocked = dropPreview(cut(), ids.videoAsset, ids.videoTrack, 3_000);
+    const blocked = dropPreview(
+      cut(),
+      ids.videoAsset,
+      ids.videoTrack,
+      3_000,
+      "fit",
+    );
     expect(blocked?.clip.startMs).toBe(3_000);
     expect(blocked?.conflict).toBe("overlap");
+    const inserting = dropPreview(
+      cut(),
+      ids.videoAsset,
+      ids.videoTrack,
+      3_000,
+      "insert",
+    );
+    expect(inserting?.conflict).toBeNull();
 
-    dropAssetOnTrack(cut(), ids.videoAsset, ids.videoTrack, 3_000);
-    expect(cut().clips).toHaveLength(1);
-    expect(messages().join(" ")).toContain("overlap");
+    dropAssetOnTrack(cut(), ids.videoAsset, ids.videoTrack, 3_000, "insert");
+    expect(cut().clips).toHaveLength(3);
+    expect(messages()).toEqual([]);
   });
 
   it("lands exactly the block the ghost drew", () => {
@@ -633,6 +649,7 @@ describe("adding at the playhead", () => {
       clipIds: ["clip-score"],
       playheadMs: 1_234,
     });
+    useClipStore.getState().setRippleScope("track");
 
     addAssetAtPlayhead(ids.videoAsset);
 
@@ -691,6 +708,7 @@ describe("adding at the playhead", () => {
       videoEntry("asset-c", 3_000),
     );
     open(moka, { timelineId: ids.timeline, playheadMs: 1_234 });
+    useClipStore.getState().setRippleScope("track");
 
     addAssetsAtPlayhead([ids.videoAsset, "asset-b", "asset-c"]);
 
@@ -755,6 +773,7 @@ describe("adding at the playhead", () => {
     );
     timeline.clips = timeline.clips.filter((clip) => clip.id !== "clip-score");
     open(moka, { timelineId: ids.timeline, playheadMs: 500 });
+    useClipStore.getState().setRippleScope("track");
 
     addAssetsAtPlayhead([ids.videoAsset, "asset-score"]);
 

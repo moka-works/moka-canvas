@@ -380,8 +380,18 @@
     "words": "标记"
   },
   "toolbar": {
-    "fitToWindow": "适应窗口",
-    "snapHint": "吸附边缘——按住 Shift 可自由拖动",
+    "fitToWindow": "适配窗口",
+    "insert": "插入",
+    "insertHint": "落片会切开光标下的片段并后移后续片段；按住 Shift 改为覆盖",
+    "overwrite": "覆盖",
+    "overwriteHint": "落片会裁切或切开其覆盖的片段；按住 Shift 改为插入",
+    "placement": "落片方式",
+    "scope": "让位范围",
+    "scopeAll": "全轨",
+    "scopeAllHint": "插入时所有轨道一起让位，保持声音与字幕同步",
+    "scopeTrack": "本轨",
+    "scopeTrackHint": "插入时只移动落点所在轨道",
+    "snapHint": "边缘互相吸附；按住 Shift 可自由拖动",
     "snapping": "吸附",
     "zoom": "缩放"
   },
@@ -421,6 +431,8 @@
   },
   "history": {
     "addClip": "添加片段",
+    "insertClip": "插入片段",
+    "overwriteClip": "覆盖片段",
     "addTextClip": "添加文字片段",
     "addTimeline": "添加时间线",
     "addTrack": "添加轨道",

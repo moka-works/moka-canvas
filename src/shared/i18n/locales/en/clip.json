@@ -381,6 +381,16 @@
   },
   "toolbar": {
     "fitToWindow": "Fit to window",
+    "insert": "Insert",
+    "insertHint": "Drops split the clip under the cursor and move later clips; hold Shift to overwrite",
+    "overwrite": "Overwrite",
+    "overwriteHint": "Drops trim or split what they land on; hold Shift to insert",
+    "placement": "Placement",
+    "scope": "Ripple rows",
+    "scopeAll": "All rows",
+    "scopeAllHint": "Insert moves every row so sound and subtitles stay in step",
+    "scopeTrack": "This row",
+    "scopeTrackHint": "Insert moves only the row it lands on",
     "snapHint": "Snap edges together — hold Shift to drag freely",
     "snapping": "Snapping",
     "zoom": "Zoom"
@@ -421,6 +431,8 @@
   },
   "history": {
     "addClip": "Add clip",
+    "insertClip": "Insert clip",
+    "overwriteClip": "Overwrite clip",
     "addTextClip": "Add text clip",
     "addTimeline": "Add timeline",
     "addTrack": "Add track",

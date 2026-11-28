@@ -755,3 +755,48 @@ test("the right-click menus duplicate a block and grow the stack", async ({
 
   forgetHome(home);
 });
+
+test("a drop inserts by default, and the toolbar can overwrite instead", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Editing Insert");
+  await newTimeline(page, "Timeline 1");
+  await importPicture(page, "one.png");
+  const assetId = await filedId(page, "one.png");
+  expect(assetId).not.toBe("");
+  const box = await canvasBox(page);
+  const video = await rowCenter(page, "Video 1");
+  const at = { x: DROP_X, y: video.y - box.y };
+
+  await dropAssetOnTimeline(page, assetId, at);
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "1");
+  const first = (await spans(page))[0];
+
+  // The same place again: the default insert moves the first block along
+  // rather than refusing the drop.
+  await dropAssetOnTimeline(page, assetId, at);
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "2");
+  const inserted = (await spans(page)).sort((a, b) => a.startMs - b.startMs);
+  expect(inserted).toHaveLength(2);
+  expect(Math.abs(inserted[0].startMs - first.startMs)).toBeLessThanOrEqual(50);
+  expect(
+    Math.abs(inserted[1].startMs - (first.startMs + first.durationMs)),
+  ).toBeLessThanOrEqual(50);
+
+  // The toolbar switches the same drop to overwrite: the block it lands on is
+  // taken out, so the cut still holds two blocks and nothing was pushed on.
+  await page.getByTestId("clip-placement-overwrite").click();
+  await expect(page.getByTestId("clip-placement-overwrite")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await dropAssetOnTimeline(page, assetId, at);
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "2");
+  const overwritten = (await spans(page)).sort((a, b) => a.startMs - b.startMs);
+  expect(overwritten).toHaveLength(2);
+  expect(
+    Math.abs(overwritten[1].startMs - (first.startMs + first.durationMs)),
+  ).toBeLessThanOrEqual(50);
+
+  forgetHome(home);
+});
