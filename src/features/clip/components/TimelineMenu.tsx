@@ -11,12 +11,19 @@ import { PlusIcon } from "./ClipIcons";
 import {
   addTrackOfKind,
   alignSelection,
+  clipboardHasContent,
+  closeGapsOn,
   clipsCrossingPlayhead,
+  copySelection,
+  cutSelection,
+  deleteGapOn,
   deleteSelection,
   duplicateSelection,
   removeTrack,
   renameTrack,
   selectAll,
+  pasteAtPlayhead,
+  rippleDeleteSelection,
   selectedClips,
   splitSelectionAtPlayhead,
 } from "../interactions/clipActions";
@@ -121,6 +128,22 @@ export function TimelineMenu({
           />
           <MenuItem
             disabled={chosen.length === 0}
+            label={t("clip:common.copySelection")}
+            onSelect={() => {
+              onClose();
+              copySelection();
+            }}
+          />
+          <MenuItem
+            disabled={chosen.length === 0}
+            label={t("clip:common.cutSelection")}
+            onSelect={() => {
+              onClose();
+              cutSelection();
+            }}
+          />
+          <MenuItem
+            disabled={chosen.length === 0}
             label={t("clip:common.duplicate")}
             onSelect={() => {
               onClose();
@@ -133,6 +156,14 @@ export function TimelineMenu({
             onSelect={() => {
               onClose();
               deleteSelection();
+            }}
+          />
+          <MenuItem
+            disabled={chosen.length === 0}
+            label={t("clip:menu.rippleDelete")}
+            onSelect={() => {
+              onClose();
+              rippleDeleteSelection();
             }}
           />
           {chosen.length >= 2 && (
@@ -176,6 +207,33 @@ export function TimelineMenu({
                 }}
               />
               <div className="menu-sep" />
+            </>
+          )}
+          <MenuItem
+            disabled={!clipboardHasContent()}
+            label={t("clip:common.pasteClips")}
+            onSelect={() => {
+              onClose();
+              pasteAtPlayhead();
+            }}
+          />
+          {blank && blankTrack && (
+            <>
+              <div className="menu-sep" />
+              <MenuItem
+                label={t("clip:menu.closeGapsOnTrack")}
+                onSelect={() => {
+                  onClose();
+                  closeGapsOn(blank.trackId);
+                }}
+              />
+              <MenuItem
+                label={t("clip:menu.deleteGap")}
+                onSelect={() => {
+                  onClose();
+                  deleteGapOn(blank.trackId, blank.atMs);
+                }}
+              />
             </>
           )}
           <MenuItem

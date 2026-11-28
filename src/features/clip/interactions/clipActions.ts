@@ -236,6 +236,133 @@ export function clearSelection(): void {
   useClipStore.getState().select({ clipIds: [], transitionId: null });
 }
 
+/** What was copied from a cut, kept for the session rather than on disk. */
+let clipboard: TimelineClip[] | null = null;
+
+export function clearClipboard(): void {
+  clipboard = null;
+}
+
+export function clipboardHasContent(): boolean {
+  return clipboard !== null && clipboard.length > 0;
+}
+
+function copyOf(clip: TimelineClip): TimelineClip {
+  return {
+    ...clip,
+    adjust: clip.adjust ? { ...clip.adjust } : undefined,
+    text: clip.text
+      ? { content: clip.text.content, style: { ...clip.text.style } }
+      : undefined,
+  };
+}
+
+/** Copies the chosen clips, keeping everything each one wears. */
+export function copySelection(): boolean {
+  const timeline = activeTimeline();
+  if (!timeline) return false;
+  const chosen = new Set(useClipStore.getState().selection.clipIds);
+  const clips = timeline.clips.filter((clip) => chosen.has(clip.id));
+  if (clips.length === 0) return false;
+  clipboard = clips.map(copyOf);
+  return true;
+}
+
+export function cutSelection(): void {
+  if (!copySelection()) return;
+  deleteSelection();
+}
+
+/** Pulls a row's clips left until its gaps are gone, or every row's. */
+export function closeGapsOn(trackId?: TrackId): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  execute(
+    i18n.t(
+      trackId ? "clip:history.closeGapsOnTrack" : "clip:history.closeGaps",
+    ),
+    [
+      {
+        type: "closeGaps",
+        timelineId: timeline.id,
+        ...(trackId ? { trackId } : {}),
+      },
+    ],
+  );
+}
+
+/** Takes the gap under a moment out and pulls the rest of the row back. */
+export function deleteGapOn(trackId: TrackId, atMs: number): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  execute(i18n.t("clip:history.deleteGap"), [
+    {
+      type: "deleteGap",
+      timelineId: timeline.id,
+      trackId,
+      atMs,
+      scope: useClipStore.getState().rippleScope,
+    },
+  ]);
+}
+
+/** Deletes the chosen clips and pulls what followed them back. */
+export function rippleDeleteSelection(): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const { selection } = useClipStore.getState();
+  const clips = selectedClips(timeline, selection);
+  if (clips.length === 0) return;
+  if (clips.some((clip) => isLocked(timeline, clip))) {
+    toast("error", i18n.t("clip:actions.trackLocked"));
+    return;
+  }
+  const done = execute(i18n.t("clip:history.rippleDeleteClips"), [
+    {
+      type: "rippleDeleteClips",
+      timelineId: timeline.id,
+      clipIds: clips.map((clip) => clip.id),
+      scope: useClipStore.getState().rippleScope,
+    },
+  ]);
+  if (done) useClipStore.getState().select({ clipIds: [], transitionId: null });
+}
+
+/** Pastes the clipboard at the playhead, with the room's current placement. */
+export function pasteAtPlayhead(): void {
+  const timeline = activeTimeline();
+  if (!timeline || !clipboard || clipboard.length === 0) return;
+  const startMs = Math.min(...clipboard.map((clip) => clip.startMs));
+  const atMs = frameAligned(
+    useClipStore.getState().playheadMs,
+    timeline.settings.fps,
+  );
+  const shift = atMs - startMs;
+  const now = nowIso();
+  const clips = clipboard.map((clip) => ({
+    ...copyOf(clip),
+    id: newId(),
+    startMs: clip.startMs + shift,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  const placement = useClipStore.getState().placement;
+  const done = execute(i18n.t("clip:history.pasteClips"), [
+    {
+      type: "insertClips",
+      timelineId: timeline.id,
+      clips,
+      mode: placement === "insert" ? "ripple" : "overwrite",
+      rippleScope: useClipStore.getState().rippleScope,
+    },
+  ]);
+  if (done)
+    useClipStore.getState().select({
+      clipIds: clips.map((clip) => clip.id),
+      transitionId: null,
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Landing media on a row
 // ---------------------------------------------------------------------------

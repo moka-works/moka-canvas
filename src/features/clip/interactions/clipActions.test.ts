@@ -28,8 +28,11 @@ import {
   addAssetsAtPlayhead,
   addTrackOfKind,
   alignSelection,
+  clearClipboard,
   clickSelection,
   clipsCrossingPlayhead,
+  copySelection,
+  cutSelection,
   deleteSelection,
   detachAudio,
   dropAssetOnTrack,
@@ -37,8 +40,10 @@ import {
   duplicateSelection,
   materialOf,
   nearestClipEdgeMs,
+  pasteAtPlayhead,
   rangeBetween,
   removeTrack,
+  rippleDeleteSelection,
   renameTrack,
   selectAll,
   selectedClips,
@@ -57,6 +62,7 @@ beforeEach(() => {
   useProjectStore.getState().close();
   useHistoryStore.getState().clear();
   useAppStore.setState({ toasts: [] });
+  clearClipboard();
   useClipStore.setState({
     activeTimelineId: null,
     selection: { clipIds: [], transitionId: null },
@@ -1066,5 +1072,62 @@ describe("tidying a selection", () => {
     alignSelection("left");
     expect(messages()).toEqual(["That track is locked"]);
     expect(entryCount()).toBe(0);
+  });
+});
+
+describe("the clipboard and ripple delete", () => {
+  it("copies a block and pastes it at the playhead, and undo takes it back", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      playheadMs: 8_000,
+    });
+
+    expect(copySelection()).toBe(true);
+    pasteAtPlayhead();
+    expect(cut().clips).toHaveLength(2);
+    const pasted = cut().clips.find((clip) => clip.id !== ids.videoClip)!;
+    expect(pasted.startMs).toBe(8_000);
+    expect(pasted.durationMs).toBe(4_000);
+
+    undo();
+    expect(cut().clips).toHaveLength(1);
+  });
+
+  it("cuts a block and pastes it back at the playhead", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      playheadMs: 0,
+    });
+
+    cutSelection();
+    expect(cut().clips).toHaveLength(0);
+    pasteAtPlayhead();
+    expect(cut().clips).toHaveLength(1);
+    expect(cut().clips[0].startMs).toBe(0);
+  });
+
+  it("ripple deletes the selection and pulls what follows back", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      playheadMs: 4_000,
+    });
+    addAssetAtPlayhead(ids.followerAsset);
+    const follower = cut().clips.find((clip) => clip.id !== ids.videoClip)!;
+    useClipStore.getState().select({
+      clipIds: [ids.videoClip],
+      transitionId: null,
+    });
+    useClipStore.getState().setRippleScope("all");
+
+    rippleDeleteSelection();
+    expect(cut().clips).toHaveLength(1);
+    expect(cut().clips[0].id).toBe(follower.id);
+    expect(cut().clips[0].startMs).toBe(0);
   });
 });

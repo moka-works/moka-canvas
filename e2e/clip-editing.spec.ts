@@ -800,3 +800,30 @@ test("a drop inserts by default, and the toolbar can overwrite instead", async (
 
   forgetHome(home);
 });
+
+test("copy and paste put a second block at the playhead", async ({ page }) => {
+  const home = await clipRoom(page, "Editing Clipboard");
+  await newTimeline(page, "Timeline 1");
+  await importPicture(page, "one.png");
+  const assetId = await filedId(page, "one.png");
+  expect(assetId).not.toBe("");
+  const box = await canvasBox(page);
+  const video = await rowCenter(page, "Video 1");
+  await dropAssetOnTimeline(page, assetId, { x: DROP_X, y: video.y - box.y });
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "1");
+
+  await page
+    .locator(".clip-tl-canvas")
+    .click({ position: { x: CLIP_BODY_X, y: video.y - box.y } });
+  await page.keyboard.press("Control+c");
+
+  // The ruler click places the playhead ten seconds along, where the paste
+  // lands the copy.
+  await page.locator(".clip-tl-canvas").click({ position: { x: 600, y: 10 } });
+  await page.keyboard.press("Control+v");
+  await expect(timeline(page)).toHaveAttribute("data-clip-count", "2");
+  const starts = (await spans(page)).map((span) => span.startMs);
+  expect(starts.some((start) => Math.abs(start - 10_000) <= 50)).toBe(true);
+
+  forgetHome(home);
+});

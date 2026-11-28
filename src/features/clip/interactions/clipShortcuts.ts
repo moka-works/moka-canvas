@@ -7,9 +7,13 @@ import { nextFrameMs, prevFrameMs } from "../timeline/timecode";
 import {
   activeTimeline,
   clearSelection,
+  copySelection,
+  cutSelection,
   deleteSelection,
   duplicateSelection,
   nearestClipEdgeMs,
+  pasteAtPlayhead,
+  rippleDeleteSelection,
   selectAll,
   selectedClips,
   splitSelectionAtPlayhead,
@@ -56,6 +60,18 @@ export const CLIP_SHORTCUT_GROUPS: ClipShortcutGroup[] = [
         ],
       },
       {
+        label: "clip:common.copySelection",
+        chords: ["clip:shortcuts.chord.ctrlCmdC"],
+      },
+      {
+        label: "clip:common.cutSelection",
+        chords: ["clip:shortcuts.chord.ctrlCmdX"],
+      },
+      {
+        label: "clip:common.pasteClips",
+        chords: ["clip:shortcuts.chord.ctrlCmdV"],
+      },
+      {
         label: "clip:common.splitAtThePlayhead",
         chords: ["clip:shortcuts.chord.ctrlCmdB"],
       },
@@ -69,6 +85,10 @@ export const CLIP_SHORTCUT_GROUPS: ClipShortcutGroup[] = [
           "clip:shortcuts.chord.delete",
           "clip:shortcuts.chord.backspace",
         ],
+      },
+      {
+        label: "clip:common.rippleDeleteSelection",
+        chords: ["clip:shortcuts.chord.shiftDelete"],
       },
       {
         label: "clip:common.selectAll",
@@ -190,6 +210,15 @@ export function useClipShortcuts(options: ClipShortcutOptions = {}) {
         } else if (key === "y") {
           event.preventDefault();
           redo();
+        } else if (key === "c") {
+          event.preventDefault();
+          copySelection();
+        } else if (key === "x") {
+          event.preventDefault();
+          cutSelection();
+        } else if (key === "v") {
+          event.preventDefault();
+          pasteAtPlayhead();
         } else if (key === "b") {
           event.preventDefault();
           splitSelectionAtPlayhead();
@@ -206,7 +235,8 @@ export function useClipShortcuts(options: ClipShortcutOptions = {}) {
 
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        deleteSelection();
+        if (event.shiftKey) rippleDeleteSelection();
+        else deleteSelection();
         return;
       }
       if (event.key === "Escape") {
