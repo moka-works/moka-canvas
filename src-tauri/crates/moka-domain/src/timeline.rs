@@ -105,6 +105,19 @@ fn ensure_track_unlocked(timeline: &TimelineDocument, track_id: &str) -> Result<
     Ok(())
 }
 
+/// The static code behind a collected validation issue, for the commands that
+/// read a whole timeline through the collector and then refuse it.
+fn issue_code(code: &str) -> &'static str {
+    match code {
+        "CLIP_OVERLAP" => "CLIP_OVERLAP",
+        "TRANSITION_SEAM" => "TRANSITION_SEAM",
+        "TRACK_NOT_FOUND" => "TRACK_NOT_FOUND",
+        "CLIP_NOT_FOUND" => "CLIP_NOT_FOUND",
+        "CONFLICT" => "CONFLICT",
+        _ => "VALIDATION_FAILED",
+    }
+}
+
 /// The end of a clip on the timeline's clock, kept in i128 so a document that
 /// arrived with absurd numbers cannot overflow the check that refuses it.
 fn clip_end(clip: &TimelineClip) -> i128 {
@@ -964,6 +977,54 @@ pub fn apply_timeline_command(
                 return Err(CommandError::new(
                     "MOKA_VERSION_UNSUPPORTED",
                     "Timeline schema is newer than this build reads",
+                ));
+            }
+            if timeline.tracks.len() > MAX_TRACKS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Track limit reached",
+                ));
+            }
+            if timeline.clips.len() > MAX_CLIPS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Timeline clip limit reached",
+                ));
+            }
+            if timeline.transitions.len() > MAX_TRANSITIONS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Timeline transition limit reached",
+                ));
+            }
+            for track in &timeline.tracks {
+                if track.name.is_empty() || track.name.chars().count() > TIMELINE_NAME_MAX {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "Track name is empty or too long",
+                    ));
+                }
+            }
+            let mut seam_leaders: HashSet<&str> = HashSet::new();
+            for transition in &timeline.transitions {
+                if !seam_leaders.insert(transition.after_clip_id.as_str()) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "That seam already carries a transition",
+                    ));
+                }
+            }
+            let settings = TimelineSettingsPatch {
+                fps: Some(timeline.settings.fps),
+                width: Some(timeline.settings.width),
+                height: Some(timeline.settings.height),
+                background: Some(timeline.settings.background.clone()),
+            };
+            validate_timeline_settings(&settings)?;
+            if let Some(first) = validate_timeline(timeline, moka).first() {
+                return Err(CommandError::new(
+                    issue_code(&first.code),
+                    first.message.clone(),
                 ));
             }
             let at = index.unwrap_or(timelines.len()).min(timelines.len());

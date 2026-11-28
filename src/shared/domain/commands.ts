@@ -115,6 +115,7 @@ import {
   mergeClipPatch,
   trackAccepts,
   transitionsOfSeams,
+  validateTimeline,
 } from "./timeline";
 import { emptyStorySlot } from "./factories";
 import {
@@ -1518,6 +1519,40 @@ function applyOne(
           "MOKA_VERSION_UNSUPPORTED",
           i18n.t("errors:command.timelineSchemaNewer"),
         );
+      if (command.timeline.tracks.length > MAX_TRACKS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.trackLimitReached"),
+        );
+      if (command.timeline.clips.length > MAX_CLIPS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.clipLimitReached"),
+        );
+      if (command.timeline.transitions.length > MAX_TRANSITIONS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.transitionLimitReached"),
+        );
+      for (const track of command.timeline.tracks)
+        if (track.name.length === 0 || track.name.length > TIMELINE_NAME_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.trackNameInvalid"),
+          );
+      const seamLeaders = new Set<string>();
+      for (const transition of command.timeline.transitions) {
+        if (seamLeaders.has(transition.afterClipId))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.seamTaken"),
+          );
+        seamLeaders.add(transition.afterClipId);
+      }
+      validateTimelineSettings(command.timeline.settings);
+      const issues = validateTimeline(command.timeline, moka);
+      if (issues.length > 0)
+        throw new CommandError(issues[0]!.code, issues[0]!.message);
       const index = Math.min(
         Math.max(command.index ?? timelines.length, 0),
         timelines.length,

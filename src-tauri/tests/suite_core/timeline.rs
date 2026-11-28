@@ -4,7 +4,9 @@
 
 use moka_canvas::config::parse_test_config;
 use moka_canvas::domain::commands::apply_commands;
-use moka_canvas::domain::timeline::{MAX_CLIPS_PER_COMMAND, MAX_TIMELINES_PER_PROJECT};
+use moka_canvas::domain::timeline::{
+    MAX_CLIPS_PER_COMMAND, MAX_TIMELINES_PER_PROJECT, MAX_TRACKS_PER_TIMELINE,
+};
 use moka_canvas::domain::validate::validate_moka_file;
 use moka_canvas::domain::{
     new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand,
@@ -776,6 +778,77 @@ fn refuses_a_seam_on_a_locked_track_and_a_move_onto_one() {
             }
         ),
         "TRACK_LOCKED"
+    );
+}
+
+#[test]
+fn refuses_a_timeline_that_arrives_with_bad_geometry_settings_or_seams() {
+    let moka = timeline_fixture();
+
+    let mut overlapping = create_timeline("Overlapping");
+    let track_id = overlapping.tracks[0].id.clone();
+    let first = clip_of(&moka, VIDEO_ASSET, &track_id, 0);
+    let mut second = first.clone();
+    second.id = new_id();
+    second.start_ms = 1_000;
+    overlapping.clips = vec![first, second];
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::AddTimeline {
+                timeline: overlapping,
+                index: None,
+            }
+        ),
+        "CLIP_OVERLAP"
+    );
+
+    let mut bad_frame = create_timeline("Bad frame");
+    bad_frame.settings.fps = 29;
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::AddTimeline {
+                timeline: bad_frame,
+                index: None,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+
+    let mut too_many = create_timeline("Too many");
+    too_many.tracks = (0..=MAX_TRACKS_PER_TIMELINE)
+        .map(|index| track(&new_id(), TrackKind::Text, &format!("Text {index}")))
+        .collect();
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::AddTimeline {
+                timeline: too_many,
+                index: None,
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+
+    let mut doubled = create_timeline("Doubled");
+    let track_id = doubled.tracks[0].id.clone();
+    let first = clip_of(&moka, VIDEO_ASSET, &track_id, 0);
+    let second = clip_of(&moka, VIDEO_ASSET, &track_id, 4_000);
+    let one = transition("transition-1", &first.id, TransitionKind::Crossfade, 500);
+    let mut two = one.clone();
+    two.id = "transition-2".into();
+    doubled.clips = vec![first, second];
+    doubled.transitions = vec![one, two];
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::AddTimeline {
+                timeline: doubled,
+                index: None,
+            }
+        ),
+        "CONFLICT"
     );
 }
 

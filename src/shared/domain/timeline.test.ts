@@ -4,6 +4,7 @@ import {
   DEFAULT_TRANSITION_MS,
   MAX_CLIPS_PER_COMMAND,
   MAX_TIMELINES_PER_PROJECT,
+  MAX_TRACKS_PER_TIMELINE,
 } from "./constants";
 import { decodeMokaFile, encodeMokaFile } from "./codec";
 import {
@@ -165,6 +166,67 @@ describe("timeline lifecycle commands", () => {
       }),
     );
     expect(code).toBe("VALIDATION_FAILED");
+  });
+
+  it("refuses a timeline that arrives with geometry, settings or seams it may not hold", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const asset = moka.resources.videos.find(
+      (entry) => entry.id === ids.videoAsset,
+    )!;
+
+    const overlapping = createTimeline("Overlapping");
+    const videoTrack = overlapping.tracks[0]!;
+    overlapping.clips = [
+      createClipFromAsset(asset, videoTrack.id, 0),
+      createClipFromAsset(asset, videoTrack.id, 1_000),
+    ];
+    expect(
+      codeOf(() => apply(moka, { type: "addTimeline", timeline: overlapping })),
+    ).toBe("CLIP_OVERLAP");
+
+    const badFrame = createTimeline("Bad frame", { fps: 29 });
+    expect(
+      codeOf(() => apply(moka, { type: "addTimeline", timeline: badFrame })),
+    ).toBe("VALIDATION_FAILED");
+
+    const tooMany = createTimeline("Too many");
+    tooMany.tracks = Array.from(
+      { length: MAX_TRACKS_PER_TIMELINE + 1 },
+      (_, index) => ({
+        ...tooMany.tracks[0]!,
+        id: `track-${index}`,
+        name: `Track ${index}`,
+      }),
+    );
+    expect(
+      codeOf(() => apply(moka, { type: "addTimeline", timeline: tooMany })),
+    ).toBe("VALIDATION_FAILED");
+
+    const doubled = createTimeline("Doubled");
+    const trackId = doubled.tracks[0]!.id;
+    const first = createClipFromAsset(asset, trackId, 0);
+    const second = createClipFromAsset(asset, trackId, 4_000);
+    doubled.clips = [first, second];
+    doubled.transitions = [
+      {
+        id: "transition-1",
+        afterClipId: first.id,
+        kind: "crossfade",
+        durationMs: 500,
+        createdAt: NOW,
+      },
+      {
+        id: "transition-2",
+        afterClipId: first.id,
+        kind: "crossfade",
+        durationMs: 500,
+        createdAt: NOW,
+      },
+    ];
+    expect(
+      codeOf(() => apply(moka, { type: "addTimeline", timeline: doubled })),
+    ).toBe("CONFLICT");
   });
 
   it("renames a timeline and the undo gives the name back", () => {
