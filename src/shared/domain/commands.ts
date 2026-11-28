@@ -515,9 +515,30 @@ function tooShort(): CommandError {
   );
 }
 
-function trimTailTo(clip: TimelineClip, endMs: number): TimelineClip {
+function ownClockClip(moka: MokaFile, clip: TimelineClip): boolean {
+  if (clip.kind === "text") return true;
+  if (!clip.assetId) return false;
+  for (const entries of Object.values(moka.resources)) {
+    const asset = entries.find((entry) => entry.id === clip.assetId);
+    if (asset) return asset.mime?.startsWith("image/") === true;
+  }
+  return false;
+}
+
+function trimTailTo(
+  moka: MokaFile,
+  clip: TimelineClip,
+  endMs: number,
+): TimelineClip {
   let durationMs = endMs - clip.startMs;
   if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  if (ownClockClip(moka, clip))
+    return fitFades({
+      ...clip,
+      durationMs,
+      inPointMs: 0,
+      outPointMs: durationMs,
+    });
   let outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
   if (outPointMs > clip.outPointMs) {
     durationMs = Math.floor((clip.outPointMs - clip.inPointMs) / clip.speed);
@@ -531,9 +552,21 @@ function trimTailTo(clip: TimelineClip, endMs: number): TimelineClip {
   return fitFades({ ...clip, durationMs, outPointMs });
 }
 
-function trimHeadTo(clip: TimelineClip, startMs: number): TimelineClip {
+function trimHeadTo(
+  moka: MokaFile,
+  clip: TimelineClip,
+  startMs: number,
+): TimelineClip {
   let durationMs = clip.startMs + clip.durationMs - startMs;
   if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  if (ownClockClip(moka, clip))
+    return fitFades({
+      ...clip,
+      startMs,
+      durationMs,
+      inPointMs: 0,
+      outPointMs: durationMs,
+    });
   const inPointMs =
     clip.inPointMs + Math.round((startMs - clip.startMs) * clip.speed);
   let outPointMs = inPointMs + Math.round(durationMs * clip.speed);
@@ -551,11 +584,25 @@ function trimHeadTo(clip: TimelineClip, startMs: number): TimelineClip {
 
 /** The two pieces a landing at `atMs` leaves, the right one with a fresh id. */
 function splitClipAt(
+  moka: MokaFile,
   clip: TimelineClip,
   atMs: number,
 ): [TimelineClip, TimelineClip] {
-  const left = trimTailTo(clip, atMs);
+  const left = trimTailTo(moka, clip, atMs);
   let durationMs = clip.startMs + clip.durationMs - atMs;
+  if (ownClockClip(moka, clip)) {
+    const right = fitFades({
+      ...clip,
+      id: newId(),
+      startMs: atMs,
+      durationMs,
+      inPointMs: 0,
+      outPointMs: durationMs,
+      createdAt: nowIso(),
+    });
+    right.updatedAt = right.createdAt;
+    return [left, right];
+  }
   let outPointMs = left.outPointMs + Math.round(durationMs * clip.speed);
   if (outPointMs > clip.outPointMs) {
     durationMs = Math.floor((clip.outPointMs - left.outPointMs) / clip.speed);
@@ -610,6 +657,7 @@ function overlapError(
 
 /** Replaces what the incoming clip covers, trimming or splitting what is left. */
 function overlayClips(
+  moka: MokaFile,
   timeline: TimelineDocument,
   incoming: TimelineClip[],
 ): TimelineClip[] {
@@ -630,16 +678,16 @@ function overlayClips(
       }
       if (held.startMs >= startMs && heldEnd <= endMs) continue;
       if (held.startMs < startMs && heldEnd > endMs) {
-        const [left, middle] = splitClipAt(held, startMs);
-        const [, right] = splitClipAt(middle, endMs);
+        const [left, middle] = splitClipAt(moka, held, startMs);
+        const [, right] = splitClipAt(moka, middle, endMs);
         next.push(left, right);
         continue;
       }
       if (held.startMs < startMs) {
-        next.push(trimTailTo(held, startMs));
+        next.push(trimTailTo(moka, held, startMs));
         continue;
       }
-      next.push(trimHeadTo(held, endMs));
+      next.push(trimHeadTo(moka, held, endMs));
     }
     next.push(added);
     list = next;
@@ -649,6 +697,7 @@ function overlayClips(
 
 /** Moves what follows the landing point by the block's length. */
 function rippleClips(
+  moka: MokaFile,
   timeline: TimelineDocument,
   incoming: TimelineClip[],
   scope: "all" | "track",
@@ -677,7 +726,7 @@ function rippleClips(
       next.push({ ...held, startMs: held.startMs + total });
       continue;
     }
-    const [left, right] = splitClipAt(held, startMs);
+    const [left, right] = splitClipAt(moka, held, startMs);
     next.push(left, { ...right, startMs: right.startMs + total });
   }
   next.push(...incoming);
@@ -2359,8 +2408,13 @@ function applyOne(
         );
       const finalClips =
         command.mode === "ripple"
-          ? rippleClips(timeline, command.clips, command.rippleScope ?? "all")
-          : overlayClips(timeline, command.clips);
+          ? rippleClips(
+              moka,
+              timeline,
+              command.clips,
+              command.rippleScope ?? "all",
+            )
+          : overlayClips(moka, timeline, command.clips);
       if (finalClips.length > MAX_CLIPS_PER_TIMELINE)
         throw new CommandError(
           "VALIDATION_FAILED",

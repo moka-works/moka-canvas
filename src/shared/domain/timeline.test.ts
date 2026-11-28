@@ -1042,6 +1042,40 @@ describe("transition commands", () => {
     expect(tail.durationMs).toBe(2_000);
   });
 
+  it("keeps a text clip on its own clock when a split lands", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const caption = createTextClip("Caption", ids.textTrack, 0);
+    const withCaption = apply(moka, {
+      type: "addClips",
+      timelineId: ids.timeline,
+      clips: [caption],
+    }).next;
+    const middle = createTextClip("Middle", ids.textTrack, 500);
+    const next = apply(withCaption, {
+      type: "insertClips",
+      timelineId: ids.timeline,
+      clips: [middle],
+      mode: "ripple",
+      rippleScope: "track",
+    }).next;
+    const clips = next.timelines![0].clips;
+    const left = clips.find((clip) => clip.id === caption.id)!;
+    expect([left.durationMs, left.inPointMs, left.outPointMs]).toEqual([
+      500, 0, 500,
+    ]);
+    const tail = clips.find(
+      (clip) =>
+        clip.kind === "text" && clip.id !== caption.id && clip.id !== middle.id,
+    )!;
+    expect([
+      tail.startMs,
+      tail.durationMs,
+      tail.inPointMs,
+      tail.outPointMs,
+    ]).toEqual([2_500, 1_500, 0, 1_500]);
+  });
+
   it("overwrites the place it lands on, trimming or splitting around it", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

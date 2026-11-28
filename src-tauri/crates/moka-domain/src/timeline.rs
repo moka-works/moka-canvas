@@ -595,10 +595,34 @@ fn fit_fades(mut clip: TimelineClip) -> TimelineClip {
     clip
 }
 
-fn trim_tail_to(clip: &TimelineClip, end_ms: i64) -> Result<TimelineClip, CommandError> {
+fn own_clock(moka: &MokaFile, clip: &TimelineClip) -> bool {
+    if clip.kind == TrackKind::Text {
+        return true;
+    }
+    let Some(asset_id) = clip.asset_id.as_deref() else {
+        return false;
+    };
+    moka.resources
+        .find(asset_id)
+        .and_then(|asset| asset.mime.as_deref())
+        .is_some_and(|mime| mime.starts_with("image/"))
+}
+
+fn trim_tail_to(
+    moka: &MokaFile,
+    clip: &TimelineClip,
+    end_ms: i64,
+) -> Result<TimelineClip, CommandError> {
     let mut duration = end_ms - clip.start_ms;
     if duration < MIN_CLIP_DURATION_MS {
         return Err(clip_too_short());
+    }
+    if own_clock(moka, clip) {
+        let mut next = clip.clone();
+        next.duration_ms = duration;
+        next.in_point_ms = 0;
+        next.out_point_ms = duration;
+        return Ok(fit_fades(next));
     }
     let mut out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
     if out_point > clip.out_point_ms {
@@ -618,10 +642,22 @@ fn trim_tail_to(clip: &TimelineClip, end_ms: i64) -> Result<TimelineClip, Comman
     Ok(fit_fades(next))
 }
 
-fn trim_head_to(clip: &TimelineClip, start_ms: i64) -> Result<TimelineClip, CommandError> {
+fn trim_head_to(
+    moka: &MokaFile,
+    clip: &TimelineClip,
+    start_ms: i64,
+) -> Result<TimelineClip, CommandError> {
     let mut duration = clip.start_ms + clip.duration_ms - start_ms;
     if duration < MIN_CLIP_DURATION_MS {
         return Err(clip_too_short());
+    }
+    if own_clock(moka, clip) {
+        let mut next = clip.clone();
+        next.start_ms = start_ms;
+        next.duration_ms = duration;
+        next.in_point_ms = 0;
+        next.out_point_ms = duration;
+        return Ok(fit_fades(next));
     }
     let in_point =
         clip.in_point_ms + ((start_ms - clip.start_ms) as f64 * clip.speed).round() as i64;
@@ -646,11 +682,23 @@ fn trim_head_to(clip: &TimelineClip, start_ms: i64) -> Result<TimelineClip, Comm
 }
 
 fn split_clip_at(
+    moka: &MokaFile,
     clip: &TimelineClip,
     at_ms: i64,
 ) -> Result<(TimelineClip, TimelineClip), CommandError> {
-    let left = trim_tail_to(clip, at_ms)?;
+    let left = trim_tail_to(moka, clip, at_ms)?;
     let mut duration = clip.start_ms + clip.duration_ms - at_ms;
+    if own_clock(moka, clip) {
+        let mut right = clip.clone();
+        right.id = new_id();
+        right.start_ms = at_ms;
+        right.duration_ms = duration;
+        right.in_point_ms = 0;
+        right.out_point_ms = duration;
+        right.created_at = now_iso();
+        right.updated_at = right.created_at.clone();
+        return Ok((left, fit_fades(right)));
+    }
     let mut out_point = left.out_point_ms + (duration as f64 * clip.speed).round() as i64;
     if out_point > clip.out_point_ms {
         duration = (((clip.out_point_ms - left.out_point_ms) as f64) / clip.speed).floor() as i64;
@@ -679,6 +727,7 @@ fn clips_overlap(a: &TimelineClip, b: &TimelineClip) -> bool {
 }
 
 fn overlay_clips(
+    moka: &MokaFile,
     timeline: &TimelineDocument,
     incoming: &[TimelineClip],
 ) -> Result<Vec<TimelineClip>, CommandError> {
@@ -701,17 +750,17 @@ fn overlay_clips(
                 continue;
             }
             if held.start_ms < start && held_end > end {
-                let (left, middle) = split_clip_at(held, start)?;
-                let (_, right) = split_clip_at(&middle, end)?;
+                let (left, middle) = split_clip_at(moka, held, start)?;
+                let (_, right) = split_clip_at(moka, &middle, end)?;
                 next.push(left);
                 next.push(right);
                 continue;
             }
             if held.start_ms < start {
-                next.push(trim_tail_to(held, start)?);
+                next.push(trim_tail_to(moka, held, start)?);
                 continue;
             }
-            next.push(trim_head_to(held, end)?);
+            next.push(trim_head_to(moka, held, end)?);
         }
         next.push(added.clone());
         list = next;
@@ -720,6 +769,7 @@ fn overlay_clips(
 }
 
 fn ripple_clips(
+    moka: &MokaFile,
     timeline: &TimelineDocument,
     incoming: &[TimelineClip],
     scope: RippleScope,
@@ -756,7 +806,7 @@ fn ripple_clips(
             next.push(shifted);
             continue;
         }
-        let (left, right) = split_clip_at(held, start)?;
+        let (left, right) = split_clip_at(moka, held, start)?;
         next.push(left);
         let mut shifted = right;
         shifted.start_ms += total;
@@ -1971,10 +2021,13 @@ pub fn apply_timeline_command(
                 ));
             }
             let final_clips = match mode {
-                InsertMode::Overwrite => overlay_clips(timeline, clips)?,
-                InsertMode::Ripple => {
-                    ripple_clips(timeline, clips, ripple_scope.unwrap_or(RippleScope::All))?
-                }
+                InsertMode::Overwrite => overlay_clips(moka, timeline, clips)?,
+                InsertMode::Ripple => ripple_clips(
+                    moka,
+                    timeline,
+                    clips,
+                    ripple_scope.unwrap_or(RippleScope::All),
+                )?,
             };
             if final_clips.len() > MAX_CLIPS_PER_TIMELINE {
                 return Err(CommandError::new(
