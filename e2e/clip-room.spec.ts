@@ -90,8 +90,10 @@ test("a second timeline joins the strip, and the machine remembers the one being
     strip(page).getByRole("tab", { name: "Timeline 2" }),
   ).toHaveAttribute("aria-selected", "false");
 
-  // A double-click renames the tab in place, and Enter takes the words.
-  await strip(page).getByRole("tab", { name: "Timeline 2" }).dblclick();
+  // A double-click on the rail's row renames the cut in place, and Enter takes
+  // the words. Naming and deleting stay in the list, where every cut is a row.
+  await page.getByTestId("clip-face-timelines").click();
+  await page.getByTestId("timeline-picker-Timeline 2").dblclick();
   const field = page.getByRole("textbox", { name: "Rename Timeline 2" });
   await field.fill("Second cut");
   await field.press("Enter");
@@ -120,6 +122,62 @@ test("a second timeline joins the strip, and the machine remembers the one being
   forgetHome(home);
 });
 
+test("a tab is put down without touching the cut, and opened again from the list", async ({
+  page,
+}) => {
+  const home = await clippedProject(page);
+  await newTimeline(page, "Timeline 1");
+  await newTimeline(page, "Timeline 2");
+
+  // Timeline 2 is the one being looked at: putting the other tab down leaves
+  // the view where it is and the cut itself in the project.
+  await page.getByTestId("timeline-tab-close-Timeline 1").click();
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 1" }),
+  ).toHaveCount(0);
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 2" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect
+    .poll(() => persistedTimelineNames(page))
+    .toEqual(["Timeline 1", "Timeline 2"]);
+
+  // The rail's list still reads every cut, and opening a row puts its tab
+  // back up.
+  await page.getByTestId("clip-face-timelines").click();
+  await expect(page.getByTestId("timeline-picker-Timeline 1")).toBeVisible();
+  await page.getByTestId("timeline-picker-Timeline 1").click();
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 1" }),
+  ).toHaveAttribute("aria-selected", "true");
+
+  // Closing the tab being looked at moves to the one beside it; the last tab
+  // keeps no ×, since there would be nothing left to look at.
+  await page.getByTestId("timeline-tab-close-Timeline 1").click();
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 1" }),
+  ).toHaveCount(0);
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 2" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("timeline-tab-close-Timeline 2")).toHaveCount(
+    0,
+  );
+
+  // The tabs this machine put down are the tabs it comes back to.
+  await page.reload();
+  await openRecent(page, "Cutting Room");
+  await openClipRoom(page);
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 1" }),
+  ).toHaveCount(0);
+  await expect(
+    strip(page).getByRole("tab", { name: "Timeline 2" }),
+  ).toHaveAttribute("aria-selected", "true");
+
+  forgetHome(home);
+});
+
 test("a timeline is taken off the strip, and the room asks again when none is left", async ({
   page,
 }) => {
@@ -127,8 +185,9 @@ test("a timeline is taken off the strip, and the room asks again when none is le
   await newTimeline(page, "Timeline 1");
   await newTimeline(page, "Timeline 2");
 
-  // An empty timeline is a tab and nothing else: one click takes it away, and
-  // the timeline beside it takes the view.
+  // An empty timeline is a row in the rail's list: one click takes it out of
+  // the project, and the timeline beside it takes the view.
+  await page.getByTestId("clip-face-timelines").click();
   await page.getByRole("button", { name: "Delete Timeline 2" }).click();
   await expect(
     strip(page).getByRole("tab", { name: "Timeline 2" }),
@@ -166,6 +225,7 @@ test("a timeline holding work is deleted only after a question that stands insid
     "1",
   );
 
+  await page.getByTestId("clip-face-timelines").click();
   await page.getByRole("button", { name: "Delete Timeline 1" }).click();
   const asked = page.getByRole("alertdialog", { name: "Delete timeline?" });
   await expect(asked).toBeVisible({ timeout: 10_000 });

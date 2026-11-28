@@ -86,4 +86,49 @@ describe("the rail's timeline selector", () => {
     fireEvent.click(screen.getByTestId("timeline-picker-new"));
     expect(useClipStore.getState().newTimelineOpen).toBe(true);
   });
+
+  it("renames a cut in place from its row", () => {
+    openCut(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Timeline 2" }));
+    const field = screen.getByRole("textbox", { name: "Rename Timeline 2" });
+    fireEvent.change(field, { target: { value: "Second cut" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(
+      useProjectStore.getState().moka?.timelines?.map((cut) => cut.name),
+    ).toEqual(["Timeline 1", "Second cut"]);
+  });
+
+  it("takes an empty cut out of the project from its row", () => {
+    openCut(true);
+
+    fireEvent.click(screen.getByTestId("timeline-picker-delete-Timeline 2"));
+
+    expect(
+      useProjectStore.getState().moka?.timelines?.map((cut) => cut.name),
+    ).toEqual(["Timeline 1"]);
+  });
+
+  it("looks at the cut beside the one deleted", () => {
+    const moka = buildTimelineMokaFile();
+    moka.timelines = [
+      { ...moka.timelines![0], clips: [] },
+      createTimeline("Timeline 2"),
+    ];
+    useProjectStore.getState().hydrate({
+      moka,
+      root: "/tmp/moka-timeline-picker-test",
+      selfCheck: { ok: true, issues: [] },
+      selfCheckVerified: true,
+    });
+    useClipStore.setState({ activeTimelineId: moka.timelines![0].id });
+    render(<TimelinePicker />);
+
+    fireEvent.click(screen.getByTestId("timeline-picker-delete-Timeline 1"));
+
+    expect(useClipStore.getState().activeTimelineId).toBe(
+      moka.timelines![1].id,
+    );
+  });
 });

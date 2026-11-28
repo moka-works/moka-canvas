@@ -65,6 +65,10 @@ function mergePatches(base: UiPrefsPatch, next: UiPrefsPatch): UiPrefsPatch {
     ...base,
     ...next,
     openCanvases: mergeRows(base.openCanvases, next.openCanvases),
+    clipOpenTimelines: mergeRows(
+      base.clipOpenTimelines,
+      next.clipOpenTimelines,
+    ),
     clipTimelines: mergeRows(base.clipTimelines, next.clipTimelines),
     clipViews: mergeRows(base.clipViews, next.clipViews),
     storyModels: mergeRows(base.storyModels, next.storyModels),

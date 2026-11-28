@@ -4890,25 +4890,70 @@ button.danger:hover:not(:disabled) {
 
 .clip-timeline-row {
   align-items: center;
-  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--ink);
   display: flex;
-  gap: 8px;
-  padding: 8px 10px;
-  text-align: left;
-  width: 100%;
+  gap: 4px;
 }
 
-.clip-timeline-row:hover:not(:disabled) {
-  background: var(--surface-raised);
-  border-color: var(--stroke);
-}
-
+.clip-timeline-row:hover,
 .clip-timeline-row.is-active {
   background: var(--surface-raised);
   border-color: var(--stroke);
+}
+
+.clip-timeline-main {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.clip-timeline-rename {
+  background: var(--canvas);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  flex: 1;
+  margin-left: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+/* The reason a rename was not taken, said beside the row it belongs to. */
+.clip-timeline-error {
+  color: var(--coral);
+  font-size: 11px;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+.clip-timeline-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.clip-timeline-actions button {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 3px 5px;
+}
+
+.clip-timeline-actions button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.clip-timeline-actions .clip-timeline-delete:hover:not(:disabled) {
+  color: var(--coral);
 }
 
 .clip-timeline-name {
@@ -5570,8 +5615,9 @@ body.is-dragging-split {
   padding: 16px 8px;
 }
 
-/* The strip of timelines in the bar: the same strip the boards get, with the
-   × always standing since a timeline is taken away rather than put down. */
+/* The strip of cuts in the bar: the same strip the boards get, with the ×
+   putting a tab down rather than taking the cut away — so it stands only while
+   there is another tab to be left looking at. */
 .timeline-tabs {
   align-items: center;
   display: flex;
@@ -5622,13 +5668,6 @@ body.is-dragging-split {
 
 .timeline-tab-close:hover:not(:disabled) {
   color: var(--coral);
-}
-
-/* The reason a rename was not taken, said beside the tab it belongs to. */
-.timeline-tab-error {
-  color: var(--coral);
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .timeline-tab-add {

@@ -138,22 +138,24 @@
   "tabs": {
     "add": "添加时间线",
     "addHint": "添加一条时间线",
-    "delete": "删除 {{name}}",
+    "close": "关闭「{{name}}」",
+    "closeHint": "关闭标签，时间线仍留在项目中",
+    "list": "时间线"
+  },
+  "timelinePicker": {
+    "delete": "删除「{{name}}」",
     "deleteBody": "“{{name}}”将连同它的 {{total}} {{noun}}一起离开项目——整条时间线一并删除。撤销可以恢复。",
     "deleteConfirm": "删除时间线",
     "deleteHint": "删除此时间线",
     "deleteTitle": "删除时间线？",
-    "list": "时间线",
-    "nameTooLong": "名称最多 {{max}} 个字符",
-    "needsName": "时间线需要名称",
-    "rename": "重命名 {{name}}",
-    "renameHint": "双击重命名"
-  },
-  "timelinePicker": {
     "empty": "还没有时间线",
     "list": "全部时间线",
+    "nameTooLong": "名称最多 {{max}} 个字符",
+    "needsName": "时间线需要名称",
     "new": "新建时间线",
-    "openHint": "在舞台打开「{{name}}」"
+    "openHint": "在舞台打开「{{name}}」",
+    "rename": "重命名「{{name}}」",
+    "renameHint": "双击改名"
   },
   "timelineDialog": {
     "create": "创建时间线",

@@ -138,22 +138,24 @@
   "tabs": {
     "add": "Add timeline",
     "addHint": "Add a timeline",
+    "close": "Close {{name}}",
+    "closeHint": "Close the tab; the timeline stays in the project",
+    "list": "Timelines"
+  },
+  "timelinePicker": {
     "delete": "Delete {{name}}",
     "deleteBody": "“{{name}}” leaves the project with its {{total}} {{noun}} — the whole timeline goes together. Undo brings it back.",
     "deleteConfirm": "Delete timeline",
     "deleteHint": "Delete this timeline",
     "deleteTitle": "Delete timeline?",
-    "list": "Timelines",
-    "nameTooLong": "Names run to {{max}} characters",
-    "needsName": "A timeline needs a name",
-    "rename": "Rename {{name}}",
-    "renameHint": "Double-click to rename"
-  },
-  "timelinePicker": {
     "empty": "No timeline yet",
     "list": "All timelines",
+    "nameTooLong": "Names run to {{max}} characters",
+    "needsName": "A timeline needs a name",
     "new": "New timeline",
-    "openHint": "Open {{name}} in the stage"
+    "openHint": "Open {{name}} in the stage",
+    "rename": "Rename {{name}}",
+    "renameHint": "Double-click to rename"
   },
   "timelineDialog": {
     "create": "Create timeline",

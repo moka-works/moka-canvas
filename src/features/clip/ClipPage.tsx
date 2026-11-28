@@ -23,8 +23,13 @@ import { ExportDialog } from "./panels/ExportDialog";
 import { PreviewStage } from "./panels/PreviewStage";
 import { TimelineArea } from "./panels/TimelineArea";
 import { useTransport } from "./preview/transport";
-import { initialTimelineId, useClipStore } from "./stores/clipStore";
+import {
+  initialTimelineId,
+  rememberedTimelineId,
+  useClipStore,
+} from "./stores/clipStore";
 import { useExportStore } from "./stores/exportStore";
+import { useOpenTimelines } from "./stores/openTimelines";
 import { useStageSplit } from "./stores/stageSplit";
 
 /**
@@ -74,14 +79,31 @@ export function ClipPage() {
   useTransport();
 
   // Entering the room is a seam in the history: the board's undos stop at the
-  // door, and what is undone here is not undone on a canvas. Which timeline
-  // the room opens onto is the one this machine left the project on, falling
-  // back to the first the document holds.
+  // door, and what is undone here is not undone on a canvas. The room opens
+  // onto the tabs the project was left with, and onto the cut this machine was
+  // left looking at when that tab is still up.
   useEffect(() => {
     if (!projectId) return;
     const opened = useProjectStore.getState().moka;
     if (!opened) return;
-    useClipStore.getState().setActiveTimeline(initialTimelineId(opened));
+    const open = useOpenTimelines.getState().adopt(opened);
+    // A cut chosen from outside the room — a story's film, a file's use, an
+    // assistant's answer — was made the place to be before the room could put
+    // its tab up, so that tab goes up now. A tab put down from inside always
+    // leaves another cut being looked at, so this never reopens a closed one.
+    const remembered = rememberedTimelineId(opened.metadata.id);
+    if (
+      remembered !== null &&
+      !open.includes(remembered) &&
+      (opened.timelines ?? []).some((timeline) => timeline.id === remembered)
+    ) {
+      useOpenTimelines.getState().open(remembered);
+    }
+    useClipStore
+      .getState()
+      .setActiveTimeline(
+        initialTimelineId(opened, useOpenTimelines.getState().ids),
+      );
     // The seam is a moment rather than a render, so its words are read where
     // it is made rather than taken from the render's own language.
     historyBoundary(i18n.t("clip:page.historyBoundary"));
@@ -89,12 +111,20 @@ export function ClipPage() {
 
   // A timeline the document no longer holds — deleted here, or by an undo of
   // the command that made it — is not what the room can be looking at: the
-  // first timeline takes its place, and a document with none clears it.
+  // strip drops its tab, the first open cut takes its place, and a document
+  // with none clears it.
   useEffect(() => {
     const timelines = moka?.timelines ?? [];
+    const ids = timelines.map((timeline) => timeline.id);
     const active = useClipStore.getState().activeTimelineId;
-    if (timelines.some((timeline) => timeline.id === active)) return;
-    useClipStore.getState().setActiveTimeline(timelines[0]?.id ?? null);
+    const next = useOpenTimelines.getState().prune(ids, active);
+    if (next) {
+      useClipStore.getState().setActiveTimeline(next);
+      return;
+    }
+    if (active === null || !ids.includes(active)) {
+      useClipStore.getState().setActiveTimeline(ids[0] ?? null);
+    }
   }, [moka]);
 
   /**

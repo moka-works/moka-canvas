@@ -28,6 +28,7 @@ export function defaultUiPrefs(): UiPreferences {
     panelWidths: { left: null, right: null },
     pictureTools: { shown: null, cropRatio: null, grid: null },
     openCanvases: {},
+    clipOpenTimelines: {},
     clipTimelines: {},
     clipViews: {},
     clipQuality: "full",
@@ -79,6 +80,7 @@ export function applyUiPatch(
     panelWidths: { ...current.panelWidths },
     pictureTools: { ...current.pictureTools },
     openCanvases: { ...current.openCanvases },
+    clipOpenTimelines: { ...current.clipOpenTimelines },
     clipTimelines: { ...current.clipTimelines },
     clipViews: { ...current.clipViews },
     storyModels: { ...current.storyModels },
@@ -109,6 +111,7 @@ export function applyUiPatch(
     next.lastUpdateCheck = patch.lastUpdateCheck;
   }
   assignMap(next.openCanvases, patch.openCanvases);
+  assignMap(next.clipOpenTimelines, patch.clipOpenTimelines);
   assignMap(next.clipTimelines, patch.clipTimelines);
   assignMap(next.clipViews, patch.clipViews);
   assignMap(next.storyModels, patch.storyModels);

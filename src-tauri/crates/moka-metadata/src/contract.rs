@@ -570,6 +570,12 @@ async fn ui_preferences_merge(store: &dyn MetadataStore) -> Result<(), String> {
         clip_timelines: [("p1".to_string(), Some("tl-1".to_string()))]
             .into_iter()
             .collect(),
+        clip_open_timelines: [(
+            "p1".to_string(),
+            Some(vec!["tl-1".to_string(), "tl-2".to_string()]),
+        )]
+        .into_iter()
+        .collect(),
         story_places: [(
             "p1".to_string(),
             Some(StoryPlace {
@@ -598,6 +604,9 @@ async fn ui_preferences_merge(store: &dyn MetadataStore) -> Result<(), String> {
     if after.clip_timelines.get("p1").map(String::as_str) != Some("tl-1") {
         return Err("a map entry did not persist".to_string());
     }
+    if after.clip_open_timelines.get("p1").map(Vec::len) != Some(2) {
+        return Err("a list entry did not persist".to_string());
+    }
 
     // A second window changing only the palette must not undo the first
     // window's entries beside it.
@@ -612,15 +621,22 @@ async fn ui_preferences_merge(store: &dyn MetadataStore) -> Result<(), String> {
     if merged.story_places.get("p1") != after.story_places.get("p1") {
         return Err("a patch dropped a map entry it did not name".to_string());
     }
+    if merged.clip_open_timelines.get("p1") != after.clip_open_timelines.get("p1") {
+        return Err("a patch dropped a list entry it did not name".to_string());
+    }
 
     // A map entry sent as null is removed; the rest of the map stays.
     let remove = UiPrefsPatch {
         clip_timelines: [("p1".to_string(), None)].into_iter().collect(),
+        clip_open_timelines: [("p1".to_string(), None)].into_iter().collect(),
         ..Default::default()
     };
     let removed = describe("remove ui entry", store.set_ui_preferences(&remove)).await?;
     if removed.clip_timelines.contains_key("p1") {
         return Err("a null map entry did not remove its row".to_string());
+    }
+    if removed.clip_open_timelines.contains_key("p1") {
+        return Err("a null list entry did not remove its row".to_string());
     }
     if removed.story_places.get("p1") != merged.story_places.get("p1") {
         return Err("removing one map entry removed another".to_string());

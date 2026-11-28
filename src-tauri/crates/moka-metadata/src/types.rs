@@ -527,6 +527,8 @@ pub struct UiPreferences {
     pub panel_widths: PanelWidths,
     pub picture_tools: PictureToolsPrefs,
     pub open_canvases: BTreeMap<String, Vec<String>>,
+    /// Which timelines each project has open, by project.
+    pub clip_open_timelines: BTreeMap<String, Vec<String>>,
     pub clip_timelines: BTreeMap<String, String>,
     pub clip_views: BTreeMap<String, TimelineView>,
     pub clip_quality: String,
@@ -554,6 +556,7 @@ impl Default for UiPreferences {
             panel_widths: PanelWidths::default(),
             picture_tools: PictureToolsPrefs::default(),
             open_canvases: BTreeMap::new(),
+            clip_open_timelines: BTreeMap::new(),
             clip_timelines: BTreeMap::new(),
             clip_views: BTreeMap::new(),
             clip_quality: "full".to_string(),
@@ -619,6 +622,16 @@ impl UiPreferences {
                 }
                 None => {
                     self.open_canvases.remove(&project);
+                }
+            }
+        }
+        for (project, timelines) in patch.clip_open_timelines {
+            match timelines {
+                Some(timelines) => {
+                    self.clip_open_timelines.insert(project, timelines);
+                }
+                None => {
+                    self.clip_open_timelines.remove(&project);
                 }
             }
         }
@@ -703,6 +716,7 @@ pub struct UiPrefsPatch {
     pub director_onboarding: Option<String>,
     pub last_update_check: Option<i64>,
     pub open_canvases: BTreeMap<String, Option<Vec<String>>>,
+    pub clip_open_timelines: BTreeMap<String, Option<Vec<String>>>,
     pub clip_timelines: BTreeMap<String, Option<String>>,
     pub clip_views: BTreeMap<String, Option<TimelineView>>,
     pub story_models: BTreeMap<String, Option<StoryModelPool>>,

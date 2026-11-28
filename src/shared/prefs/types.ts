@@ -58,6 +58,8 @@ export interface UiPreferences {
   panelWidths: PanelWidths;
   pictureTools: PictureToolsPrefs;
   openCanvases: Record<string, string[]>;
+  /** The timelines each project has open, by project. */
+  clipOpenTimelines: Record<string, string[]>;
   clipTimelines: Record<string, string>;
   clipViews: Record<string, TimelineViewPrefs>;
   clipQuality: string;
@@ -95,6 +97,7 @@ export interface UiPrefsPatch {
   directorOnboarding?: string;
   lastUpdateCheck?: number;
   openCanvases?: Record<string, string[] | null>;
+  clipOpenTimelines?: Record<string, string[] | null>;
   clipTimelines?: Record<string, string | null>;
   clipViews?: Record<string, TimelineViewPrefs | null>;
   storyModels?: Record<string, string[] | null>;

@@ -29,6 +29,7 @@ import {
   zoomAnchorMs,
   type TimelineView,
 } from "../timeline/geometry";
+import { useOpenTimelines } from "./openTimelines";
 
 /**
  * The faces the left column turns over between: the timelines a reader can
@@ -68,17 +69,29 @@ export function rememberTimelineId(
 /**
  * Which timeline a project opens onto.
  *
- * The one it was left on, when the document still has it — a timeline deleted
- * while nobody was looking is not a timeline to open onto — and otherwise the
- * first the document does have.
+ * The one it was left on, when the document still has it and its tab was not
+ * put down — a timeline deleted while nobody was looking is not a timeline to
+ * open onto, and neither is one deliberately closed. Otherwise the first open
+ * cut, or the document's first when no list of open cuts is handed in.
  */
-export function initialTimelineId(moka: MokaFile): TimelineId | null {
+export function initialTimelineId(
+  moka: MokaFile,
+  open?: readonly TimelineId[],
+): TimelineId | null {
   const timelines = moka.timelines ?? [];
+  const openSet = open ? new Set(open) : null;
   const remembered = rememberedTimelineId(moka.metadata.id);
-  if (remembered !== null && timelines.some((t) => t.id === remembered)) {
+  if (
+    remembered !== null &&
+    timelines.some((timeline) => timeline.id === remembered) &&
+    (openSet === null || openSet.has(remembered))
+  ) {
     return remembered;
   }
-  return timelines[0]?.id ?? null;
+  const pool = openSet
+    ? timelines.filter((timeline) => openSet.has(timeline.id))
+    : timelines;
+  return pool[0]?.id ?? null;
 }
 
 /** The zoom and the playhead one timeline was last left with. */
@@ -435,6 +448,9 @@ export const useClipStore = create<ClipState>()((set, get) => {
 
     setActiveTimeline(id) {
       const state = get();
+      // What is being looked at is on the strip: every door into a cut puts
+      // its tab up, so no entry point has to remember the strip's own rule.
+      if (id && heldTimeline(id)) useOpenTimelines.getState().open(id);
       if (state.activeTimelineId !== id) {
         // The view being left is written down under its own timeline before
         // the next one's is picked up, and a timeline nobody has opened yet
