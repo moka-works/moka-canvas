@@ -337,6 +337,12 @@
     "volumeLabel": "音量"
   },
   "textFields": {
+    "autoPlace": "自动位置",
+    "x": "X",
+    "y": "Y",
+    "rotation": "旋转",
+    "letterSpacing": "字距",
+    "fade": "淡入淡出",
     "align": "对齐",
     "alignLeftAria": "左对齐",
     "alignCenterAria": "居中对齐",

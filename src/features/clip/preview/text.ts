@@ -26,6 +26,11 @@ export interface TextLayout {
   radiusPx: number;
   strokeWidthPx: number;
   align: TextClipStyle["align"];
+  /** Extra space between letters, in canvas pixels. */
+  letterSpacingPx: number;
+  /** Where a turn about the block's own centre is anchored. */
+  centerX: number;
+  centerY: number;
 }
 
 /** The side margin a positioned block keeps, as a share of the frame's height. */
@@ -54,6 +59,7 @@ export function wrapLines(
   ctx: CanvasRenderingContext2D,
   content: string,
   maxWidth: number,
+  letterSpacingPx = 0,
 ): string[] {
   const lines: string[] = [];
   for (const paragraph of content.split("\n")) {
@@ -61,7 +67,10 @@ export function wrapLines(
     let line = "";
     for (const word of words) {
       const candidate = line.length === 0 ? word : `${line} ${word}`;
-      if (line.length > 0 && ctx.measureText(candidate).width > maxWidth) {
+      if (
+        line.length > 0 &&
+        measureLine(ctx, candidate, letterSpacingPx) > maxWidth
+      ) {
         lines.push(line);
         line = word;
       } else {
@@ -71,6 +80,19 @@ export function wrapLines(
     lines.push(line);
   }
   return lines;
+}
+
+/** A line's width with the letter spacing the style asks for. */
+function measureLine(
+  ctx: CanvasRenderingContext2D,
+  line: string,
+  letterSpacingPx: number,
+): number {
+  const glyphs = [...line];
+  const width = ctx.measureText(line).width;
+  return letterSpacingPx > 0 && glyphs.length > 1
+    ? width + letterSpacingPx * (glyphs.length - 1)
+    : width;
 }
 
 /** Where a text clip's words sit on a frame of this size. */
@@ -84,23 +106,34 @@ export function textLayout(
   // document states is scaled into the picture being drawn.
   const scale = timelineWidth > 0 ? frame.width / timelineWidth : 1;
   const fontPx = Math.max(1, data.style.fontSize * scale);
+  const letterSpacingPx = Math.max(0, data.style.letterSpacing ?? 0) * scale;
   ctx.font = textFont(data.style, scale);
-  const lines = wrapLines(ctx, data.content, frame.width * TEXT_WIDTH_SHARE);
+  const lines = wrapLines(
+    ctx,
+    data.content,
+    frame.width * TEXT_WIDTH_SHARE,
+    letterSpacingPx,
+  );
   const lineHeightPx = fontPx * TEXT_LINE_SHARE;
   const width = lines.reduce(
-    (widest, line) => Math.max(widest, ctx.measureText(line).width),
+    (widest, line) => Math.max(widest, measureLine(ctx, line, letterSpacingPx)),
     0,
   );
   const height = Math.max(1, lines.length) * lineHeightPx;
   const margin = frame.height * TEXT_MARGIN_SHARE;
-  const x =
-    data.style.align === "left"
+  const freeX = data.style.x;
+  const freeY = data.style.y;
+  const free = freeX !== undefined && freeY !== undefined;
+  const x = free
+    ? frame.width * Math.max(0, Math.min(1, freeX ?? 0)) - width / 2
+    : data.style.align === "left"
       ? margin
       : data.style.align === "right"
         ? frame.width - margin - width
         : (frame.width - width) / 2;
-  const y =
-    data.style.position === "top"
+  const y = free
+    ? frame.height * Math.max(0, Math.min(1, freeY ?? 0)) - height / 2
+    : data.style.position === "top"
       ? margin
       : data.style.position === "bottom"
         ? frame.height - margin - height
@@ -117,6 +150,9 @@ export function textLayout(
     radiusPx: fontPx * TEXT_PLATE_RADIUS_SHARE,
     strokeWidthPx: data.style.strokeWidth * scale,
     align: data.style.align,
+    letterSpacingPx,
+    centerX: x + width / 2,
+    centerY: y + height / 2,
   };
 }
 
@@ -125,6 +161,31 @@ function lineX(layout: TextLayout): number {
   if (layout.align === "left") return layout.x;
   if (layout.align === "right") return layout.x + layout.width;
   return layout.x + layout.width / 2;
+}
+
+/** One line, letters pushed apart by the style's own spacing. */
+function drawSpacedLine(
+  ctx: CanvasRenderingContext2D,
+  layout: TextLayout,
+  line: string,
+  y: number,
+  stroke: boolean,
+): void {
+  const glyphs = [...line];
+  const lineWidth = measureLine(ctx, line, layout.letterSpacingPx);
+  let x =
+    layout.align === "left"
+      ? layout.x
+      : layout.align === "right"
+        ? layout.x + layout.width - lineWidth
+        : layout.x + (layout.width - lineWidth) / 2;
+  ctx.textAlign = "left";
+  for (const glyph of glyphs) {
+    if (stroke) ctx.strokeText(glyph, x, y);
+    else ctx.fillText(glyph, x, y);
+    x += ctx.measureText(glyph).width + layout.letterSpacingPx;
+  }
+  ctx.textAlign = layout.align;
 }
 
 /** Draws a text clip: its plate, then each line's outline, then the line itself. */
@@ -150,6 +211,12 @@ export function drawTextClip(
   ctx.textAlign = data.style.align;
   // The layout measures from the block's top edge, so the baseline is the top.
   ctx.textBaseline = "top";
+  const rotation = data.style.rotation ?? 0;
+  if (rotation !== 0) {
+    ctx.translate(layout.centerX, layout.centerY);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-layout.centerX, -layout.centerY);
+  }
   if (data.style.background) {
     ctx.fillStyle = data.style.background;
     ctx.beginPath();
@@ -165,13 +232,17 @@ export function drawTextClip(
   const x = lineX(layout);
   for (let index = 0; index < layout.lines.length; index += 1) {
     const y = layout.y + index * layout.lineHeightPx;
+    const line = layout.lines[index];
+    const spaced = layout.letterSpacingPx > 0;
     if (layout.strokeWidthPx > 0) {
       ctx.strokeStyle = data.style.strokeColor;
       ctx.lineWidth = layout.strokeWidthPx;
-      ctx.strokeText(layout.lines[index], x, y);
+      if (spaced) drawSpacedLine(ctx, layout, line, y, true);
+      else ctx.strokeText(line, x, y);
     }
     ctx.fillStyle = data.style.color;
-    ctx.fillText(layout.lines[index], x, y);
+    if (spaced) drawSpacedLine(ctx, layout, line, y, false);
+    else ctx.fillText(line, x, y);
   }
   ctx.restore();
   return layout;

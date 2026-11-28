@@ -337,6 +337,12 @@
     "volumeLabel": "Volume"
   },
   "textFields": {
+    "autoPlace": "Auto place",
+    "x": "X",
+    "y": "Y",
+    "rotation": "Rotation",
+    "letterSpacing": "Letter spacing",
+    "fade": "Fade",
     "align": "Align",
     "alignLeftAria": "Align left",
     "alignCenterAria": "Align center",

@@ -3220,6 +3220,11 @@ fn text_clip(
                 background: None,
                 stroke_width: 0,
                 stroke_color: "#000000".into(),
+                x: None,
+                y: None,
+                rotation: None,
+                letter_spacing: None,
+                fade_ms: None,
             },
         }),
     }

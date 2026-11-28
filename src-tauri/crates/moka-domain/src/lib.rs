@@ -1088,6 +1088,20 @@ pub struct TextClipStyle {
     pub stroke_width: i32,
     /// #rrggbb; always present, harmless at zero width.
     pub stroke_color: String,
+    /// 0..1 centre of the block; both must be present to override position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
+    /// Degrees, -180..180; turns the block about its centre.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<i32>,
+    /// Extra space between letters, in timeline pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<i32>,
+    /// Fade in and out at each end, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fade_ms: Option<i32>,
 }
 
 /// What a text clip says and how it is set.

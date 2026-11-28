@@ -99,7 +99,7 @@ pub fn build_ass(timeline: &TimelineDocument) -> String {
             .iter()
             .position(|(held, _)| same_style(held, style))
             .expect("every clip's style was collected");
-        out.push_str(&dialogue_line(clip, at));
+        out.push_str(&dialogue_line(clip, at, width, height));
         out.push('\n');
     }
     out
@@ -118,6 +118,11 @@ fn same_style(a: &TextClipStyle, b: &TextClipStyle) -> bool {
         && a.background == b.background
         && a.stroke_width == b.stroke_width
         && a.stroke_color == b.stroke_color
+        && a.x == b.x
+        && a.y == b.y
+        && a.rotation == b.rotation
+        && a.letter_spacing == b.letter_spacing
+        && a.fade_ms == b.fade_ms
 }
 
 /// One `Style:` line, named `S<index>`.
@@ -148,21 +153,42 @@ fn style_line(
     let margin_h = share(width as f64, MARGIN_H_SHARE);
     format!(
         "Style: S{index},{font},{size},{primary},{primary},{outline_colour},&H00000000,\
-{bold},{italic},0,0,100,100,0,0,{border_style},{outline},0,{alignment},{margin_h},{margin_h},\
+{bold},{italic},0,0,100,100,{spacing},{angle},{border_style},{outline},0,{alignment},{margin_h},{margin_h},\
 {margin_v},1",
         font = burn_in_font(style, beyond_latin),
         size = style.font_size.max(0),
         primary = bgr(&style.color),
         bold = if style.bold { -1 } else { 0 },
         italic = if style.italic { -1 } else { 0 },
+        spacing = style.letter_spacing.unwrap_or(0).max(0),
+        angle = style.rotation.unwrap_or(0).clamp(-180, 180),
         alignment = alignment_number(style.align, style.position),
     )
 }
 
 /// One `Dialogue:` line. Margins are the style's, so the event carries none.
-fn dialogue_line(clip: &TimelineClip, style_index: usize) -> String {
+fn dialogue_line(clip: &TimelineClip, style_index: usize, width: i32, height: i32) -> String {
     let data = clip.text.as_ref().expect("only text clips reach here");
     let content = escape_text(&data.content);
+    let mut overrides = String::new();
+    if let (Some(x), Some(y)) = (data.style.x, data.style.y) {
+        // A block placed by hand is centred on its anchor, which is the one
+        // reading the preview and the renderer can share without knowing how
+        // wide the words turned out.
+        overrides.push_str(&format!(
+            "\\an5\\pos({x:.0},{y:.0})",
+            x = x.clamp(0.0, 1.0) * width as f64,
+            y = y.clamp(0.0, 1.0) * height as f64,
+        ));
+    }
+    if let Some(fade) = data.style.fade_ms.filter(|ms| *ms > 0) {
+        overrides.push_str(&format!("\\fad({fade},{fade})"));
+    }
+    let content = if overrides.is_empty() {
+        content
+    } else {
+        format!("{{{overrides}}}{content}")
+    };
     format!(
         "Dialogue: 0,{start},{end},S{style_index},,0000,0000,0000,,{content}",
         start = time_cc(clip.start_ms),
@@ -488,6 +514,30 @@ mod tests {
         );
         let ass = build_ass(&timeline);
         assert!(ass.contains(",5,96,96,0,1"), "{ass}");
+    }
+
+    #[test]
+    fn a_placed_turned_block_says_where_and_how_much() {
+        let mut style = fixtures::text_style();
+        style.x = Some(0.25);
+        style.y = Some(0.75);
+        style.rotation = Some(15);
+        style.letter_spacing = Some(4);
+        style.fade_ms = Some(250);
+        let timeline = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Text)],
+            vec![fixtures::text("c1", "t1", 0, 1000, "Placed", style)],
+            Vec::new(),
+        );
+        let ass = build_ass(&timeline);
+        // The style carries the spacing and the turn; the event centres the
+        // block on the hand-placed anchor and fades it at both ends.
+        assert!(ass.contains(",100,100,4,15,"), "{ass}");
+        assert!(
+            ass.contains(r"{\an5\pos(480,810)\fad(250,250)}Placed"),
+            "{ass}"
+        );
     }
 
     #[test]

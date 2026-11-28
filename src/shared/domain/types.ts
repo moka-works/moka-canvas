@@ -277,6 +277,15 @@ export interface TextClipStyle {
   strokeWidth: number;
   /** #rrggbb; always present, harmless at zero width. */
   strokeColor: string;
+  /** 0..1 centre of the block; both must be present to override position. */
+  x?: number;
+  y?: number;
+  /** Degrees, -180..180; turns the block about its centre. */
+  rotation?: number;
+  /** Extra space between letters, in timeline pixels. */
+  letterSpacing?: number;
+  /** Fade in and out at each end, in milliseconds. */
+  fadeMs?: number;
 }
 
 /** What a text clip says and how it is set. */

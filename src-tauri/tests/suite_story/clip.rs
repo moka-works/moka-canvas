@@ -118,6 +118,11 @@ fn caption_style() -> TextClipStyle {
         background: None,
         stroke_width: 4,
         stroke_color: "#000000".to_string(),
+        x: None,
+        y: None,
+        rotation: None,
+        letter_spacing: None,
+        fade_ms: None,
     }
 }
 

@@ -334,7 +334,7 @@ function encodeAdjust(adjust: ClipAdjust): Record<string, unknown> {
 }
 
 function encodeTextStyle(style: TextClipStyle): Record<string, unknown> {
-  return {
+  const doc: Record<string, unknown> = {
     fontFamily: style.fontFamily,
     fontSize: style.fontSize,
     color: style.color,
@@ -346,6 +346,15 @@ function encodeTextStyle(style: TextClipStyle): Record<string, unknown> {
     strokeWidth: style.strokeWidth,
     strokeColor: style.strokeColor,
   };
+  // The layout additions sit at the tail and stay off a style that never
+  // asked for them, so a document written before they existed is unchanged.
+  if (style.x !== undefined) doc.x = asDouble(style.x);
+  if (style.y !== undefined) doc.y = asDouble(style.y);
+  if (style.rotation !== undefined) doc.rotation = asLong(style.rotation);
+  if (style.letterSpacing !== undefined)
+    doc.letterSpacing = asLong(style.letterSpacing);
+  if (style.fadeMs !== undefined) doc.fadeMs = asLong(style.fadeMs);
+  return doc;
 }
 
 function encodeClip(clip: TimelineClip): Record<string, unknown> {
@@ -1455,6 +1464,18 @@ function decodeTextStyle(value: unknown): TextClipStyle {
     style.position as string,
     "Text position",
   );
+  const x = unwrapNumber(doc.x);
+  const y = unwrapNumber(doc.y);
+  if (x !== undefined && y !== undefined) {
+    style.x = x;
+    style.y = y;
+  }
+  const rotation = unwrapNumber(doc.rotation);
+  if (rotation !== undefined) style.rotation = rotation;
+  const letterSpacing = unwrapNumber(doc.letterSpacing);
+  if (letterSpacing !== undefined) style.letterSpacing = letterSpacing;
+  const fadeMs = unwrapNumber(doc.fadeMs);
+  if (fadeMs !== undefined) style.fadeMs = fadeMs;
   return style as unknown as TextClipStyle;
 }
 

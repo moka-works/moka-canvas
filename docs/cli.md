@@ -68,6 +68,9 @@ moka --project ./lake tools call clip.update \
 # 调色：亮度/对比/饱和，以及色温/色调（-1..1，0 为中性）
 moka --project ./lake tools call clip.update \
   --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"adjust":{"brightness":0.1,"contrast":0.2,"saturation":0.15,"temperature":0.3,"tint":-0.1}}}'
+# 文字：位置 0..1（覆盖九宫格）、旋转 -180..180、字距与淡入淡出
+moka --project ./lake tools call clip.update \
+  --input '{"timelineId":"tl_1","clipId":"cl_text","patch":{"text":{"content":"标题","style":{"fontFamily":"Inter","fontSize":48,"color":"#ffffff","bold":true,"italic":false,"align":"center","position":"center","background":null,"strokeWidth":0,"strokeColor":"#000000","x":0.5,"y":0.35,"rotation":-8,"letterSpacing":2,"fadeMs":300}}}}'
 moka --project ./lake tools call clip.update \
   --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"adjust":null}}'
 moka --project ./lake tools call clip.reverse --input '{"timelineId":"tl_1","clipIds":["cl_1"]}'

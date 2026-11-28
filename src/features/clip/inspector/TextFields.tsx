@@ -379,6 +379,81 @@ export function TextFields({
       </div>
 
       <div className="clip-text-row">
+        <NumberStepper
+          labelKey="clip:textFields.x"
+          max={100}
+          min={0}
+          mixed={isMixed("x") || isMixed("y")}
+          onCommit={(value) => {
+            const rest = { ...style };
+            delete rest.x;
+            delete rest.y;
+            setStyle({ ...rest, x: value / 100, y: style.y ?? 0.5 }, true);
+          }}
+          value={
+            isMixed("x") || isMixed("y")
+              ? null
+              : Math.round((style.x ?? 0.5) * 100)
+          }
+        />
+        <NumberStepper
+          labelKey="clip:textFields.y"
+          max={100}
+          min={0}
+          mixed={isMixed("x") || isMixed("y")}
+          onCommit={(value) => {
+            const rest = { ...style };
+            delete rest.x;
+            delete rest.y;
+            setStyle({ ...rest, x: style.x ?? 0.5, y: value / 100 }, true);
+          }}
+          value={
+            isMixed("x") || isMixed("y")
+              ? null
+              : Math.round((style.y ?? 0.5) * 100)
+          }
+        />
+        <button
+          className={
+            style.x === undefined && style.y === undefined
+              ? "clip-text-toggle is-on"
+              : "clip-text-toggle"
+          }
+          onClick={() => setStyle({ x: undefined, y: undefined }, true)}
+          type="button"
+        >
+          {t("clip:textFields.autoPlace")}
+        </button>
+      </div>
+
+      <div className="clip-text-row">
+        <NumberStepper
+          labelKey="clip:textFields.rotation"
+          max={180}
+          min={-180}
+          mixed={isMixed("rotation")}
+          onCommit={(value) => setStyle({ rotation: value }, true)}
+          value={isMixed("rotation") ? null : (style.rotation ?? 0)}
+        />
+        <NumberStepper
+          labelKey="clip:textFields.letterSpacing"
+          max={40}
+          min={0}
+          mixed={isMixed("letterSpacing")}
+          onCommit={(value) => setStyle({ letterSpacing: value }, true)}
+          value={isMixed("letterSpacing") ? null : (style.letterSpacing ?? 0)}
+        />
+        <NumberStepper
+          labelKey="clip:textFields.fade"
+          max={5_000}
+          min={0}
+          mixed={isMixed("fadeMs")}
+          onCommit={(value) => setStyle({ fadeMs: value }, true)}
+          value={isMixed("fadeMs") ? null : (style.fadeMs ?? 0)}
+        />
+      </div>
+
+      <div className="clip-text-row">
         <div className="clip-text-group">
           <Label mixed={isMixed("background")}>
             {t("clip:textFields.plate")}

@@ -916,6 +916,30 @@ describe("moka codec", () => {
     ]);
   });
 
+  it("carries a text block's placement, turn, spacing and fade", () => {
+    const cut = buildCutMokaFile();
+    const caption = cut.timelines![0].clips.find((clip) => clip.text)!;
+    caption.text!.style = {
+      ...caption.text!.style,
+      x: 0.25,
+      y: 0.8,
+      rotation: 15,
+      letterSpacing: 2,
+      fadeMs: 300,
+    };
+    const decoded = decodeMokaFile(encodeMokaFile(cut));
+    const style = decoded.timelines![0].clips.find(
+      (clip) => clip.id === caption.id,
+    )!.text!.style;
+    expect([
+      style.x,
+      style.y,
+      style.rotation,
+      style.letterSpacing,
+      style.fadeMs,
+    ]).toEqual([0.25, 0.8, 15, 2, 300]);
+  });
+
   it("keeps the cut timeline byte-canonical on re-save", () => {
     const cut = buildCutMokaFile();
     const first = encodeMokaFile(cut);

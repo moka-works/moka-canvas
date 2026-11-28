@@ -416,14 +416,29 @@ export async function composeFrame(
   ): DrawReport => {
     if (clip.kind === "text") {
       const data = draftedText?.ids.has(clip.id) ? draftedText.text : clip.text;
-      if (data)
+      if (data) {
+        const fade = data.style.fadeMs ?? 0;
+        const fadeAlpha =
+          fade > 0
+            ? Math.max(
+                0,
+                Math.min(
+                  1,
+                  (atMs - clip.startMs) / fade,
+                  (clip.startMs + clip.durationMs - atMs) / fade,
+                ),
+              )
+            : 1;
         drawTextClip(
           target,
           data,
           { width, height },
           timeline.settings.width,
-          Math.max(0, Math.min(1, clip.opacity)) * fadeFactor(clip, atMs),
+          Math.max(0, Math.min(1, clip.opacity)) *
+            fadeFactor(clip, atMs) *
+            fadeAlpha,
         );
+      }
       return { coloursSkipped: false, materialMs: null, waiting: false };
     }
     if (picture?.kind === "picture") {
