@@ -523,9 +523,7 @@ async fn import_settings_merge_and_replace(store: &dyn MetadataStore) -> Result<
         ),
     )
     .await?;
-    if (replaced.added, replaced.replaced, replaced.removed)
-        != (0, 1, removed_ids.len())
-    {
+    if (replaced.added, replaced.replaced, replaced.removed) != (0, 1, removed_ids.len()) {
         return Err(format!("unexpected replace counts {replaced:?}"));
     }
     if replaced.keys_removed != expected_keys_removed {
@@ -550,7 +548,10 @@ async fn import_settings_merge_and_replace(store: &dyn MetadataStore) -> Result<
         return Err("replace dropped a surviving model's credential".to_string());
     }
     for id in &removed_ids {
-        if describe("removed key", store.get_secret(id)).await?.is_some() {
+        if describe("removed key", store.get_secret(id))
+            .await?
+            .is_some()
+        {
             return Err(format!("a removed model's credential outlived it: {id}"));
         }
     }

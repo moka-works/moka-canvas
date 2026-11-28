@@ -29,8 +29,8 @@ use super::redact;
 use super::types::{
     Defaults, DocumentInfo, ImportOutcome, ImportedSettings, MetadataInfo, MetadataStoreKind,
     ModelConfig, ModelDraft, ModelRecord, ModelsSnapshot, Preferences, PromptItem, PromptPage,
-    PromptQuery, PromptSource, RecentProject, SecretInfo, SecretStorage, UiPreferences, UiPrefsPatch,
-    MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
+    PromptQuery, PromptSource, RecentProject, SecretInfo, SecretStorage, UiPreferences,
+    UiPrefsPatch, MAX_PROMPT_ITEMS_PER_SOURCE, MAX_RECENT, MAX_SEARCH_PAGE_SIZE,
 };
 use super::{MetadataError, MetadataStore, FILE_STORE, SCHEMA_VERSION};
 use crate::config::{MetadataConfig, RuntimeMode};
@@ -522,7 +522,11 @@ impl MetadataStore for FileMetadataStore {
         imported: ImportedSettings,
         expected_revision: Option<u64>,
     ) -> Result<ImportOutcome, MetadataError> {
-        let incoming: HashSet<&str> = imported.models.iter().map(|model| model.id.as_str()).collect();
+        let incoming: HashSet<&str> = imported
+            .models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect();
         if incoming.len() != imported.models.len() {
             return Err(MetadataError::invalid(
                 "an imported configuration names the same model twice",

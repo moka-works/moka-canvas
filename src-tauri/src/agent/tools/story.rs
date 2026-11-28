@@ -3407,7 +3407,14 @@ pub async fn effect(
         }
         let job = state
             .story_jobs
-            .start(&session.0, story_id.clone(), kind, model_id, parallel, group)
+            .start(
+                &session.0,
+                story_id.clone(),
+                kind,
+                model_id,
+                parallel,
+                group,
+            )
             .await
             .map_err(|error| {
                 ToolError::internal(format!(
@@ -3418,7 +3425,9 @@ pub async fn effect(
         started.push(job);
     }
     let Some(first) = started.first() else {
-        return Err(ToolError::validation("a story batch needs at least one item"));
+        return Err(ToolError::validation(
+            "a story batch needs at least one item",
+        ));
     };
     let jobs: Vec<Value> = started
         .iter()
@@ -4270,9 +4279,7 @@ async fn element_repeats(
         .into_iter()
         .filter_map(|key| {
             let (kind, name, readings) = groups.remove(&key)?;
-            (readings.len() >= 2).then(|| {
-                json!({"kind": kind, "name": name, "readings": readings})
-            })
+            (readings.len() >= 2).then(|| json!({"kind": kind, "name": name, "readings": readings}))
         })
         .collect();
     Ok(ToolOutcome::read(
@@ -4309,9 +4316,8 @@ fn audit_elements(moka: &MokaFile, input: &Value) -> Result<ToolOutcome, ToolErr
     let args = Args::new("story.audit_elements", input)?;
     let story = super::story_of(moka, args.req_str("storyId")?)?;
     let (people, places) = super::story_plan::element_inventory(story);
-    let normalized = |name: &str| -> String {
-        name.chars().filter(|held| !held.is_whitespace()).collect()
-    };
+    let normalized =
+        |name: &str| -> String { name.chars().filter(|held| !held.is_whitespace()).collect() };
     let characters: std::collections::BTreeSet<String> = story
         .elements
         .iter()
@@ -4336,9 +4342,7 @@ fn audit_elements(moka: &MokaFile, input: &Value) -> Result<ToolOutcome, ToolErr
         .collect();
     let missing_scenes: Vec<Value> = places
         .iter()
-        .filter(|(name, (occurrences, _))| {
-            *occurrences >= 2 && !scenes.contains(&normalized(name))
-        })
+        .filter(|(name, (occurrences, _))| *occurrences >= 2 && !scenes.contains(&normalized(name)))
         .map(|(name, (occurrences, chapters))| {
             json!({
                 "name": name,
@@ -4414,10 +4418,8 @@ mod element_answer_tests {
 
     #[test]
     fn a_fenced_answer_is_read() {
-        let value = element_answer(
-            "noise\n```json\n{\"characters\":[{\"name\":\"A\"}]}\n```\n",
-        )
-        .expect("the answer is read");
+        let value = element_answer("noise\n```json\n{\"characters\":[{\"name\":\"A\"}]}\n```\n")
+            .expect("the answer is read");
         assert_eq!(value["characters"][0]["name"], "A");
     }
 

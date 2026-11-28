@@ -457,7 +457,11 @@ pub(super) fn element_inventory(story: &StoryDocument) -> (PeopleIndex, PlaceInd
 }
 
 /// The prompt's own checklist, limited to the chapters this part reads.
-fn inventory_prompt(people: &PeopleIndex, places: &PlaceIndex, numbers: &BTreeSet<usize>) -> String {
+fn inventory_prompt(
+    people: &PeopleIndex,
+    places: &PlaceIndex,
+    numbers: &BTreeSet<usize>,
+) -> String {
     let mut lines = Vec::new();
     let mut named: Vec<(&String, &BTreeSet<usize>)> = people
         .iter()
@@ -486,7 +490,10 @@ fn inventory_prompt(people: &PeopleIndex, places: &PlaceIndex, numbers: &BTreeSe
             "These places recur in two or more scenes (place — scenes — chapters):".to_string(),
         );
         for (name, (scenes, chapters)) in recurring {
-            lines.push(format!("- {name} — {scenes} scenes — [{}]", chapter_list(chapters)));
+            lines.push(format!(
+                "- {name} — {scenes} scenes — [{}]",
+                chapter_list(chapters)
+            ));
         }
     }
     if lines.is_empty() {
@@ -533,8 +540,20 @@ fn chapter_cast(text: &str) -> Vec<String> {
 }
 
 const SCENE_TIME_WORDS: [&str; 14] = [
-    "清晨", "上午", "中午", "下午", "黄昏", "夜", "凌晨", "黎明前", "白天", "傍晚", "深夜", "清早",
-    "正午", "午夜",
+    "清晨",
+    "上午",
+    "中午",
+    "下午",
+    "黄昏",
+    "夜",
+    "凌晨",
+    "黎明前",
+    "白天",
+    "傍晚",
+    "深夜",
+    "清早",
+    "正午",
+    "午夜",
 ];
 
 /// The places a script's own scene headings stand in, one per heading.
@@ -1707,7 +1726,10 @@ async fn plan_act_videos(
             let recorded = if piece.has_dialogue() {
                 voice_references_for(
                     story,
-                    piece.keyframes.iter().flat_map(|keyframe| &keyframe.dialogue),
+                    piece
+                        .keyframes
+                        .iter()
+                        .flat_map(|keyframe| &keyframe.dialogue),
                     &refs,
                     rule.as_ref()
                         .filter(|rule| rule.supported)
@@ -2048,9 +2070,7 @@ impl Piece<'_> {
                     json!(tenths as f64 / 10.0)
                 };
                 let dialogue = match label {
-                    Some((story, refs)) => {
-                        labelled_spoken_lines(story, refs, &keyframe.dialogue)
-                    }
+                    Some((story, refs)) => labelled_spoken_lines(story, refs, &keyframe.dialogue),
                     None => spoken_lines(&keyframe.dialogue),
                 };
                 json!({
@@ -3361,10 +3381,7 @@ mod inventory_tests {
     #[test]
     fn scene_headings_keep_the_place_and_drop_the_hour() {
         let text = "## 1. 旧灯塔·潮位室·凌晨（0:00–0:20）\n## 2. 旧海堤·决口·黎明前（0:20–1:20）\n";
-        assert_eq!(
-            chapter_places(text),
-            vec!["旧灯塔·潮位室", "旧海堤·决口"]
-        );
+        assert_eq!(chapter_places(text), vec!["旧灯塔·潮位室", "旧海堤·决口"]);
     }
 
     #[test]
@@ -3492,20 +3509,17 @@ mod reference_audio_tests {
                 ("S1".to_string(), "asset-ahe".to_string()),
             ],
         );
-        assert!(prompt.contains(
-            "<Audio 1> carries the voice of the speaker labelled (S2); use its timbre"
-        ));
-        assert!(prompt.contains(
-            "<Audio 2> carries the voice of the speaker labelled (S1); use its timbre"
-        ));
+        assert!(prompt
+            .contains("<Audio 1> carries the voice of the speaker labelled (S2); use its timbre"));
+        assert!(prompt
+            .contains("<Audio 2> carries the voice of the speaker labelled (S1); use its timbre"));
         assert!(
             prompt.find("Voice references:").unwrap()
                 > prompt.find("integrated_multimodal_description:").unwrap(),
             "the mapping sits inside the description the service reads"
         );
         assert!(
-            prompt.find("Voice references:").unwrap()
-                < prompt.find("overall_soundscape:").unwrap()
+            prompt.find("Voice references:").unwrap() < prompt.find("overall_soundscape:").unwrap()
         );
     }
 

@@ -185,7 +185,10 @@ mod tests {
         let sealed = seal(PASSPHRASE, 2, r#"{"openai":"sk-secret"}"#).unwrap();
         validate(&sealed).unwrap();
         assert_eq!(sealed.count, 2);
-        assert_eq!(open(PASSPHRASE, &sealed).unwrap(), r#"{"openai":"sk-secret"}"#);
+        assert_eq!(
+            open(PASSPHRASE, &sealed).unwrap(),
+            r#"{"openai":"sk-secret"}"#
+        );
         assert!(!sealed.ciphertext.contains("sk-secret"));
     }
 

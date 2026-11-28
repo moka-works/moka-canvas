@@ -1275,9 +1275,7 @@ mod tests {
             audio_reference: true,
             ..Features::default()
         };
-        assert!(
-            reference_audio_refusal(&declared, "filmer", &voice(Capability::Video)).is_ok()
-        );
+        assert!(reference_audio_refusal(&declared, "filmer", &voice(Capability::Video)).is_ok());
 
         // A converter that says nothing is not guessed at: the recording would
         // be dropped or misread, so the ask is refused with the model's name.

@@ -2136,7 +2136,10 @@ fn writes_a_turnaround_into_a_character_that_had_none() {
         .iter()
         .find(|element| element.id == PARTNER)
         .unwrap();
-    let turnaround = partner.turnaround.as_ref().expect("the sheet's place is made");
+    let turnaround = partner
+        .turnaround
+        .as_ref()
+        .expect("the sheet's place is made");
     assert_eq!(turnaround.takes.len(), 1);
     assert_eq!(
         turnaround.takes[0].asset_ids,
