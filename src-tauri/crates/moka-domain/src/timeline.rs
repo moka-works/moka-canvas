@@ -1215,7 +1215,201 @@ fn validate_timeline_settings(settings: &TimelineSettingsPatch) -> Result<(), Co
     Ok(())
 }
 
-/// Applies one of the 13 timeline commands and returns the new document plus
+fn merged_spans(mut spans: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
+    spans.sort_by_key(|(start, _)| *start);
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (start, end) in spans {
+        if let Some(last) = merged.last_mut() {
+            if start < last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+    merged
+}
+
+fn pulled_by(start_ms: i64, spans: &[(i64, i64)]) -> i64 {
+    spans
+        .iter()
+        .filter(|(_, end)| *end <= start_ms)
+        .map(|(start, end)| end - start)
+        .sum()
+}
+
+fn ripple_deleted(
+    timeline: &TimelineDocument,
+    clip_ids: &[String],
+    scope: RippleScope,
+) -> Vec<TimelineClip> {
+    let removing: HashSet<&str> = clip_ids.iter().map(String::as_str).collect();
+    let removed: Vec<&TimelineClip> = timeline
+        .clips
+        .iter()
+        .filter(|clip| removing.contains(clip.id.as_str()))
+        .collect();
+    let global = merged_spans(
+        removed
+            .iter()
+            .map(|clip| {
+                (
+                    clip.start_ms,
+                    clip.start_ms.saturating_add(clip.duration_ms),
+                )
+            })
+            .collect(),
+    );
+    let mut by_track: HashMap<&str, Vec<(i64, i64)>> = HashMap::new();
+    for clip in &removed {
+        by_track.entry(clip.track_id.as_str()).or_default().push((
+            clip.start_ms,
+            clip.start_ms.saturating_add(clip.duration_ms),
+        ));
+    }
+    for spans in by_track.values_mut() {
+        *spans = merged_spans(std::mem::take(spans));
+    }
+    timeline
+        .clips
+        .iter()
+        .filter(|clip| !removing.contains(clip.id.as_str()))
+        .map(|clip| {
+            let spans: &[(i64, i64)] = match scope {
+                RippleScope::All => &global,
+                RippleScope::Track => by_track
+                    .get(clip.track_id.as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            };
+            let shift = pulled_by(clip.start_ms, spans);
+            if shift == 0 {
+                clip.clone()
+            } else {
+                let mut next = clip.clone();
+                next.start_ms = clip.start_ms - shift;
+                next
+            }
+        })
+        .collect()
+}
+
+fn closed_gaps(timeline: &TimelineDocument, track_id: Option<&str>) -> Vec<TimelineClip> {
+    let tracks: Vec<&str> = match track_id {
+        Some(id) => vec![id],
+        None => timeline
+            .tracks
+            .iter()
+            .map(|track| track.id.as_str())
+            .collect(),
+    };
+    let mut next = timeline.clips.clone();
+    for id in tracks {
+        let mut on_track: Vec<(String, i64, i64)> = next
+            .iter()
+            .filter(|clip| clip.track_id == id)
+            .map(|clip| (clip.id.clone(), clip.start_ms, clip.duration_ms))
+            .collect();
+        on_track.sort_by_key(|(_, start, _)| *start);
+        let mut cursor = on_track.first().map(|(_, start, _)| *start).unwrap_or(0);
+        for (clip_id, _, duration) in on_track {
+            if let Some(clip) = next.iter_mut().find(|held| held.id == clip_id) {
+                clip.start_ms = cursor;
+            }
+            cursor += duration;
+        }
+    }
+    next
+}
+
+fn gap_at(timeline: &TimelineDocument, track_id: &str, at_ms: i64) -> Option<(i64, i64)> {
+    let mut on_track: Vec<&TimelineClip> = timeline
+        .clips
+        .iter()
+        .filter(|clip| clip.track_id == track_id)
+        .collect();
+    on_track.sort_by_key(|clip| clip.start_ms);
+    let mut cursor = 0;
+    for clip in on_track {
+        if at_ms < clip.start_ms {
+            return (at_ms >= cursor && cursor < clip.start_ms).then_some((cursor, clip.start_ms));
+        }
+        cursor = cursor.max(clip.start_ms.saturating_add(clip.duration_ms));
+    }
+    None
+}
+
+/// Applies a planned clip list through the commands that already validate and
+/// undo themselves, so a landing and a compaction share one kind of history.
+fn apply_planned_clips(
+    moka: &MokaFile,
+    timeline: &TimelineDocument,
+    final_clips: Vec<TimelineClip>,
+) -> Result<(MokaFile, Vec<DocumentCommand>), CommandError> {
+    let original: HashMap<&str, &TimelineClip> = timeline
+        .clips
+        .iter()
+        .map(|clip| (clip.id.as_str(), clip))
+        .collect();
+    let final_ids: HashSet<&str> = final_clips.iter().map(|clip| clip.id.as_str()).collect();
+    let removed: Vec<String> = timeline
+        .clips
+        .iter()
+        .filter(|clip| !final_ids.contains(clip.id.as_str()))
+        .map(|clip| clip.id.clone())
+        .collect();
+    let added: Vec<TimelineClip> = final_clips
+        .iter()
+        .filter(|clip| !original.contains_key(clip.id.as_str()))
+        .cloned()
+        .collect();
+    let mut patches: Vec<ClipPatchEntry> = Vec::new();
+    for clip in &final_clips {
+        if let Some(held) = original.get(clip.id.as_str()) {
+            if timing_changed(held, clip) {
+                patches.push(ClipPatchEntry {
+                    clip_id: clip.id.clone(),
+                    patch: timing_patch(held, clip),
+                });
+            }
+        }
+    }
+    let mut commands: Vec<DocumentCommand> = Vec::new();
+    if !removed.is_empty() {
+        commands.push(DocumentCommand::RemoveClips {
+            timeline_id: timeline.id.clone(),
+            clip_ids: removed,
+        });
+    }
+    if !patches.is_empty() {
+        commands.push(DocumentCommand::UpdateClips {
+            timeline_id: timeline.id.clone(),
+            patches,
+        });
+    }
+    if !added.is_empty() {
+        commands.push(DocumentCommand::AddClips {
+            timeline_id: timeline.id.clone(),
+            clips: added,
+            seams: None,
+        });
+    }
+    if commands.is_empty() {
+        return Ok((moka.clone(), Vec::new()));
+    }
+    let mut current = moka.clone();
+    let mut inverses: Vec<DocumentCommand> = Vec::new();
+    for command in commands {
+        let (next, inverse) = apply_timeline_command(&current, &command)?;
+        current = next;
+        let mut combined = inverse;
+        combined.extend(inverses);
+        inverses = combined;
+    }
+    Ok((current, inverses))
+}
+
+/// Applies one of the timeline commands and returns the new document plus
 /// the inverse commands. Anything else is a programming error: `commands.rs`
 /// routes only the timeline variants here.
 pub fn apply_timeline_command(
@@ -1850,6 +2044,86 @@ pub fn apply_timeline_command(
                 inverses = combined;
             }
             Ok((current, inverses))
+        }
+
+        DocumentCommand::RippleDeleteClips {
+            timeline_id,
+            clip_ids,
+            scope,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if clip_ids.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to remove"));
+            }
+            let removing: HashSet<&str> = clip_ids.iter().map(String::as_str).collect();
+            if timeline
+                .clips
+                .iter()
+                .filter(|clip| removing.contains(clip.id.as_str()))
+                .count()
+                != removing.len()
+            {
+                return Err(CommandError::new(
+                    "CLIP_NOT_FOUND",
+                    "Some clips were not found",
+                ));
+            }
+            apply_planned_clips(
+                moka,
+                timeline,
+                ripple_deleted(timeline, clip_ids, scope.unwrap_or(RippleScope::All)),
+            )
+        }
+
+        DocumentCommand::CloseGaps {
+            timeline_id,
+            track_id,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if let Some(id) = track_id {
+                if !timeline.tracks.iter().any(|track| track.id == *id) {
+                    return Err(CommandError::new(
+                        "TRACK_NOT_FOUND",
+                        "Clip's track not found",
+                    ));
+                }
+            }
+            apply_planned_clips(moka, timeline, closed_gaps(timeline, track_id.as_deref()))
+        }
+
+        DocumentCommand::DeleteGap {
+            timeline_id,
+            track_id,
+            at_ms,
+            scope,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if !timeline.tracks.iter().any(|track| track.id == *track_id) {
+                return Err(CommandError::new(
+                    "TRACK_NOT_FOUND",
+                    "Clip's track not found",
+                ));
+            }
+            let (gap_start, gap_end) = gap_at(timeline, track_id, *at_ms).ok_or_else(|| {
+                CommandError::new("GAP_NOT_FOUND", "There is no gap at that moment")
+            })?;
+            let shift = gap_end - gap_start;
+            let final_clips = timeline
+                .clips
+                .iter()
+                .map(|clip| {
+                    if *scope != Some(RippleScope::All) && clip.track_id != *track_id {
+                        return clip.clone();
+                    }
+                    if clip.start_ms < gap_end {
+                        return clip.clone();
+                    }
+                    let mut next = clip.clone();
+                    next.start_ms -= shift;
+                    next
+                })
+                .collect();
+            apply_planned_clips(moka, timeline, final_clips)
         }
 
         DocumentCommand::MoveClips { timeline_id, moves } => {

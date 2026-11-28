@@ -1143,6 +1143,96 @@ describe("transition commands", () => {
     ).toBe("TRACK_LOCKED");
   });
 
+  it("deletes a clip and pulls what followed it back", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const paired = pairAt(moka, ids, 4_000);
+    const follower = paired.timelines![0].clips.find(
+      (clip) => clip.startMs === 4_000,
+    )!;
+    const { next, inverse } = apply(paired, {
+      type: "rippleDeleteClips",
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      scope: "all",
+    });
+    const clips = next.timelines![0].clips;
+    expect(clips).toHaveLength(1);
+    expect(clips.find((clip) => clip.id === follower.id)!.startMs).toBe(0);
+    const undone = apply(next, ...inverse).next;
+    const sorted = (moka: MokaFile) =>
+      [...moka.timelines![0].clips].sort((a, b) => a.id.localeCompare(b.id));
+    expect(sorted(undone)).toEqual(sorted(paired));
+  });
+
+  it("pulls every row for a ripple delete, or only the row it names", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const caption = createTextClip("Caption", ids.textTrack, 5_000);
+    const withCaption = apply(moka, {
+      type: "addClips",
+      timelineId: ids.timeline,
+      clips: [caption],
+    }).next;
+    const all = apply(withCaption, {
+      type: "rippleDeleteClips",
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      scope: "all",
+    }).next;
+    expect(
+      all.timelines![0].clips.find((clip) => clip.id === caption.id)!.startMs,
+    ).toBe(1_000);
+    const track = apply(withCaption, {
+      type: "rippleDeleteClips",
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      scope: "track",
+    }).next;
+    expect(
+      track.timelines![0].clips.find((clip) => clip.id === caption.id)!.startMs,
+    ).toBe(5_000);
+  });
+
+  it("closes a gap and takes a gap out", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const later = clipOf(moka, ids.followerAsset, ids.videoTrack, 6_000);
+    const withLater = apply(moka, {
+      type: "addClips",
+      timelineId: ids.timeline,
+      clips: [later],
+    }).next;
+    const closed = expectRoundTrip(withLater, {
+      type: "closeGaps",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+    });
+    expect(
+      closed.timelines![0].clips.find((clip) => clip.id === later.id)!.startMs,
+    ).toBe(4_000);
+    const withoutGap = expectRoundTrip(withLater, {
+      type: "deleteGap",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      atMs: 5_000,
+    });
+    expect(
+      withoutGap.timelines![0].clips.find((clip) => clip.id === later.id)!
+        .startMs,
+    ).toBe(4_000);
+    expect(
+      codeOf(() =>
+        apply(withLater, {
+          type: "deleteGap",
+          timelineId: ids.timeline,
+          trackId: ids.videoTrack,
+          atMs: 1_000,
+        }),
+      ),
+    ).toBe("GAP_NOT_FOUND");
+  });
+
   it("lands a transition on a butted seam, pulling the follower back itself, and the undo puts it back", () => {
     const moka = buildTimelineMokaFile();
     const ids = timelineIds();

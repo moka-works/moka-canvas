@@ -1763,6 +1763,23 @@ export type DocumentCommand =
       mode: "overwrite" | "ripple";
       rippleScope?: "all" | "track";
     }
+  /** Deletes clips and pulls what followed them on the chosen rows back. */
+  | {
+      type: "rippleDeleteClips";
+      timelineId: TimelineId;
+      clipIds: ClipId[];
+      scope?: "all" | "track";
+    }
+  /** Pulls each row's clips left until the gaps between them are gone. */
+  | { type: "closeGaps"; timelineId: TimelineId; trackId?: TrackId }
+  /** Takes the empty stretch at a moment out and pulls the rest back. */
+  | {
+      type: "deleteGap";
+      timelineId: TimelineId;
+      trackId: TrackId;
+      atMs: number;
+      scope?: "all" | "track";
+    }
   /**
    * Only where a clip sits: `startMs` on the timeline's clock and, when the
    * clip is named for a different track, the `trackId` it lands on. A move

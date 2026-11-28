@@ -1380,6 +1380,92 @@ fn refuses_a_landing_on_a_locked_row() {
     );
 }
 
+#[test]
+fn deletes_a_clip_and_pulls_what_followed_it_back() {
+    let moka = timeline_fixture();
+    let (paired, follower) = pair_at(&moka, 4_000);
+    let (next, inverse) = apply(
+        &paired,
+        vec![DocumentCommand::RippleDeleteClips {
+            timeline_id: TIMELINE.into(),
+            clip_ids: vec![VIDEO_CLIP.into()],
+            scope: Some(RippleScope::All),
+        }],
+    );
+    assert_eq!(next.timelines.as_ref().unwrap()[0].clips.len(), 1);
+    assert_eq!(clip_at(&next, 0, &follower.id).start_ms, 0);
+    let (undone, _) = apply(&next, inverse);
+    let mut before = paired.timelines.as_ref().unwrap()[0].clips.clone();
+    let mut after = undone.timelines.as_ref().unwrap()[0].clips.clone();
+    before.sort_by(|a, b| a.id.cmp(&b.id));
+    after.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(after, before);
+}
+
+#[test]
+fn pulls_every_row_for_a_ripple_delete_or_only_the_row_it_names() {
+    let moka = timeline_fixture();
+    let caption = text_clip("Caption", TEXT_TRACK, 5_000);
+    let caption_id = caption.id.clone();
+    let (with_caption, _) = apply(&moka, vec![add_clips(vec![caption])]);
+    let (all, _) = apply(
+        &with_caption,
+        vec![DocumentCommand::RippleDeleteClips {
+            timeline_id: TIMELINE.into(),
+            clip_ids: vec![VIDEO_CLIP.into()],
+            scope: Some(RippleScope::All),
+        }],
+    );
+    assert_eq!(clip_at(&all, 0, &caption_id).start_ms, 1_000);
+    let (track, _) = apply(
+        &with_caption,
+        vec![DocumentCommand::RippleDeleteClips {
+            timeline_id: TIMELINE.into(),
+            clip_ids: vec![VIDEO_CLIP.into()],
+            scope: Some(RippleScope::Track),
+        }],
+    );
+    assert_eq!(clip_at(&track, 0, &caption_id).start_ms, 5_000);
+}
+
+#[test]
+fn closes_a_gap_and_takes_a_gap_out() {
+    let moka = timeline_fixture();
+    let later = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 6_000);
+    let later_id = later.id.clone();
+    let (with_later, _) = apply(&moka, vec![add_clips(vec![later])]);
+    let closed = round_trip(
+        &with_later,
+        vec![DocumentCommand::CloseGaps {
+            timeline_id: TIMELINE.into(),
+            track_id: Some(VIDEO_TRACK.into()),
+        }],
+    );
+    assert_eq!(clip_at(&closed, 0, &later_id).start_ms, 4_000);
+    let without_gap = round_trip(
+        &with_later,
+        vec![DocumentCommand::DeleteGap {
+            timeline_id: TIMELINE.into(),
+            track_id: VIDEO_TRACK.into(),
+            at_ms: 5_000,
+            scope: None,
+        }],
+    );
+    assert_eq!(clip_at(&without_gap, 0, &later_id).start_ms, 4_000);
+    assert_eq!(
+        code_of(
+            &with_later,
+            DocumentCommand::DeleteGap {
+                timeline_id: TIMELINE.into(),
+                track_id: VIDEO_TRACK.into(),
+                at_ms: 1_000,
+                scope: None,
+            }
+        ),
+        "GAP_NOT_FOUND"
+    );
+}
+
 // Transitions -----------------------------------------------------------
 
 #[test]

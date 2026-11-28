@@ -728,6 +728,154 @@ function timingPatch(a: TimelineClip, b: TimelineClip): ClipPatch {
   return patch;
 }
 
+interface TimeSpan {
+  startMs: number;
+  endMs: number;
+}
+
+/** Overlapping removals count once, so a video and its sound pull one gap. */
+function mergedSpans(spans: TimeSpan[]): TimeSpan[] {
+  const ordered = [...spans].sort((a, b) => a.startMs - b.startMs);
+  const merged: TimeSpan[] = [];
+  for (const span of ordered) {
+    const last = merged.at(-1);
+    if (last && span.startMs < last.endMs) {
+      last.endMs = Math.max(last.endMs, span.endMs);
+    } else {
+      merged.push({ ...span });
+    }
+  }
+  return merged;
+}
+
+function pulledBy(startMs: number, spans: TimeSpan[]): number {
+  let shift = 0;
+  for (const span of spans) {
+    if (span.endMs <= startMs) shift += span.endMs - span.startMs;
+  }
+  return shift;
+}
+
+function rippleDeleted(
+  timeline: TimelineDocument,
+  clipIds: string[],
+  scope: "all" | "track",
+): TimelineClip[] {
+  const removing = new Set(clipIds);
+  const removed = timeline.clips.filter((clip) => removing.has(clip.id));
+  const globalSpans = mergedSpans(
+    removed.map((clip) => ({
+      startMs: clip.startMs,
+      endMs: clip.startMs + clip.durationMs,
+    })),
+  );
+  const byTrack = new Map<string, TimeSpan[]>();
+  for (const clip of removed) {
+    const list = byTrack.get(clip.trackId) ?? [];
+    list.push({
+      startMs: clip.startMs,
+      endMs: clip.startMs + clip.durationMs,
+    });
+    byTrack.set(clip.trackId, list);
+  }
+  for (const [trackId, spans] of byTrack)
+    byTrack.set(trackId, mergedSpans(spans));
+  return timeline.clips
+    .filter((clip) => !removing.has(clip.id))
+    .map((clip) => {
+      const spans =
+        scope === "all" ? globalSpans : (byTrack.get(clip.trackId) ?? []);
+      const shift = pulledBy(clip.startMs, spans);
+      return shift === 0 ? clip : { ...clip, startMs: clip.startMs - shift };
+    });
+}
+
+function closedGaps(
+  timeline: TimelineDocument,
+  trackId?: string,
+): TimelineClip[] {
+  const tracks = trackId ? [trackId] : timeline.tracks.map((track) => track.id);
+  const next = [...timeline.clips];
+  for (const id of tracks) {
+    const onTrack = next
+      .filter((clip) => clip.trackId === id)
+      .sort((a, b) => a.startMs - b.startMs);
+    let cursor = onTrack[0]?.startMs ?? 0;
+    for (const clip of onTrack) {
+      if (clip.startMs !== cursor) {
+        const at = next.findIndex((held) => held.id === clip.id);
+        next[at] = { ...clip, startMs: cursor };
+      }
+      cursor += clip.durationMs;
+    }
+  }
+  return next;
+}
+
+function gapAt(
+  timeline: TimelineDocument,
+  trackId: string,
+  atMs: number,
+): TimeSpan | null {
+  const onTrack = timeline.clips
+    .filter((clip) => clip.trackId === trackId)
+    .sort((a, b) => a.startMs - b.startMs);
+  let cursor = 0;
+  for (const clip of onTrack) {
+    if (atMs < clip.startMs) {
+      return atMs >= cursor && cursor < clip.startMs
+        ? { startMs: cursor, endMs: clip.startMs }
+        : null;
+    }
+    cursor = Math.max(cursor, clip.startMs + clip.durationMs);
+  }
+  return null;
+}
+
+/**
+ * The forward steps a planned clip list needs, expressed through the commands
+ * that already validate and undo themselves. Returned as the command's own
+ * result so a landing and a compaction share one kind of history.
+ */
+function applyPlannedClips(
+  moka: MokaFile,
+  timeline: TimelineDocument,
+  finalClips: TimelineClip[],
+): { next: MokaFile; inverse: DocumentCommand[] } {
+  const original = new Map(timeline.clips.map((clip) => [clip.id, clip]));
+  const finalById = new Map(finalClips.map((clip) => [clip.id, clip]));
+  const removed = timeline.clips.filter((clip) => !finalById.has(clip.id));
+  const added = finalClips.filter((clip) => !original.has(clip.id));
+  const changed = finalClips.filter((clip) => {
+    const held = original.get(clip.id);
+    return held !== undefined && timingChanged(held, clip);
+  });
+  const commands: DocumentCommand[] = [];
+  if (removed.length > 0)
+    commands.push({
+      type: "removeClips",
+      timelineId: timeline.id,
+      clipIds: removed.map((clip) => clip.id),
+    });
+  if (changed.length > 0)
+    commands.push({
+      type: "updateClips",
+      timelineId: timeline.id,
+      patches: changed.map((clip) => ({
+        clipId: clip.id,
+        patch: timingPatch(original.get(clip.id)!, clip),
+      })),
+    });
+  if (added.length > 0)
+    commands.push({
+      type: "addClips",
+      timelineId: timeline.id,
+      clips: added,
+    });
+  if (commands.length === 0) return { next: moka, inverse: [] };
+  return applyCommands(moka, commands);
+}
+
 function applyOne(
   moka: MokaFile,
   command: DocumentCommand,
@@ -2254,6 +2402,74 @@ function applyOne(
       // and undo themselves, so a landing's history is exactly the trim,
       // removal, and addition it took.
       return applyCommands(moka, commands);
+    }
+
+    case "rippleDeleteClips": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.clipIds.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToRemove"),
+        );
+      const removing = new Set(command.clipIds);
+      if (
+        timeline.clips.filter((clip) => removing.has(clip.id)).length !==
+        removing.size
+      )
+        throw new CommandError(
+          "CLIP_NOT_FOUND",
+          i18n.t("errors:command.someClipsNotFound"),
+        );
+      return applyPlannedClips(
+        moka,
+        timeline,
+        rippleDeleted(timeline, command.clipIds, command.scope ?? "all"),
+      );
+    }
+
+    case "closeGaps": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (
+        command.trackId !== undefined &&
+        !timeline.tracks.some((track) => track.id === command.trackId)
+      )
+        throw new CommandError(
+          "TRACK_NOT_FOUND",
+          i18n.t("errors:command.clipTrackNotFound"),
+        );
+      return applyPlannedClips(
+        moka,
+        timeline,
+        closedGaps(timeline, command.trackId),
+      );
+    }
+
+    case "deleteGap": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (!timeline.tracks.some((track) => track.id === command.trackId))
+        throw new CommandError(
+          "TRACK_NOT_FOUND",
+          i18n.t("errors:command.clipTrackNotFound"),
+        );
+      if (!Number.isInteger(command.atMs))
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.clipStartNotWholeMs"),
+        );
+      const gap = gapAt(timeline, command.trackId, command.atMs);
+      if (!gap)
+        throw new CommandError(
+          "GAP_NOT_FOUND",
+          i18n.t("errors:command.gapNotFound"),
+        );
+      const shift = gap.endMs - gap.startMs;
+      const finalClips = timeline.clips.map((clip) => {
+        if (command.scope !== "all" && clip.trackId !== command.trackId)
+          return clip;
+        if (clip.startMs < gap.endMs) return clip;
+        return { ...clip, startMs: clip.startMs - shift };
+      });
+      return applyPlannedClips(moka, timeline, finalClips);
     }
 
     case "moveClips": {

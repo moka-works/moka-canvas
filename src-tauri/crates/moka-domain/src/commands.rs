@@ -1548,6 +1548,9 @@ fn apply_one(
         | DocumentCommand::UpdateTrack { .. }
         | DocumentCommand::AddClips { .. }
         | DocumentCommand::InsertClips { .. }
+        | DocumentCommand::RippleDeleteClips { .. }
+        | DocumentCommand::CloseGaps { .. }
+        | DocumentCommand::DeleteGap { .. }
         | DocumentCommand::RemoveClips { .. }
         | DocumentCommand::UpdateClips { .. }
         | DocumentCommand::MoveClips { .. }

@@ -1679,6 +1679,30 @@ pub enum DocumentCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ripple_scope: Option<RippleScope>,
     },
+    /// Deletes clips and pulls what followed them on the chosen rows back.
+    #[serde(rename_all = "camelCase")]
+    RippleDeleteClips {
+        timeline_id: TimelineId,
+        clip_ids: Vec<ClipId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<RippleScope>,
+    },
+    /// Pulls each row's clips left until the gaps between them are gone.
+    #[serde(rename_all = "camelCase")]
+    CloseGaps {
+        timeline_id: TimelineId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        track_id: Option<TrackId>,
+    },
+    /// Takes the empty stretch at a moment out and pulls the rest back.
+    #[serde(rename_all = "camelCase")]
+    DeleteGap {
+        timeline_id: TimelineId,
+        track_id: TrackId,
+        at_ms: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<RippleScope>,
+    },
     #[serde(rename_all = "camelCase")]
     RemoveClips {
         timeline_id: TimelineId,
