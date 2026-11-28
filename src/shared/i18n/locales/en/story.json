@@ -151,6 +151,7 @@
     "assemble": "Assemble the film",
     "importCanvas": "Import the story into a canvas",
     "importClips": "Import the story into the cutting room",
+    "importElements": "Import elements",
     "confirm": "Confirm the step"
   },
   "parse": {
@@ -594,7 +595,29 @@
     "moveUp": "Move {{name}} up",
     "moveDown": "Move {{name}} down",
     "orderList": "The elements in order",
-    "emptyGroup": "Nothing of this kind yet"
+    "emptyGroup": "Nothing of this kind yet",
+    "export": "Export elements",
+    "exporting": "Exporting…",
+    "exportTitle": "Export story elements",
+    "exportEmpty": "This telling has no elements yet",
+    "exportDone": "Exported {{count}} elements with {{files}} pictures or recordings",
+    "exportFailed": "The elements were not exported",
+    "exportMissing": "{{count}} referenced files are no longer in the project; nothing was exported",
+    "import": "Import elements",
+    "importing": "Importing…",
+    "importDone": "Imported {{count}} elements",
+    "importNone": "There is no new element to import",
+    "importFailed": "The elements were not imported",
+    "importUnknown": "This file is not a story elements package",
+    "importNewer": "This package comes from a newer version and cannot be read here",
+    "importVersion": "The package format {{version}} is newer than this build reads",
+    "importEmpty": "The package holds no elements",
+    "importLimit": "Importing would go past the {{max}}-element limit",
+    "importLimitDetail": "Elements and forms share places: this import needs {{adding}}, and {{capacity}} are left",
+    "importSaveBlocked": "Unsaved changes stand in the way; the import did not start",
+    "importMissing": "{{count}} pictures or recordings did not travel with the package",
+    "importSkippedDetail": "Names already in this telling were not imported again: {{names}}",
+    "importMissingDetail": "Missing: {{names}}"
   },
   "storyboard": {
     "lead": "One episode at a time: which shots an act is made of and how each is filmed, then a frame for every shot and a clip for every act",

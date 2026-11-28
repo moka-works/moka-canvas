@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { assetThumbUrl } from "../../../api/assets";
+import { errorText } from "../../../api/client";
 
 import {
   chapterReadingWaves,
@@ -28,6 +29,8 @@ import { MAX_ELEMENTS_PER_STORY } from "../../../shared/domain/constants";
 import { newId } from "../../../shared/domain/ids";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
+import { askSavePath, fileSafeName } from "../../editor/launcher/savePath";
+import { useAppStore } from "../../editor/stores/appStore";
 import {
   modelNameOf,
   modelOptionsFor,
@@ -42,6 +45,11 @@ import { elementPlaceholderUrl } from "../elementPlaceholder";
 import { ElementCard } from "../panels/ElementCard";
 import { ElementDraftDialog } from "../panels/ElementDraftDialog";
 import { addElementToStory } from "../panels/elementDraft";
+import { ElementPackageError } from "../panels/elementPackage";
+import {
+  exportElementPackage,
+  importElementPackage,
+} from "../panels/elementTransfer";
 import { liveStory } from "../panels/removeOldTake";
 import { VoiceFields } from "../panels/VoiceFields";
 import { collectElementRepeats, readElementsAnswer } from "../jobs/apply";
@@ -164,6 +172,10 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
   const [query, setQuery] = useState("");
   const [asking, setAsking] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Whether the cast is being packed out or unpacked in, which the two links
+  // say while their own work is running.
+  const [packaging, setPackaging] = useState<"export" | "import" | null>(null);
+  const packageInput = useRef<HTMLInputElement>(null);
   // The cards a bulk action is about, chosen one checkbox at a time.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // The card a jump from another step asked to be brought into view.
@@ -515,6 +527,140 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
     void useStoryJobStore.getState().startWaves(story.id, "elements", merges);
   }, [applying, jobs, reading, sending, story, waves]);
 
+  /** What a failed packing or unpacking is called, and what went wrong. */
+  const packageTrouble = (
+    problem: unknown,
+    action: "export" | "import",
+  ): { message: string; detail?: string } => {
+    if (problem instanceof ElementPackageError) {
+      switch (problem.code) {
+        case "LIMIT":
+          return {
+            message: t("story:elements.importLimit", {
+              max: MAX_ELEMENTS_PER_STORY,
+            }),
+            detail: t("story:elements.importLimitDetail", {
+              adding: problem.meta?.adding ?? 0,
+              capacity: problem.meta?.capacity ?? 0,
+            }),
+          };
+        case "VERSION":
+          return {
+            message: t("story:elements.importNewer"),
+            detail: t("story:elements.importVersion", {
+              version: problem.meta?.version ?? 0,
+            }),
+          };
+        case "EMPTY":
+          return { message: t("story:elements.importEmpty") };
+        case "INVALID":
+          return { message: t("story:elements.importUnknown") };
+        case "ASSETS_MISSING":
+          return {
+            message: t(
+              action === "export"
+                ? "story:elements.exportMissing"
+                : "story:elements.importMissing",
+              { count: problem.meta?.count ?? 1 },
+            ),
+            detail: problem.detail,
+          };
+        case "SAVE_BLOCKED":
+          return {
+            message: t("story:elements.importSaveBlocked"),
+            detail: problem.detail,
+          };
+        case "UPLOAD":
+          return {
+            message: t("story:elements.importFailed"),
+            detail: problem.detail,
+          };
+        case "WRITE":
+          // The command itself has already said why it was refused.
+          return { message: t("story:elements.importFailed") };
+      }
+    }
+    const trouble = errorText(problem);
+    return {
+      message: t(
+        action === "export"
+          ? "story:elements.exportFailed"
+          : "story:elements.importFailed",
+      ),
+      detail: trouble.detail ?? trouble.message,
+    };
+  };
+
+  /** The whole cast, packed out to a file the reader names. */
+  const exportCast = async (): Promise<void> => {
+    const destination = await askSavePath({
+      title: t("story:elements.exportTitle"),
+      defaultName: `${fileSafeName(story.name)}-elements.zip`,
+      extensions: ["zip"],
+    });
+    if (destination === null) return;
+    setPackaging("export");
+    try {
+      const report = await exportElementPackage(story, destination);
+      useAppStore.getState().pushToast(
+        "success",
+        t("story:elements.exportDone", {
+          count: report.elements,
+          files: report.assets,
+        }),
+        undefined,
+        destination,
+      );
+    } catch (problem) {
+      const said = packageTrouble(problem, "export");
+      useAppStore
+        .getState()
+        .pushToast("error", said.message, undefined, said.detail);
+    } finally {
+      setPackaging(null);
+    }
+  };
+
+  /** A package unpacked into this telling: files first, then the cards. */
+  const importCast = async (file: File): Promise<void> => {
+    setPackaging("import");
+    try {
+      const report = await importElementPackage(story, file);
+      const notes: string[] = [];
+      if (report.skipped.length > 0) {
+        notes.push(
+          t("story:elements.importSkippedDetail", {
+            names: report.skipped.join("、"),
+          }),
+        );
+      }
+      if (report.missingAssets.length > 0) {
+        notes.push(
+          t("story:elements.importMissingDetail", {
+            names: report.missingAssets.join("、"),
+          }),
+        );
+      }
+      useAppStore
+        .getState()
+        .pushToast(
+          "success",
+          report.imported === 0
+            ? t("story:elements.importNone")
+            : t("story:elements.importDone", { count: report.imported }),
+          undefined,
+          notes.length === 0 ? undefined : notes.join("\n"),
+        );
+    } catch (problem) {
+      const said = packageTrouble(problem, "import");
+      useAppStore
+        .getState()
+        .pushToast("error", said.message, undefined, said.detail);
+    } finally {
+      setPackaging(null);
+    }
+  };
+
   /** Reads the telling, whole or a part at a time. */
   const begin = async () => {
     // A reading already out is the one that will be merged: a second ask beside
@@ -771,6 +917,45 @@ export function ElementsStep({ story }: { story: StoryDocument }) {
             >
               {t("story:elements.add")}
             </button>
+            <button
+              className="link"
+              data-testid="story-elements-export"
+              disabled={packaging !== null || story.elements.length === 0}
+              onClick={() => void exportCast()}
+              title={
+                story.elements.length === 0
+                  ? t("story:elements.exportEmpty")
+                  : undefined
+              }
+              type="button"
+            >
+              {packaging === "export"
+                ? t("story:elements.exporting")
+                : t("story:elements.export")}
+            </button>
+            <button
+              className="link"
+              data-testid="story-elements-import"
+              disabled={packaging !== null}
+              onClick={() => packageInput.current?.click()}
+              type="button"
+            >
+              {packaging === "import"
+                ? t("story:elements.importing")
+                : t("story:elements.import")}
+            </button>
+            <input
+              accept=".zip,application/zip"
+              data-testid="story-elements-import-file"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file !== undefined) void importCast(file);
+              }}
+              ref={packageInput}
+              type="file"
+            />
             <button
               className="link"
               data-testid="story-elements-recognise"

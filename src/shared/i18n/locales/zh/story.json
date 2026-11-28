@@ -151,6 +151,7 @@
     "assemble": "装配成片",
     "importCanvas": "把故事导入画布",
     "importClips": "把故事导入剪辑室",
+    "importElements": "导入元素",
     "confirm": "确认这一步"
   },
   "parse": {
@@ -594,7 +595,29 @@
     "moveUp": "上移 {{name}}",
     "moveDown": "下移 {{name}}",
     "orderList": "按顺序排列的元素",
-    "emptyGroup": "这一类还没有元素"
+    "emptyGroup": "这一类还没有元素",
+    "export": "导出元素",
+    "exporting": "正在导出…",
+    "exportTitle": "导出剧情元素",
+    "exportEmpty": "这个故事还没有元素",
+    "exportDone": "已导出 {{count}} 个元素，含 {{files}} 个图片或录音",
+    "exportFailed": "导出元素没有完成",
+    "exportMissing": "{{count}} 个被引用的文件已不在项目里，无法导出",
+    "import": "导入元素",
+    "importing": "正在导入…",
+    "importDone": "已导入 {{count}} 个元素",
+    "importNone": "没有新的元素可以导入",
+    "importFailed": "导入元素没有完成",
+    "importUnknown": "这个压缩包不是剧情元素包",
+    "importNewer": "这个元素包来自更新的版本，当前版本读不了",
+    "importVersion": "元素包格式 {{version}} 比当前版本新",
+    "importEmpty": "元素包里没有元素",
+    "importLimit": "导入后会超过元素的 {{max}} 个上限",
+    "importLimitDetail": "元素与形态共占位置：这次需要 {{adding}} 个，空余 {{capacity}} 个",
+    "importSaveBlocked": "还有改动没有保存，导入没有开始",
+    "importMissing": "{{count}} 个图片或录音没有随包导入",
+    "importSkippedDetail": "同名元素已存在，没有重复导入：{{names}}",
+    "importMissingDetail": "缺失：{{names}}"
   },
   "storyboard": {
     "lead": "一集一集地写：每一幕有哪些镜头、怎么拍，然后逐格出图、逐幕出片",
