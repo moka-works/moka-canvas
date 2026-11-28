@@ -701,13 +701,15 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("name", "string", "Track name"),
             ("index", "integer", "Position; appended when omitted"),
         ])),
-        command("timeline.update_track", "clip", ToolRisk::Write, "Rename a track or change mute, hidden, or lock.", schema(&["timelineId", "trackId"], &[
+        command("timeline.update_track", "clip", ToolRisk::Write, "Rename a track or change mute, hidden, lock, level, or solo.", schema(&["timelineId", "trackId"], &[
             ("timelineId", "string", "Timeline id"),
             ("trackId", "string", "Track id"),
             ("name", "string", "New name"),
             ("muted", "boolean", "Mute the track"),
             ("hidden", "boolean", "Hide the track"),
             ("locked", "boolean", "Lock the track against clip edits"),
+            ("gainDb", "number", "Row level, −60 to 12 dB"),
+            ("solo", "boolean", "Hear only soloed rows"),
         ])),
         command("timeline.remove_track", "clip", ToolRisk::Destroy, "Delete an empty track. Requires confirm.", schema(&["timelineId", "trackId", "confirm"], &[
             ("timelineId", "string", "Timeline id"),

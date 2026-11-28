@@ -128,6 +128,12 @@ const STALLED_MOVE_MS = 20;
 /** The most elements that may sound at once. */
 export const MAX_VOICES = 8;
 
+/** A row's own level, as the linear gain its sound is multiplied by. */
+export function trackGain(track: TimelineTrack): number {
+  if (track.muted) return 0;
+  return 10 ** ((track.gainDb ?? 0) / 20);
+}
+
 /** A clip that can be heard at a moment, with the row it sits on. */
 export interface AudibleClip {
   clip: TimelineClip;
@@ -149,8 +155,10 @@ export function audibleClipsAt(
   atMs: number,
 ): AudibleClip[] {
   const sounding: AudibleClip[] = [];
+  const anySolo = timeline.tracks.some((track) => track.solo === true);
   for (const track of timeline.tracks) {
     if (track.muted) continue;
+    if (anySolo && track.solo !== true) continue;
     for (const clip of timeline.clips) {
       if (clip.trackId !== track.id) continue;
       if (clip.kind === "text" || !clip.assetId) continue;
@@ -348,7 +356,7 @@ function scheduleGain(
     if (clip.fadeOutMs > 0 && untilEndMs > windowEndMs - atMs) {
       param.linearRampToValueAtTime(0, now + untilEndMs / 1_000);
     }
-    voice.trackGain.gain.value = track.muted ? 0 : 1;
+    voice.trackGain.gain.value = trackGain(track);
     return;
   }
   param.setValueAtTime(clipGainAt(clip, track, atMs), now);
@@ -365,7 +373,7 @@ function scheduleGain(
   if (clip.fadeOutMs > 0 && untilEndMs < clip.fadeOutMs) {
     param.linearRampToValueAtTime(0, now + untilEndMs / 1_000);
   }
-  voice.trackGain.gain.value = track.muted ? 0 : 1;
+  voice.trackGain.gain.value = trackGain(track);
 }
 
 /** Points a voice at its clip and puts the element where the clock stands. */

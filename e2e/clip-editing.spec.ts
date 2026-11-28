@@ -852,3 +852,23 @@ test("M names a moment, and I and O mark the working range", async ({
 
   forgetHome(home);
 });
+
+test("a row is soloed and levelled from its header", async ({ page }) => {
+  const home = await clipRoom(page, "Editing Track Mix");
+  await newTimeline(page, "Timeline 1");
+
+  const audioHeader = page.locator(".clip-tl-header-row", {
+    hasText: "Audio 1",
+  });
+  const solo = audioHeader.getByTestId("track-solo");
+  await solo.click();
+  await expect(solo).toHaveAttribute("aria-pressed", "true");
+
+  const gain = audioHeader.getByTestId("track-gain");
+  await gain.fill("-6");
+  await gain.blur();
+  await expect(gain).toHaveValue("-6.0");
+  await expect(solo).toHaveAttribute("aria-pressed", "true");
+
+  forgetHome(home);
+});

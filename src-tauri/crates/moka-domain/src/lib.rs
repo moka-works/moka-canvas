@@ -1044,6 +1044,12 @@ pub struct TimelineTrack {
     pub muted: bool,
     pub hidden: bool,
     pub locked: bool,
+    /// The row's own level in dB; absent means 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gain_db: Option<f64>,
+    /// While any row is soloed, only soloed rows are heard.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solo: Option<bool>,
     pub created_at: IsoTimestamp,
 }
 
@@ -1367,6 +1373,15 @@ pub struct TrackPatch {
     pub hidden: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gain_db: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solo: Option<bool>,
+    /// Put back a row that had no level of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_gain_db: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_solo: Option<bool>,
 }
 
 /// Reads a field that must tell "left off" from "carried as null".

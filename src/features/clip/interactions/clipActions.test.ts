@@ -48,10 +48,11 @@ import {
   rippleDeleteSelection,
   rippleTrimToPlayhead,
   setRangeEdge,
+  setTrackFlag,
+  setTrackGain,
   renameTrack,
   selectAll,
   selectedClips,
-  setTrackFlag,
   splitSelectionAtPlayhead,
 } from "./clipActions";
 
@@ -1185,5 +1186,26 @@ describe("markers and the working range", () => {
 
     clearRange();
     expect([cut().inPointMs, cut().outPointMs]).toEqual([undefined, undefined]);
+  });
+});
+
+describe("a row's level and solo", () => {
+  it("soles a row and levels it, and the undo puts the row back", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), { timelineId: ids.timeline });
+    setTrackFlag(cut(), ids.audioTrack, "solo", true);
+    let audio = cut().tracks.find((track) => track.id === ids.audioTrack)!;
+    expect(audio.solo).toBe(true);
+    setTrackGain(cut(), ids.audioTrack, -6);
+    audio = cut().tracks.find((track) => track.id === ids.audioTrack)!;
+    expect(audio.gainDb).toBe(-6);
+    undo();
+    expect(
+      cut().tracks.find((track) => track.id === ids.audioTrack)!.gainDb,
+    ).toBeUndefined();
+    undo();
+    expect(
+      cut().tracks.find((track) => track.id === ids.audioTrack)!.solo,
+    ).toBeUndefined();
   });
 });

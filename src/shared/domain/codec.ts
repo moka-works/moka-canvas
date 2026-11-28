@@ -380,6 +380,8 @@ function encodeTrack(track: TimelineTrack): Record<string, unknown> {
     muted: track.muted,
     hidden: track.hidden,
     locked: track.locked,
+    ...(track.gainDb !== undefined ? { gainDb: track.gainDb } : {}),
+    ...(track.solo !== undefined ? { solo: track.solo } : {}),
     createdAt: track.createdAt,
   };
 }
@@ -1486,6 +1488,12 @@ function decodeTrack(value: unknown): TimelineTrack {
     muted: Boolean(doc.muted),
     hidden: Boolean(doc.hidden),
     locked: Boolean(doc.locked),
+    ...(doc.gainDb === undefined
+      ? {}
+      : {
+          gainDb: requireField(unwrapNumber(doc.gainDb), "tracks[].gainDb"),
+        }),
+    ...(doc.solo === undefined ? {} : { solo: Boolean(doc.solo) }),
     createdAt: asString(doc.createdAt, "tracks[].createdAt"),
   };
 }

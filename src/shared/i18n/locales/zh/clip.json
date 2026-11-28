@@ -422,6 +422,9 @@
     "zoom": "缩放"
   },
   "trackHeaders": {
+    "gain": "{{name}} 音量（dB）",
+    "soloTrack": "独奏 {{name}}",
+    "unsoloTrack": "取消独奏 {{name}}",
     "hideTrack": "隐藏 {{name}}",
     "lockTrack": "锁定 {{name}}",
     "muteTrack": "静音 {{name}}",
@@ -456,6 +459,9 @@
     "overlapEachOther": "字幕在 {{timecode}} 处相互重叠"
   },
   "history": {
+    "setTrackGain": "把轨道音量设为 {{db}} dB",
+    "soloTrack": "独奏轨道",
+    "unsoloTrack": "取消独奏轨道",
     "addClip": "添加片段",
     "closeGapsOnTrack": "合拢本轨空隙",
     "insertClip": "插入片段",

@@ -198,6 +198,8 @@ fn empty_timeline(id: &str, name: &str) -> TimelineDocument {
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: now.clone(),
     };
     TimelineDocument {

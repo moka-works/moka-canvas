@@ -5316,6 +5316,23 @@ body.is-dragging-split {
   color: var(--ink);
 }
 
+.clip-tl-track-gain {
+  background: transparent;
+  border: 1px solid var(--stroke);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  height: 18px;
+  padding: 0 2px;
+  width: 38px;
+}
+
+.clip-tl-track-gain:focus {
+  border-color: var(--primary);
+  color: var(--ink);
+  outline: none;
+}
+
 .clip-tl-viewport {
   grid-area: 1 / 2 / 3 / 3;
   min-height: 0;

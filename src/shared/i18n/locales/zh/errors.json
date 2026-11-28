@@ -88,6 +88,7 @@
     "timelineSchemaNewer": "时间线架构版本高于本版本可读取的范围",
     "trackIdExists": "轨道 ID 已存在",
     "trackLimitReached": "轨道数已达上限",
+    "trackGainOutside": "轨道音量在 −60 到 12 dB 之间",
     "trackNameInvalid": "轨道名称为空或过长",
     "trackNotEmpty": "该轨道上仍有片段",
     "trackNotFound": "轨道不存在",

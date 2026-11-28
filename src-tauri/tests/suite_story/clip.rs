@@ -63,6 +63,8 @@ fn track(id: &str, kind: TrackKind) -> TimelineTrack {
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: NOW.to_string(),
     }
 }

@@ -9,6 +9,7 @@ import type {
 import {
   audibleClipsAt,
   audioEngine,
+  trackGain,
   clipGainAt,
   needsResync,
   transitionGain,
@@ -185,6 +186,26 @@ describe("the clips that sound at a moment", () => {
       transitions: [],
     };
     expect(audibleClipsAt(timeline, 1_000)).toHaveLength(6);
+  });
+
+  it("reads a row's level in dB, and a solo leaves the other rows out", () => {
+    expect(trackGain(track({ gainDb: -6 }))).toBeCloseTo(0.501, 3);
+    expect(trackGain(track({ muted: true }))).toBe(0);
+
+    const soloed = track({ id: "track-a", solo: true });
+    const other = track({ id: "track-b" });
+    const timeline: TimelineDocument = {
+      ...seamed(),
+      tracks: [soloed, other],
+      clips: [
+        clip({ id: "a", trackId: soloed.id }),
+        clip({ id: "b", trackId: other.id }),
+      ],
+      transitions: [],
+    };
+    expect(
+      audibleClipsAt(timeline, 1_000).map((entry) => entry.clip.id),
+    ).toEqual(["a"]);
   });
 
   it("leaves a muted side out of the window's pair", () => {

@@ -2423,16 +2423,57 @@ function applyOne(
           "VALIDATION_FAILED",
           i18n.t("errors:command.trackNameInvalid"),
         );
+      if (
+        command.patch.gainDb !== undefined &&
+        (!Number.isFinite(command.patch.gainDb) ||
+          command.patch.gainDb < -60 ||
+          command.patch.gainDb > 12)
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.trackGainOutside"),
+        );
       const previous: Partial<
-        Pick<TimelineTrack, "name" | "muted" | "hidden" | "locked">
-      > = {};
+        Pick<
+          TimelineTrack,
+          "name" | "muted" | "hidden" | "locked" | "gainDb" | "solo"
+        >
+      > & { clearGainDb?: boolean; clearSolo?: boolean } = {};
       if (command.patch.name !== undefined) previous.name = track.name;
       if (command.patch.muted !== undefined) previous.muted = track.muted;
       if (command.patch.hidden !== undefined) previous.hidden = track.hidden;
       if (command.patch.locked !== undefined) previous.locked = track.locked;
-      const tracks = timeline.tracks.map((t) =>
-        t.id === track.id ? { ...t, ...command.patch } : t,
-      );
+      if (
+        command.patch.gainDb !== undefined ||
+        command.patch.clearGainDb === true
+      ) {
+        if (track.gainDb === undefined) previous.clearGainDb = true;
+        else previous.gainDb = track.gainDb;
+      }
+      if (
+        command.patch.solo !== undefined ||
+        command.patch.clearSolo === true
+      ) {
+        if (track.solo === undefined) previous.clearSolo = true;
+        else previous.solo = track.solo;
+      }
+      const tracks = timeline.tracks.map((held) => {
+        if (held.id !== track.id) return held;
+        const updated = { ...held };
+        if (command.patch.name !== undefined) updated.name = command.patch.name;
+        if (command.patch.muted !== undefined)
+          updated.muted = command.patch.muted;
+        if (command.patch.hidden !== undefined)
+          updated.hidden = command.patch.hidden;
+        if (command.patch.locked !== undefined)
+          updated.locked = command.patch.locked;
+        if (command.patch.gainDb !== undefined)
+          updated.gainDb = command.patch.gainDb;
+        else if (command.patch.clearGainDb === true) delete updated.gainDb;
+        if (command.patch.solo !== undefined) updated.solo = command.patch.solo;
+        else if (command.patch.clearSolo === true) delete updated.solo;
+        return updated;
+      });
       return {
         next: replaceTimeline(moka, { ...timeline, tracks }),
         inverse: [

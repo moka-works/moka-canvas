@@ -422,6 +422,9 @@
     "zoom": "Zoom"
   },
   "trackHeaders": {
+    "gain": "{{name}} level in dB",
+    "soloTrack": "Solo {{name}}",
+    "unsoloTrack": "Stop soloing {{name}}",
     "hideTrack": "Hide {{name}}",
     "lockTrack": "Lock {{name}}",
     "muteTrack": "Mute {{name}}",
@@ -456,6 +459,9 @@
     "overlapEachOther": "The subtitles overlap each other at {{timecode}}"
   },
   "history": {
+    "setTrackGain": "Set a row's level to {{db}} dB",
+    "soloTrack": "Solo a row",
+    "unsoloTrack": "Stop soloing a row",
     "addClip": "Add clip",
     "closeGapsOnTrack": "Close gaps on a row",
     "insertClip": "Insert clip",

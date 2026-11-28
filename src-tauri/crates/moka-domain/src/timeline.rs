@@ -2082,6 +2082,22 @@ pub fn apply_timeline_command(
             if patch.locked.is_some() {
                 previous.locked = Some(track.locked);
             }
+            if patch.gain_db.is_some() || patch.clear_gain_db == Some(true) {
+                previous.gain_db = track.gain_db;
+                previous.clear_gain_db = Some(track.gain_db.is_none());
+            }
+            if patch.solo.is_some() || patch.clear_solo == Some(true) {
+                previous.solo = track.solo;
+                previous.clear_solo = Some(track.solo.is_none());
+            }
+            if let Some(gain) = patch.gain_db {
+                if !gain.is_finite() || !(-60.0..=12.0).contains(&gain) {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "A row's level runs −60 to 12 dB",
+                    ));
+                }
+            }
             let tracks: Vec<TimelineTrack> = timeline
                 .tracks
                 .iter()
@@ -2101,6 +2117,16 @@ pub fn apply_timeline_command(
                     }
                     if let Some(locked) = patch.locked {
                         updated.locked = locked;
+                    }
+                    if patch.clear_gain_db == Some(true) {
+                        updated.gain_db = None;
+                    } else if patch.gain_db.is_some() {
+                        updated.gain_db = patch.gain_db;
+                    }
+                    if patch.clear_solo == Some(true) {
+                        updated.solo = None;
+                    } else if let Some(solo) = patch.solo {
+                        updated.solo = Some(solo);
                     }
                     updated
                 })

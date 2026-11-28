@@ -236,6 +236,10 @@ export interface TimelineTrack {
   muted: boolean;
   hidden: boolean;
   locked: boolean;
+  /** The row's own level in dB; absent means 0. */
+  gainDb?: number;
+  /** While any row is soloed, only soloed rows are heard. */
+  solo?: boolean;
   createdAt: IsoTimestamp;
 }
 
@@ -1730,8 +1734,11 @@ export type DocumentCommand =
       timelineId: TimelineId;
       trackId: TrackId;
       patch: Partial<
-        Pick<TimelineTrack, "name" | "muted" | "hidden" | "locked">
-      >;
+        Pick<
+          TimelineTrack,
+          "name" | "muted" | "hidden" | "locked" | "gainDb" | "solo"
+        >
+      > & { clearGainDb?: boolean; clearSolo?: boolean };
     }
   /**
    * Clips land together — a division or a paste arrives as many clips in one

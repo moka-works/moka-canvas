@@ -2574,6 +2574,8 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: now.clone(),
     }];
     let mut clips: Vec<TimelineClip> = Vec::new();
@@ -2753,6 +2755,8 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             muted: false,
             hidden: false,
             locked: false,
+            gain_db: None,
+            solo: None,
             created_at: now.clone(),
         });
         for chapter in &story.chapters {
@@ -3125,6 +3129,8 @@ fn audio_track(id: &str, name: &str, now: &str) -> TimelineTrack {
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: now.to_string(),
     }
 }

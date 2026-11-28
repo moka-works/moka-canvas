@@ -1149,12 +1149,13 @@ export function materialHoldsSound(clip: TimelineClip): boolean {
 }
 
 /** One switch of a row's own state, as one step of history. */
-export type TrackFlag = "muted" | "hidden" | "locked";
+export type TrackFlag = "muted" | "hidden" | "locked" | "solo";
 
 const FLAG_TITLES: Record<TrackFlag, [string, string]> = {
   muted: ["clip:history.unmuteTrack", "clip:history.muteTrack"],
   hidden: ["clip:history.showTrack", "clip:history.hideTrack"],
   locked: ["clip:history.unlockTrack", "clip:history.lockTrack"],
+  solo: ["clip:history.unsoloTrack", "clip:history.soloTrack"],
 };
 
 export function setTrackFlag(
@@ -1168,13 +1169,32 @@ export function setTrackFlag(
       ? { muted: value }
       : flag === "hidden"
         ? { hidden: value }
-        : { locked: value };
+        : flag === "solo"
+          ? { solo: value }
+          : { locked: value };
   execute(i18n.t(FLAG_TITLES[flag][value ? 1 : 0]), [
     {
       type: "updateTrack",
       timelineId: timeline.id,
       trackId,
       patch,
+    },
+  ]);
+}
+
+/** A row's own level, clamped to what the document allows. */
+export function setTrackGain(
+  timeline: TimelineDocument,
+  trackId: TrackId,
+  db: number,
+): void {
+  const gainDb = Math.max(-60, Math.min(12, db));
+  execute(i18n.t("clip:history.setTrackGain", { db: gainDb.toFixed(1) }), [
+    {
+      type: "updateTrack",
+      timelineId: timeline.id,
+      trackId,
+      patch: { gainDb },
     },
   ]);
 }

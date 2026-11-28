@@ -13,7 +13,7 @@ import {
   VolumeIcon,
 } from "../components/ClipIcons";
 import { TimelineMenu } from "../components/TimelineMenu";
-import { setTrackFlag } from "../interactions/clipActions";
+import { setTrackFlag, setTrackGain } from "../interactions/clipActions";
 import { trackRows } from "./geometry";
 
 interface TrackHeadersProps {
@@ -111,6 +111,59 @@ export function TrackHeaders({ timeline, ref }: TrackHeadersProps) {
                   <VolumeIcon size={13} />
                 )}
               </button>
+            )}
+            {row.track.kind !== "text" && (
+              <button
+                aria-label={t(
+                  row.track.solo
+                    ? "clip:trackHeaders.unsoloTrack"
+                    : "clip:trackHeaders.soloTrack",
+                  { name: row.track.name },
+                )}
+                aria-pressed={row.track.solo === true}
+                className="clip-tl-track-toggle"
+                data-testid="track-solo"
+                onClick={() =>
+                  setTrackFlag(
+                    timeline,
+                    row.track.id,
+                    "solo",
+                    row.track.solo !== true,
+                  )
+                }
+                title={t(
+                  row.track.solo
+                    ? "clip:trackHeaders.unsoloTrack"
+                    : "clip:trackHeaders.soloTrack",
+                  { name: row.track.name },
+                )}
+                type="button"
+              >
+                S
+              </button>
+            )}
+            {row.track.kind !== "text" && (
+              <input
+                aria-label={t("clip:trackHeaders.gain", {
+                  name: row.track.name,
+                })}
+                className="clip-tl-track-gain"
+                data-testid="track-gain"
+                defaultValue={(row.track.gainDb ?? 0).toFixed(1)}
+                key={`${row.track.id}:${row.track.gainDb ?? 0}`}
+                max={12}
+                min={-60}
+                onBlur={(event) => {
+                  const db = Number(event.target.value);
+                  if (Number.isFinite(db))
+                    setTrackGain(timeline, row.track.id, db);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                step={1}
+                type="number"
+              />
             )}
             <button
               aria-label={t(

@@ -204,6 +204,10 @@ pub async fn command(
                 muted: args.raw("muted").and_then(Value::as_bool),
                 hidden: args.raw("hidden").and_then(Value::as_bool),
                 locked: args.raw("locked").and_then(Value::as_bool),
+                gain_db: args.raw("gainDb").and_then(Value::as_f64),
+                solo: args.raw("solo").and_then(Value::as_bool),
+                clear_gain_db: None,
+                clear_solo: None,
             };
             Ok(ToolOutcome::write(
                 format!("Updated track {track_id}"),
@@ -329,6 +333,8 @@ fn track_of(kind: TrackKind, name: &str) -> TimelineTrack {
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: now_iso(),
     }
 }

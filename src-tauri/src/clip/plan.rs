@@ -155,6 +155,7 @@ pub fn build_plan(
         .map(|clip| clip.start_ms + clip.duration_ms)
         .max()
         .unwrap_or(0);
+    let any_solo = timeline.tracks.iter().any(|track| track.solo == Some(true));
 
     // -- the inputs, and how many times each is read --------------------------
     let mut inputs: Vec<InputPlan> = Vec::new();
@@ -168,7 +169,7 @@ pub fn build_plan(
         };
         let track = track_of(timeline, &clip.track_id);
         let picture = draws_picture(clip, track, Some(asset));
-        let sound = is_audible(clip, track, Some(asset));
+        let sound = is_audible(clip, track, Some(asset), any_solo);
         if !picture && !sound {
             continue;
         }
@@ -388,7 +389,7 @@ offset={offset}[{merged}]",
             continue;
         };
         let track = track_of(timeline, &clip.track_id);
-        if !is_audible(clip, track, Some(asset)) {
+        if !is_audible(clip, track, Some(asset), any_solo) {
             continue;
         }
         let input_index = by_asset[asset_id];
@@ -397,7 +398,12 @@ offset={offset}[{merged}]",
         let source = source_label(input_index, arm, inputs[input_index].audio_uses, true);
         let trim = !inputs[input_index].seeked();
         let label = labels.fresh();
-        let filters = audio_filters(clip, trim, transition_role(timeline, clip, track));
+        let filters = audio_filters(
+            clip,
+            trim,
+            transition_role(timeline, clip, track),
+            track.and_then(|track| track.gain_db),
+        );
         lines.push(format!("[{source}]{filters}[{label}]"));
         voices.push(label);
     }
@@ -449,9 +455,15 @@ fn is_audible(
     clip: &TimelineClip,
     track: Option<&TimelineTrack>,
     asset: Option<&PlanAsset>,
+    any_solo: bool,
 ) -> bool {
     let Some(track) = track else { return false };
-    if clip.kind == TrackKind::Text || track.muted || clip.muted || clip.volume <= 0.0 {
+    if clip.kind == TrackKind::Text
+        || track.muted
+        || clip.muted
+        || clip.volume <= 0.0
+        || (any_solo && track.solo != Some(true))
+    {
         return false;
     }
     matches!(asset, Some(asset) if asset.has_audio)
@@ -613,7 +625,12 @@ pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={background}"
 }
 
 /// One audible block's filters, from its window to a delayed, mixed stream.
-fn audio_filters(clip: &TimelineClip, trim: bool, seam: SeamRole) -> String {
+fn audio_filters(
+    clip: &TimelineClip,
+    trim: bool,
+    seam: SeamRole,
+    track_gain_db: Option<f64>,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     if trim {
         parts.push(format!(
@@ -631,6 +648,11 @@ fn audio_filters(clip: &TimelineClip, trim: bool, seam: SeamRole) -> String {
         }
     }
     parts.push(format!("volume={}", num(clip.volume.clamp(0.0, 2.0))));
+    if let Some(gain_db) = track_gain_db {
+        if gain_db != 0.0 {
+            parts.push(format!("volume={}", num(10f64.powf(gain_db / 20.0))));
+        }
+    }
     if clip.fade_in_ms > 0 {
         parts.push(format!(
             "afade=t=in:st=0:d={}",

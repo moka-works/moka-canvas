@@ -166,6 +166,8 @@ fn track(id: &str, kind: TrackKind, name: &str) -> TimelineTrack {
         muted: false,
         hidden: false,
         locked: false,
+        gain_db: None,
+        solo: None,
         created_at: NOW.into(),
     }
 }
@@ -881,6 +883,30 @@ fn lets_two_clips_touch_end_to_start() {
     let beside = clip_of(&moka, FOLLOWER_ASSET, VIDEO_TRACK, 4_000);
     let (next, _) = apply(&moka, vec![add_clips(vec![beside])]);
     assert_eq!(next.timelines.as_ref().unwrap()[0].clips.len(), 2);
+}
+
+#[test]
+fn solos_a_track_and_levels_it_and_the_undo_puts_it_back() {
+    let moka = timeline_fixture();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: AUDIO_TRACK.into(),
+            patch: TrackPatch {
+                gain_db: Some(-6.0),
+                solo: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    let audio = next.timelines.as_ref().unwrap()[0]
+        .tracks
+        .iter()
+        .find(|track| track.id == AUDIO_TRACK)
+        .unwrap();
+    assert_eq!(audio.gain_db, Some(-6.0));
+    assert_eq!(audio.solo, Some(true));
 }
 
 #[test]

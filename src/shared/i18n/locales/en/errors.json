@@ -88,6 +88,7 @@
     "timelineSchemaNewer": "Timeline schema is newer than this build reads",
     "trackIdExists": "Track id already exists",
     "trackLimitReached": "Track limit reached",
+    "trackGainOutside": "A row's level runs −60 to 12 dB",
     "trackNameInvalid": "Track name is empty or too long",
     "trackNotEmpty": "That track still holds clips",
     "trackNotFound": "Track not found",
