@@ -1,5 +1,5 @@
 /**
- * Laying a telling's shots end to end as one timeline.
+ * Laying one episode's shots end to end as a timeline of its own.
  *
  * Everything here is arithmetic over the document: which clips the fourth step
  * has made, in what order they go, where each of them lands, and what one
@@ -7,10 +7,11 @@
  * server, so what an assembly will do is the same answer in a test, in the
  * warning a reader is shown, and in the commands that are finally written.
  *
- * A telling is assembled twice over in the ordinary run of things — once when
+ * An episode is assembled twice over in the ordinary run of things — once when
  * its clips are first cut, and again every time another act is filmed — so what
  * goes on the timeline is planned first and looked at before it is applied, and
  * an assembly with nothing to lay down is refused rather than written empty.
+ * Each episode's plan and cut stay blind to the episodes beside them.
  */
 
 import { CommandError } from "../../shared/domain/commands";
@@ -27,6 +28,7 @@ import { findResource } from "../../shared/domain/validate";
 import {
   actGranularity,
   actPlannedMs,
+  chapterCut,
   currentTake,
   takeFile,
   timelineSizeForAspect,
@@ -38,6 +40,8 @@ import type {
   MokaFile,
   ResourceEntry,
   StoryAct,
+  StoryChapter,
+  StoryChapterCut,
   StoryDocument,
   StoryEdit,
   StoryKeyframe,
@@ -220,18 +224,16 @@ function readPerLine(act: StoryAct): boolean {
  * than the sound being dropped for want of somewhere to put it.
  */
 function soundRows(
-  story: StoryDocument,
+  acts: StoryAct[],
   tracks: TimelineDocument["tracks"],
 ): {
   rows: { voice?: string; music?: string };
   added: TimelineTrack[];
 } {
-  const voiced = story.chapters.some((chapter) =>
-    chapter.acts.some((act) => act.voice !== undefined || readPerLine(act)),
+  const voiced = acts.some(
+    (act) => act.voice !== undefined || readPerLine(act),
   );
-  const scored = story.chapters.some((chapter) =>
-    chapter.acts.some((act) => act.music !== undefined),
-  );
+  const scored = acts.some((act) => act.music !== undefined);
   const audio = tracks.filter((track) => track.kind === "audio");
   const added: TimelineTrack[] = [];
   const row = (name: string): TimelineTrack => {
@@ -265,12 +267,14 @@ function soundRows(
 export function planAssembly(
   story: StoryDocument,
   moka: MokaFile,
+  chapterId?: string,
 ): AssemblyPlan {
   const units: AssemblyUnit[] = [];
   const warnings: AssemblyWarning[] = [];
   let at = 0;
 
   story.chapters.forEach((chapter, chapterAt) => {
+    if (chapterId !== undefined && chapter.id !== chapterId) return;
     chapter.acts.forEach((act, actAt) => {
       const place = i18n.t("story:edit.place", {
         chapter: chapterAt + 1,
@@ -361,23 +365,36 @@ export function chapterStartMs(
   return plan.units.find((unit) => unit.chapterIndex === chapterIndex)?.startMs;
 }
 
+/** The acts a plan actually lays something down for, in telling order. */
+function actsOfPlan(story: StoryDocument, plan: AssemblyPlan): StoryAct[] {
+  const wanted = new Set(plan.units.map((unit) => unit.actId));
+  return story.chapters
+    .flatMap((chapter) => chapter.acts)
+    .filter((act) => wanted.has(act.id));
+}
+
 /**
- * What assembling writes, as the one batch of commands it is.
+ * What assembling one episode writes, as the one batch of commands it is.
  *
- * A telling assembled for the first time brings a timeline of its own with it;
- * one assembled again edits that same timeline — taking back only the clips it
- * laid down itself, so a reader's own work on the same track is left where it
- * stands. Either way it is one step of the history, because it is one thing the
- * reader asked for.
+ * An episode assembled for the first time brings a timeline of its own with
+ * it; one assembled again edits that same timeline — taking back only the
+ * clips this episode's assembly laid down itself, so a reader's own work on
+ * the same track is left where it stands. Either way it is one step of the
+ * history, because it is one thing the reader asked for.
  */
 export function assemblyCommands(
   story: StoryDocument,
   moka: MokaFile,
   plan: AssemblyPlan,
-  options: { withSubtitles: boolean; timelineId?: string },
+  options: {
+    withSubtitles: boolean;
+    cut?: StoryChapterCut;
+    timelineName?: string;
+  },
 ): {
   commands: DocumentCommand[];
   clipByAct: NonNullable<StoryEdit["clipByAct"]>;
+  timelineId: string;
 } {
   if (plan.units.length === 0) {
     throw new CommandError(
@@ -387,23 +404,23 @@ export function assemblyCommands(
   }
   const size = timelineSizeForAspect(story.brief.aspect);
   const target =
-    options.timelineId === undefined
+    options.cut === undefined
       ? undefined
-      : (moka.timelines ?? []).find((held) => held.id === options.timelineId);
+      : (moka.timelines ?? []).find(
+          (held) => held.id === options.cut?.timelineId,
+        );
+  const acts = actsOfPlan(story, plan);
 
   if (target === undefined) {
-    const timeline = createTimeline(
-      i18n.t("story:edit.timelineName", { name: story.name }),
-      {
-        width: size.width,
-        height: size.height,
-        fps: ASSEMBLY_FPS,
-        background: ASSEMBLY_BACKGROUND,
-      },
-    );
-    // A timeline this telling is making can have its rows named for what they
+    const timeline = createTimeline(options.timelineName ?? story.name, {
+      width: size.width,
+      height: size.height,
+      fps: ASSEMBLY_FPS,
+      background: ASSEMBLY_BACKGROUND,
+    });
+    // A timeline this episode is making can have its rows named for what they
     // carry; one a reader has worked on keeps whatever names it was given.
-    const sound = soundRows(story, timeline.tracks);
+    const sound = soundRows(acts, timeline.tracks);
     const tracks = [...timeline.tracks, ...sound.added].map((track) =>
       track.id === sound.rows.voice
         ? { ...track, name: i18n.t("story:edit.voiceTrack") }
@@ -419,28 +436,27 @@ export function assemblyCommands(
         { type: "addTimeline", timeline: { ...timeline, tracks, clips } },
       ],
       clipByAct,
+      timelineId: timeline.id,
     };
   }
 
   // A timeline that has lost its video row cannot carry a film: a fresh one is
-  // made rather than a telling quietly laid down on the sound track.
+  // made rather than an episode quietly laid down on the sound track.
   if (target.tracks.every((track) => track.kind !== "video")) {
-    const timeline = createTimeline(
-      i18n.t("story:edit.timelineName", { name: story.name }),
-      {
-        width: size.width,
-        height: size.height,
-        fps: ASSEMBLY_FPS,
-        background: ASSEMBLY_BACKGROUND,
-      },
-    );
+    const timeline = createTimeline(options.timelineName ?? story.name, {
+      width: size.width,
+      height: size.height,
+      fps: ASSEMBLY_FPS,
+      background: ASSEMBLY_BACKGROUND,
+    });
     return {
       commands: [{ type: "addTimeline", timeline: { ...timeline, clips: [] } }],
       clipByAct: [],
+      timelineId: timeline.id,
     };
   }
 
-  const sound = soundRows(story, target.tracks);
+  const sound = soundRows(acts, target.tracks);
   const { clips, clipByAct } = layDown(story, moka, plan, {
     tracks: [...target.tracks, ...sound.added],
     rows: sound.rows,
@@ -448,9 +464,9 @@ export function assemblyCommands(
   });
 
   const commands: DocumentCommand[] = [];
-  // Only what this telling put there: a clip the reader added by hand, or
-  // another telling laid down, is not this one's to take away.
-  const mine = (story.edit.clipByAct ?? [])
+  // Only what this episode's assembly put there: a clip the reader added by
+  // hand is not this episode's to take away.
+  const mine = (options.cut?.clipByAct ?? [])
     .map((entry) => entry.clipId)
     .filter((clipId) => target.clips.some((clip) => clip.id === clipId));
   if (mine.length > 0) {
@@ -472,11 +488,11 @@ export function assemblyCommands(
       settings: { width: size.width, height: size.height },
     });
   }
-  return { commands, clipByAct };
+  return { commands, clipByAct, timelineId: target.id };
 }
 
 /**
- * A telling's clips on a timeline of the reader's own naming.
+ * One episode's cut, copied onto a timeline of the reader's own naming.
  *
  * The fifth step's assembly writes into the timeline the telling owns and
  * rearranges it every time another act is filmed. This is the other way out: a
@@ -490,46 +506,72 @@ export function assemblyCommands(
 export function importTimelineCommands(
   story: StoryDocument,
   moka: MokaFile,
+  chapter: StoryChapter,
   name: string,
 ): { commands: DocumentCommand[]; timelineId: string; clips: number } {
-  const plan = planAssembly(story, moka);
-  if (plan.units.length === 0) {
+  const cut = chapterCut(story, chapter.id);
+  if (cut === undefined) {
     throw new CommandError(
       "VALIDATION_FAILED",
-      i18n.t("story:edit.nothingToAssemble"),
+      i18n.t("story:import.timeline.notAssembled"),
     );
   }
-  const size = timelineSizeForAspect(story.brief.aspect);
-  const timeline = createTimeline(name, {
-    width: size.width,
-    height: size.height,
-    fps: ASSEMBLY_FPS,
-    background: ASSEMBLY_BACKGROUND,
-  });
-  const sound = soundRows(story, timeline.tracks);
-  const tracks = [...timeline.tracks, ...sound.added].map((track) =>
-    track.id === sound.rows.voice
-      ? { ...track, name: i18n.t("story:edit.voiceTrack") }
-      : track,
+  const source = (moka.timelines ?? []).find(
+    (timeline) => timeline.id === cut.timelineId,
   );
-  const { clips } = layDown(story, moka, plan, {
-    tracks,
-    rows: sound.rows,
-    withSubtitles: false,
-  });
+  if (source === undefined) {
+    throw new CommandError(
+      "TIMELINE_NOT_FOUND",
+      i18n.t("story:edit.noTimeline"),
+    );
+  }
   // A standing timeline is added whole, which is the one way clips land without
   // the command that counts them — so the ceiling a cut holds is asked here
   // rather than discovered by a document that would carry more than it may.
-  if (clips.length > MAX_CLIPS_PER_TIMELINE) {
+  if (source.clips.length > MAX_CLIPS_PER_TIMELINE) {
     throw new CommandError(
       "VALIDATION_FAILED",
       i18n.t("story:import.tooManyClips", { max: MAX_CLIPS_PER_TIMELINE }),
     );
   }
+  const now = nowIso();
+  const tracks = source.tracks.map((track) => ({ ...track, id: newId() }));
+  const trackIds = new Map(
+    source.tracks.map((track, at) => [track.id, tracks[at]!.id]),
+  );
+  const clips = source.clips.map((clip) => {
+    const id = newId();
+    return {
+      ...clip,
+      id,
+      trackId: trackIds.get(clip.trackId) ?? clip.trackId,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  const clipIds = new Map(
+    source.clips.map((clip, at) => [clip.id, clips[at]!.id]),
+  );
+  const transitions = source.transitions.flatMap((transition) => {
+    const afterClipId = clipIds.get(transition.afterClipId);
+    return afterClipId === undefined
+      ? []
+      : [{ ...transition, id: newId(), afterClipId }];
+  });
+  const markers = source.markers?.map((marker) => ({ ...marker, id: newId() }));
+  const timeline: TimelineDocument = {
+    ...source,
+    id: newId(),
+    name,
+    tracks,
+    clips,
+    transitions,
+    ...(markers === undefined ? {} : { markers }),
+    createdAt: now,
+    updatedAt: now,
+  };
   return {
-    commands: [
-      { type: "addTimeline", timeline: { ...timeline, tracks, clips } },
-    ],
+    commands: [{ type: "addTimeline", timeline }],
     timelineId: timeline.id,
     clips: clips.length,
   };
@@ -768,20 +810,32 @@ export function shotWindows(
 export function assemblySummary(
   story: StoryDocument,
   plan: AssemblyPlan,
+  chapter?: StoryChapter,
 ): string {
-  const anyPerShot = story.chapters.some((chapter) =>
-    chapter.acts.some(
-      (act) => actGranularity(act, story.shotGranularity) === "keyframe",
-    ),
+  const anyPerShot = (chapter === undefined ? story.chapters : [chapter]).some(
+    (held) =>
+      held.acts.some(
+        (act) => actGranularity(act, story.shotGranularity) === "keyframe",
+      ),
   );
-  return i18n.t(
-    anyPerShot ? "story:edit.summaryByShot" : "story:edit.summary",
-    {
-      name: story.name,
-      count: plan.units.length,
-      seconds: (plan.totalPlannedMs / 1000).toFixed(1),
-    },
-  );
+  const number =
+    chapter === undefined
+      ? undefined
+      : story.chapters.findIndex((held) => held.id === chapter.id) + 1;
+  const key =
+    chapter === undefined
+      ? anyPerShot
+        ? "story:edit.summaryByShot"
+        : "story:edit.summary"
+      : anyPerShot
+        ? "story:edit.summaryChapterByShot"
+        : "story:edit.summaryChapter";
+  return i18n.t(key, {
+    name: story.name,
+    ...(chapter === undefined ? {} : { chapter: number, title: chapter.title }),
+    count: plan.units.length,
+    seconds: (plan.totalPlannedMs / 1000).toFixed(1),
+  });
 }
 
 /**
@@ -835,8 +889,13 @@ export function assemblyDigest(
       `unit:${unit.actId}:${unit.keyframeId ?? ""}:${unit.startMs}:${unit.durationMs}:${unit.assetId}`,
     );
   }
+  // What this assembly would lay down, not what the rest of the telling holds:
+  // an episode's digest has to be blind to the episodes beside it, or filming
+  // another one would make this one look behind.
+  const acts = new Set(plan.units.map((unit) => unit.actId));
   for (const chapter of story.chapters) {
     for (const act of chapter.acts) {
+      if (!acts.has(act.id)) continue;
       const perLine = act.keyframes.some((keyframe) =>
         keyframe.dialogue.some(
           (line) => voiceTakeOf(keyframe, line.id) !== undefined,

@@ -71,6 +71,7 @@ async function persistedBoard(page: Page): Promise<{
 /** What the server holds of the cut this test asks for, and of the telling. */
 async function persistedCut(page: Page): Promise<{
   names: string[];
+  ids: string[];
   clips: { kind?: string; assetId?: string; startMs?: number }[];
   assembled?: string;
 }> {
@@ -79,24 +80,28 @@ async function persistedCut(page: Page): Promise<{
     const body = (await response.json()) as {
       moka?: {
         timelines?: {
+          id?: string;
           name?: string;
           clips?: { kind?: string; assetId?: string; startMs?: number }[];
         }[];
-        stories?: { edit?: { timelineId?: string } }[];
+        stories?: {
+          edit?: { chapterCuts?: Array<{ timelineId?: string }> };
+        }[];
       };
     };
     const timelines = body.moka?.timelines ?? [];
     const made = timelines[timelines.length - 1];
+    const assembled =
+      body.moka?.stories?.[0]?.edit?.chapterCuts?.[0]?.timelineId;
     return {
       names: timelines.map((timeline) => timeline.name ?? ""),
+      ids: timelines.map((timeline) => timeline.id ?? ""),
       clips: (made?.clips ?? []).map((clip) => ({
         kind: clip.kind,
         assetId: clip.assetId,
         startMs: clip.startMs,
       })),
-      ...(body.moka?.stories?.[0]?.edit?.timelineId === undefined
-        ? {}
-        : { assembled: body.moka.stories[0].edit.timelineId }),
+      ...(assembled === undefined ? {} : { assembled }),
     };
   });
 }
@@ -182,14 +187,27 @@ test("a telling is imported into a board, and into a cut of its own", async ({
     // run into the images port.
     expect(made.ports).toEqual(expect.arrayContaining(["prompt", "images"]));
 
-    // Step five's button takes it into a cut of its own.
+    // Step five composes this episode first; the hand-over copies that cut.
     await openStoryRoom(page);
     await page.getByTestId("story-step-edit").click();
     await expect(page.getByTestId("story-step-edit-body")).toBeVisible();
+    await expect(page.getByTestId("story-edit-chapter-0")).toContainText(
+      "1. Chapter 1",
+    );
+    await page.getByTestId("story-edit-chapter-0").click();
+    await page.getByTestId("story-assembly-subtitles").uncheck();
+    await page.getByTestId("story-film-reassemble").click();
+    await expect(page.getByTestId("story-film-freshness")).toContainText(
+      "as it stands",
+      { timeout: 30_000 },
+    );
     await page.getByTestId("story-import-timeline").click();
     const cut = page.getByTestId("story-import-timeline-dialog");
     await expect(cut).toBeVisible({ timeout: 10_000 });
-    await expect(cut.getByLabel("Name")).toHaveValue("Rain at Night · cut");
+    await expect(cut.getByLabel("Name")).toHaveValue(
+      "Rain at Night · Chapter 1 · cut",
+    );
+    await cut.getByLabel("Name").fill("Rain at Night · cut");
     await cut
       .getByRole("button", { name: "Import to the cutting room" })
       .click();
@@ -204,12 +222,21 @@ test("a telling is imported into a board, and into a cut of its own", async ({
     ).toHaveAttribute("aria-selected", "true");
 
     await expect
-      .poll(async () => (await persistedCut(page)).names, { timeout: 30_000 })
-      .toEqual(["Rain at Night · cut"]);
+      .poll(async () => (await persistedCut(page)).names.at(-1), {
+        timeout: 30_000,
+      })
+      .toBe("Rain at Night · cut");
     const handed = await persistedCut(page);
-    // The clip of each act, both lines read aloud inside the shots they are
-    // said in, and the score under the first — and no captions: the lines are
-    // the cutting room's to place.
+    // The episode keeps the cut step five assembled, and the hand-over is a
+    // copy of it: the clip of each act, both lines read aloud inside the shots
+    // they are said in, and the score under the first — no captions, since the
+    // reader turned them off before composing.
+    expect(handed.names).toEqual(
+      expect.arrayContaining([
+        "Rain at Night · Episode 1",
+        "Rain at Night · cut",
+      ]),
+    );
     expect(handed.clips.map((clip) => clip.kind)).toEqual([
       "video",
       "video",
@@ -220,8 +247,8 @@ test("a telling is imported into a board, and into a cut of its own", async ({
     expect(handed.clips.map((clip) => clip.startMs)).toEqual([
       0, 1_000, 0, 3_000, 0,
     ]);
-    // The telling itself assembled nothing: this cut is the reader's own.
-    expect(handed.assembled).toBeUndefined();
+    expect(handed.assembled).toBeDefined();
+    expect(handed.ids.at(-1)).not.toBe(handed.assembled);
   } finally {
     forgetHome(home);
   }

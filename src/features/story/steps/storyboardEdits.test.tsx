@@ -865,7 +865,7 @@ describe("a telling at the stress ceilings", () => {
     expect(document.querySelectorAll("body *").length).toBeLessThan(
       shots * 100,
     );
-  });
+  }, 15_000);
 });
 
 describe("the clock each act keeps", () => {

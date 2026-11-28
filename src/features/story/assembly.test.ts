@@ -343,11 +343,14 @@ describe("assemblyCommands", () => {
       durationMs: 1_000,
     };
     moka.timelines = [{ ...timeline, clips: [...timeline.clips, foreign] }];
-    held.edit = { timelineId: timeline.id, clipByAct: first.clipByAct };
 
     const again = assemblyCommands(held, moka, plan, {
       withSubtitles: false,
-      timelineId: timeline.id,
+      cut: {
+        chapterId: held.chapters[0]!.id,
+        timelineId: timeline.id,
+        clipByAct: first.clipByAct,
+      },
     });
     const removed = again.commands[0];
     if (removed?.type !== "removeClips") throw new Error("clips are removed");
@@ -797,7 +800,6 @@ describe("a telling that has been voiced and scored", () => {
     const first = assemblyCommands(held, moka, plan, { withSubtitles: false });
     const added = first.commands[0];
     if (added?.type !== "addTimeline") throw new Error("a timeline is added");
-    held.edit = { timelineId: added.timeline.id, clipByAct: first.clipByAct };
     // A clip of the reader's own on the same timeline, and a row they added.
     moka.timelines = [
       ...(moka.timelines ?? []),
@@ -843,7 +845,11 @@ describe("a telling that has been voiced and scored", () => {
     const again = story(moka);
     const second = assemblyCommands(again, moka, planAssembly(again, moka), {
       withSubtitles: false,
-      timelineId: added.timeline.id,
+      cut: {
+        chapterId: again.chapters[0]!.id,
+        timelineId: added.timeline.id,
+        clipByAct: first.clipByAct,
+      },
     });
 
     const removed = second.commands.find(

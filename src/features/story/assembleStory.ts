@@ -10,6 +10,7 @@
  * reading it first would throw the waiting work away.
  */
 
+import { chapterCut } from "../../shared/domain/story";
 import { i18n } from "../../shared/i18n";
 import { execute } from "../editor/commands/execute";
 import { saveTrouble, useProjectStore } from "../editor/stores/projectStore";
@@ -36,6 +37,7 @@ export class AssembleTrouble extends Error {
  */
 export async function assembleStory(
   storyId: string,
+  chapterId: string,
   options: { withSubtitles: boolean },
 ): Promise<{ timelineId: string; units: number; seconds: string }> {
   const sayBlocked = (): AssembleTrouble => {
@@ -55,31 +57,50 @@ export async function assembleStory(
   if (held === null || current === undefined) {
     throw new AssembleTrouble(i18n.t("errors:command.storyNotFound"));
   }
-  const plan = planAssembly(current, held);
-  const { commands, clipByAct } = assemblyCommands(current, held, plan, {
-    withSubtitles: options.withSubtitles,
-    ...(current.edit.timelineId === undefined
-      ? {}
-      : { timelineId: current.edit.timelineId }),
-  });
-  const added = commands.find((command) => command.type === "addTimeline");
-  const timelineId =
-    added?.type === "addTimeline" ? added.timeline.id : current.edit.timelineId;
-  if (timelineId === undefined) {
-    throw new AssembleTrouble(i18n.t("story:edit.noTimeline"));
+  const chapterAt = current.chapters.findIndex((each) => each.id === chapterId);
+  const chapter = current.chapters[chapterAt];
+  if (chapter === undefined) {
+    throw new AssembleTrouble(i18n.t("story:outline.chapterGone"));
   }
+  const plan = planAssembly(current, held, chapter.id);
+  const cut = chapterCut(current, chapter.id);
+  const { commands, clipByAct, timelineId } = assemblyCommands(
+    current,
+    held,
+    plan,
+    {
+      withSubtitles: options.withSubtitles,
+      ...(cut === undefined ? {} : { cut }),
+      timelineName: i18n.t("story:edit.timelineName", {
+        name: current.name,
+        chapter: chapterAt + 1,
+      }),
+    },
+  );
   // What was laid down, written down beside it: the film card reads the
-  // telling the same way and can say whether the timeline is behind it.
+  // episode the same way and can say whether its timeline is behind it.
   const assembledDigest = assemblyDigest(current, held, plan, {
     withSubtitles: options.withSubtitles,
     timelineId,
   });
+  const cuts = [
+    ...(current.edit.chapterCuts ?? []).filter(
+      (heldCut) =>
+        heldCut.chapterId !== chapter.id &&
+        current.chapters.some((each) => each.id === heldCut.chapterId),
+    ),
+    { chapterId: chapter.id, timelineId, clipByAct, assembledDigest },
+  ].sort(
+    (one, other) =>
+      current.chapters.findIndex((each) => each.id === one.chapterId) -
+      current.chapters.findIndex((each) => each.id === other.chapterId),
+  );
   execute(i18n.t("story:history.assemble"), [
     ...commands,
     {
       type: "setStoryEdit",
       storyId: current.id,
-      patch: { timelineId, clipByAct, assembledDigest },
+      patch: { chapterCuts: cuts },
     },
   ]);
   return {

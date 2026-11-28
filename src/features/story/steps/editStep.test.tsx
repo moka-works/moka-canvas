@@ -10,7 +10,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 
-import type { MokaFile } from "../../../shared/domain";
+import { chapterCut, type MokaFile } from "../../../shared/domain";
 import { buildStoryMokaFile } from "../../../shared/domain/fixtures";
 import { useProjectStore } from "../../editor/stores/projectStore";
 import { useAppStore } from "../../editor/stores/appStore";
@@ -41,9 +41,6 @@ let asked: string[] = [];
 let destinations: string[] = [];
 /** What the next ask answers with, when it is refused. */
 let refusal: { status: number; code: string; message: string } | null = null;
-/** What the project route hands back, for the reload after a render lands. */
-let reloaded: MokaFile | null = null;
-
 /** The server under the test: capabilities, one render, and its poll. */
 function serving(): void {
   vi.stubGlobal(
@@ -112,7 +109,7 @@ function serving(): void {
       ) {
         return json({
           root: "/tmp/moka-edit-test",
-          moka: reloaded ?? useProjectStore.getState().moka,
+          moka: useProjectStore.getState().moka,
           selfCheck: { ok: true, issues: [] },
           selfCheckVerified: true,
         });
@@ -150,7 +147,6 @@ function voice(id: string, durationMs: number) {
  * stood on, and the project's own route answers with what it holds.
  */
 function openAtEdit(moka: MokaFile): void {
-  reloaded = moka;
   useProjectStore.getState().hydrate({
     moka,
     root: "/tmp/moka-edit-test",
@@ -168,6 +164,16 @@ function story() {
   return held;
 }
 
+/** The open episode's cut, as the document keeps it. */
+function cut(chapterAt = 0) {
+  const held = story();
+  const chapter = held.chapters[chapterAt];
+  if (chapter === undefined) throw new Error("an episode is open");
+  const found = chapterCut(held, chapter.id);
+  if (found === undefined) throw new Error("the episode has a cut");
+  return found;
+}
+
 function timelines() {
   return useProjectStore.getState().moka?.timelines ?? [];
 }
@@ -177,7 +183,6 @@ beforeEach(() => {
   asked = [];
   destinations = [];
   refusal = null;
-  reloaded = null;
   canRender = true;
   serving();
   resetUiPrefs();
@@ -215,7 +220,7 @@ describe("assembling a telling", () => {
     );
     expect(after.clips.some((clip) => clip.kind === "video")).toBe(true);
     expect(after.clips.some((clip) => clip.kind === "text")).toBe(true);
-    expect(story().edit.timelineId).toBe(after.id);
+    expect(cut().timelineId).toBe(after.id);
     expect(after.settings).toMatchObject({ width: 1920, height: 1080 });
     expect(after.clips.filter((clip) => clip.kind === "video")).toHaveLength(1);
 
@@ -229,6 +234,48 @@ describe("assembling a telling", () => {
       ),
     );
     expect(story().edit.clipByAct?.[0]?.clipId).toBe(before.clips[0]!.id);
+    expect(story().edit.chapterCuts).toBeUndefined();
+  });
+
+  it("gives each episode a cut of its own, and switching turns to it", async () => {
+    const moka = filmed();
+    const story = moka.stories![0];
+    const source = story.chapters[0]!.acts[0]!;
+    story.chapters[1] = {
+      ...story.chapters[1]!,
+      acts: [{ ...source, id: "act-second" }],
+    };
+    openAtEdit(moka);
+
+    fireEvent.click(screen.getByTestId("story-film-reassemble"));
+    await waitFor(() => expect(cut(0).timelineId).toBeDefined());
+    const first = cut(0).timelineId;
+
+    fireEvent.click(screen.getByTestId("story-edit-chapter-1"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("story-assembly-summary").textContent,
+      ).toContain("Episode 2"),
+    );
+    fireEvent.click(screen.getByTestId("story-film-reassemble"));
+    await waitFor(() => expect(cut(1).timelineId).toBeDefined());
+    expect(cut(1).timelineId).not.toBe(first);
+    expect(
+      timelines().filter(
+        (held) => held.id === first || held.id === cut(1).timelineId,
+      ),
+    ).toHaveLength(2);
+
+    // Turning back is the first episode's cut, not the second's.
+    fireEvent.click(screen.getByTestId("story-edit-chapter-0"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("story-assembly-summary").textContent,
+      ).toContain("Episode 1"),
+    );
+    fireEvent.click(screen.getByTestId("story-film-open"));
+    await waitFor(() => expect(useAppStore.getState().phase).toBe("clip"));
+    expect(useClipStore.getState().activeTimelineId).toBe(first);
   });
 
   it("says which act is missing a clip, and walks to it", async () => {
@@ -241,6 +288,7 @@ describe("assembling a telling", () => {
     const held = moka.stories![0].chapters[1]!.acts[0]!;
     held.video = { takes: [] };
     openAtEdit(moka);
+    fireEvent.click(screen.getByTestId("story-edit-chapter-1"));
 
     const warnings = screen.getByTestId("story-assembly-warnings");
     expect(warnings.textContent).toContain("Episode 2");
@@ -252,8 +300,8 @@ describe("assembling a telling", () => {
   it("keeps its clips off a timeline of the reader's, and says so first", async () => {
     openAtEdit(filmed());
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
-    const timeline = timelines()[timelines().length - 1]!;
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
+    const timeline = timelines().find((held) => held.id === cut().timelineId)!;
     // The reader adds a clip of their own to the same timeline.
     act(() => {
       useProjectStore.getState().applyLocal([
@@ -355,7 +403,7 @@ describe("assembling a telling", () => {
         .checked,
     ).toBe(true);
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
     const timeline = timelines()[timelines().length - 1]!;
     const captions = timeline.clips.filter((clip) => clip.kind === "text");
     expect(captions).toHaveLength(1);
@@ -367,7 +415,7 @@ describe("the film of a telling", () => {
   it("asks where the film goes, renders the timeline, and says where it landed", async () => {
     openAtEdit(filmed());
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
 
     fireEvent.click(screen.getByTestId("story-film-export"));
     // The path is a question before the render is, and a back-out means no
@@ -380,7 +428,7 @@ describe("the film of a telling", () => {
     useSavePathStore.getState().reply("/tmp/moka-edit-test/films/the film.mp4");
 
     await waitFor(() => expect(asked).toHaveLength(1));
-    expect(asked[0]).toBe(story().edit.timelineId);
+    expect(asked[0]).toBe(cut().timelineId);
     expect(destinations[0]).toBe("/tmp/moka-edit-test/films/the film.mp4");
 
     // The render comes home as a file of the reader's own: the card says where
@@ -412,7 +460,7 @@ describe("the film of a telling", () => {
   it("leaves the project untouched when a render lands", async () => {
     openAtEdit(filmed());
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
 
     fireEvent.click(screen.getByTestId("story-film-export"));
     await waitFor(() =>
@@ -475,13 +523,11 @@ describe("the film of a telling", () => {
   it("opens the assembled timeline in the cutting room", async () => {
     openAtEdit(filmed());
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
 
     fireEvent.click(screen.getByTestId("story-film-open"));
     await waitFor(() => expect(useAppStore.getState().phase).toBe("clip"));
-    expect(useClipStore.getState().activeTimelineId).toBe(
-      story().edit.timelineId,
-    );
+    expect(useClipStore.getState().activeTimelineId).toBe(cut().timelineId);
   });
 
   it("adds a cover for the open episode and opens the cut on it", async () => {
@@ -489,7 +535,7 @@ describe("the film of a telling", () => {
     fireEvent.click(screen.getByTestId("story-film-add-cover"));
 
     await waitFor(() => expect(useAppStore.getState().phase).toBe("clip"));
-    const timelineId = story().edit.timelineId;
+    const timelineId = cut().timelineId;
     expect(useClipStore.getState().activeTimelineId).toBe(timelineId);
     const timeline = timelines().find((held) => held.id === timelineId);
     const covering = (timeline?.clips ?? []).filter((clip) =>
@@ -515,7 +561,7 @@ describe("the film of a telling", () => {
     expect(screen.queryByTestId("story-assemble")).toBeNull();
 
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
   });
 
   it("says why the clips cannot be laid out when none is filmed", async () => {
@@ -556,8 +602,8 @@ describe("a film that has fallen behind the telling", () => {
     await waitFor(() => expect(asked).toHaveLength(1));
     // What was rendered is the timeline the export itself laid down, which is
     // the telling as it stands rather than a film of an older one.
-    expect(story().edit.timelineId).toBeDefined();
-    expect(asked[0]).toBe(story().edit.timelineId);
+    expect(cut().timelineId).toBeDefined();
+    expect(asked[0]).toBe(cut().timelineId);
     expect(
       timelines()
         .find((held) => held.id === asked[0])
@@ -591,7 +637,7 @@ describe("a film that has fallen behind the telling", () => {
     );
 
     fireEvent.click(screen.getByTestId("story-film-reassemble"));
-    await waitFor(() => expect(story().edit.timelineId).toBeDefined());
+    await waitFor(() => expect(cut().timelineId).toBeDefined());
     await waitFor(() =>
       expect(screen.getByTestId("story-film-freshness").textContent).toContain(
         "the telling as it stands",

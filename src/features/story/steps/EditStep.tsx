@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { currentTake } from "../../../shared/domain";
-import type { StoryDocument } from "../../../shared/domain/types";
+import { chapterCut, currentTake } from "../../../shared/domain";
+import type {
+  StoryChapter,
+  StoryDocument,
+  TimelineDocument,
+} from "../../../shared/domain/types";
 import { findResource } from "../../../shared/domain/validate";
 import { i18n } from "../../../shared/i18n";
 import { execute } from "../../editor/commands/execute";
@@ -56,13 +60,15 @@ function coverAsset(
 }
 
 /**
- * The fifth step: a telling's clips laid end to end, rendered, and handed over.
+ * The fifth step: one episode's clips laid end to end, rendered, and handed
+ * over — then the next episode, each on a timeline of its own.
  *
  * The step does two things and says what it is doing at each: it assembles the
- * clips the fourth step made onto a timeline of the telling's own, and it asks
- * the server to render that timeline into one file. Neither is guessed at —
- * the plan behind the assembly is shown before it is applied, and a machine
- * that cannot render says so rather than failing when pressed.
+ * clips the fourth step made for the open episode onto a timeline of that
+ * episode's own, and it asks the server to render that timeline into one file.
+ * Neither is guessed at — the plan behind the assembly is shown before it is
+ * applied, and a machine that cannot render says so rather than failing when
+ * pressed.
  */
 export function EditStep({ story }: { story: StoryDocument }) {
   const { t } = useTranslation();
@@ -76,12 +82,13 @@ export function EditStep({ story }: { story: StoryDocument }) {
     (held) => held.id === openChapterId,
   );
   const chapterIndex = chapterAt < 0 ? 0 : chapterAt;
-  const chapter = story.chapters[chapterIndex];
+  const chapter: StoryChapter | undefined = story.chapters[chapterIndex];
+  const cut = chapter === undefined ? undefined : chapterCut(story, chapter.id);
 
   const plan: AssemblyPlan =
-    moka === null
+    moka === null || chapter === undefined
       ? { units: [], warnings: [], totalPlannedMs: 0 }
-      : planAssembly(story, moka);
+      : planAssembly(story, moka, chapter.id);
   // How the lines lie inside their shots — what is too long for its window, and
   // what nobody measured — is worth saying before the cut is rendered rather
   // than discovered in the finished film.
@@ -97,38 +104,34 @@ export function EditStep({ story }: { story: StoryDocument }) {
     ...plan.warnings,
     ...(dubbing?.warnings ?? []),
   ];
-  const timeline = (moka?.timelines ?? []).find(
-    (held) => held.id === story.edit.timelineId,
-  );
-  // Whether the timeline is behind the telling, read the same way the film
-  // card reads it: a telling never assembled is behind by definition.
+  const timeline: TimelineDocument | undefined =
+    cut === undefined
+      ? undefined
+      : (moka?.timelines ?? []).find((held) => held.id === cut.timelineId);
+  // Whether the episode's timeline is behind it, read the same way the film
+  // card reads it: an episode never assembled is behind by definition.
   const behind =
     moka === null ||
+    cut === undefined ||
+    timeline === undefined ||
     assemblyDigest(story, moka, plan, {
       withSubtitles,
-      ...(story.edit.timelineId === undefined
-        ? {}
-        : { timelineId: story.edit.timelineId }),
-    }) !== story.edit.assembledDigest;
-  const spoken = story.chapters
-    .flatMap((chapter) => chapter.acts)
+      timelineId: cut.timelineId,
+    }) !== cut.assembledDigest;
+  const spoken = (chapter?.acts ?? [])
     .flatMap((act) => act.keyframes)
     .some((keyframe) => keyframe.dialogue.length > 0);
-  // A telling that has been voiced or scored brings rows of its own with it,
+  // An episode that has been voiced or scored brings rows of its own with it,
   // and a clip that carries its own sound is worth warning about before a
   // reader hears two scores fighting in the cutting room.
-  const sounded = story.chapters.some((chapter) =>
-    chapter.acts.some(
-      (act) => act.voice !== undefined || act.music !== undefined,
-    ),
+  const sounded = (chapter?.acts ?? []).some(
+    (act) => act.voice !== undefined || act.music !== undefined,
   );
   const videoSound =
     useModelStore.getState().view?.preferences.video.generateAudio === true;
-  const mine = new Set(
-    (story.edit.clipByAct ?? []).map((entry) => entry.clipId),
-  );
+  const mine = new Set((cut?.clipByAct ?? []).map((entry) => entry.clipId));
   // A timeline the reader has also worked on: what is on it and not this
-  // story's, or this story's clips that somebody has since taken away.
+  // episode's assembly, or this episode's clips that somebody has taken away.
   const foreign =
     timeline === undefined
       ? 0
@@ -140,13 +143,17 @@ export function EditStep({ story }: { story: StoryDocument }) {
           : 0);
 
   const assemble = async () => {
+    if (chapter === undefined) return;
     setBusy(true);
     setAsking(false);
     try {
-      const made = await assembleStory(story.id, { withSubtitles });
+      const made = await assembleStory(story.id, chapter.id, {
+        withSubtitles,
+      });
       useAppStore.getState().pushToast(
         "success",
         i18n.t("story:edit.assembled", {
+          chapter: chapterIndex + 1,
           count: made.units,
           seconds: made.seconds,
         }),
@@ -182,7 +189,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
   const addCover = async () => {
     if (chapter === undefined || covering) return;
     const chapterNumber = chapterIndex + 1;
-    if (!plan.units.some((unit) => unit.chapterIndex === chapterNumber)) {
+    if (plan.units.length === 0) {
       useAppStore.getState().pushToast("info", t("story:edit.coverNoFootage"));
       return;
     }
@@ -195,18 +202,20 @@ export function EditStep({ story }: { story: StoryDocument }) {
             .pushToast("error", t("story:edit.coverForeign"));
           return;
         }
-        await assembleStory(story.id, { withSubtitles });
+        await assembleStory(story.id, chapter.id, { withSubtitles });
       }
       const liveMoka = useProjectStore.getState().moka;
       const live =
         liveMoka === null
           ? undefined
           : (liveMoka.stories ?? []).find((held) => held.id === story.id);
+      const liveCut =
+        live === undefined ? undefined : chapterCut(live, chapter.id);
       const liveTimeline =
-        liveMoka === null || live?.edit.timelineId === undefined
+        liveMoka === null || liveCut === undefined
           ? undefined
           : (liveMoka.timelines ?? []).find(
-              (held) => held.id === live.edit.timelineId,
+              (held) => held.id === liveCut.timelineId,
             );
       if (
         liveMoka === null ||
@@ -216,7 +225,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
         useAppStore.getState().pushToast("error", t("story:edit.noTimeline"));
         return;
       }
-      const livePlan = planAssembly(live, liveMoka);
+      const livePlan = planAssembly(live, liveMoka, chapter.id);
       const startMs = chapterStartMs(livePlan, chapterNumber);
       if (startMs === undefined) {
         useAppStore
@@ -284,18 +293,79 @@ export function EditStep({ story }: { story: StoryDocument }) {
     }
   };
 
+  const cutState = (chapterId: string): string => {
+    const heldCut = chapterCut(story, chapterId);
+    const held =
+      heldCut !== undefined &&
+      (moka?.timelines ?? []).some((each) => each.id === heldCut.timelineId);
+    return held ? t("story:edit.cutReady") : t("story:edit.cutMissing");
+  };
+
+  if (chapter === undefined) {
+    return (
+      <div className="story-step-scroll" data-testid="story-step-edit-body">
+        <div className="story-step-wide">
+          <div className="story-step-bar">
+            <p className="story-step-lead">{t("story:edit.lead")}</p>
+          </div>
+          <p className="story-hint" data-testid="story-edit-nochapters">
+            {t("story:storyboard.noChapters")}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="story-step-scroll" data-testid="story-step-edit-body">
       <div className="story-step-wide">
         <div className="story-step-bar">
           <p className="story-step-lead">{t("story:edit.lead")}</p>
-          <StoryImportButton story={story} target="timeline" />
+          <StoryImportButton
+            chapter={chapter}
+            story={story}
+            target="timeline"
+          />
+        </div>
+
+        <nav
+          aria-label={t("story:edit.chapters")}
+          className="story-chapter-strip"
+          data-testid="story-edit-chapters"
+          role="tablist"
+        >
+          {story.chapters.map((held, at) => (
+            <button
+              aria-selected={held.id === chapter.id}
+              className={`story-choice${
+                held.id === chapter.id ? " is-on" : ""
+              }`}
+              data-testid={`story-edit-chapter-${at}`}
+              key={held.id}
+              onClick={() => useStoryStore.getState().openChapter(held.id)}
+              role="tab"
+              type="button"
+            >
+              {at + 1}. {held.title}
+              <span className="story-hint">{cutState(held.id)}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="story-board-head">
+          <span className="story-board-name">
+            {t("story:storyboard.chapterAt", {
+              number: chapterIndex + 1,
+              title: chapter.title,
+            })}
+          </span>
+          <span className="story-hint">{t("story:edit.chapterLead")}</span>
         </div>
 
         <section className="story-assembly" data-testid="story-assembly">
           <h3>{t("story:edit.assemble")}</h3>
           <p className="story-hint" data-testid="story-assembly-summary">
-            {assemblySummary(story, plan)}
+            {assemblySummary(story, plan, chapter)}
           </p>
 
           <label className="story-check">
@@ -369,6 +439,7 @@ export function EditStep({ story }: { story: StoryDocument }) {
             plan.units.length === 0 ? t("story:edit.nothingToAssemble") : null
           }
           assembling={busy}
+          chapter={chapter}
           onAssembleAgain={pressAssemble}
           story={story}
           timeline={timeline}

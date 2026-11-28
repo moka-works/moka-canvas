@@ -181,14 +181,27 @@ describe("taking a telling into the canvas", () => {
 });
 
 describe("taking a telling into the cutting room", () => {
-  it("asks what the cut is called, lays the clips down, and opens the room on it", async () => {
+  it("asks what the cut is called, copies the episode's cut, and opens the room on it", async () => {
     const moka = buildStoryMokaFile();
+    const story = moka.stories![0]!;
+    story.edit = {
+      ...story.edit,
+      chapterCuts: [
+        {
+          chapterId: story.chapters[0]!.id,
+          timelineId: story.edit.timelineId!,
+          clipByAct: story.edit.clipByAct ?? [],
+        },
+      ],
+    };
     openAtStep(moka, "edit");
     const before = timelines().length;
 
     fireEvent.click(screen.getByTestId("story-import-timeline"));
     const name = await screen.findByTestId("story-import-timeline-dialog-name");
-    expect((name as HTMLInputElement).value).toBe("雨夜列车 · cut");
+    expect((name as HTMLInputElement).value).toBe(
+      "雨夜列车 · 第一章 站台 · cut",
+    );
     fireEvent.change(name, { target: { value: "初剪" } });
     fireEvent.click(screen.getByTestId("story-import-timeline-dialog-confirm"));
 

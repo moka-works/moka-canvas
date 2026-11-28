@@ -4,10 +4,11 @@ import { useTranslation } from "react-i18next";
 import {
   MAX_CANVAS_NAME_LENGTH,
   TIMELINE_NAME_MAX,
+  chapterCut,
+  type StoryChapter,
   type StoryDocument,
 } from "../../../shared/domain";
 import { useProjectStore } from "../../editor/stores/projectStore";
-import { planAssembly } from "../assembly";
 import { hasCanvasImport, importStoryToCanvas } from "../importCanvas";
 import { importStoryToTimeline } from "../importTimeline";
 import { ImportDialog } from "./ImportDialog";
@@ -16,37 +17,53 @@ import { ImportDialog } from "./ImportDialog";
 export type ImportTarget = "canvas" | "timeline";
 
 /**
- * Taking the telling into the canvas or into the cutting room, from wherever it
- * has been worked on.
+ * Taking the telling into the canvas, or one episode into the cutting room,
+ * from wherever it has been worked on.
  *
  * The offer is one button and a question — what the thing being made is called.
  * Whether there is anything to import is read off the telling rather than
- * guessed at: a story whose steps have made nothing offers nothing, and says
- * why the button is dead rather than opening a question with no answer.
+ * guessed at: a story whose steps have made nothing offers nothing, and an
+ * episode that has not been assembled offers no cut; either says why the
+ * button is dead rather than opening a question with no answer.
  */
 export function StoryImportButton({
   story,
   target,
+  chapter,
 }: {
   story: StoryDocument;
   target: ImportTarget;
+  /** The episode a cut is copied from; the canvas takes the whole telling. */
+  chapter?: StoryChapter;
 }) {
   const { t } = useTranslation();
   const moka = useProjectStore((state) => state.moka);
   const [open, setOpen] = useState(false);
+  const cut = chapter === undefined ? undefined : chapterCut(story, chapter.id);
+  const cutTimeline =
+    cut === undefined
+      ? undefined
+      : (moka?.timelines ?? []).find(
+          (timeline) => timeline.id === cut.timelineId,
+        );
   const ready =
     target === "canvas"
       ? hasCanvasImport(story)
-      : moka !== null && planAssembly(story, moka).units.length > 0;
+      : cutTimeline !== undefined && cutTimeline.clips.length > 0;
+  const empty =
+    target === "canvas"
+      ? t("story:import.canvas.empty")
+      : cutTimeline === undefined
+        ? t("story:import.timeline.notAssembled")
+        : t("story:import.timeline.empty");
 
   const run = (name: string): boolean => {
     const held = useProjectStore.getState().moka;
     if (held === null) return false;
-    const made =
-      target === "canvas"
-        ? importStoryToCanvas(story, held, name)
-        : importStoryToTimeline(story, held, name);
-    return made !== null;
+    if (target === "canvas")
+      return importStoryToCanvas(story, held, name) !== null;
+    if (chapter === undefined) return false;
+    return importStoryToTimeline(story, held, chapter, name) !== null;
   };
 
   return (
@@ -56,7 +73,7 @@ export function StoryImportButton({
         data-testid={`story-import-${target}`}
         disabled={!ready}
         onClick={() => setOpen(true)}
-        title={ready ? undefined : t(`story:import.${target}.empty`)}
+        title={ready ? undefined : empty}
         type="button"
       >
         {t(`story:import.${target}.button`)}
@@ -67,7 +84,10 @@ export function StoryImportButton({
           defaultName={
             target === "canvas"
               ? story.name
-              : t("story:import.timeline.name", { name: story.name })
+              : t("story:import.timeline.name", {
+                  name: story.name,
+                  chapter: chapter?.title ?? "",
+                })
           }
           hint={t(`story:import.${target}.hint`)}
           maxLength={

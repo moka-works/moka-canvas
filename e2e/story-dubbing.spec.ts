@@ -115,7 +115,12 @@ async function persistedClips(page: Page): Promise<
     const response = await fetch("/api/v1/projects/current");
     const body = (await response.json()) as {
       moka?: {
-        stories?: { edit?: { timelineId?: string } }[];
+        stories?: {
+          edit?: {
+            timelineId?: string;
+            chapterCuts?: Array<{ timelineId?: string }>;
+          };
+        }[];
         timelines?: {
           id?: string;
           clips?: Array<{
@@ -128,7 +133,8 @@ async function persistedClips(page: Page): Promise<
         }[];
       };
     };
-    const wanted = body.moka?.stories?.[0]?.edit?.timelineId;
+    const edit = body.moka?.stories?.[0]?.edit;
+    const wanted = edit?.chapterCuts?.[0]?.timelineId ?? edit?.timelineId;
     const timeline = (body.moka?.timelines ?? []).find(
       (held) => held.id === wanted,
     );

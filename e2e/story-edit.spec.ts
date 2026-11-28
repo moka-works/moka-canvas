@@ -13,12 +13,13 @@ import {
 test.describe.configure({ timeout: 90_000 });
 
 /**
- * The fifth step: a telling's clips laid end to end as one timeline.
+ * The fifth step: one episode's clips laid end to end on a timeline of its own.
  *
  * The whole telling is taken there — premise, chapters, cast, board, both acts
- * framed and filmed, and the first act's sound — and assembled: what the step
- * is for is that the acts a reader has drawn and filmed come out as one cut, on
- * a timeline of its own that the cutting room can go on working on. The sound is
+ * framed and filmed, and the first act's sound — and the open episode is
+ * assembled: what the step is for is that the acts a reader has drawn and
+ * filmed come out as one cut, on a timeline of that episode's own that the
+ * cutting room can go on working on. The sound is
  * the part of the step that may be skipped (a telling with no score is still a
  * telling); it is walked here because a track nothing ever asks for is a track
  * nobody has seen work.
@@ -40,7 +41,12 @@ async function persistedTimeline(page: Page): Promise<{
     const response = await fetch("/api/v1/projects/current");
     const body = (await response.json()) as {
       moka?: {
-        stories?: { edit?: { timelineId?: string } }[];
+        stories?: {
+          edit?: {
+            timelineId?: string;
+            chapterCuts?: Array<{ timelineId?: string }>;
+          };
+        }[];
         timelines?: {
           id?: string;
           name?: string;
@@ -54,7 +60,8 @@ async function persistedTimeline(page: Page): Promise<{
         }[];
       };
     };
-    const wanted = body.moka?.stories?.[0]?.edit?.timelineId;
+    const edit = body.moka?.stories?.[0]?.edit;
+    const wanted = edit?.chapterCuts?.[0]?.timelineId ?? edit?.timelineId;
     const timeline = (body.moka?.timelines ?? []).find(
       (held) => held.id === wanted,
     );
@@ -74,7 +81,7 @@ async function persistedTimeline(page: Page): Promise<{
   });
 }
 
-test("a telling is assembled into one timeline and handed to the cutting room", async ({
+test("an episode is assembled into a timeline of its own and handed to the cutting room", async ({
   page,
 }) => {
   const home = projectHome("story-edit");

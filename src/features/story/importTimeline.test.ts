@@ -11,10 +11,15 @@ import type {
   MokaFile,
   ResourceEntry,
   StoryAct,
+  StoryChapter,
   TimelineDocument,
 } from "../../shared/domain";
 import { useModelStore } from "../settings/modelStore";
-import { importTimelineCommands } from "./assembly";
+import {
+  assemblyCommands,
+  importTimelineCommands,
+  planAssembly,
+} from "./assembly";
 
 const ids = storyIds();
 const T0 = "2026-01-01T00:00:00.000Z";
@@ -93,6 +98,38 @@ function told(): MokaFile {
   return moka;
 }
 
+/** The first episode's own assembled cut, as step five leaves it. */
+function assembled(moka: MokaFile): {
+  story: NonNullable<MokaFile["stories"]>[number];
+  chapter: StoryChapter;
+  timeline: TimelineDocument;
+} {
+  const story = moka.stories![0];
+  const chapter = story.chapters[0]!;
+  const plan = planAssembly(story, moka, chapter.id);
+  const { commands, clipByAct, timelineId } = assemblyCommands(
+    story,
+    moka,
+    plan,
+    { withSubtitles: false, timelineName: "第 1 集" },
+  );
+  const added = commands.find((command) => command.type === "addTimeline");
+  if (added?.type !== "addTimeline") throw new Error("a timeline is added");
+  story.edit = {
+    ...story.edit,
+    chapterCuts: [
+      {
+        chapterId: chapter.id,
+        timelineId,
+        clipByAct,
+        assembledDigest: "0a0b0c0d",
+      },
+    ],
+  };
+  moka.timelines = [...(moka.timelines ?? []), added.timeline];
+  return { story, chapter, timeline: added.timeline };
+}
+
 /** The cut a batch of commands adds, which the import adds exactly one of. */
 function addedTimeline(
   moka: MokaFile,
@@ -143,148 +180,163 @@ beforeEach(() => {
   useModelStore.setState({ view: null });
 });
 
-describe("the cut a telling hands over", () => {
-  it("is a timeline of its own, named by the reader and framed like the telling", () => {
+describe("the cut one episode hands over", () => {
+  it("is a copy of the episode's assembly, named by the reader", () => {
     const moka = told();
-    const story = moka.stories![0];
+    const { story, chapter, timeline: source } = assembled(moka);
     const { commands, timelineId, clips } = importTimelineCommands(
       story,
       moka,
+      chapter,
       "雨夜列车 · 初剪",
     );
     expect(commands).toHaveLength(1);
     const timeline = addedTimeline(moka, commands);
     expect(timeline.id).toBe(timelineId);
+    expect(timeline.id).not.toBe(source.id);
     expect(timeline.name).toBe("雨夜列车 · 初剪");
-    expect(timeline.settings).toMatchObject({
-      width: 1920,
-      height: 1080,
-      fps: 30,
-    });
-    expect(clips).toBe(4);
+    expect(timeline.settings).toEqual(source.settings);
+    expect(clips).toBe(source.clips.length);
+    expect(clips).toBe(3);
+    // The same pictures and sound, on rows of their own: a copy, not a plan.
+    expect(
+      timeline.clips.map((clip) => [clip.kind, clip.assetId, clip.startMs]),
+    ).toEqual(
+      source.clips.map((clip) => [clip.kind, clip.assetId, clip.startMs]),
+    );
+    expect(timeline.clips.map((clip) => clip.id)).not.toEqual(
+      source.clips.map((clip) => clip.id),
+    );
+    const rowNames = (held: TimelineDocument, clipId: string) =>
+      held.tracks.find(
+        (track) =>
+          track.id === held.clips.find((clip) => clip.id === clipId)?.trackId,
+      )?.name;
+    expect(rowNames(timeline, timeline.clips[0]!.id)).toBe(
+      rowNames(source, source.clips[0]!.id),
+    );
   });
 
-  it("lays the clips down in telling order, with each act's sound under it", () => {
+  it("keeps the cover, the captions and every row the episode's cut carries", () => {
     const moka = told();
-    const story = moka.stories![0];
+    const { story, chapter, timeline: source } = assembled(moka);
+    const track = source.tracks.find((held) => held.kind === "text")!;
+    const caption = {
+      ...source.clips[0]!,
+      id: "caption-take",
+      trackId: track.id,
+      kind: "text" as const,
+      assetId: undefined,
+      text: {
+        content: "车已经停运了。",
+        style: {
+          fontFamily: "Inter",
+          fontSize: 48,
+          color: "#ffffff",
+          bold: false,
+          italic: false,
+          align: "center" as const,
+          position: "bottom" as const,
+          background: null,
+          strokeWidth: 0,
+          strokeColor: "#000000",
+        },
+      },
+    };
+    source.clips.push(caption);
+
     const timeline = addedTimeline(
       moka,
-      importTimelineCommands(story, moka, "初剪").commands,
+      importTimelineCommands(story, moka, chapter, "初剪").commands,
     );
-    const row = (kind: "video" | "audio" | "text", name?: string) =>
-      timeline.tracks.find(
-        (track) =>
-          track.kind === kind && (name === undefined || track.name === name),
-      )?.id;
-
-    const pictures = timeline.clips
-      .filter((clip) => clip.kind === "video")
-      .sort((one, other) => one.startMs - other.startMs);
-    expect(pictures.map((clip) => [clip.assetId, clip.startMs])).toEqual([
-      [ids.actVideo, 0],
-      ["asset-video-2", 5_000],
-    ]);
-    expect(pictures.every((clip) => clip.trackId === row("video"))).toBe(true);
-    // The lines and the score go down where their act begins, each on a row of
-    // its own so a reader can weigh them apart afterwards.
-    const voice = timeline.clips.find((clip) => clip.assetId === "asset-voice");
-    const music = timeline.clips.find((clip) => clip.assetId === "asset-music");
-    expect(voice).toMatchObject({ startMs: 0, kind: "audio" });
-    expect(music).toMatchObject({ startMs: 0, kind: "audio" });
-    expect(voice?.trackId).not.toBe(music?.trackId);
-    expect(voice?.trackId).toBe(row("audio", "Voice-over"));
-    expect(timeline.clips.some((clip) => clip.kind === "text")).toBe(false);
+    const copied = timeline.clips.find((clip) => clip.kind === "text");
+    expect(copied?.text?.content).toBe("车已经停运了。");
+    expect(copied?.id).not.toBe("caption-take");
+    expect(timeline.tracks.map((held) => held.name)).toEqual(
+      source.tracks.map((held) => held.name),
+    );
   });
 
-  it("leaves the timeline the telling assembled where it stands", () => {
+  it("leaves the episode's own cut and the telling where they stand", () => {
     const moka = told();
-    const story = moka.stories![0];
-    const before = (moka.timelines ?? []).find(
-      (timeline) => timeline.id === story.edit.timelineId,
-    );
-    const commands = importTimelineCommands(story, moka, "初剪").commands;
+    const { story, chapter, timeline: source } = assembled(moka);
+    const before = JSON.parse(JSON.stringify(source));
+    const cuts = JSON.parse(JSON.stringify(story.edit.chapterCuts));
+    const commands = importTimelineCommands(
+      story,
+      moka,
+      chapter,
+      "初剪",
+    ).commands;
     const applied = applyCommands(moka, commands);
     const after = (applied.next.timelines ?? []).find(
-      (timeline) => timeline.id === story.edit.timelineId,
+      (timeline) => timeline.id === source.id,
     );
     expect(after).toEqual(before);
+    expect(applied.next.stories![0]!.edit.chapterCuts).toEqual(cuts);
     expect(applied.next.timelines).toHaveLength(
       (moka.timelines ?? []).length + 1,
     );
   });
 
-  it("refuses a telling with more clips than one timeline holds", () => {
-    const moka = crowded();
+  it("refuses an episode that has not been assembled", () => {
+    const moka = told();
+    const story = moka.stories![0];
     expect(() =>
-      importTimelineCommands(moka.stories![0], moka, "初剪"),
+      importTimelineCommands(story, moka, story.chapters[0]!, "初剪"),
     ).toThrow(CommandError);
+    expect(() =>
+      importTimelineCommands(story, moka, story.chapters[0]!, "初剪"),
+    ).toThrow(/not been assembled|还没有装配/);
+  });
+
+  it("refuses an assembled episode whose timeline has left the project", () => {
+    const moka = told();
+    const { story, chapter } = assembled(moka);
+    story.edit.chapterCuts = [
+      { ...story.edit.chapterCuts![0]!, timelineId: "timeline-gone" },
+    ];
+    expect(() => importTimelineCommands(story, moka, chapter, "初剪")).toThrow(
+      CommandError,
+    );
+  });
+
+  it("refuses a cut with more clips than one timeline holds", () => {
+    const moka = crowded();
+    const story = moka.stories![0];
+    const chapter = story.chapters[0]!;
+    const plan = planAssembly(story, moka, chapter.id);
+    const { commands, clipByAct, timelineId } = assemblyCommands(
+      story,
+      moka,
+      plan,
+      { withSubtitles: false },
+    );
+    const added = commands.find((command) => command.type === "addTimeline");
+    if (added?.type !== "addTimeline") throw new Error("a timeline is added");
+    // The document's own ceiling is what the copy is refused against, so the
+    // source is put past it directly rather than by filming four hundred acts.
+    added.timeline.clips = Array.from({ length: 401 }, (_, at) => ({
+      ...added.timeline.clips[0]!,
+      id: `clip-${at}`,
+      startMs: at * 1_000,
+    }));
+    moka.timelines = [...(moka.timelines ?? []), added.timeline];
+    story.edit.chapterCuts = [
+      {
+        chapterId: chapter.id,
+        timelineId,
+        clipByAct,
+        assembledDigest: "0a0b0c0d",
+      },
+    ];
+    expect(() => importTimelineCommands(story, moka, chapter, "初剪")).toThrow(
+      CommandError,
+    );
     try {
-      importTimelineCommands(moka.stories![0], moka, "初剪");
+      importTimelineCommands(story, moka, chapter, "初剪");
     } catch (problem) {
       expect((problem as Error).message).toContain("400");
     }
-  });
-
-  it("lays each line's reading inside the shot it is said in", () => {
-    const moka = told();
-    const story = moka.stories![0];
-    const act = story.chapters[0]!.acts[0]!;
-    // The act is one shot of its own, and the two lines are said in it: the
-    // shot runs a second on the timeline and each line gets half of it.
-    const shot = act.keyframes[0]!;
-    shot.durationMs = 1_000;
-    shot.dialogue = [
-      {
-        id: "line-a",
-        speaker: "Keeper",
-        text: "It stopped running years ago.",
-      },
-      { id: "line-b", speaker: "", text: "The doors stay shut." },
-    ];
-    shot.voices = [
-      {
-        lineId: "line-a",
-        text: "It stopped running years ago.",
-        voice: "reader-1",
-        slot: {
-          takes: [{ assetIds: ["said-a"], createdAt: T0 }],
-        },
-      },
-      {
-        lineId: "line-b",
-        text: "The doors stay shut.",
-        voice: "reader-2",
-        slot: {
-          takes: [{ assetIds: ["said-b"], createdAt: T0 }],
-        },
-      },
-    ];
-    // The older reading of the whole act is still on file, and is not what the
-    // act sounds like any more; the score under it still is.
-    moka.resources.voice.push(sound("said-a", 600), sound("said-b", 900));
-    const timeline = addedTimeline(
-      moka,
-      importTimelineCommands(story, moka, "初剪").commands,
-    );
-
-    const readings = timeline.clips
-      .filter((clip) => clip.kind === "audio" && clip.assetId !== "asset-music")
-      .sort((one, other) => one.startMs - other.startMs);
-    expect(
-      readings.map((clip) => [clip.assetId, clip.startMs, clip.durationMs]),
-    ).toEqual([
-      ["said-a", 0, 500],
-      ["said-b", 500, 667],
-    ]);
-    // The first fits its half second by being read a little faster; the second
-    // is longer than its own half even at the fastest a voice may be read, and
-    // runs on — what is heard is one thing, and where the pictures are another.
-    expect(readings[0]?.speed).toBeCloseTo(1.2, 5);
-    expect(readings[1]?.speed).toBeCloseTo(1.35, 2);
-    expect(Math.round(readings[1]!.durationMs * readings[1]!.speed)).toBe(900);
-    expect(readings.some((clip) => clip.assetId === "asset-voice")).toBe(false);
-    // Their captions are not written: a cut of the reader's own is theirs to
-    // arrange, and this import has never carried the words.
-    expect(timeline.clips.some((clip) => clip.kind === "text")).toBe(false);
   });
 });

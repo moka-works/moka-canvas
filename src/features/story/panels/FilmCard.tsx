@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isApiError } from "../../../api/client";
+import { chapterCut } from "../../../shared/domain/story";
 import type {
+  StoryChapter,
   StoryDocument,
   TimelineDocument,
 } from "../../../shared/domain/types";
@@ -36,6 +38,7 @@ const POLL_MS = 700;
  */
 export function FilmCard({
   story,
+  chapter,
   timeline,
   withSubtitles,
   assembleBlocked,
@@ -43,7 +46,9 @@ export function FilmCard({
   onAssembleAgain,
 }: {
   story: StoryDocument;
-  /** The timeline the telling was laid down on, if the document still has it. */
+  /** The episode this card's film belongs to. */
+  chapter: StoryChapter;
+  /** The episode's timeline, if the document still has it. */
   timeline: TimelineDocument | undefined;
   /** Whether the lines are written on the film as a caption track. */
   withSubtitles: boolean;
@@ -65,20 +70,22 @@ export function FilmCard({
   // Where the last render of this session went, held while the process runs:
   // this card is the only place a reader is told it.
   const savedTo = task?.status === "done" ? task.savedTo : undefined;
-  // Whether the film is behind the telling: what the assembly would lay down
+  // Whether the episode's film is behind it: what the assembly would lay down
   // now, read the same way the assembly reads it, against what was written
-  // down when the timeline was last laid down. A telling that has never been
+  // down when the timeline was last laid down. An episode that has never been
   // assembled is behind by definition, and pressing export assembles it.
-  const plan = moka === null ? undefined : planAssembly(story, moka);
+  const cut = chapterCut(story, chapter.id);
+  const plan =
+    moka === null ? undefined : planAssembly(story, moka, chapter.id);
   const behind =
     moka === null ||
     plan === undefined ||
+    cut === undefined ||
+    timeline === undefined ||
     assemblyDigest(story, moka, plan, {
       withSubtitles,
-      ...(story.edit.timelineId === undefined
-        ? {}
-        : { timelineId: story.edit.timelineId }),
-    }) !== story.edit.assembledDigest;
+      timelineId: cut.timelineId,
+    }) !== cut.assembledDigest;
   // What the film will carry, counted from the same plan the digest is taken
   // from: what is heard, and whether the words are written on it.
   const carried =
@@ -119,10 +126,10 @@ export function FilmCard({
         i18n.t("story:edit.filmSaved", { path: task.savedTo }),
         {
           label: i18n.t("story:edit.openInClip"),
-          go: () => openInCuttingRoom(story.id),
+          go: () => openInCuttingRoom(story.id, chapter.id),
         },
       );
-  }, [task, story.id]);
+  }, [task, story.id, chapter.id]);
 
   // Polling while a render is live, and only then.
   useEffect(() => {
@@ -152,7 +159,9 @@ export function FilmCard({
         ? held.destination
         : await askSavePath({
             title: t("story:edit.saveTitle"),
-            defaultName: `${fileSafeName(timeline?.name ?? story.name)}.mp4`,
+            defaultName: `${fileSafeName(
+              timeline?.name ?? `${story.name} · ${chapter.title}`,
+            )}.mp4`,
             extensions: ["mp4"],
           });
       if (destination === null) return;
@@ -164,7 +173,8 @@ export function FilmCard({
       // it, and the render is the server's, so the order is assemble, save,
       // render.
       const target = behind
-        ? (await assembleStory(story.id, { withSubtitles })).timelineId
+        ? (await assembleStory(story.id, chapter.id, { withSubtitles }))
+            .timelineId
         : timeline?.id;
       if (target === undefined) return;
       if (!(await saveEverything())) {
@@ -282,7 +292,7 @@ export function FilmCard({
             <button
               className="link"
               data-testid="story-film-watch"
-              onClick={() => openInCuttingRoom(story.id, true)}
+              onClick={() => openInCuttingRoom(story.id, chapter.id, true)}
               type="button"
             >
               {t("story:edit.watchExport")}
@@ -323,7 +333,7 @@ export function FilmCard({
         {timeline !== undefined && (
           <button
             data-testid="story-film-open"
-            onClick={() => void openInCuttingRoom(story.id)}
+            onClick={() => void openInCuttingRoom(story.id, chapter.id)}
             type="button"
           >
             {t("story:edit.openInClip")}
@@ -345,7 +355,8 @@ export function FilmCard({
 }
 
 /**
- * Leaves the story room for the cutting room, with this telling's timeline open.
+ * Leaves the story room for the cutting room, with this episode's timeline
+ * open.
  *
  * The project is flushed first: a film is exported from the timeline the server
  * holds, and one that is still in this window is a timeline it has never heard
@@ -356,6 +367,7 @@ export function FilmCard({
  */
 async function openInCuttingRoom(
   storyId: string,
+  chapterId: string,
   withExportDialog = false,
 ): Promise<void> {
   const project = useProjectStore.getState();
@@ -373,8 +385,9 @@ async function openInCuttingRoom(
     return;
   }
   const story = (after.moka?.stories ?? []).find((held) => held.id === storyId);
-  if (story?.edit.timelineId === undefined) return;
-  useClipStore.getState().setActiveTimeline(story.edit.timelineId);
+  const cut = story === undefined ? undefined : chapterCut(story, chapterId);
+  if (cut === undefined) return;
+  useClipStore.getState().setActiveTimeline(cut.timelineId);
   useAppStore.getState().setPhase("clip");
   if (withExportDialog) {
     useExportStore.getState().setOpen(true);
