@@ -872,3 +872,34 @@ test("a row is soloed and levelled from its header", async ({ page }) => {
 
   forgetHome(home);
 });
+
+test("a fade dot dragged from a clip's head sets its fade in", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Editing Fades");
+  await newTimeline(page, "Timeline 1");
+  await importPicture(page, "one.png");
+  const assetId = await filedId(page, "one.png");
+  const box = await canvasBox(page);
+  const video = await rowCenter(page, "Video 1");
+  const at = (x: number) => ({ x, y: video.y - box.y });
+  await dropAssetOnTimeline(page, assetId, at(DROP_X));
+  await page.locator(".clip-tl-canvas").click({ position: at(CLIP_BODY_X) });
+
+  // The fade dot sits on the clip's head; a drag of a second to the right
+  // makes a one-second fade in, and the release is when it is written.
+  const videoHeader = await page
+    .locator(".clip-tl-header-row", { hasText: "Video 1" })
+    .boundingBox();
+  if (!videoHeader) throw new Error("the video header is not there");
+  const y = videoHeader.y - box.y + 7;
+  await page.mouse.move(box.x + DROP_X, box.y + y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + DROP_X + 60, box.y + y, { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(() => timeline(page).getAttribute("data-fades"))
+    .toContain("@1000:");
+
+  forgetHome(home);
+});

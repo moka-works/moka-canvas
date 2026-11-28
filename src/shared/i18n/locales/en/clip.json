@@ -459,6 +459,7 @@
     "overlapEachOther": "The subtitles overlap each other at {{timecode}}"
   },
   "history": {
+    "fadeClip": "Change a clip's fade",
     "setTrackGain": "Set a row's level to {{db}} dB",
     "soloTrack": "Solo a row",
     "unsoloTrack": "Stop soloing a row",

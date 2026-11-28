@@ -69,7 +69,13 @@ export type TimelineDraft =
       conflict: "overlap" | null;
     }
   | { kind: "marquee"; rect: Rect }
-  | { kind: "seam"; transitionId: TransitionId; durationMs: number };
+  | { kind: "seam"; transitionId: TransitionId; durationMs: number }
+  | {
+      kind: "fade";
+      clip: TimelineClip;
+      edge: "in" | "out";
+      valueMs: number;
+    };
 
 /** A point pair as the rectangle between them, in either direction. */
 export function marqueeRect(

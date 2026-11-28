@@ -127,6 +127,13 @@ type Gesture =
       downX: number;
       /** The window the drag would give the transition; never in the document. */
       draft: Extract<TimelineDraft, { kind: "seam" }> | null;
+    }
+  | {
+      kind: "fade";
+      clip: TimelineClip;
+      edge: "in" | "out";
+      downX: number;
+      draft: Extract<TimelineDraft, { kind: "fade" }> | null;
     };
 
 /** How the canvas answers the pointer, as the class its edges wear. */
@@ -291,6 +298,12 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
       room.setAttribute(
         "data-range",
         `${timeline.inPointMs ?? ""}:${timeline.outPointMs ?? ""}`,
+      );
+      room.setAttribute(
+        "data-fades",
+        timeline.clips
+          .map((clip) => `${clip.id}@${clip.fadeInMs}:${clip.fadeOutMs}`)
+          .join(";"),
       );
     }
   }, [timeline, decor, hoverSeam]);
@@ -464,6 +477,29 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     return "grab";
   };
 
+  /** A fade dot on a chosen clip, or null when the press is not on one. */
+  const fadeHandleAt = (
+    x: number,
+    y: number,
+  ): { clip: TimelineClip; edge: "in" | "out" } | null => {
+    const viewport = viewportRef.current;
+    if (!viewport) return null;
+    const view = viewNow();
+    const rows = trackRows(timeline);
+    const chosen = new Set(useClipStore.getState().selection.clipIds);
+    for (const clip of timeline.clips) {
+      if (!chosen.has(clip.id)) continue;
+      const row = rows.find((held) => held.track.id === clip.trackId);
+      if (!row || Math.abs(y - (row.top - viewport.scrollTop + 7)) > 8)
+        continue;
+      const inX = xAt(clip.startMs + clip.fadeInMs, view);
+      if (Math.abs(x - inX) <= 7) return { clip, edge: "in" };
+      const outX = xAt(clip.startMs + clip.durationMs - clip.fadeOutMs, view);
+      if (Math.abs(x - outX) <= 7) return { clip, edge: "out" };
+    }
+    return null;
+  };
+
   /** The hover the drawing reads: only a seam is worth holding onto. */
   const showHover = (hit: TimelineHit | null) => {
     const key =
@@ -492,6 +528,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     if (useClipStore.getState().cueEditor) {
       if (document.activeElement instanceof HTMLElement)
         document.activeElement.blur();
+      return;
+    }
+    const fadeHandle = fadeHandleAt(local.x, local.y);
+    if (fadeHandle) {
+      gestureRef.current = {
+        kind: "fade",
+        clip: fadeHandle.clip,
+        edge: fadeHandle.edge,
+        downX: local.x,
+        draft: null,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setCursor("ew");
       return;
     }
     if (inRuler(local.y, viewport.scrollTop)) {
@@ -646,6 +695,39 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     if (!gesture || gesture.kind === "candidate" || !viewport) return;
     const store = useClipStore.getState();
     const view = viewNow();
+    if (gesture.kind === "fade") {
+      const deltaMs = Math.round(
+        ((local.x - gesture.downX) / view.pxPerSec) * 1_000,
+      );
+      const other =
+        gesture.edge === "in" ? gesture.clip.fadeOutMs : gesture.clip.fadeInMs;
+      const base =
+        gesture.edge === "in" ? gesture.clip.fadeInMs : gesture.clip.fadeOutMs;
+      const valueMs = Math.max(
+        0,
+        Math.min(
+          gesture.clip.durationMs - other,
+          gesture.edge === "in" ? base + deltaMs : base - deltaMs,
+        ),
+      );
+      const clip = {
+        ...gesture.clip,
+        ...(gesture.edge === "in"
+          ? { fadeInMs: valueMs }
+          : { fadeOutMs: valueMs }),
+      };
+      const draft = {
+        kind: "fade" as const,
+        clip,
+        edge: gesture.edge,
+        valueMs,
+      };
+      gestureRef.current = { ...gesture, draft };
+      draftRef.current = draft;
+      setCursor("ew");
+      schedule();
+      return;
+    }
     if (gesture.kind === "marquee") {
       const rect = marqueeRect(
         { x: gesture.downX, y: gesture.downY + viewport.scrollTop },
@@ -812,6 +894,32 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
       execute(i18n.t("clip:history.changeTransition"), commands);
       return;
     }
+    if (gesture.kind === "fade") {
+      const draft = gesture.draft;
+      if (!draft) return;
+      const valueMs = draft.valueMs;
+      if (
+        valueMs ===
+        (gesture.edge === "in" ? gesture.clip.fadeInMs : gesture.clip.fadeOutMs)
+      )
+        return;
+      execute(i18n.t("clip:history.fadeClip"), [
+        {
+          type: "updateClips",
+          timelineId: timeline.id,
+          patches: [
+            {
+              clipId: gesture.clip.id,
+              patch:
+                gesture.edge === "in"
+                  ? { fadeInMs: valueMs }
+                  : { fadeOutMs: valueMs },
+            },
+          ],
+        },
+      ]);
+      return;
+    }
     if (gesture.kind !== "trim") return;
     const draft = gesture.draft;
     if (!draft) return;
@@ -842,6 +950,10 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
     }
     const gesture = gestureRef.current;
     if (!gesture) {
+      if (fadeHandleAt(local.x, local.y)) {
+        setCursor("ew");
+        return;
+      }
       const hit = hitAt(local.x, local.y);
       showHover(hit);
       setCursor(cursorFor(hit, local.x));

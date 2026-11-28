@@ -459,6 +459,7 @@
     "overlapEachOther": "字幕在 {{timecode}} 处相互重叠"
   },
   "history": {
+    "fadeClip": "调整片段淡化",
     "setTrackGain": "把轨道音量设为 {{db}} dB",
     "soloTrack": "独奏轨道",
     "unsoloTrack": "取消独奏轨道",

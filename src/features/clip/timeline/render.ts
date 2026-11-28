@@ -304,8 +304,10 @@ function drawClips(
     if (rowY > height || rowY + row.height < 0) continue;
     // Sorted by where they start, which is also the order they overlap in:
     // the follower of a seam draws over the tail it was pulled back into.
+    const draft = model.draft?.kind === "fade" ? model.draft.clip : null;
     const onTrack = model.timeline.clips
       .filter((clip) => clip.trackId === row.track.id)
+      .map((clip) => (draft?.id === clip.id ? draft : clip))
       .sort((a, b) => a.startMs - b.startMs);
     for (const clip of onTrack) {
       const rect = { ...clipRect(clip, rows, model.view), y: rowY };
@@ -764,6 +766,33 @@ function drawDraft(
       draft.clip.durationMs,
       palette,
     );
+    return;
+  }
+  if (draft.kind === "fade") {
+    const row = rows.find((each) => each.track.id === draft.clip.trackId);
+    if (!row) return;
+    const y = row.top - model.viewport.scrollTopPx;
+    const x = xAt(
+      draft.edge === "in"
+        ? draft.clip.startMs + draft.clip.fadeInMs
+        : draft.clip.startMs + draft.clip.durationMs - draft.clip.fadeOutMs,
+      model.view,
+    );
+    ctx.strokeStyle = palette.ink;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y + row.height);
+    ctx.stroke();
+    ctx.fillStyle = palette.ink;
+    ctx.beginPath();
+    ctx.arc(x, y + 7, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = BADGE_FONT;
+    ctx.fillStyle = palette.ink;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${draft.valueMs}ms`, x + 7, y + 7);
     return;
   }
   if (draft.kind === "move" && draft.rowTrackId !== null) {
