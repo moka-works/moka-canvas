@@ -358,3 +358,36 @@ test("a file chosen on the shelf is read by the inspector as material", async ({
 
   forgetHome(home);
 });
+
+test("a text clip offers no sound controls, and a sound offers no opacity", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Inspector Kinds");
+  await newTimeline(page, "Timeline 1");
+
+  await page.getByTestId("clip-face-text").click();
+  await page.locator(".clip-tl-canvas").click({ position: { x: 6, y: 10 } });
+  await page.getByTestId("clip-text-content").fill("No sound here");
+  await page.getByRole("button", { name: "Add at the playhead" }).click();
+  await page.getByTestId("clip-subtitle-row").first().click();
+
+  await expect(page.getByTestId("clip-fields")).toBeVisible();
+  const fields = page.getByTestId("clip-fields");
+  await expect(
+    fields.getByRole("heading", { name: "Sound", exact: true }),
+  ).toHaveCount(0);
+  await expect(fields.getByLabel("Volume")).toHaveCount(0);
+
+  await page.getByTestId("clip-face-cut").click();
+  await dropOne(page, "tiny.wav", "audio/wav", tinyWav(), "Audio 1");
+  await chooseTheClip(page, "Audio 1");
+
+  await expect(
+    fields.getByRole("heading", { name: "Sound", exact: true }),
+  ).toBeVisible();
+  await expect(
+    fields.getByRole("heading", { name: "Opacity", exact: true }),
+  ).toHaveCount(0);
+
+  forgetHome(home);
+});

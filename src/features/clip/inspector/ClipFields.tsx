@@ -24,6 +24,7 @@ import {
   deleteSelection,
   detachAudio,
   duplicateSelection,
+  materialHoldsSound,
   materialOf,
   splitSelectionAtPlayhead,
 } from "../interactions/clipActions";
@@ -303,20 +304,21 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
     );
   };
 
-  const volume = sharedValue(clips.map((clip) => clip.volume));
-  const muted = sharedValue(clips.map((clip) => clip.muted));
+  const soundClips = clips.filter(materialHoldsSound);
+  const volume = sharedValue(soundClips.map((clip) => clip.volume));
+  const muted = sharedValue(soundClips.map((clip) => clip.muted));
   const [heldVolume, setHeldVolume] = useState<number | null>(null);
   const volumeShown = heldVolume ?? volume ?? 1;
 
-  const fadeIn = sharedValue(clips.map((clip) => clip.fadeInMs));
-  const fadeOut = sharedValue(clips.map((clip) => clip.fadeOutMs));
-  const longest = Math.max(...clips.map((clip) => clip.durationMs));
+  const fadeIn = sharedValue(soundClips.map((clip) => clip.fadeInMs));
+  const fadeOut = sharedValue(soundClips.map((clip) => clip.fadeOutMs));
+  const longest = Math.max(0, ...soundClips.map((clip) => clip.durationMs));
 
   const applyFade = (which: "in" | "out", valueMs: number) => {
     // A mixed pair of fades is written per clip from what that clip holds
     // as the other, so a set can share one number without losing its own.
     commit(
-      clips.map((clip) => {
+      soundClips.map((clip) => {
         const other = which === "in" ? clip.fadeOutMs : clip.fadeInMs;
         const own = clampFade(valueMs, clip.durationMs, other);
         return {
@@ -330,7 +332,7 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
     );
   };
 
-  const opacityClips = clips.filter((clip) => clip.kind !== "text");
+  const opacityClips = clips.filter((clip) => clip.kind !== "audio");
   const opacity = sharedValue(opacityClips.map((clip) => clip.opacity));
   const [heldOpacity, setHeldOpacity] = useState<number | null>(null);
   const opacityShown = heldOpacity ?? opacity ?? 1;
@@ -558,72 +560,74 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
         )}
       </section>
 
-      <section className="inspector-section">
-        <h3>{t("clip:clipFields.soundSection")}</h3>
-        <div className="clip-inspector-slider">
-          <input
-            aria-label={t("clip:clipFields.volumeLabel")}
-            max={MAX_CLIP_VOLUME}
-            min={0}
-            onChange={(event) => setHeldVolume(Number(event.target.value))}
-            onBlur={() => {
-              if (heldVolume !== null && heldVolume !== volume)
-                commit(
-                  clips.map((clip) => ({
-                    clipId: clip.id,
-                    patch: { volume: heldVolume },
-                  })),
-                );
-              setHeldVolume(null);
-            }}
-            onPointerUp={() => {
-              if (heldVolume !== null && heldVolume !== volume)
-                commit(
-                  clips.map((clip) => ({
-                    clipId: clip.id,
-                    patch: { volume: heldVolume },
-                  })),
-                );
-              setHeldVolume(null);
-            }}
-            step={0.05}
-            type="range"
-            value={volumeShown}
-          />
-          <span>{volumeShown.toFixed(2)}</span>
-        </div>
-        <div className="clip-inspector-pair">
-          <NumberField
-            label={t("clip:clipFields.fadeIn")}
-            max={longest}
-            min={0}
-            onCommit={(value) => applyFade("in", value)}
-            value={fadeIn}
-          />
-          <NumberField
-            label={t("clip:clipFields.fadeOut")}
-            max={longest}
-            min={0}
-            onCommit={(value) => applyFade("out", value)}
-            value={fadeOut}
-          />
-        </div>
-        <button
-          aria-label={t("clip:clipFields.mute")}
-          aria-pressed={muted === true}
-          onClick={() =>
-            commit(
-              clips.map((clip) => ({
-                clipId: clip.id,
-                patch: { muted: muted !== true },
-              })),
-            )
-          }
-          type="button"
-        >
-          {t("clip:clipFields.mute")}
-        </button>
-      </section>
+      {soundClips.length > 0 && (
+        <section className="inspector-section">
+          <h3>{t("clip:clipFields.soundSection")}</h3>
+          <div className="clip-inspector-slider">
+            <input
+              aria-label={t("clip:clipFields.volumeLabel")}
+              max={MAX_CLIP_VOLUME}
+              min={0}
+              onChange={(event) => setHeldVolume(Number(event.target.value))}
+              onBlur={() => {
+                if (heldVolume !== null && heldVolume !== volume)
+                  commit(
+                    soundClips.map((clip) => ({
+                      clipId: clip.id,
+                      patch: { volume: heldVolume },
+                    })),
+                  );
+                setHeldVolume(null);
+              }}
+              onPointerUp={() => {
+                if (heldVolume !== null && heldVolume !== volume)
+                  commit(
+                    soundClips.map((clip) => ({
+                      clipId: clip.id,
+                      patch: { volume: heldVolume },
+                    })),
+                  );
+                setHeldVolume(null);
+              }}
+              step={0.05}
+              type="range"
+              value={volumeShown}
+            />
+            <span>{volumeShown.toFixed(2)}</span>
+          </div>
+          <div className="clip-inspector-pair">
+            <NumberField
+              label={t("clip:clipFields.fadeIn")}
+              max={longest}
+              min={0}
+              onCommit={(value) => applyFade("in", value)}
+              value={fadeIn}
+            />
+            <NumberField
+              label={t("clip:clipFields.fadeOut")}
+              max={longest}
+              min={0}
+              onCommit={(value) => applyFade("out", value)}
+              value={fadeOut}
+            />
+          </div>
+          <button
+            aria-label={t("clip:clipFields.mute")}
+            aria-pressed={muted === true}
+            onClick={() =>
+              commit(
+                soundClips.map((clip) => ({
+                  clipId: clip.id,
+                  patch: { muted: muted !== true },
+                })),
+              )
+            }
+            type="button"
+          >
+            {t("clip:clipFields.mute")}
+          </button>
+        </section>
+      )}
 
       {opacityClips.length > 0 && (
         <section className="inspector-section">
