@@ -553,6 +553,34 @@ function trimTailTo(
   return fitFades({ ...clip, durationMs, outPointMs });
 }
 
+function extendTailTo(
+  moka: MokaFile,
+  clip: TimelineClip,
+  endMs: number,
+): TimelineClip {
+  let durationMs = endMs - clip.startMs;
+  if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  if (ownClockClip(moka, clip))
+    return fitFades({
+      ...clip,
+      durationMs,
+      inPointMs: 0,
+      outPointMs: durationMs,
+    });
+  let outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+  const material = materialDuration(moka, clip);
+  if (material !== null && outPointMs > material) {
+    durationMs = Math.floor((material - clip.inPointMs) / clip.speed);
+    outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+    if (outPointMs > material) {
+      durationMs -= 1;
+      outPointMs = clip.inPointMs + Math.round(durationMs * clip.speed);
+    }
+    if (durationMs < MIN_CLIP_DURATION_MS) throw tooShort();
+  }
+  return fitFades({ ...clip, durationMs, outPointMs });
+}
+
 function trimHeadTo(
   moka: MokaFile,
   clip: TimelineClip,
@@ -904,6 +932,224 @@ function applyPlannedClips(
     });
   if (commands.length === 0) return { next: moka, inverse: [] };
   return applyCommands(moka, commands);
+}
+
+function resourceOf(moka: MokaFile, assetId: string) {
+  for (const entries of Object.values(moka.resources)) {
+    const asset = entries.find((entry) => entry.id === assetId);
+    if (asset) return asset;
+  }
+  return null;
+}
+
+function materialDuration(moka: MokaFile, clip: TimelineClip): number | null {
+  return clip.assetId
+    ? (resourceOf(moka, clip.assetId)?.probe?.durationMs ?? null)
+    : null;
+}
+
+/** How much material is left past a clip's out point, on the timeline clock. */
+function tailRoom(moka: MokaFile, clip: TimelineClip): number {
+  if (ownClockClip(moka, clip)) return Number.POSITIVE_INFINITY;
+  const duration = materialDuration(moka, clip);
+  if (duration === null) return Number.POSITIVE_INFINITY;
+  return Math.max(0, (duration - clip.outPointMs) / clip.speed);
+}
+
+/** How much material can be taken back before a clip's in point. */
+function headRoom(moka: MokaFile, clip: TimelineClip): number {
+  if (ownClockClip(moka, clip)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, clip.inPointMs / clip.speed);
+}
+
+function slipPlannedClips(
+  moka: MokaFile,
+  timeline: TimelineDocument,
+  edits: { clipId: string; byMs: number }[],
+): TimelineClip[] {
+  const wanted = new Map(edits.map((edit) => [edit.clipId, edit.byMs]));
+  return timeline.clips.map((clip) => {
+    const byMs = wanted.get(clip.id);
+    if (byMs === undefined) return clip;
+    if (ownClockClip(moka, clip))
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:command.slipOwnClock"),
+      );
+    const duration = materialDuration(moka, clip);
+    const by = Math.max(
+      -clip.inPointMs,
+      Math.min(
+        byMs,
+        duration === null
+          ? Number.POSITIVE_INFINITY
+          : duration - clip.outPointMs,
+      ),
+    );
+    if (by === 0) return clip;
+    return {
+      ...clip,
+      inPointMs: clip.inPointMs + by,
+      outPointMs: clip.outPointMs + by,
+    };
+  });
+}
+
+function slidePlannedClips(
+  moka: MokaFile,
+  timeline: TimelineDocument,
+  moves: { clipId: string; byMs: number }[],
+): TimelineClip[] {
+  const wanted = new Map(moves.map((move) => [move.clipId, move.byMs]));
+  const next = new Map(timeline.clips.map((clip) => [clip.id, clip]));
+  for (const [clipId, byMs] of wanted) {
+    const clip = next.get(clipId);
+    if (!clip) continue;
+    const ordered = [...next.values()]
+      .filter((held) => held.trackId === clip.trackId)
+      .sort((a, b) => a.startMs - b.startMs);
+    const at = ordered.findIndex((held) => held.id === clip.id);
+    const previous = ordered[at - 1];
+    const follower = ordered[at + 1];
+    if (
+      !previous ||
+      !follower ||
+      previous.startMs + previous.durationMs !== clip.startMs ||
+      clip.startMs + clip.durationMs !== follower.startMs
+    )
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:command.slideNeedsNeighbours"),
+      );
+    if (
+      timeline.transitions.some(
+        (transition) =>
+          transition.afterClipId === previous.id ||
+          transition.afterClipId === clip.id,
+      )
+    )
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:command.rollAcrossTransition"),
+      );
+    const lowest = Math.max(
+      -(previous.durationMs - MIN_CLIP_DURATION_MS),
+      -headRoom(moka, follower),
+    );
+    const highest = Math.min(
+      tailRoom(moka, previous),
+      follower.durationMs - MIN_CLIP_DURATION_MS,
+    );
+    const delta = Math.max(lowest, Math.min(highest, byMs));
+    if (delta === 0) continue;
+    next.set(
+      previous.id,
+      delta > 0
+        ? extendTailTo(
+            moka,
+            previous,
+            previous.startMs + previous.durationMs + delta,
+          )
+        : trimTailTo(
+            moka,
+            previous,
+            previous.startMs + previous.durationMs + delta,
+          ),
+    );
+    next.set(clip.id, { ...clip, startMs: clip.startMs + delta });
+    next.set(follower.id, trimHeadTo(moka, follower, follower.startMs + delta));
+  }
+  return [...next.values()];
+}
+
+function rollPlannedClips(
+  moka: MokaFile,
+  timeline: TimelineDocument,
+  afterClipId: string,
+  byMs: number,
+): TimelineClip[] {
+  const leader = timeline.clips.find((clip) => clip.id === afterClipId);
+  if (!leader)
+    throw new CommandError(
+      "CLIP_NOT_FOUND",
+      i18n.t("errors:command.clipNotFound"),
+    );
+  const follower = followerOf(timeline, leader);
+  if (!follower || follower.startMs !== leader.startMs + leader.durationMs)
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.rollNeedsButtedSeam"),
+    );
+  if (
+    timeline.transitions.some(
+      (transition) => transition.afterClipId === leader.id,
+    )
+  )
+    throw new CommandError(
+      "VALIDATION_FAILED",
+      i18n.t("errors:command.rollAcrossTransition"),
+    );
+  const lowest = Math.max(
+    -(follower.durationMs - MIN_CLIP_DURATION_MS),
+    -headRoom(moka, follower),
+  );
+  const highest = Math.min(
+    leader.durationMs - MIN_CLIP_DURATION_MS,
+    tailRoom(moka, leader),
+  );
+  const delta = Math.max(lowest, Math.min(highest, byMs));
+  if (delta === 0) return timeline.clips;
+  const next = new Map(timeline.clips.map((clip) => [clip.id, clip]));
+  next.set(
+    leader.id,
+    delta > 0
+      ? extendTailTo(moka, leader, leader.startMs + leader.durationMs + delta)
+      : trimTailTo(moka, leader, leader.startMs + leader.durationMs + delta),
+  );
+  next.set(follower.id, trimHeadTo(moka, follower, follower.startMs + delta));
+  return [...next.values()];
+}
+
+function rangePlannedClips(
+  moka: MokaFile,
+  timeline: TimelineDocument,
+  startMs: number,
+  endMs: number,
+  scope: "all" | "track",
+  trackId?: string,
+): TimelineClip[] {
+  const length = endMs - startMs;
+  const tracks = scope === "all" ? null : new Set([trackId ?? ""]);
+  const next: TimelineClip[] = [];
+  for (const clip of timeline.clips) {
+    if (tracks && !tracks.has(clip.trackId)) {
+      next.push(clip);
+      continue;
+    }
+    const clipEnd = clip.startMs + clip.durationMs;
+    if (clipEnd <= startMs) {
+      next.push(clip);
+      continue;
+    }
+    if (clip.startMs >= endMs) {
+      next.push({ ...clip, startMs: clip.startMs - length });
+      continue;
+    }
+    if (clip.startMs >= startMs && clipEnd <= endMs) continue;
+    if (clip.startMs < startMs && clipEnd > endMs) {
+      const [left, middle] = splitClipAt(moka, clip, startMs);
+      const [, right] = splitClipAt(moka, middle, endMs);
+      next.push(left, { ...right, startMs: right.startMs - length });
+      continue;
+    }
+    if (clip.startMs < startMs) {
+      next.push(trimTailTo(moka, clip, startMs));
+      continue;
+    }
+    const tail = trimHeadTo(moka, clip, endMs);
+    next.push({ ...tail, startMs: tail.startMs - length });
+  }
+  return next;
 }
 
 function applyOne(
@@ -2298,7 +2544,7 @@ function applyOne(
       const byId = new Map(timeline.clips.map((clip) => [clip.id, clip]));
       const updated = new Map<string, TimelineClip>();
       const materialChecked: TimelineClip[] = [];
-      const inverses: DocumentCommand[] = [];
+      const inversePatches: { clipId: string; patch: ClipPatch }[] = [];
       for (const { clipId, patch } of command.patches) {
         const clip = byId.get(clipId);
         if (!clip)
@@ -2325,10 +2571,9 @@ function applyOne(
         // The inverse patch carries back what this one moved, and nothing
         // else — undoing a volume change does not touch the text the same
         // step edited, and a field this patch brought in goes with a null.
-        inverses.push({
-          type: "updateClips",
-          timelineId: command.timelineId,
-          patches: [{ clipId, patch: invertClipPatch(clip, patch) }],
+        inversePatches.push({
+          clipId,
+          patch: invertClipPatch(clip, patch),
         });
       }
       const clips = timeline.clips.map((clip) => updated.get(clip.id) ?? clip);
@@ -2339,7 +2584,15 @@ function applyOne(
       for (const clip of materialChecked) checkClipWithinAsset(moka, clip);
       return {
         next: replaceTimeline(moka, { ...timeline, clips }),
-        inverse: inverses.reverse(),
+        // The undo is one command over every patch: applied one by one, two
+        // clips moving past each other would be an overlap half way home.
+        inverse: [
+          {
+            type: "updateClips",
+            timelineId: command.timelineId,
+            patches: inversePatches,
+          },
+        ],
       };
     }
 
@@ -2505,6 +2758,126 @@ function applyOne(
         return { ...clip, startMs: clip.startMs - shift };
       });
       return applyPlannedClips(moka, timeline, finalClips);
+    }
+
+    case "slipClips": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.edits.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToUpdate"),
+        );
+      const seen = new Set<string>();
+      for (const edit of command.edits) {
+        if (!Number.isInteger(edit.byMs))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.slipNeedsWholeMs"),
+          );
+        if (seen.has(edit.clipId))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.clipPatchedTwice"),
+          );
+        seen.add(edit.clipId);
+        if (!timeline.clips.some((clip) => clip.id === edit.clipId))
+          throw new CommandError(
+            "CLIP_NOT_FOUND",
+            i18n.t("errors:command.clipNotFound"),
+          );
+      }
+      return applyPlannedClips(
+        moka,
+        timeline,
+        slipPlannedClips(moka, timeline, command.edits),
+      );
+    }
+
+    case "slideClips": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.moves.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToMove"),
+        );
+      const seen = new Set<string>();
+      for (const move of command.moves) {
+        if (!Number.isInteger(move.byMs))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.slipNeedsWholeMs"),
+          );
+        if (seen.has(move.clipId))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.clipPatchedTwice"),
+          );
+        seen.add(move.clipId);
+        if (!timeline.clips.some((clip) => clip.id === move.clipId))
+          throw new CommandError(
+            "CLIP_NOT_FOUND",
+            i18n.t("errors:command.clipNotFound"),
+          );
+      }
+      return applyPlannedClips(
+        moka,
+        timeline,
+        slidePlannedClips(moka, timeline, command.moves),
+      );
+    }
+
+    case "rollEdit": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (!Number.isInteger(command.byMs))
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.slipNeedsWholeMs"),
+        );
+      return applyPlannedClips(
+        moka,
+        timeline,
+        rollPlannedClips(moka, timeline, command.afterClipId, command.byMs),
+      );
+    }
+
+    case "removeRange": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (
+        !Number.isInteger(command.startMs) ||
+        !Number.isInteger(command.endMs) ||
+        command.startMs < 0 ||
+        command.endMs <= command.startMs
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.removeRangeInvalid"),
+        );
+      const scope = command.scope ?? "all";
+      if (scope === "track" && command.trackId === undefined)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.removeRangeNeedsTrack"),
+        );
+      if (
+        command.trackId !== undefined &&
+        !timeline.tracks.some((track) => track.id === command.trackId)
+      )
+        throw new CommandError(
+          "TRACK_NOT_FOUND",
+          i18n.t("errors:command.clipTrackNotFound"),
+        );
+      return applyPlannedClips(
+        moka,
+        timeline,
+        rangePlannedClips(
+          moka,
+          timeline,
+          command.startMs,
+          command.endMs,
+          scope,
+          command.trackId,
+        ),
+      );
     }
 
     case "moveClips": {

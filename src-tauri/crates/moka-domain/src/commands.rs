@@ -1551,6 +1551,10 @@ fn apply_one(
         | DocumentCommand::RippleDeleteClips { .. }
         | DocumentCommand::CloseGaps { .. }
         | DocumentCommand::DeleteGap { .. }
+        | DocumentCommand::SlipClips { .. }
+        | DocumentCommand::SlideClips { .. }
+        | DocumentCommand::RollEdit { .. }
+        | DocumentCommand::RemoveRange { .. }
         | DocumentCommand::RemoveClips { .. }
         | DocumentCommand::UpdateClips { .. }
         | DocumentCommand::MoveClips { .. }

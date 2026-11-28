@@ -745,6 +745,27 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("atMs", "integer", "A moment inside the gap"),
             ("scope", "string", "all or track"),
         ])),
+        command("clip.slip", "clip", ToolRisk::Write, "Move clips' source windows under them without moving the clips.", schema(&["timelineId", "edits"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("edits", "array", "Each {clipId, byMs}"),
+        ])),
+        command("clip.slide", "clip", ToolRisk::Write, "Slide clips along, trimming the clips beside them.", schema(&["timelineId", "moves"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("moves", "array", "Each {clipId, byMs}"),
+        ])),
+        command("clip.roll", "clip", ToolRisk::Write, "Move one cut between two clips, changing both lengths.", schema(&["timelineId", "afterClipId", "byMs"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("afterClipId", "string", "The clip before the cut"),
+            ("byMs", "integer", "How far to roll, in milliseconds"),
+        ])),
+        command("timeline.remove_range", "clip", ToolRisk::Destroy, "Take a stretch of time out and pull the rest back.", schema(&["timelineId", "startMs", "endMs", "confirm"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("startMs", "integer", "Range start"),
+            ("endMs", "integer", "Range end"),
+            ("scope", "string", "all or track"),
+            ("trackId", "string", "The row, when scope is track"),
+            ("confirm", "string", "Must be non-empty"),
+        ])),
         command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
             ("timelineId", "string", "Timeline id"),
             ("clipId", "string", "Clip id"),

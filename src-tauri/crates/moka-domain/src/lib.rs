@@ -1468,6 +1468,22 @@ pub enum RippleScope {
     Track,
 }
 
+/// A clip whose source window moves under it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipSlip {
+    pub clip_id: ClipId,
+    pub by_ms: i64,
+}
+
+/// A clip that slides along, trimming the clips beside it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipSlide {
+    pub clip_id: ClipId,
+    pub by_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum DocumentCommand {
@@ -1702,6 +1718,36 @@ pub enum DocumentCommand {
         at_ms: i64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<RippleScope>,
+    },
+    /// Moves each clip's source window under it, leaving its place alone.
+    #[serde(rename_all = "camelCase")]
+    SlipClips {
+        timeline_id: TimelineId,
+        edits: Vec<ClipSlip>,
+    },
+    /// Slides each clip along, trimming the clips on either side to follow.
+    #[serde(rename_all = "camelCase")]
+    SlideClips {
+        timeline_id: TimelineId,
+        moves: Vec<ClipSlide>,
+    },
+    /// Moves one cut between two clips, changing both their lengths.
+    #[serde(rename_all = "camelCase")]
+    RollEdit {
+        timeline_id: TimelineId,
+        after_clip_id: ClipId,
+        by_ms: i64,
+    },
+    /// Takes a stretch of time out, from every row or from one.
+    #[serde(rename_all = "camelCase")]
+    RemoveRange {
+        timeline_id: TimelineId,
+        start_ms: i64,
+        end_ms: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<RippleScope>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        track_id: Option<TrackId>,
     },
     #[serde(rename_all = "camelCase")]
     RemoveClips {

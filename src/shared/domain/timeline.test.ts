@@ -1760,3 +1760,98 @@ describe("what a cut is made of", () => {
     expect(timelineAssetIds(timeline)).toEqual([]);
   });
 });
+
+describe("slip, slide, roll and range edits", () => {
+  function threeButted() {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const make = (id: string, assetId: string, startMs: number) => {
+      const clip = clipOf(moka, assetId, ids.videoTrack, startMs);
+      return {
+        ...clip,
+        id,
+        startMs,
+        durationMs: 2_000,
+        inPointMs: 1_000,
+        outPointMs: 3_000,
+      };
+    };
+    moka.timelines![0].clips = [
+      make("clip-a", ids.videoAsset, 0),
+      make("clip-b", ids.followerAsset, 2_000),
+      make("clip-c", ids.videoAsset, 4_000),
+    ];
+    return { moka, ids };
+  }
+
+  it("slips a clip's source window without moving it", () => {
+    const { moka, ids } = threeButted();
+    const next = expectRoundTrip(moka, {
+      type: "slipClips",
+      timelineId: ids.timeline,
+      edits: [{ clipId: "clip-a", byMs: 500 }],
+    });
+    const clip = next.timelines![0].clips.find((held) => held.id === "clip-a")!;
+    expect([
+      clip.startMs,
+      clip.durationMs,
+      clip.inPointMs,
+      clip.outPointMs,
+    ]).toEqual([0, 2_000, 1_500, 3_500]);
+  });
+
+  it("slides a clip and carries its neighbours' edges", () => {
+    const { moka, ids } = threeButted();
+    const next = expectRoundTrip(moka, {
+      type: "slideClips",
+      timelineId: ids.timeline,
+      moves: [{ clipId: "clip-b", byMs: 200 }],
+    });
+    const clips = next.timelines![0].clips;
+    const a = clips.find((held) => held.id === "clip-a")!;
+    const b = clips.find((held) => held.id === "clip-b")!;
+    const c = clips.find((held) => held.id === "clip-c")!;
+    expect([a.durationMs, a.outPointMs]).toEqual([2_200, 3_200]);
+    expect(b.startMs).toBe(2_200);
+    expect([c.startMs, c.durationMs, c.inPointMs]).toEqual([
+      4_200, 1_800, 1_200,
+    ]);
+  });
+
+  it("rolls one cut and keeps the total length", () => {
+    const { moka, ids } = threeButted();
+    const next = expectRoundTrip(moka, {
+      type: "rollEdit",
+      timelineId: ids.timeline,
+      afterClipId: "clip-a",
+      byMs: 200,
+    });
+    const clips = next.timelines![0].clips;
+    const a = clips.find((held) => held.id === "clip-a")!;
+    const b = clips.find((held) => held.id === "clip-b")!;
+    expect(a.durationMs).toBe(2_200);
+    expect([b.startMs, b.durationMs, b.inPointMs]).toEqual([
+      2_200, 1_800, 1_200,
+    ]);
+    expect(clips.find((held) => held.id === "clip-c")!.startMs).toBe(4_000);
+  });
+
+  it("takes a range out across every row, splitting what it crosses", () => {
+    const { moka, ids } = threeButted();
+    const next = expectRoundTrip(moka, {
+      type: "removeRange",
+      timelineId: ids.timeline,
+      startMs: 1_000,
+      endMs: 3_000,
+      scope: "all",
+    });
+    const clips = next.timelines![0].clips.sort(
+      (a, b) => a.startMs - b.startMs,
+    );
+    expect(clips.map((clip) => [clip.startMs, clip.durationMs])).toEqual([
+      [0, 1_000],
+      [1_000, 1_000],
+      [2_000, 2_000],
+    ]);
+  });
+});

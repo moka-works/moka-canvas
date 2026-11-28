@@ -9,11 +9,11 @@ use moka_canvas::domain::timeline::{
 };
 use moka_canvas::domain::validate::validate_moka_file;
 use moka_canvas::domain::{
-    new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand,
-    InsertMode, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry, RippleScope, TextAlign,
-    TextClipData, TextClipStyle, TextPosition, TimelineClip, TimelineDocument, TimelineSettings,
-    TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind, TrackPatch,
-    TransitionKind, MOKA_FILE_VERSION,
+    new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip,
+    DocumentCommand, InsertMode, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry,
+    RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
+    TimelineDocument, TimelineSettings, TimelineSettingsPatch, TimelineTrack, TimelineTransition,
+    TrackKind, TrackPatch, TransitionKind, MOKA_FILE_VERSION,
 };
 use moka_canvas::project::codec::{decode_moka_file, encode_moka_file};
 use moka_canvas::project::store::ProjectRegistry;
@@ -1463,6 +1463,120 @@ fn closes_a_gap_and_takes_a_gap_out() {
             }
         ),
         "GAP_NOT_FOUND"
+    );
+}
+
+fn three_butted() -> MokaFile {
+    let base = timeline_fixture();
+    let mut moka = base.clone();
+    let make = |id: &str, asset: &str, start: i64| {
+        let mut clip = clip_of(&base, asset, VIDEO_TRACK, start);
+        clip.id = id.into();
+        clip.start_ms = start;
+        clip.duration_ms = 2_000;
+        clip.in_point_ms = 1_000;
+        clip.out_point_ms = 3_000;
+        clip
+    };
+    moka.timelines.as_mut().unwrap()[0].clips = vec![
+        make("clip-a", VIDEO_ASSET, 0),
+        make("clip-b", FOLLOWER_ASSET, 2_000),
+        make("clip-c", VIDEO_ASSET, 4_000),
+    ];
+    moka
+}
+
+#[test]
+fn slips_a_clips_source_window_without_moving_it() {
+    let moka = three_butted();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SlipClips {
+            timeline_id: TIMELINE.into(),
+            edits: vec![ClipSlip {
+                clip_id: "clip-a".into(),
+                by_ms: 500,
+            }],
+        }],
+    );
+    let clip = clip_at(&next, 0, "clip-a");
+    assert_eq!(
+        [
+            clip.start_ms,
+            clip.duration_ms,
+            clip.in_point_ms,
+            clip.out_point_ms
+        ],
+        [0, 2_000, 1_500, 3_500]
+    );
+}
+
+#[test]
+fn slides_a_clip_and_carries_its_neighbours_edges() {
+    let moka = three_butted();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::SlideClips {
+            timeline_id: TIMELINE.into(),
+            moves: vec![ClipSlide {
+                clip_id: "clip-b".into(),
+                by_ms: 200,
+            }],
+        }],
+    );
+    let a = clip_at(&next, 0, "clip-a");
+    let b = clip_at(&next, 0, "clip-b");
+    let c = clip_at(&next, 0, "clip-c");
+    assert_eq!([a.duration_ms, a.out_point_ms], [2_200, 3_200]);
+    assert_eq!(b.start_ms, 2_200);
+    assert_eq!(
+        [c.start_ms, c.duration_ms, c.in_point_ms],
+        [4_200, 1_800, 1_200]
+    );
+}
+
+#[test]
+fn rolls_one_cut_and_keeps_the_total_length() {
+    let moka = three_butted();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::RollEdit {
+            timeline_id: TIMELINE.into(),
+            after_clip_id: "clip-a".into(),
+            by_ms: 200,
+        }],
+    );
+    let a = clip_at(&next, 0, "clip-a");
+    let b = clip_at(&next, 0, "clip-b");
+    assert_eq!(a.duration_ms, 2_200);
+    assert_eq!(
+        [b.start_ms, b.duration_ms, b.in_point_ms],
+        [2_200, 1_800, 1_200]
+    );
+    assert_eq!(clip_at(&next, 0, "clip-c").start_ms, 4_000);
+}
+
+#[test]
+fn takes_a_range_out_across_every_row() {
+    let moka = three_butted();
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::RemoveRange {
+            timeline_id: TIMELINE.into(),
+            start_ms: 1_000,
+            end_ms: 3_000,
+            scope: Some(RippleScope::All),
+            track_id: None,
+        }],
+    );
+    let mut clips = next.timelines.as_ref().unwrap()[0].clips.clone();
+    clips.sort_by_key(|clip| clip.start_ms);
+    assert_eq!(
+        clips
+            .iter()
+            .map(|clip| [clip.start_ms, clip.duration_ms])
+            .collect::<Vec<_>>(),
+        vec![[0, 1_000], [1_000, 1_000], [2_000, 2_000]]
     );
 }
 

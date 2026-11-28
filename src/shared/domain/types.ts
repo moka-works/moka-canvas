@@ -1780,6 +1780,34 @@ export type DocumentCommand =
       atMs: number;
       scope?: "all" | "track";
     }
+  /** Slides a clip's source window under it, leaving where it sits alone. */
+  | {
+      type: "slipClips";
+      timelineId: TimelineId;
+      edits: { clipId: ClipId; byMs: number }[];
+    }
+  /** Slides a clip along, trimming its neighbours to keep them joined. */
+  | {
+      type: "slideClips";
+      timelineId: TimelineId;
+      moves: { clipId: ClipId; byMs: number }[];
+    }
+  /** Moves one cut between two clips, changing both their lengths. */
+  | {
+      type: "rollEdit";
+      timelineId: TimelineId;
+      afterClipId: ClipId;
+      byMs: number;
+    }
+  /** Takes a stretch of time out, from every row or from one. */
+  | {
+      type: "removeRange";
+      timelineId: TimelineId;
+      startMs: number;
+      endMs: number;
+      scope?: "all" | "track";
+      trackId?: TrackId;
+    }
   /**
    * Only where a clip sits: `startMs` on the timeline's clock and, when the
    * clip is named for a different track, the `trackId` it lands on. A move

@@ -13,8 +13,8 @@ use serde_json::{json, Value};
 use crate::api::{ApiState, ProjectSession};
 use crate::clip::jobs::ExportRun;
 use crate::domain::{
-    now_iso, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, InsertMode, MokaFile,
-    RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
+    now_iso, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip, DocumentCommand, InsertMode,
+    MokaFile, RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
     TimelineDocument, TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind,
     TrackPatch, TransitionKind,
 };
@@ -236,6 +236,10 @@ pub async fn command(
         "clip.ripple_delete" => clip_ripple_delete(moka, &args),
         "clip.close_gaps" => clip_close_gaps(moka, &args),
         "clip.delete_gap" => clip_delete_gap(moka, &args),
+        "clip.slip" => clip_slip(moka, &args),
+        "clip.slide" => clip_slide(moka, &args),
+        "clip.roll" => clip_roll(moka, &args),
+        "timeline.remove_range" => timeline_remove_range(moka, &args),
         "clip.update" => clip_update(moka, &args),
         "clip.move" => clip_move(moka, &args),
         "clip.trim" => clip_trim(moka, &args),
@@ -681,6 +685,103 @@ fn clip_delete_gap(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, Tool
             track_id,
             at_ms,
             scope: Some(scope),
+        }],
+    ))
+}
+
+fn clip_slip(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let mut edits = Vec::new();
+    for edit in args.req_array("edits")? {
+        let clip_id = edit
+            .get("clipId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::validation("every slip needs clipId"))?;
+        let by_ms = edit
+            .get("byMs")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| ToolError::validation("every slip needs byMs"))?;
+        edits.push(ClipSlip {
+            clip_id: clip_id.to_string(),
+            by_ms,
+        });
+    }
+    Ok(ToolOutcome::write(
+        format!("Slipped {} clips", edits.len()),
+        json!({"edited": edits.len()}),
+        vec![DocumentCommand::SlipClips {
+            timeline_id: timeline.id.clone(),
+            edits,
+        }],
+    ))
+}
+
+fn clip_slide(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let mut moves = Vec::new();
+    for movement in args.req_array("moves")? {
+        let clip_id = movement
+            .get("clipId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::validation("every slide needs clipId"))?;
+        let by_ms = movement
+            .get("byMs")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| ToolError::validation("every slide needs byMs"))?;
+        moves.push(ClipSlide {
+            clip_id: clip_id.to_string(),
+            by_ms,
+        });
+    }
+    Ok(ToolOutcome::write(
+        format!("Slid {} clips", moves.len()),
+        json!({"moved": moves.len()}),
+        vec![DocumentCommand::SlideClips {
+            timeline_id: timeline.id.clone(),
+            moves,
+        }],
+    ))
+}
+
+fn clip_roll(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let after_clip_id = args.req_str("afterClipId")?.to_string();
+    let by_ms = args.req_i64("byMs")?;
+    Ok(ToolOutcome::write(
+        format!("Rolled the cut after {after_clip_id} by {by_ms} ms"),
+        json!({"afterClipId": after_clip_id, "byMs": by_ms}),
+        vec![DocumentCommand::RollEdit {
+            timeline_id: timeline.id.clone(),
+            after_clip_id,
+            by_ms,
+        }],
+    ))
+}
+
+fn timeline_remove_range(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    args.confirmed()?;
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let start_ms = args.req_i64("startMs")?;
+    let end_ms = args.req_i64("endMs")?;
+    let scope = match args.opt_str("scope").unwrap_or("all") {
+        "all" => RippleScope::All,
+        "track" => RippleScope::Track,
+        other => {
+            return Err(ToolError::validation(format!(
+                "scope '{other}' is not all or track"
+            )))
+        }
+    };
+    let track_id = args.opt_str("trackId").map(str::to_string);
+    Ok(ToolOutcome::write(
+        format!("Removed {start_ms}–{end_ms} ms"),
+        json!({"startMs": start_ms, "endMs": end_ms}),
+        vec![DocumentCommand::RemoveRange {
+            timeline_id: timeline.id.clone(),
+            start_ms,
+            end_ms,
+            scope: Some(scope),
+            track_id,
         }],
     ))
 }

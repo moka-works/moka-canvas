@@ -9,9 +9,9 @@ use std::collections::{HashMap, HashSet};
 
 use super::commands::CommandError;
 use super::{
-    new_id, now_iso, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, InsertMode, MokaFile,
-    RippleScope, TimelineClip, TimelineDocument, TimelineSettingsPatch, TimelineTrack,
-    TimelineTransition, TrackKind, TrackPatch, TransitionKind,
+    new_id, now_iso, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip, DocumentCommand,
+    InsertMode, MokaFile, RippleScope, TimelineClip, TimelineDocument, TimelineSettingsPatch,
+    TimelineTrack, TimelineTransition, TrackKind, TrackPatch, TransitionKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -1459,6 +1459,305 @@ fn apply_planned_clips(
     Ok((current, inverses))
 }
 
+fn material_duration(moka: &MokaFile, clip: &TimelineClip) -> Option<i64> {
+    clip.asset_id
+        .as_deref()
+        .and_then(|id| moka.resources.find(id))
+        .and_then(|asset| asset.probe.as_ref())
+        .and_then(|probe| probe.duration_ms)
+}
+
+fn tail_room(moka: &MokaFile, clip: &TimelineClip) -> f64 {
+    if own_clock(moka, clip) {
+        return f64::INFINITY;
+    }
+    match material_duration(moka, clip) {
+        Some(duration) => ((duration - clip.out_point_ms) as f64 / clip.speed).max(0.0),
+        None => f64::INFINITY,
+    }
+}
+
+fn head_room(moka: &MokaFile, clip: &TimelineClip) -> f64 {
+    if own_clock(moka, clip) {
+        return f64::INFINITY;
+    }
+    (clip.in_point_ms as f64 / clip.speed).max(0.0)
+}
+
+fn extend_tail_to(
+    moka: &MokaFile,
+    clip: &TimelineClip,
+    end_ms: i64,
+) -> Result<TimelineClip, CommandError> {
+    let mut duration = end_ms - clip.start_ms;
+    if duration < MIN_CLIP_DURATION_MS {
+        return Err(clip_too_short());
+    }
+    if own_clock(moka, clip) {
+        let mut next = clip.clone();
+        next.duration_ms = duration;
+        next.in_point_ms = 0;
+        next.out_point_ms = duration;
+        return Ok(fit_fades(next));
+    }
+    let mut out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+    if let Some(material) = material_duration(moka, clip) {
+        if out_point > material {
+            duration = ((material - clip.in_point_ms) as f64 / clip.speed).floor() as i64;
+            out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+            if out_point > material {
+                duration -= 1;
+                out_point = clip.in_point_ms + (duration as f64 * clip.speed).round() as i64;
+            }
+            if duration < MIN_CLIP_DURATION_MS {
+                return Err(clip_too_short());
+            }
+        }
+    }
+    let mut next = clip.clone();
+    next.duration_ms = duration;
+    next.out_point_ms = out_point;
+    Ok(fit_fades(next))
+}
+
+fn slip_planned_clips(
+    moka: &MokaFile,
+    timeline: &TimelineDocument,
+    edits: &[ClipSlip],
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let wanted: HashMap<&str, i64> = edits
+        .iter()
+        .map(|edit| (edit.clip_id.as_str(), edit.by_ms))
+        .collect();
+    let mut next = Vec::with_capacity(timeline.clips.len());
+    for clip in &timeline.clips {
+        let Some(by_ms) = wanted.get(clip.id.as_str()) else {
+            next.push(clip.clone());
+            continue;
+        };
+        if own_clock(moka, clip) {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "A cue or a still has no source window to slip",
+            ));
+        }
+        let highest = material_duration(moka, clip)
+            .map(|duration| duration - clip.out_point_ms)
+            .unwrap_or(i64::MAX);
+        let by = (*by_ms).clamp(-clip.in_point_ms, highest);
+        if by == 0 {
+            next.push(clip.clone());
+            continue;
+        }
+        let mut slipped = clip.clone();
+        slipped.in_point_ms += by;
+        slipped.out_point_ms += by;
+        next.push(slipped);
+    }
+    Ok(next)
+}
+
+fn slide_planned_clips(
+    moka: &MokaFile,
+    timeline: &TimelineDocument,
+    moves: &[ClipSlide],
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let wanted: HashMap<&str, i64> = moves
+        .iter()
+        .map(|movement| (movement.clip_id.as_str(), movement.by_ms))
+        .collect();
+    let mut next: HashMap<String, TimelineClip> = timeline
+        .clips
+        .iter()
+        .map(|clip| (clip.id.clone(), clip.clone()))
+        .collect();
+    for (clip_id, by_ms) in wanted {
+        let Some(clip) = next.get(clip_id).cloned() else {
+            continue;
+        };
+        let mut ordered: Vec<TimelineClip> = next
+            .values()
+            .filter(|held| held.track_id == clip.track_id)
+            .cloned()
+            .collect();
+        ordered.sort_by_key(|held| held.start_ms);
+        let at = ordered.iter().position(|held| held.id == clip.id);
+        let (Some(at), true) = (at, ordered.len() > 1) else {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "A slide needs a joined clip on each side of the one it moves",
+            ));
+        };
+        if at == 0 || at + 1 >= ordered.len() {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "A slide needs a joined clip on each side of the one it moves",
+            ));
+        }
+        let previous = ordered[at - 1].clone();
+        let follower = ordered[at + 1].clone();
+        if previous.start_ms + previous.duration_ms != clip.start_ms
+            || clip.start_ms + clip.duration_ms != follower.start_ms
+        {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "A slide needs a joined clip on each side of the one it moves",
+            ));
+        }
+        if timeline.transitions.iter().any(|transition| {
+            transition.after_clip_id == previous.id || transition.after_clip_id == clip.id
+        }) {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "Remove the transition before rolling this cut",
+            ));
+        }
+        let lowest = (-(previous.duration_ms - MIN_CLIP_DURATION_MS) as f64)
+            .max(-head_room(moka, &follower));
+        let highest =
+            tail_room(moka, &previous).min((follower.duration_ms - MIN_CLIP_DURATION_MS) as f64);
+        if lowest > highest {
+            continue;
+        }
+        let delta = (by_ms as f64).clamp(lowest, highest).round() as i64;
+        if delta == 0 {
+            continue;
+        }
+        let previous_end = previous.start_ms + previous.duration_ms + delta;
+        next.insert(
+            previous.id.clone(),
+            if delta > 0 {
+                extend_tail_to(moka, &previous, previous_end)?
+            } else {
+                trim_tail_to(moka, &previous, previous_end)?
+            },
+        );
+        let mut moved = clip.clone();
+        moved.start_ms += delta;
+        next.insert(clip.id.clone(), moved);
+        next.insert(
+            follower.id.clone(),
+            trim_head_to(moka, &follower, follower.start_ms + delta)?,
+        );
+    }
+    Ok(next.into_values().collect())
+}
+
+fn roll_planned_clips(
+    moka: &MokaFile,
+    timeline: &TimelineDocument,
+    after_clip_id: &str,
+    by_ms: i64,
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let leader = timeline
+        .clips
+        .iter()
+        .find(|clip| clip.id == after_clip_id)
+        .cloned()
+        .ok_or_else(|| CommandError::new("CLIP_NOT_FOUND", "Clip not found"))?;
+    let follower = follower_of(timeline, &leader).cloned().ok_or_else(|| {
+        CommandError::new(
+            "VALIDATION_FAILED",
+            "A roll needs two clips joined at the cut",
+        )
+    })?;
+    if follower.start_ms != leader.start_ms + leader.duration_ms {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A roll needs two clips joined at the cut",
+        ));
+    }
+    if timeline
+        .transitions
+        .iter()
+        .any(|transition| transition.after_clip_id == leader.id)
+    {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "Remove the transition before rolling this cut",
+        ));
+    }
+    let lowest =
+        (-(follower.duration_ms - MIN_CLIP_DURATION_MS) as f64).max(-head_room(moka, &follower));
+    let highest = (leader.duration_ms - MIN_CLIP_DURATION_MS) as f64;
+    let highest = highest.min(tail_room(moka, &leader));
+    if lowest > highest {
+        return Ok(timeline.clips.clone());
+    }
+    let delta = (by_ms as f64).clamp(lowest, highest).round() as i64;
+    if delta == 0 {
+        return Ok(timeline.clips.clone());
+    }
+    let mut next: HashMap<String, TimelineClip> = timeline
+        .clips
+        .iter()
+        .map(|clip| (clip.id.clone(), clip.clone()))
+        .collect();
+    let leader_end = leader.start_ms + leader.duration_ms + delta;
+    next.insert(
+        leader.id.clone(),
+        if delta > 0 {
+            extend_tail_to(moka, &leader, leader_end)?
+        } else {
+            trim_tail_to(moka, &leader, leader_end)?
+        },
+    );
+    next.insert(
+        follower.id.clone(),
+        trim_head_to(moka, &follower, follower.start_ms + delta)?,
+    );
+    Ok(next.into_values().collect())
+}
+
+fn range_planned_clips(
+    moka: &MokaFile,
+    timeline: &TimelineDocument,
+    start_ms: i64,
+    end_ms: i64,
+    scope: RippleScope,
+    track_id: Option<&str>,
+) -> Result<Vec<TimelineClip>, CommandError> {
+    let length = end_ms - start_ms;
+    let mut next = Vec::with_capacity(timeline.clips.len());
+    for clip in &timeline.clips {
+        if scope == RippleScope::Track && clip.track_id != track_id.unwrap_or_default() {
+            next.push(clip.clone());
+            continue;
+        }
+        let clip_end = clip.start_ms + clip.duration_ms;
+        if clip_end <= start_ms {
+            next.push(clip.clone());
+            continue;
+        }
+        if clip.start_ms >= end_ms {
+            let mut moved = clip.clone();
+            moved.start_ms -= length;
+            next.push(moved);
+            continue;
+        }
+        if clip.start_ms >= start_ms && clip_end <= end_ms {
+            continue;
+        }
+        if clip.start_ms < start_ms && clip_end > end_ms {
+            let (left, middle) = split_clip_at(moka, clip, start_ms)?;
+            let (_, right) = split_clip_at(moka, &middle, end_ms)?;
+            next.push(left);
+            let mut shifted = right;
+            shifted.start_ms -= length;
+            next.push(shifted);
+            continue;
+        }
+        if clip.start_ms < start_ms {
+            next.push(trim_tail_to(moka, clip, start_ms)?);
+            continue;
+        }
+        let mut tail = trim_head_to(moka, clip, end_ms)?;
+        tail.start_ms -= length;
+        next.push(tail);
+    }
+    Ok(next)
+}
+
 /// Applies one of the timeline commands and returns the new document plus
 /// the inverse commands. Anything else is a programming error: `commands.rs`
 /// routes only the timeline variants here.
@@ -1923,7 +2222,7 @@ pub fn apply_timeline_command(
                 .collect();
             let mut updated: HashMap<String, TimelineClip> = HashMap::new();
             let mut material_checked: Vec<TimelineClip> = Vec::new();
-            let mut inverses: Vec<DocumentCommand> = Vec::new();
+            let mut inverse_patches: Vec<ClipPatchEntry> = Vec::new();
             for entry in patches {
                 let clip = by_id
                     .get(entry.clip_id.as_str())
@@ -1949,12 +2248,9 @@ pub fn apply_timeline_command(
                 updated.insert(entry.clip_id.clone(), merged);
                 // The inverse patch carries back what this one moved, and
                 // nothing else — a field this patch brought in goes with a null.
-                inverses.push(DocumentCommand::UpdateClips {
-                    timeline_id: timeline_id.clone(),
-                    patches: vec![ClipPatchEntry {
-                        clip_id: entry.clip_id.clone(),
-                        patch: invert_clip_patch(clip, &entry.patch),
-                    }],
+                inverse_patches.push(ClipPatchEntry {
+                    clip_id: entry.clip_id.clone(),
+                    patch: invert_clip_patch(clip, &entry.patch),
                 });
             }
             let mut next = timeline.clone();
@@ -1975,8 +2271,15 @@ pub fn apply_timeline_command(
             for clip in &material_checked {
                 check_clip_within_asset(moka, clip)?;
             }
-            inverses.reverse();
-            Ok((replace_timeline(moka, next), inverses))
+            Ok((
+                replace_timeline(moka, next),
+                // One command over every patch: applied one by one, two clips
+                // moving past each other would be an overlap half way home.
+                vec![DocumentCommand::UpdateClips {
+                    timeline_id: timeline_id.clone(),
+                    patches: inverse_patches,
+                }],
+            ))
         }
 
         DocumentCommand::InsertClips {
@@ -2177,6 +2480,106 @@ pub fn apply_timeline_command(
                 })
                 .collect();
             apply_planned_clips(moka, timeline, final_clips)
+        }
+
+        DocumentCommand::SlipClips { timeline_id, edits } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if edits.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to update"));
+            }
+            let mut seen: HashSet<&str> = HashSet::new();
+            for edit in edits {
+                if !seen.insert(edit.clip_id.as_str()) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "A clip is patched twice in one step",
+                    ));
+                }
+                if !timeline.clips.iter().any(|clip| clip.id == edit.clip_id) {
+                    return Err(CommandError::new("CLIP_NOT_FOUND", "Clip not found"));
+                }
+            }
+            apply_planned_clips(moka, timeline, slip_planned_clips(moka, timeline, edits)?)
+        }
+
+        DocumentCommand::SlideClips { timeline_id, moves } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if moves.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to move"));
+            }
+            let mut seen: HashSet<&str> = HashSet::new();
+            for movement in moves {
+                if !seen.insert(movement.clip_id.as_str()) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "A clip is patched twice in one step",
+                    ));
+                }
+                if !timeline
+                    .clips
+                    .iter()
+                    .any(|clip| clip.id == movement.clip_id)
+                {
+                    return Err(CommandError::new("CLIP_NOT_FOUND", "Clip not found"));
+                }
+            }
+            apply_planned_clips(moka, timeline, slide_planned_clips(moka, timeline, moves)?)
+        }
+
+        DocumentCommand::RollEdit {
+            timeline_id,
+            after_clip_id,
+            by_ms,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            apply_planned_clips(
+                moka,
+                timeline,
+                roll_planned_clips(moka, timeline, after_clip_id, *by_ms)?,
+            )
+        }
+
+        DocumentCommand::RemoveRange {
+            timeline_id,
+            start_ms,
+            end_ms,
+            scope,
+            track_id,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if *start_ms < 0 || *end_ms <= *start_ms {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "The range to remove is empty",
+                ));
+            }
+            let scope = scope.unwrap_or(RippleScope::All);
+            if scope == RippleScope::Track && track_id.is_none() {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Removing from one row needs that row",
+                ));
+            }
+            if let Some(id) = track_id {
+                if !timeline.tracks.iter().any(|track| track.id == *id) {
+                    return Err(CommandError::new(
+                        "TRACK_NOT_FOUND",
+                        "Clip's track not found",
+                    ));
+                }
+            }
+            apply_planned_clips(
+                moka,
+                timeline,
+                range_planned_clips(
+                    moka,
+                    timeline,
+                    *start_ms,
+                    *end_ms,
+                    scope,
+                    track_id.as_deref(),
+                )?,
+            )
         }
 
         DocumentCommand::MoveClips { timeline_id, moves } => {

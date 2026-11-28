@@ -124,6 +124,10 @@ moka tools call clip.add --input '{"timelineId":"tl_1","kind":"video","assetId":
 moka tools call clip.ripple_delete --input '{"timelineId":"tl_1","clipIds":["cl_1"],"confirm":"delete-clips","scope":"all"}' --yes --json
 moka tools call clip.close_gaps --input '{"timelineId":"tl_1"}' --json
 moka tools call clip.delete_gap --input '{"timelineId":"tl_1","trackId":"tr_v1","atMs":8000}' --json
+moka tools call clip.slip --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","byMs":500}]}' --json
+moka tools call clip.slide --input '{"timelineId":"tl_1","moves":[{"clipId":"cl_2","byMs":200}]}' --json
+moka tools call clip.roll --input '{"timelineId":"tl_1","afterClipId":"cl_1","byMs":200}' --json
+moka tools call timeline.remove_range --input '{"timelineId":"tl_1","startMs":5000,"endMs":9000,"confirm":"remove-range"}' --yes --json
 moka tools call clip.split --input '{"timelineId":"tl_1","clipIds":["cl_1"],"atMs":12000}' --json
 moka tools call clip.add_transition --input ./transition.json --json
 moka tools call timeline.export --input '{"timelineId":"tl_1","destination":"/path/out.mp4","overwrite":false}' --yes --json
