@@ -163,6 +163,7 @@
     "textClipTooLong": "文本片段内容过长",
     "textClipWindow": "文本片段的窗口应等于自身时长",
     "textOutlineWidth": "文字描边宽度不是整数像素",
+    "trackLocked": "轨道「{{track}}」已锁定",
     "transitionClipNotFound": "转场对应的片段不存在",
     "transitionKindUnknown": "转场类型不在八种之列",
     "transitionNeedsFollower": "转场需要在其前导片段之后有一个片段",

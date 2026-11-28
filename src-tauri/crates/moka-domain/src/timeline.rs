@@ -86,6 +86,25 @@ pub fn track_accepts(track: &TimelineTrack, kind: TrackKind) -> bool {
     track.kind == kind
 }
 
+/// Refuses to touch a row whose lock says its clips are not the caller's to
+/// edit. A locked row may still be read; what it will not take is new work.
+/// Kept in the document layer so a caller writing commands directly cannot
+/// step around what the interface refuses.
+fn ensure_track_unlocked(timeline: &TimelineDocument, track_id: &str) -> Result<(), CommandError> {
+    let track = timeline
+        .tracks
+        .iter()
+        .find(|held| held.id == track_id)
+        .ok_or_else(|| CommandError::new("TRACK_NOT_FOUND", "Clip's track not found"))?;
+    if track.locked {
+        return Err(CommandError::new(
+            "TRACK_LOCKED",
+            format!("The “{}” track is locked", track.name),
+        ));
+    }
+    Ok(())
+}
+
 /// The end of a clip on the timeline's clock, kept in i128 so a document that
 /// arrived with absurd numbers cannot overflow the check that refuses it.
 fn clip_end(clip: &TimelineClip) -> i128 {
@@ -1207,6 +1226,7 @@ pub fn apply_timeline_command(
                     return Err(CommandError::new("CONFLICT", "Clip id already exists"));
                 }
                 check_clip(moka, timeline, clip)?;
+                ensure_track_unlocked(timeline, &clip.track_id)?;
             }
             let seams: &[TimelineTransition] = seams.as_deref().unwrap_or(&[]);
             // Restored seams are read against the clips as this command leaves
@@ -1270,6 +1290,9 @@ pub fn apply_timeline_command(
                     "CLIP_NOT_FOUND",
                     "Some clips were not found",
                 ));
+            }
+            for clip in &removed {
+                ensure_track_unlocked(timeline, &clip.track_id)?;
             }
             // Each seam transition goes with its seam, and both seams a removed
             // clip touched — the one ahead of it and the one behind it — go.
@@ -1335,6 +1358,7 @@ pub fn apply_timeline_command(
                     .get(entry.clip_id.as_str())
                     .copied()
                     .ok_or_else(|| CommandError::new("CLIP_NOT_FOUND", "Clip not found"))?;
+                ensure_track_unlocked(timeline, &clip.track_id)?;
                 if updated.contains_key(&entry.clip_id) {
                     return Err(CommandError::new(
                         "CONFLICT",
@@ -1419,6 +1443,8 @@ pub fn apply_timeline_command(
                         ),
                     ));
                 }
+                ensure_track_unlocked(timeline, &clip.track_id)?;
+                ensure_track_unlocked(timeline, target_track_id)?;
                 if held_move.start_ms < 0 {
                     return Err(CommandError::new(
                         "VALIDATION_FAILED",
@@ -1510,6 +1536,13 @@ pub fn apply_timeline_command(
                         "That seam already carries a transition",
                     ));
                 }
+                if let Some(leader) = timeline
+                    .clips
+                    .iter()
+                    .find(|clip| clip.id == transition.after_clip_id)
+                {
+                    ensure_track_unlocked(timeline, &leader.track_id)?;
+                }
                 check_transition_landing(timeline, transition)?;
             }
             // Install the records and pull each follower back as the timeline
@@ -1597,6 +1630,7 @@ pub fn apply_timeline_command(
                         "The seam a transition names is not on the timeline",
                     ));
                 };
+                ensure_track_unlocked(&working, &leader.track_id)?;
                 let start_ms = to_i64(leader.start_ms as i128 + leader.duration_ms as i128);
                 if let Some(clip) = working.clips.iter_mut().find(|clip| clip.id == follower.id) {
                     clip.start_ms = start_ms;

@@ -635,6 +635,150 @@ fn locks_a_track_and_the_undo_unlocks_it() {
     assert!(video.locked);
 }
 
+#[test]
+fn refuses_every_clip_edit_on_a_locked_track() {
+    let moka = timeline_fixture();
+    let (locked, _) = apply(
+        &moka,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: VIDEO_TRACK.into(),
+            patch: TrackPatch {
+                locked: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    let follower = clip_of(&locked, FOLLOWER_ASSET, VIDEO_TRACK, 4_000);
+    assert_eq!(code_of(&locked, add_clips(vec![follower])), "TRACK_LOCKED");
+    assert_eq!(
+        code_of(
+            &locked,
+            DocumentCommand::UpdateClips {
+                timeline_id: TIMELINE.into(),
+                patches: vec![ClipPatchEntry {
+                    clip_id: VIDEO_CLIP.into(),
+                    patch: ClipPatch {
+                        volume: Some(0.5),
+                        ..Default::default()
+                    },
+                }],
+            }
+        ),
+        "TRACK_LOCKED"
+    );
+    assert_eq!(
+        code_of(
+            &locked,
+            DocumentCommand::MoveClips {
+                timeline_id: TIMELINE.into(),
+                moves: vec![ClipMove {
+                    clip_id: VIDEO_CLIP.into(),
+                    start_ms: 1_000,
+                    track_id: None,
+                }],
+            }
+        ),
+        "TRACK_LOCKED"
+    );
+    assert_eq!(
+        code_of(
+            &locked,
+            DocumentCommand::RemoveClips {
+                timeline_id: TIMELINE.into(),
+                clip_ids: vec![VIDEO_CLIP.into()],
+            }
+        ),
+        "TRACK_LOCKED"
+    );
+
+    let (unlocked, _) = apply(
+        &locked,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: VIDEO_TRACK.into(),
+            patch: TrackPatch {
+                locked: Some(false),
+                ..Default::default()
+            },
+        }],
+    );
+    assert!(
+        !unlocked.timelines.as_ref().unwrap()[0]
+            .tracks
+            .iter()
+            .find(|track| track.id == VIDEO_TRACK)
+            .unwrap()
+            .locked
+    );
+}
+
+#[test]
+fn refuses_a_seam_on_a_locked_track_and_a_move_onto_one() {
+    let moka = timeline_fixture();
+    let (paired, _) = pair_at(&moka, 4_000);
+    let (locked, _) = apply(
+        &paired,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: VIDEO_TRACK.into(),
+            patch: TrackPatch {
+                locked: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        code_of(
+            &locked,
+            DocumentCommand::AddTransitions {
+                timeline_id: TIMELINE.into(),
+                transitions: vec![transition(
+                    "transition-locked",
+                    VIDEO_CLIP,
+                    TransitionKind::Crossfade,
+                    500,
+                )],
+            }
+        ),
+        "TRACK_LOCKED"
+    );
+
+    let (with_row, _) = apply(
+        &moka,
+        vec![DocumentCommand::AddTrack {
+            timeline_id: TIMELINE.into(),
+            track: track("track-video-2", TrackKind::Video, "Video 2"),
+            index: None,
+        }],
+    );
+    let (with_locked_row, _) = apply(
+        &with_row,
+        vec![DocumentCommand::UpdateTrack {
+            timeline_id: TIMELINE.into(),
+            track_id: "track-video-2".into(),
+            patch: TrackPatch {
+                locked: Some(true),
+                ..Default::default()
+            },
+        }],
+    );
+    assert_eq!(
+        code_of(
+            &with_locked_row,
+            DocumentCommand::MoveClips {
+                timeline_id: TIMELINE.into(),
+                moves: vec![ClipMove {
+                    clip_id: VIDEO_CLIP.into(),
+                    start_ms: 8_000,
+                    track_id: Some("track-video-2".into()),
+                }],
+            }
+        ),
+        "TRACK_LOCKED"
+    );
+}
+
 // Clips -----------------------------------------------------------------
 
 #[test]

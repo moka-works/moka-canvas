@@ -86,6 +86,7 @@
   "taskExpired": "生成任务 {{task}} 已过期，结果无法取回",
   "taskNotFound": "生成任务 {{task}} 不存在或已被回收",
   "timelineNotFound": "时间线不存在",
+  "trackLocked": "该轨道已锁定",
   "trackNotEmpty": "该轨道上还有片段，无法删除",
   "trackNotFound": "轨道不存在",
   "transitionNotFound": "转场不存在",

@@ -86,6 +86,7 @@
   "taskExpired": "generation task expired before it was collected",
   "taskNotFound": "no generation task is being tracked",
   "timelineNotFound": "Timeline not found",
+  "trackLocked": "That track is locked",
   "trackNotEmpty": "That track still holds clips",
   "trackNotFound": "Track not found",
   "transitionNotFound": "Some transitions were not found",

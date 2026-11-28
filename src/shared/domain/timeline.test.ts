@@ -307,6 +307,123 @@ describe("track commands", () => {
     )!;
     expect(video.locked).toBe(true);
   });
+
+  it("refuses every clip edit on a locked row, and still lets the row be unlocked", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const locked = apply(moka, {
+      type: "updateTrack",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      patch: { locked: true },
+    }).next;
+    const follower = clipOf(locked, ids.followerAsset, ids.videoTrack, 4_000);
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "addClips",
+          timelineId: ids.timeline,
+          clips: [follower],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "updateClips",
+          timelineId: ids.timeline,
+          patches: [{ clipId: ids.videoClip, patch: { volume: 0.5 } }],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "moveClips",
+          timelineId: ids.timeline,
+          moves: [{ clipId: ids.videoClip, startMs: 1_000 }],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "removeClips",
+          timelineId: ids.timeline,
+          clipIds: [ids.videoClip],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+
+    const unlocked = apply(locked, {
+      type: "updateTrack",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      patch: { locked: false },
+    }).next;
+    expect(
+      unlocked.timelines![0].tracks.find((t) => t.id === ids.videoTrack)!
+        .locked,
+    ).toBe(false);
+  });
+
+  it("refuses a seam on a locked row and a move onto a locked row", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const paired = pairAt(moka, ids, 4_000);
+    const locked = apply(paired, {
+      type: "updateTrack",
+      timelineId: ids.timeline,
+      trackId: ids.videoTrack,
+      patch: { locked: true },
+    }).next;
+    expect(
+      codeOf(() =>
+        apply(locked, {
+          type: "addTransitions",
+          timelineId: ids.timeline,
+          transitions: [
+            {
+              id: "transition-locked",
+              afterClipId: ids.videoClip,
+              kind: "crossfade",
+              durationMs: DEFAULT_TRANSITION_MS,
+              createdAt: NOW,
+            },
+          ],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+
+    const withRow = apply(moka, {
+      type: "addTrack",
+      timelineId: ids.timeline,
+      track: {
+        id: "track-video-2",
+        kind: "video",
+        name: "Video 2",
+        muted: false,
+        hidden: false,
+        locked: true,
+        createdAt: NOW,
+      },
+    }).next;
+    expect(
+      codeOf(() =>
+        apply(withRow, {
+          type: "moveClips",
+          timelineId: ids.timeline,
+          moves: [
+            {
+              clipId: ids.videoClip,
+              startMs: 8_000,
+              trackId: "track-video-2",
+            },
+          ],
+        }),
+      ),
+    ).toBe("TRACK_LOCKED");
+  });
 });
 
 describe("clip commands", () => {

@@ -107,6 +107,7 @@ import {
   checkHexColor,
   checkNoOverlap,
   checkTimeline,
+  checkTracksUnlocked,
   checkTransitionLanding,
   checkTransitionRestoration,
   followerOf,
@@ -1729,6 +1730,10 @@ function applyOne(
         known.add(clip.id);
         checkClip(moka, timeline, clip);
       }
+      checkTracksUnlocked(
+        timeline,
+        command.clips.map((clip) => clip.trackId),
+      );
       const seams = command.seams ?? [];
       // Restored seams are read against the clips as this command leaves
       // them: a seam's leader may be a clip already on the timeline or one
@@ -1791,6 +1796,10 @@ function applyOne(
           "CLIP_NOT_FOUND",
           i18n.t("errors:command.someClipsNotFound"),
         );
+      checkTracksUnlocked(
+        timeline,
+        removed.map((clip) => clip.trackId),
+      );
       // Each seam transition goes with its seam, and both seams a removed
       // clip touched — the one ahead of it and the one behind it — go.
       const removedTransitions = transitionsOfSeams(timeline, command.clipIds);
@@ -1844,6 +1853,7 @@ function applyOne(
             "CLIP_NOT_FOUND",
             i18n.t("errors:command.clipNotFound"),
           );
+        checkTracksUnlocked(timeline, [clip.trackId]);
         if (updated.has(clipId))
           throw new CommandError(
             "CONFLICT",
@@ -1913,6 +1923,7 @@ function applyOne(
               trackKind: target.kind,
             }),
           );
+        checkTracksUnlocked(timeline, [clip.trackId, targetTrackId]);
         if (!Number.isInteger(startMs) || startMs < 0)
           throw new CommandError(
             "VALIDATION_FAILED",
@@ -1984,6 +1995,10 @@ function applyOne(
             i18n.t("errors:command.seamTaken"),
           );
         seamLeaders.add(transition.afterClipId);
+        const leader = timeline.clips.find(
+          (clip) => clip.id === transition.afterClipId,
+        );
+        if (leader) checkTracksUnlocked(timeline, [leader.trackId]);
         checkTransitionLanding(timeline, transition);
       }
       // Install the records and pull each follower back as the timeline
@@ -2051,6 +2066,7 @@ function applyOne(
             "TRANSITION_NOT_FOUND",
             i18n.t("errors:command.seamMissing"),
           );
+        checkTracksUnlocked(working, [leader.trackId]);
         const startMs = leader.startMs + leader.durationMs;
         working = {
           ...working,

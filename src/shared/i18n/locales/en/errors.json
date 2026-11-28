@@ -163,6 +163,7 @@
     "textClipTooLong": "Text clip content is too long",
     "textClipWindow": "A text clip's window is its own duration",
     "textOutlineWidth": "Text outline width is not a whole count of pixels",
+    "trackLocked": "The “{{track}}” track is locked",
     "transitionClipNotFound": "Transition's clip not found",
     "transitionKindUnknown": "Transition kind is not one of the eight",
     "transitionNeedsFollower": "A transition needs a clip behind the one it follows",

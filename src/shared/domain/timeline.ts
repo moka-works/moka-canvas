@@ -43,6 +43,29 @@ export function trackAccepts(
   return track.kind === kind;
 }
 
+/**
+ * Refuses to touch a row whose lock says its clips are not the caller's to
+ * edit. A locked row may still be pointed at and read; what it will not take
+ * is new work. The lock is asked of both layers so a caller that writes
+ * commands directly cannot step around what the interface refuses.
+ */
+export function checkTracksUnlocked(
+  timeline: TimelineDocument,
+  trackIds: Iterable<TrackId>,
+): void {
+  const seen = new Set<TrackId>();
+  for (const trackId of trackIds) {
+    if (seen.has(trackId)) continue;
+    seen.add(trackId);
+    const track = timeline.tracks.find((held) => held.id === trackId);
+    if (track?.locked)
+      throw new CommandError(
+        "TRACK_LOCKED",
+        i18n.t("errors:timeline.trackLocked", { track: track.name }),
+      );
+  }
+}
+
 interface ClipInterval {
   startMs: number;
   endMs: number;
