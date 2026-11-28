@@ -1855,3 +1855,78 @@ describe("slip, slide, roll and range edits", () => {
     ]);
   });
 });
+
+describe("markers and the working range", () => {
+  it("adds, edits and removes markers, and the codec keeps them", () => {
+    const moka = buildTimelineMokaFile();
+    moka.timelines![0].schemaVersion = 2;
+    const ids = timelineIds();
+    const withMarkers = expectRoundTrip(moka, {
+      type: "addMarkers",
+      timelineId: ids.timeline,
+      markers: [
+        { id: "marker-1", atMs: 1_000, label: "Verse", color: "yellow" },
+        { id: "marker-2", atMs: 3_000, label: "Drop", color: "red" },
+      ],
+    });
+    expect(withMarkers.timelines![0].markers).toHaveLength(2);
+    expect(
+      decodeMokaFile(encodeMokaFile(withMarkers)).timelines![0].markers,
+    ).toEqual(withMarkers.timelines![0].markers);
+
+    const updated = expectRoundTrip(withMarkers, {
+      type: "updateMarkers",
+      timelineId: ids.timeline,
+      patches: [
+        { markerId: "marker-1", atMs: 1_500, label: "Chorus", color: "blue" },
+      ],
+    });
+    expect(
+      updated.timelines![0].markers!.find((marker) => marker.id === "marker-1"),
+    ).toMatchObject({ atMs: 1_500, label: "Chorus", color: "blue" });
+
+    const removed = expectRoundTrip(updated, {
+      type: "removeMarkers",
+      timelineId: ids.timeline,
+      markerIds: ["marker-2"],
+    });
+    expect(removed.timelines![0].markers).toHaveLength(1);
+  });
+
+  it("sets and clears the working range", () => {
+    const moka = buildTimelineMokaFile();
+    moka.timelines![0].schemaVersion = 2;
+    const ids = timelineIds();
+    const set = expectRoundTrip(moka, {
+      type: "setTimelineRange",
+      timelineId: ids.timeline,
+      inMs: 1_000,
+      outMs: 3_000,
+    });
+    expect([set.timelines![0].inPointMs, set.timelines![0].outPointMs]).toEqual(
+      [1_000, 3_000],
+    );
+    const cleared = expectRoundTrip(set, {
+      type: "setTimelineRange",
+      timelineId: ids.timeline,
+      inMs: null,
+      outMs: null,
+    });
+    expect([
+      cleared.timelines![0].inPointMs,
+      cleared.timelines![0].outPointMs,
+    ]).toEqual([undefined, undefined]);
+  });
+
+  it("moves an older timeline to the current schema when it gains a marker", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    moka.timelines![0].schemaVersion = 1;
+    const next = apply(moka, {
+      type: "addMarkers",
+      timelineId: ids.timeline,
+      markers: [{ id: "marker-1", atMs: 0, label: "Head", color: "white" }],
+    }).next;
+    expect(next.timelines![0].schemaVersion).toBe(2);
+  });
+});

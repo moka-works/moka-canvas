@@ -273,6 +273,80 @@ export function cutSelection(): void {
   deleteSelection();
 }
 
+/** Names the playhead's moment, one more than the cut's own markers. */
+export function addMarkerAtPlayhead(): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const markers = timeline.markers ?? [];
+  const atMs = frameAligned(
+    useClipStore.getState().playheadMs,
+    timeline.settings.fps,
+  );
+  const marker = {
+    id: newId(),
+    atMs,
+    label: i18n.t("clip:markers.default", { n: markers.length + 1 }),
+    color: "white" as const,
+  };
+  execute(i18n.t("clip:history.addMarker"), [
+    { type: "addMarkers", timelineId: timeline.id, markers: [marker] },
+  ]);
+}
+
+export function removeMarker(markerId: string): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  execute(i18n.t("clip:history.removeMarker"), [
+    { type: "removeMarkers", timelineId: timeline.id, markerIds: [markerId] },
+  ]);
+}
+
+export function clearMarkers(): void {
+  const timeline = activeTimeline();
+  if (!timeline || (timeline.markers ?? []).length === 0) return;
+  execute(i18n.t("clip:history.clearMarkers"), [
+    { type: "removeMarkers", timelineId: timeline.id, all: true },
+  ]);
+}
+
+/** Sets one edge of the working range at the playhead. */
+export function setRangeEdge(edge: "in" | "out"): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const atMs = frameAligned(
+    useClipStore.getState().playheadMs,
+    timeline.settings.fps,
+  );
+  const currentIn = timeline.inPointMs ?? null;
+  const currentOut = timeline.outPointMs ?? null;
+  let inMs = currentIn;
+  let outMs = currentOut;
+  if (edge === "in") {
+    inMs = atMs;
+    if (outMs !== null && inMs >= outMs) outMs = null;
+  } else {
+    outMs = atMs;
+    if (inMs !== null && outMs <= inMs) inMs = null;
+  }
+  execute(i18n.t("clip:history.setRange"), [
+    { type: "setTimelineRange", timelineId: timeline.id, inMs, outMs },
+  ]);
+}
+
+export function clearRange(): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  if (timeline.inPointMs == null && timeline.outPointMs == null) return;
+  execute(i18n.t("clip:history.clearRange"), [
+    {
+      type: "setTimelineRange",
+      timelineId: timeline.id,
+      inMs: null,
+      outMs: null,
+    },
+  ]);
+}
+
 /** Pulls a row's clips left until its gaps are gone, or every row's. */
 export function closeGapsOn(trackId?: TrackId): void {
   const timeline = activeTimeline();

@@ -142,7 +142,7 @@ export const MAX_ASSET_NAME_LENGTH = 200;
 // The cutting room
 // ---------------------------------------------------------------------------
 
-export const TIMELINE_SCHEMA_VERSION = 1;
+export const TIMELINE_SCHEMA_VERSION = 2;
 /** How many timelines one project's cutting room holds. */
 export const MAX_TIMELINES_PER_PROJECT = 12;
 /** How many tracks one timeline holds, video, audio, and text together. */
@@ -151,6 +151,19 @@ export const MAX_TRACKS_PER_TIMELINE = 8;
 export const MAX_CLIPS_PER_TIMELINE = 400;
 /** How many transitions one timeline holds. */
 export const MAX_TRANSITIONS_PER_TIMELINE = 100;
+/** How many markers one timeline holds. */
+export const MAX_MARKERS_PER_TIMELINE = 200;
+/** The colours a marker may wear. */
+export const MARKER_COLORS = [
+  "white",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+  "red",
+] as const;
+export type MarkerColor = (typeof MARKER_COLORS)[number];
+export const MARKER_LABEL_MAX = 40;
 export const TIMELINE_NAME_MAX = 80;
 /** How long a clip's label may run, which is a name rather than a text. */
 export const CLIP_LABEL_MAX = 80;

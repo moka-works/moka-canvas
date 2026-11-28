@@ -766,6 +766,29 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("trackId", "string", "The row, when scope is track"),
             ("confirm", "string", "Must be non-empty"),
         ])),
+        command("clip.add_marker", "clip", ToolRisk::Write, "Name a place on the cut.", schema(&["timelineId", "atMs"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("atMs", "integer", "The moment to mark"),
+            ("label", "string", "Marker name"),
+            ("color", "string", "white, yellow, green, blue, purple, or red"),
+        ])),
+        command("clip.update_marker", "clip", ToolRisk::Write, "Change a marker's moment, name or colour.", schema(&["timelineId", "markerId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("markerId", "string", "Marker id"),
+            ("atMs", "integer", "New moment"),
+            ("label", "string", "New name"),
+            ("color", "string", "New colour"),
+        ])),
+        command("clip.remove_markers", "clip", ToolRisk::Write, "Remove markers by id, or every marker.", schema(&["timelineId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("markerIds", "array", "Markers to remove"),
+            ("all", "boolean", "Remove every marker"),
+        ])),
+        command("timeline.set_range", "clip", ToolRisk::Write, "Set or clear the timeline's working range.", schema(&["timelineId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("inMs", "integer", "Range start; omit both to clear"),
+            ("outMs", "integer", "Range end"),
+        ])),
         command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
             ("timelineId", "string", "Timeline id"),
             ("clipId", "string", "Clip id"),

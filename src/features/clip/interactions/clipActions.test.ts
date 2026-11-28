@@ -27,8 +27,10 @@ import {
   addAssetAtPlayhead,
   addAssetsAtPlayhead,
   addTrackOfKind,
+  addMarkerAtPlayhead,
   alignSelection,
   clearClipboard,
+  clearRange,
   clickSelection,
   clipsCrossingPlayhead,
   copySelection,
@@ -45,6 +47,7 @@ import {
   removeTrack,
   rippleDeleteSelection,
   rippleTrimToPlayhead,
+  setRangeEdge,
   renameTrack,
   selectAll,
   selectedClips,
@@ -1156,5 +1159,31 @@ describe("ripple trimming to the playhead", () => {
     expect([cut().clips[0].startMs, cut().clips[0].durationMs]).toEqual([
       0, 2_000,
     ]);
+  });
+});
+
+describe("markers and the working range", () => {
+  it("marks the playhead and sets both edges of the range", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      playheadMs: 2_000,
+    });
+
+    addMarkerAtPlayhead();
+    const marker = cut().markers![0];
+    expect([marker.atMs, marker.label, marker.color]).toEqual([
+      2_000,
+      "Marker 1",
+      "white",
+    ]);
+
+    setRangeEdge("in");
+    useClipStore.getState().setPlayhead(3_000);
+    setRangeEdge("out");
+    expect([cut().inPointMs, cut().outPointMs]).toEqual([2_000, 3_000]);
+
+    clearRange();
+    expect([cut().inPointMs, cut().outPointMs]).toEqual([undefined, undefined]);
   });
 });

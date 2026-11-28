@@ -128,6 +128,8 @@ moka tools call clip.slip --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1
 moka tools call clip.slide --input '{"timelineId":"tl_1","moves":[{"clipId":"cl_2","byMs":200}]}' --json
 moka tools call clip.roll --input '{"timelineId":"tl_1","afterClipId":"cl_1","byMs":200}' --json
 moka tools call timeline.remove_range --input '{"timelineId":"tl_1","startMs":5000,"endMs":9000,"confirm":"remove-range"}' --yes --json
+moka tools call clip.add_marker --input '{"timelineId":"tl_1","atMs":12000,"label":"Chorus","color":"yellow"}' --json
+moka tools call timeline.set_range --input '{"timelineId":"tl_1","inMs":2000,"outMs":15000}' --json
 moka tools call clip.split --input '{"timelineId":"tl_1","clipIds":["cl_1"],"atMs":12000}' --json
 moka tools call clip.add_transition --input ./transition.json --json
 moka tools call timeline.export --input '{"timelineId":"tl_1","destination":"/path/out.mp4","overwrite":false}' --yes --json

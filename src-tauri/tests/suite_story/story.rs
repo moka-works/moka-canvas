@@ -117,6 +117,9 @@ fn timeline() -> TimelineDocument {
         tracks: Vec::new(),
         clips: Vec::new(),
         transitions: Vec::new(),
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }

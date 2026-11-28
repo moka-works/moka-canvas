@@ -1555,6 +1555,10 @@ fn apply_one(
         | DocumentCommand::SlideClips { .. }
         | DocumentCommand::RollEdit { .. }
         | DocumentCommand::RemoveRange { .. }
+        | DocumentCommand::AddMarkers { .. }
+        | DocumentCommand::UpdateMarkers { .. }
+        | DocumentCommand::RemoveMarkers { .. }
+        | DocumentCommand::SetTimelineRange { .. }
         | DocumentCommand::RemoveClips { .. }
         | DocumentCommand::UpdateClips { .. }
         | DocumentCommand::MoveClips { .. }

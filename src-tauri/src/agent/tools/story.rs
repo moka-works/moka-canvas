@@ -2893,6 +2893,9 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                 tracks,
                 clips,
                 transitions: Vec::new(),
+                markers: None,
+                in_point_ms: None,
+                out_point_ms: None,
                 created_at: now.clone(),
                 updated_at: now,
             };

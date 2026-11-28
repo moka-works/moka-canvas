@@ -83,6 +83,19 @@ describe("catching an edge", () => {
     expect(snapExtremes([4_050, 8_000], ctx, 60, false)).toBeNull();
   });
 
+  it("catches markers and the edges of the working range", () => {
+    const timeline = cut();
+    timeline.markers = [
+      { id: "marker-1", atMs: 1_200, label: "Verse", color: "yellow" },
+    ];
+    timeline.inPointMs = 800;
+    timeline.outPointMs = 7_500;
+    const ctx = snapContext(timeline, 0, []);
+    expect(ctx.edges).toContain(1_200);
+    expect(ctx.edges).toContain(800);
+    expect(ctx.edges).toContain(7_500);
+  });
+
   it("picks the nearer of two moving edges and moves the group by its catch", () => {
     const ctx = videoContext();
     // A block carried with edges at 3,960 and 6,000: its head is 40ms from

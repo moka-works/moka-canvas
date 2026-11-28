@@ -56,6 +56,10 @@
       "backSecond": "Back one second",
       "backToHead": "Back to the head",
       "clearSelection": "Clear the selection",
+      "addMarker": "Add a marker",
+      "setIn": "Set the in point",
+      "setOut": "Set the out point",
+      "clearRange": "Clear the in and out points",
       "editSubtitle": "Edit a subtitle",
       "forwardFrame": "Forward one frame",
       "forwardSecond": "Forward one second",
@@ -89,6 +93,10 @@
       "shiftDelete": "Shift + Delete",
       "q": "Q",
       "w": "W",
+      "i": "I",
+      "m": "M",
+      "o": "O",
+      "shiftX": "Shift + X",
       "shiftLeft": "Shift + ←",
       "shiftRight": "Shift + →",
       "space": "Space",
@@ -98,6 +106,9 @@
   "stage": {
     "splitHint": "Drag to give the preview more or less room — double-click for 60/40",
     "splitLabel": "Height of the preview"
+  },
+  "markers": {
+    "default": "Marker {{n}}"
   },
   "menu": {
     "addSubtitle": "Add subtitle here",
@@ -457,6 +468,11 @@
     "deleteGap": "Delete gap",
 
     "addTextClip": "Add text clip",
+    "addMarker": "Add a marker",
+    "removeMarker": "Remove a marker",
+    "clearMarkers": "Clear markers",
+    "setRange": "Set the working range",
+    "clearRange": "Clear the working range",
     "addTimeline": "Add timeline",
     "addTrack": "Add track",
     "addTransition": "Add transition",

@@ -3,6 +3,7 @@ import type {
   AssetOrigin,
   Capability,
   ClipFilterPreset,
+  MarkerColor,
   ProblemCode,
   TransitionKind,
 } from "./constants";
@@ -354,6 +355,13 @@ export interface TimelineSettings {
  * clip moved between rows is one field's change and the rows are an order the
  * reader chose, not one the document has to keep in two places.
  */
+export interface TimelineMarker {
+  id: string;
+  atMs: number;
+  label: string;
+  color: MarkerColor;
+}
+
 export interface TimelineDocument {
   id: TimelineId;
   name: string;
@@ -362,6 +370,11 @@ export interface TimelineDocument {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
   transitions: TimelineTransition[];
+  /** Places worth finding again; absent on a timeline that names none. */
+  markers?: TimelineMarker[];
+  /** The range a reader marked, when they marked one. */
+  inPointMs?: number | null;
+  outPointMs?: number | null;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
 }
@@ -1798,6 +1811,35 @@ export type DocumentCommand =
       timelineId: TimelineId;
       afterClipId: ClipId;
       byMs: number;
+    }
+  /** Names places on the cut worth finding again. */
+  | {
+      type: "addMarkers";
+      timelineId: TimelineId;
+      markers: TimelineMarker[];
+    }
+  | {
+      type: "updateMarkers";
+      timelineId: TimelineId;
+      patches: {
+        markerId: string;
+        atMs?: number;
+        label?: string;
+        color?: MarkerColor;
+      }[];
+    }
+  | {
+      type: "removeMarkers";
+      timelineId: TimelineId;
+      markerIds?: string[];
+      all?: boolean;
+    }
+  /** Marks the range a reader works on, or clears it with nulls. */
+  | {
+      type: "setTimelineRange";
+      timelineId: TimelineId;
+      inMs: number | null;
+      outMs: number | null;
     }
   /** Takes a stretch of time out, from every row or from one. */
   | {

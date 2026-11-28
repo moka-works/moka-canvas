@@ -39,6 +39,9 @@ export function snapContext(
     if (carried.has(clip.id)) continue;
     edges.push(clip.startMs, clip.startMs + clip.durationMs);
   }
+  for (const marker of timeline.markers ?? []) edges.push(marker.atMs);
+  if (timeline.inPointMs != null) edges.push(timeline.inPointMs);
+  if (timeline.outPointMs != null) edges.push(timeline.outPointMs);
   return { playheadMs, edges };
 }
 

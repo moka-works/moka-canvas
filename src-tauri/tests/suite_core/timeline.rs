@@ -12,8 +12,8 @@ use moka_canvas::domain::{
     new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip,
     DocumentCommand, InsertMode, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry,
     RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
-    TimelineDocument, TimelineSettings, TimelineSettingsPatch, TimelineTrack, TimelineTransition,
-    TrackKind, TrackPatch, TransitionKind, MOKA_FILE_VERSION,
+    TimelineDocument, TimelineMarker, TimelineSettings, TimelineSettingsPatch, TimelineTrack,
+    TimelineTransition, TrackKind, TrackPatch, TransitionKind, MOKA_FILE_VERSION,
 };
 use moka_canvas::project::codec::{decode_moka_file, encode_moka_file};
 use moka_canvas::project::store::ProjectRegistry;
@@ -282,6 +282,9 @@ fn create_timeline(name: &str) -> TimelineDocument {
         ],
         clips: Vec::new(),
         transitions: Vec::new(),
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }
@@ -331,6 +334,9 @@ fn timeline_fixture() -> MokaFile {
             text: None,
         }],
         transitions: Vec::new(),
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
     }]);
@@ -1578,6 +1584,121 @@ fn takes_a_range_out_across_every_row() {
             .collect::<Vec<_>>(),
         vec![[0, 1_000], [1_000, 1_000], [2_000, 2_000]]
     );
+}
+
+#[test]
+fn adds_edits_and_removes_markers_and_keeps_the_range() {
+    let mut moka = timeline_fixture();
+    moka.timelines.as_mut().unwrap()[0].schema_version = 2;
+    let with_markers = round_trip(
+        &moka,
+        vec![DocumentCommand::AddMarkers {
+            timeline_id: TIMELINE.into(),
+            markers: vec![
+                TimelineMarker {
+                    id: "marker-1".into(),
+                    at_ms: 1_000,
+                    label: "Verse".into(),
+                    color: "yellow".into(),
+                },
+                TimelineMarker {
+                    id: "marker-2".into(),
+                    at_ms: 3_000,
+                    label: "Drop".into(),
+                    color: "red".into(),
+                },
+            ],
+        }],
+    );
+    assert_eq!(
+        with_markers.timelines.as_ref().unwrap()[0]
+            .markers
+            .as_ref()
+            .unwrap()
+            .len(),
+        2
+    );
+    let updated = round_trip(
+        &with_markers,
+        vec![DocumentCommand::UpdateMarkers {
+            timeline_id: TIMELINE.into(),
+            patches: vec![moka_canvas::domain::MarkerPatch {
+                marker_id: "marker-1".into(),
+                at_ms: Some(1_500),
+                label: Some("Chorus".into()),
+                color: Some("blue".into()),
+            }],
+        }],
+    );
+    let marker = updated.timelines.as_ref().unwrap()[0]
+        .markers
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|marker| marker.id == "marker-1")
+        .unwrap();
+    assert_eq!(marker.at_ms, 1_500);
+    assert_eq!(marker.label, "Chorus");
+    assert_eq!(marker.color, "blue");
+    let removed = round_trip(
+        &updated,
+        vec![DocumentCommand::RemoveMarkers {
+            timeline_id: TIMELINE.into(),
+            marker_ids: Some(vec!["marker-2".into()]),
+            all: None,
+        }],
+    );
+    assert_eq!(
+        removed.timelines.as_ref().unwrap()[0]
+            .markers
+            .as_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let ranged = round_trip(
+        &moka,
+        vec![DocumentCommand::SetTimelineRange {
+            timeline_id: TIMELINE.into(),
+            in_ms: Some(1_000),
+            out_ms: Some(3_000),
+        }],
+    );
+    let timeline = &ranged.timelines.as_ref().unwrap()[0];
+    assert_eq!(
+        [timeline.in_point_ms, timeline.out_point_ms],
+        [Some(1_000), Some(3_000)]
+    );
+    let cleared = round_trip(
+        &ranged,
+        vec![DocumentCommand::SetTimelineRange {
+            timeline_id: TIMELINE.into(),
+            in_ms: None,
+            out_ms: None,
+        }],
+    );
+    let timeline = &cleared.timelines.as_ref().unwrap()[0];
+    assert_eq!([timeline.in_point_ms, timeline.out_point_ms], [None, None]);
+}
+
+#[test]
+fn moves_an_older_timeline_to_the_current_schema_when_it_gains_a_marker() {
+    let moka = timeline_fixture();
+    assert_eq!(moka.timelines.as_ref().unwrap()[0].schema_version, 1);
+    let (next, _) = apply(
+        &moka,
+        vec![DocumentCommand::AddMarkers {
+            timeline_id: TIMELINE.into(),
+            markers: vec![TimelineMarker {
+                id: "marker-1".into(),
+                at_ms: 0,
+                label: "Head".into(),
+                color: "white".into(),
+            }],
+        }],
+    );
+    assert_eq!(next.timelines.as_ref().unwrap()[0].schema_version, 2);
 }
 
 // Transitions -----------------------------------------------------------

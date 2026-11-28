@@ -10,10 +10,12 @@ import {
   REFERENCE_IMAGES_DEFAULT,
   REFERENCE_IMAGES_MAX,
   STORY_SCHEMA_VERSION,
+  MARKER_COLORS,
   TIMELINE_SCHEMA_VERSION,
   TRANSITION_KINDS,
 } from "./constants";
 import type {
+  MarkerColor,
   ProblemCode,
   ClipFilterPreset,
   TransitionKind,
@@ -408,6 +410,22 @@ function encodeTimeline(timeline: TimelineDocument): Record<string, unknown> {
     tracks: timeline.tracks.map(encodeTrack),
     clips: timeline.clips.map(encodeClip),
     transitions: timeline.transitions.map(encodeTransition),
+    ...(timeline.markers !== undefined
+      ? {
+          markers: timeline.markers.map((marker) => ({
+            id: marker.id,
+            atMs: asLong(marker.atMs),
+            label: marker.label,
+            color: marker.color,
+          })),
+        }
+      : {}),
+    ...(timeline.inPointMs !== undefined
+      ? { inPointMs: timeline.inPointMs }
+      : {}),
+    ...(timeline.outPointMs !== undefined
+      ? { outPointMs: timeline.outPointMs }
+      : {}),
     createdAt: timeline.createdAt,
     updatedAt: timeline.updatedAt,
   };
@@ -1535,6 +1553,56 @@ function decodeTimeline(value: unknown): TimelineDocument {
     transitions: asArray(doc.transitions, "timelines[].transitions").map(
       decodeTransition,
     ),
+    ...(doc.markers === undefined
+      ? {}
+      : {
+          markers: asArray(doc.markers, "timelines[].markers").map((value) => {
+            const marker = asRecord(value, "timelines[].markers[]");
+            const color = asString(marker.color, "timelines[].markers[].color");
+            if (!(MARKER_COLORS as readonly string[]).includes(color))
+              throw new MokaCodecError(
+                "MOKA_BSON_INVALID",
+                `timelines[].markers[].color is not one of ${MARKER_COLORS.join(", ")}`,
+              );
+            return {
+              id: asString(marker.id, "timelines[].markers[].id"),
+              atMs: Math.trunc(
+                requireField(
+                  unwrapNumber(marker.atMs),
+                  "timelines[].markers[].atMs",
+                ),
+              ),
+              label: asString(marker.label, "timelines[].markers[].label"),
+              color: color as MarkerColor,
+            };
+          }),
+        }),
+    ...(doc.inPointMs === undefined
+      ? {}
+      : {
+          inPointMs:
+            doc.inPointMs === null
+              ? null
+              : Math.trunc(
+                  requireField(
+                    unwrapNumber(doc.inPointMs),
+                    "timelines[].inPointMs",
+                  ),
+                ),
+        }),
+    ...(doc.outPointMs === undefined
+      ? {}
+      : {
+          outPointMs:
+            doc.outPointMs === null
+              ? null
+              : Math.trunc(
+                  requireField(
+                    unwrapNumber(doc.outPointMs),
+                    "timelines[].outPointMs",
+                  ),
+                ),
+        }),
     createdAt: asString(doc.createdAt, "timelines[].createdAt"),
     updatedAt: asString(doc.updatedAt, "timelines[].updatedAt"),
   };

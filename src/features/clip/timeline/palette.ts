@@ -42,6 +42,8 @@ export interface TimelinePalette {
   snap: string;
   /** A ghost over a place the release would refuse. */
   refuse: string;
+  /** The wash outside the working range. */
+  rangeDim: string;
   /** The wash inside a marquee's rectangle. */
   marqueeFill: string;
 }
@@ -73,5 +75,6 @@ export const TIMELINE_PALETTE: TimelinePalette = {
   lock: "#9a9aa4",
   snap: "#f2ce7a",
   refuse: "#ff8a80",
+  rangeDim: "rgba(0, 0, 0, 0.32)",
   marqueeFill: "rgba(245, 245, 247, 0.07)",
 };

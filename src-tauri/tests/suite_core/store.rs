@@ -217,6 +217,9 @@ fn empty_timeline(id: &str, name: &str) -> TimelineDocument {
         ],
         clips: Vec::new(),
         transitions: Vec::new(),
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: now.clone(),
         updated_at: now,
     }

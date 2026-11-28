@@ -1163,8 +1163,25 @@ pub struct TimelineDocument {
     pub tracks: Vec<TimelineTrack>,
     pub clips: Vec<TimelineClip>,
     pub transitions: Vec<TimelineTransition>,
+    /// Places worth finding again; absent on a timeline that names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markers: Option<Vec<TimelineMarker>>,
+    /// The range a reader marked, when they marked one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_point_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub out_point_ms: Option<i64>,
     pub created_at: IsoTimestamp,
     pub updated_at: IsoTimestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMarker {
+    pub id: String,
+    pub at_ms: i64,
+    pub label: String,
+    pub color: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1484,6 +1501,19 @@ pub struct ClipSlide {
     pub by_ms: i64,
 }
 
+/// A change to one marker, named by id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkerPatch {
+    pub marker_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum DocumentCommand {
@@ -1748,6 +1778,34 @@ pub enum DocumentCommand {
         scope: Option<RippleScope>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         track_id: Option<TrackId>,
+    },
+    /// Names places on the cut worth finding again.
+    #[serde(rename_all = "camelCase")]
+    AddMarkers {
+        timeline_id: TimelineId,
+        markers: Vec<TimelineMarker>,
+    },
+    #[serde(rename_all = "camelCase")]
+    UpdateMarkers {
+        timeline_id: TimelineId,
+        patches: Vec<MarkerPatch>,
+    },
+    #[serde(rename_all = "camelCase")]
+    RemoveMarkers {
+        timeline_id: TimelineId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        marker_ids: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        all: Option<bool>,
+    },
+    /// Marks the range a reader works on; both sides absent clears it.
+    #[serde(rename_all = "camelCase")]
+    SetTimelineRange {
+        timeline_id: TimelineId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        in_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        out_ms: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     RemoveClips {

@@ -74,6 +74,14 @@ export interface TimelineRenderModel {
 const CLIP_FONT = "12px ui-sans-serif, system-ui, sans-serif";
 const BADGE_FONT = "10px ui-sans-serif, system-ui, sans-serif";
 const CLIP_RADIUS = 6;
+const MARKER_TINTS: Record<string, string> = {
+  white: "#f4f4f6",
+  yellow: "#f2ce7a",
+  green: "#7ad9a8",
+  blue: "#7aa8f2",
+  purple: "#b58af2",
+  red: "#ff8a80",
+};
 /** How far apart a video block's pictures sit; one thumbnail's own width. */
 const FILMSTRIP_STEP_PX = 96;
 /** The `+` a hovered seam offers, square. */
@@ -114,8 +122,78 @@ export function renderTimeline(
     }
   }
   drawDraft(ctx, model, rows, palette);
+  drawRange(ctx, model, rows, palette, rulerY);
   drawRuler(ctx, model, palette, rulerY);
+  drawMarkers(ctx, model, palette, rulerY);
   drawPlayhead(ctx, model, palette, rulerY);
+}
+
+function drawRange(
+  ctx: CanvasRenderingContext2D,
+  model: TimelineRenderModel,
+  rows: TrackRow[],
+  palette: TimelinePalette,
+  rulerY: number,
+): void {
+  const { inPointMs, outPointMs } = model.timeline;
+  if (inPointMs == null && outPointMs == null) return;
+  const { width, height, scrollTopPx } = model.viewport;
+  const top = Math.max(rulerY, (rows[0]?.top ?? rulerY) - scrollTopPx);
+  const bottom = Math.min(height, contentHeight(model.timeline) - scrollTopPx);
+  if (inPointMs != null && outPointMs != null) {
+    const start = xAt(inPointMs, model.view);
+    const end = xAt(outPointMs, model.view);
+    ctx.fillStyle = palette.rangeDim;
+    ctx.fillRect(0, top, Math.max(0, start), Math.max(0, bottom - top));
+    ctx.fillRect(
+      Math.min(width, end),
+      top,
+      Math.max(0, width - end),
+      Math.max(0, bottom - top),
+    );
+  }
+  ctx.strokeStyle = palette.ink;
+  ctx.lineWidth = 1;
+  if (inPointMs != null) {
+    const x = xAt(inPointMs, model.view);
+    ctx.beginPath();
+    ctx.moveTo(x, rulerY);
+    ctx.lineTo(x, bottom);
+    ctx.moveTo(x, rulerY + 4);
+    ctx.lineTo(x + 6, rulerY + 4);
+    ctx.stroke();
+  }
+  if (outPointMs != null) {
+    const x = xAt(outPointMs, model.view);
+    ctx.beginPath();
+    ctx.moveTo(x, rulerY);
+    ctx.lineTo(x, bottom);
+    ctx.moveTo(x, rulerY + 4);
+    ctx.lineTo(x - 6, rulerY + 4);
+    ctx.stroke();
+  }
+}
+
+function drawMarkers(
+  ctx: CanvasRenderingContext2D,
+  model: TimelineRenderModel,
+  palette: TimelinePalette,
+  rulerY: number,
+): void {
+  const markers = model.timeline.markers ?? [];
+  if (markers.length === 0) return;
+  const { width } = model.viewport;
+  ctx.font = BADGE_FONT;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (const marker of markers) {
+    const x = xAt(marker.atMs, model.view);
+    if (x < -40 || x > width + 40) continue;
+    ctx.fillStyle = MARKER_TINTS[marker.color] ?? MARKER_TINTS.white;
+    ctx.fillRect(x, rulerY + 3, 8, 8);
+    ctx.fillStyle = palette.label;
+    ctx.fillText(marker.label.slice(0, 16), x + 11, rulerY + 7);
+  }
 }
 
 function drawRows(

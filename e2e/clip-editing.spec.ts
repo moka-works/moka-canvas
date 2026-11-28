@@ -827,3 +827,28 @@ test("copy and paste put a second block at the playhead", async ({ page }) => {
 
   forgetHome(home);
 });
+
+test("M names a moment, and I and O mark the working range", async ({
+  page,
+}) => {
+  const home = await clipRoom(page, "Editing Markers");
+  await newTimeline(page, "Timeline 1");
+
+  await page.locator(".clip-tl-canvas").click({ position: { x: 300, y: 10 } });
+  await page.keyboard.press("m");
+  await expect
+    .poll(() => timeline(page).getAttribute("data-markers"))
+    .toContain("@5000:Marker 1:white");
+
+  await page.keyboard.press("i");
+  await page.locator(".clip-tl-canvas").click({ position: { x: 600, y: 10 } });
+  await page.keyboard.press("o");
+  await expect
+    .poll(() => timeline(page).getAttribute("data-range"))
+    .toBe("5000:10000");
+
+  await page.keyboard.press("Shift+x");
+  await expect.poll(() => timeline(page).getAttribute("data-range")).toBe(":");
+
+  forgetHome(home);
+});

@@ -56,23 +56,27 @@ export function useTransport(): void {
       if (!state.playing) return;
       const timeline = activeTimeline();
       const end = timeline ? cutEndMs(timeline) : 0;
+      const inPoint = timeline?.inPointMs ?? null;
+      const outPoint = timeline?.outPointMs ?? null;
+      const loopStart = inPoint ?? 0;
+      const loopEnd = outPoint ?? end;
       const now = performance.now();
       let atMs = startMs + (now - startWall);
-      if (end <= 0 || atMs >= end) {
-        if (state.loop && end > 0) {
+      if (loopEnd <= 0 || atMs >= loopEnd) {
+        if (state.loop && loopEnd > 0) {
           // The end is the head again: the clock is restarted there and the
           // sounding and the runs are taken up from the top. The audio engine
           // rebuilds through the same entry a document change uses.
-          startMs = 0;
+          startMs = loopStart;
           startWall = now;
-          atMs = 0;
-          state.setPlayheadFromClock(0);
+          atMs = loopStart;
+          state.setPlayheadFromClock(loopStart);
           frames.stopPlayback();
-          audio.play(0);
+          audio.play(loopStart);
         } else {
           // The tail is the last frame the clock stands on; the store's pause
           // is what the loop hears to take itself down.
-          state.setPlayheadFromClock(end);
+          state.setPlayheadFromClock(loopEnd);
           state.pause();
           return;
         }
@@ -91,7 +95,17 @@ export function useTransport(): void {
     const start = (): void => {
       const state = useClipStore.getState();
       startWall = performance.now();
-      startMs = state.playheadMs;
+      const timeline = activeTimeline();
+      const inPoint = timeline?.inPointMs ?? null;
+      const outPoint = timeline?.outPointMs ?? null;
+      startMs =
+        state.loop &&
+        inPoint !== null &&
+        outPoint !== null &&
+        (state.playheadMs < inPoint || state.playheadMs >= outPoint)
+          ? inPoint
+          : state.playheadMs;
+      if (startMs !== state.playheadMs) state.setPlayheadFromClock(startMs);
       audio.setTimeline(activeTimeline());
       audio.play(startMs);
       raf = requestAnimationFrame(frame);

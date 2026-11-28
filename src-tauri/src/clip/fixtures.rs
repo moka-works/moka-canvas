@@ -147,6 +147,9 @@ pub fn timeline(
         tracks,
         clips,
         transitions,
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
     }

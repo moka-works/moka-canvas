@@ -10,15 +10,16 @@ use std::collections::{HashMap, HashSet};
 use super::commands::CommandError;
 use super::{
     new_id, now_iso, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip, DocumentCommand,
-    InsertMode, MokaFile, RippleScope, TimelineClip, TimelineDocument, TimelineSettingsPatch,
-    TimelineTrack, TimelineTransition, TrackKind, TrackPatch, TransitionKind,
+    InsertMode, MarkerPatch, MokaFile, RippleScope, TimelineClip, TimelineDocument, TimelineMarker,
+    TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind, TrackPatch,
+    TransitionKind,
 };
 
 // ---------------------------------------------------------------------------
 // Limits, mirrored from `constants.ts` name for name
 // ---------------------------------------------------------------------------
 
-pub const TIMELINE_SCHEMA_VERSION: i32 = 1;
+pub const TIMELINE_SCHEMA_VERSION: i32 = 2;
 /// How many timelines one project's cutting room holds.
 pub const MAX_TIMELINES_PER_PROJECT: usize = 12;
 /// How many tracks one timeline holds, video, audio, and text together.
@@ -27,6 +28,11 @@ pub const MAX_TRACKS_PER_TIMELINE: usize = 8;
 pub const MAX_CLIPS_PER_TIMELINE: usize = 400;
 /// How many transitions one timeline holds.
 pub const MAX_TRANSITIONS_PER_TIMELINE: usize = 100;
+/// How many markers one timeline holds.
+pub const MAX_MARKERS_PER_TIMELINE: usize = 200;
+/// The colours a marker may wear.
+pub const MARKER_COLORS: [&str; 6] = ["white", "yellow", "green", "blue", "purple", "red"];
+pub const MARKER_LABEL_MAX: usize = 40;
 pub const TIMELINE_NAME_MAX: usize = 80;
 /// How long a clip's label may run, which is a name rather than a text.
 pub const CLIP_LABEL_MAX: usize = 80;
@@ -1265,6 +1271,28 @@ fn validate_timeline_settings(settings: &TimelineSettingsPatch) -> Result<(), Co
     Ok(())
 }
 
+fn check_marker(marker: &TimelineMarker) -> Result<(), CommandError> {
+    if marker.at_ms < 0 {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A marker sits at a whole, positive millisecond",
+        ));
+    }
+    if marker.label.is_empty() || marker.label.chars().count() > MARKER_LABEL_MAX {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A marker's name must be a word or two",
+        ));
+    }
+    if !MARKER_COLORS.contains(&marker.color.as_str()) {
+        return Err(CommandError::new(
+            "VALIDATION_FAILED",
+            "A marker's colour is not one of the six",
+        ));
+    }
+    Ok(())
+}
+
 fn merged_spans(mut spans: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
     spans.sort_by_key(|(start, _)| *start);
     let mut merged: Vec<(i64, i64)> = Vec::new();
@@ -1826,6 +1854,31 @@ pub fn apply_timeline_command(
                 background: Some(timeline.settings.background.clone()),
             };
             validate_timeline_settings(&settings)?;
+            let markers = timeline.markers.as_deref().unwrap_or(&[]);
+            if markers.len() > MAX_MARKERS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "This timeline holds as many markers as it can",
+                ));
+            }
+            let mut marker_ids: HashSet<&str> = HashSet::new();
+            for marker in markers {
+                if !marker_ids.insert(marker.id.as_str()) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "A marker with that id is already here",
+                    ));
+                }
+                check_marker(marker)?;
+            }
+            if let (Some(start), Some(end)) = (timeline.in_point_ms, timeline.out_point_ms) {
+                if start >= end {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The range needs whole milliseconds and an end after its start",
+                    ));
+                }
+            }
             if let Some(first) = validate_timeline(timeline, moka).first() {
                 return Err(CommandError::new(
                     issue_code(&first.code),
@@ -2580,6 +2633,189 @@ pub fn apply_timeline_command(
                     track_id.as_deref(),
                 )?,
             )
+        }
+
+        DocumentCommand::AddMarkers {
+            timeline_id,
+            markers,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if markers.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to add"));
+            }
+            let held = timeline.markers.clone().unwrap_or_default();
+            if held.len() + markers.len() > MAX_MARKERS_PER_TIMELINE {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "This timeline holds as many markers as it can",
+                ));
+            }
+            let mut ids: HashSet<&str> = held.iter().map(|marker| marker.id.as_str()).collect();
+            for marker in markers {
+                if !ids.insert(marker.id.as_str()) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "A marker with that id is already here",
+                    ));
+                }
+                check_marker(marker)?;
+            }
+            let mut next = timeline.clone();
+            next.markers = Some(
+                held.into_iter()
+                    .chain(markers.iter().cloned())
+                    .collect::<Vec<_>>(),
+            );
+            next.schema_version = TIMELINE_SCHEMA_VERSION;
+            Ok((
+                replace_timeline(moka, next),
+                vec![DocumentCommand::RemoveMarkers {
+                    timeline_id: timeline_id.clone(),
+                    marker_ids: Some(markers.iter().map(|marker| marker.id.clone()).collect()),
+                    all: None,
+                }],
+            ))
+        }
+
+        DocumentCommand::UpdateMarkers {
+            timeline_id,
+            patches,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if patches.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to update"));
+            }
+            let held = timeline.markers.clone().unwrap_or_default();
+            let mut updated: HashMap<String, TimelineMarker> = HashMap::new();
+            let mut inverse_patches: Vec<MarkerPatch> = Vec::new();
+            for patch in patches {
+                let marker = held
+                    .iter()
+                    .find(|marker| marker.id == patch.marker_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        CommandError::new(
+                            "MOKA_FIELD_MISSING",
+                            "That marker is not on this timeline",
+                        )
+                    })?;
+                if updated.contains_key(&patch.marker_id) {
+                    return Err(CommandError::new(
+                        "CONFLICT",
+                        "A clip is patched twice in one step",
+                    ));
+                }
+                let mut next = marker.clone();
+                if let Some(at_ms) = patch.at_ms {
+                    next.at_ms = at_ms;
+                }
+                if let Some(label) = &patch.label {
+                    next.label = label.clone();
+                }
+                if let Some(color) = &patch.color {
+                    next.color = color.clone();
+                }
+                check_marker(&next)?;
+                inverse_patches.push(MarkerPatch {
+                    marker_id: marker.id.clone(),
+                    at_ms: Some(marker.at_ms),
+                    label: Some(marker.label.clone()),
+                    color: Some(marker.color.clone()),
+                });
+                updated.insert(patch.marker_id.clone(), next);
+            }
+            let mut next = timeline.clone();
+            next.markers = Some(
+                held.into_iter()
+                    .map(|marker| updated.get(&marker.id).cloned().unwrap_or(marker))
+                    .collect(),
+            );
+            next.schema_version = TIMELINE_SCHEMA_VERSION;
+            Ok((
+                replace_timeline(moka, next),
+                vec![DocumentCommand::UpdateMarkers {
+                    timeline_id: timeline_id.clone(),
+                    patches: inverse_patches,
+                }],
+            ))
+        }
+
+        DocumentCommand::RemoveMarkers {
+            timeline_id,
+            marker_ids,
+            all,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            let held = timeline.markers.clone().unwrap_or_default();
+            let removing: HashSet<String> = match (all, marker_ids) {
+                (Some(true), _) => held.iter().map(|marker| marker.id.clone()).collect(),
+                (_, Some(ids)) => ids.iter().cloned().collect(),
+                _ => HashSet::new(),
+            };
+            if removing.is_empty() {
+                return Err(CommandError::new("VALIDATION_FAILED", "Nothing to remove"));
+            }
+            let removed: Vec<TimelineMarker> = held
+                .iter()
+                .filter(|marker| removing.contains(&marker.id))
+                .cloned()
+                .collect();
+            if removed.len() != removing.len() {
+                return Err(CommandError::new(
+                    "MOKA_FIELD_MISSING",
+                    "Some markers are not on this timeline",
+                ));
+            }
+            let remaining: Vec<TimelineMarker> = held
+                .into_iter()
+                .filter(|marker| !removing.contains(&marker.id))
+                .collect();
+            let mut next = timeline.clone();
+            next.markers = (!remaining.is_empty()).then_some(remaining);
+            next.schema_version = TIMELINE_SCHEMA_VERSION;
+            Ok((
+                replace_timeline(moka, next),
+                vec![DocumentCommand::AddMarkers {
+                    timeline_id: timeline_id.clone(),
+                    markers: removed,
+                }],
+            ))
+        }
+
+        DocumentCommand::SetTimelineRange {
+            timeline_id,
+            in_ms,
+            out_ms,
+        } => {
+            let timeline = timeline_of(moka, timeline_id)?;
+            if in_ms.is_some_and(|value| value < 0) || out_ms.is_some_and(|value| value < 0) {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "The range needs whole milliseconds and an end after its start",
+                ));
+            }
+            if let (Some(start), Some(end)) = (in_ms, out_ms) {
+                if start >= end {
+                    return Err(CommandError::new(
+                        "VALIDATION_FAILED",
+                        "The range needs whole milliseconds and an end after its start",
+                    ));
+                }
+            }
+            let previous_in = timeline.in_point_ms;
+            let previous_out = timeline.out_point_ms;
+            let mut next = timeline.clone();
+            next.in_point_ms = *in_ms;
+            next.out_point_ms = *out_ms;
+            next.schema_version = TIMELINE_SCHEMA_VERSION;
+            Ok((
+                replace_timeline(moka, next),
+                vec![DocumentCommand::SetTimelineRange {
+                    timeline_id: timeline_id.clone(),
+                    in_ms: previous_in,
+                    out_ms: previous_out,
+                }],
+            ))
         }
 
         DocumentCommand::MoveClips { timeline_id, moves } => {

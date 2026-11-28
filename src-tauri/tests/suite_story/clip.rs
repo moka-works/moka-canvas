@@ -165,6 +165,9 @@ fn cut(asset_a: &str, asset_b: &str, video: &str, tone: &str) -> TimelineDocumen
             duration_ms: 200,
             created_at: NOW.to_string(),
         }],
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
     }
@@ -728,6 +731,9 @@ fn caption_timeline() -> TimelineDocument {
             caption("cue-two", "风雨雷电", 1_000),
         ],
         transitions: Vec::new(),
+        markers: None,
+        in_point_ms: None,
+        out_point_ms: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
     }

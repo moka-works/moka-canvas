@@ -15,8 +15,8 @@ use crate::clip::jobs::ExportRun;
 use crate::domain::{
     now_iso, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip, DocumentCommand, InsertMode,
     MokaFile, RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
-    TimelineDocument, TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind,
-    TrackPatch, TransitionKind,
+    TimelineDocument, TimelineMarker, TimelineSettingsPatch, TimelineTrack, TimelineTransition,
+    TrackKind, TrackPatch, TransitionKind,
 };
 use crate::generate::{GenerateInput, GenerateRequest, InputRole};
 use crate::project::ProjectStore;
@@ -116,6 +116,9 @@ pub async fn command(
                 tracks,
                 clips: Vec::new(),
                 transitions: Vec::new(),
+                markers: None,
+                in_point_ms: None,
+                out_point_ms: None,
                 created_at: now.clone(),
                 updated_at: now,
             };
@@ -240,6 +243,10 @@ pub async fn command(
         "clip.slide" => clip_slide(moka, &args),
         "clip.roll" => clip_roll(moka, &args),
         "timeline.remove_range" => timeline_remove_range(moka, &args),
+        "clip.add_marker" => clip_add_marker(moka, &args),
+        "clip.update_marker" => clip_update_marker(moka, &args),
+        "clip.remove_markers" => clip_remove_markers(moka, &args),
+        "timeline.set_range" => timeline_set_range(moka, &args),
         "clip.update" => clip_update(moka, &args),
         "clip.move" => clip_move(moka, &args),
         "clip.trim" => clip_trim(moka, &args),
@@ -782,6 +789,89 @@ fn timeline_remove_range(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome
             end_ms,
             scope: Some(scope),
             track_id,
+        }],
+    ))
+}
+
+fn clip_add_marker(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let marker = TimelineMarker {
+        id: args
+            .opt_str("markerId")
+            .map(str::to_string)
+            .unwrap_or_else(crate::domain::new_id),
+        at_ms: args.req_i64("atMs")?,
+        label: args.opt_str("label").unwrap_or("Marker").to_string(),
+        color: args.opt_str("color").unwrap_or("white").to_string(),
+    };
+    Ok(ToolOutcome::write(
+        format!("Added marker \"{}\" at {} ms", marker.label, marker.at_ms),
+        json!({"markerId": marker.id}),
+        vec![DocumentCommand::AddMarkers {
+            timeline_id: timeline.id.clone(),
+            markers: vec![marker],
+        }],
+    ))
+}
+
+fn clip_update_marker(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let patch = crate::domain::MarkerPatch {
+        marker_id: args.req_str("markerId")?.to_string(),
+        at_ms: args.opt_i64("atMs"),
+        label: args.opt_str("label").map(str::to_string),
+        color: args.opt_str("color").map(str::to_string),
+    };
+    Ok(ToolOutcome::write(
+        format!("Updated marker {}", patch.marker_id),
+        json!({"markerId": patch.marker_id}),
+        vec![DocumentCommand::UpdateMarkers {
+            timeline_id: timeline.id.clone(),
+            patches: vec![patch],
+        }],
+    ))
+}
+
+fn clip_remove_markers(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let all = args.opt_bool("all", false);
+    let marker_ids = if all {
+        None
+    } else {
+        Some(args.req_strings("markerIds")?)
+    };
+    Ok(ToolOutcome::write(
+        if all {
+            "Removed every marker".to_string()
+        } else {
+            format!(
+                "Removed {} markers",
+                marker_ids.as_ref().map(Vec::len).unwrap_or(0)
+            )
+        },
+        json!({"all": all, "markerIds": marker_ids}),
+        vec![DocumentCommand::RemoveMarkers {
+            timeline_id: timeline.id.clone(),
+            marker_ids,
+            all: Some(all),
+        }],
+    ))
+}
+
+fn timeline_set_range(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let in_ms = args.opt_i64("inMs");
+    let out_ms = args.opt_i64("outMs");
+    Ok(ToolOutcome::write(
+        match (in_ms, out_ms) {
+            (Some(start), Some(end)) => format!("Set the range to {start}–{end} ms"),
+            _ => "Cleared the range".to_string(),
+        },
+        json!({"inMs": in_ms, "outMs": out_ms}),
+        vec![DocumentCommand::SetTimelineRange {
+            timeline_id: timeline.id.clone(),
+            in_ms,
+            out_ms,
         }],
     ))
 }

@@ -62,6 +62,7 @@ import {
   hitTest,
   msAt,
   trackRows,
+  xAt,
   type ClipEdge,
   type TimelineHit,
   type TrackRow,
@@ -278,6 +279,19 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
         "data-selected-transition-id",
         state.selection.transitionId ?? "",
       );
+      room.setAttribute(
+        "data-markers",
+        (timeline.markers ?? [])
+          .map(
+            (marker) =>
+              `${marker.id}@${marker.atMs}:${marker.label}:${marker.color}`,
+          )
+          .join(";"),
+      );
+      room.setAttribute(
+        "data-range",
+        `${timeline.inPointMs ?? ""}:${timeline.outPointMs ?? ""}`,
+      );
     }
   }, [timeline, decor, hoverSeam]);
 
@@ -481,6 +495,16 @@ export function TimelineCanvas({ timeline, headersRef }: TimelineCanvasProps) {
       return;
     }
     if (inRuler(local.y, viewport.scrollTop)) {
+      // A press on a flag finds the marker; the ruler is otherwise the
+      // hand-hold for the clock.
+      const view = viewNow();
+      const marker = (timeline.markers ?? []).find(
+        (held) => Math.abs(xAt(held.atMs, view) - local.x) <= 6,
+      );
+      if (marker) {
+        useClipStore.getState().setPlayhead(marker.atMs);
+        return;
+      }
       // The ruler is 04's own hand-hold; choosing clips happens below it.
       // The seek lands first: a capture that a browser refuses is a drag that
       // stops at the edge, not a click that never happened.

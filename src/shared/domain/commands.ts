@@ -15,6 +15,9 @@ import {
   MAX_DIALOGUE_LINES_PER_KEYFRAME,
   MAX_DIALOGUE_LINE_LENGTH,
   MAX_EDGES_PER_CANVAS,
+  MAX_MARKERS_PER_TIMELINE,
+  MARKER_COLORS,
+  MARKER_LABEL_MAX,
   MAX_ELEMENTS_PER_STORY,
   MAX_FOLDER_DEPTH,
   MAX_FOLDER_NAME_LENGTH,
@@ -86,6 +89,7 @@ import type {
   TimelineClip,
   TimelineDocument,
   TimelineId,
+  TimelineMarker,
   TimelineSettings,
   TimelineTrack,
   TrackId,
@@ -135,6 +139,7 @@ import {
   type DirectorScene,
 } from "./director";
 import { directorSceneBytes } from "./directorCodec";
+import type { MarkerColor } from "./constants";
 import { i18n } from "../i18n";
 import { newId, nowIso } from "./ids";
 
@@ -2212,6 +2217,49 @@ function applyOne(
         seamLeaders.add(transition.afterClipId);
       }
       validateTimelineSettings(command.timeline.settings);
+      const markers = command.timeline.markers ?? [];
+      if (markers.length > MAX_MARKERS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.markerLimitReached"),
+        );
+      const markerIds = new Set<string>();
+      for (const marker of markers) {
+        if (markerIds.has(marker.id))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.markerIdExists"),
+          );
+        markerIds.add(marker.id);
+        if (!Number.isInteger(marker.atMs) || marker.atMs < 0)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerAtInvalid"),
+          );
+        if (marker.label.length === 0 || marker.label.length > MARKER_LABEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerLabelInvalid"),
+          );
+        if (!(MARKER_COLORS as readonly string[]).includes(marker.color))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerColorUnknown"),
+          );
+      }
+      const timelineIn = command.timeline.inPointMs;
+      const timelineOut = command.timeline.outPointMs;
+      if (
+        timelineIn !== undefined &&
+        timelineIn !== null &&
+        timelineOut !== undefined &&
+        timelineOut !== null &&
+        timelineIn >= timelineOut
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.rangeInvalid"),
+        );
       const issues = validateTimeline(command.timeline, moka);
       if (issues.length > 0)
         throw new CommandError(issues[0]!.code, issues[0]!.message);
@@ -2878,6 +2926,202 @@ function applyOne(
           command.trackId,
         ),
       );
+    }
+
+    case "addMarkers": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.markers.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToAdd"),
+        );
+      const held = timeline.markers ?? [];
+      if (held.length + command.markers.length > MAX_MARKERS_PER_TIMELINE)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.markerLimitReached"),
+        );
+      const ids = new Set(held.map((marker) => marker.id));
+      for (const marker of command.markers) {
+        if (ids.has(marker.id))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.markerIdExists"),
+          );
+        ids.add(marker.id);
+        if (!Number.isInteger(marker.atMs) || marker.atMs < 0)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerAtInvalid"),
+          );
+        if (marker.label.length === 0 || marker.label.length > MARKER_LABEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerLabelInvalid"),
+          );
+        if (!(MARKER_COLORS as readonly string[]).includes(marker.color))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerColorUnknown"),
+          );
+      }
+      return {
+        next: replaceTimeline(moka, {
+          ...timeline,
+          markers: [...held, ...command.markers],
+          schemaVersion: TIMELINE_SCHEMA_VERSION,
+        }),
+        inverse: [
+          {
+            type: "removeMarkers",
+            timelineId: command.timelineId,
+            markerIds: command.markers.map((marker) => marker.id),
+          },
+        ],
+      };
+    }
+
+    case "updateMarkers": {
+      const timeline = timelineOf(moka, command.timelineId);
+      if (command.patches.length === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToUpdate"),
+        );
+      const held = timeline.markers ?? [];
+      const byId = new Map(held.map((marker) => [marker.id, marker]));
+      const updated = new Map<string, TimelineMarker>();
+      const inversePatches: {
+        markerId: string;
+        atMs?: number;
+        label?: string;
+        color?: MarkerColor;
+      }[] = [];
+      for (const patch of command.patches) {
+        const marker = byId.get(patch.markerId);
+        if (!marker)
+          throw new CommandError(
+            "MOKA_FIELD_MISSING",
+            i18n.t("errors:command.markerNotFound"),
+          );
+        if (updated.has(patch.markerId))
+          throw new CommandError(
+            "CONFLICT",
+            i18n.t("errors:command.clipPatchedTwice"),
+          );
+        const next = {
+          ...marker,
+          ...(patch.atMs !== undefined ? { atMs: patch.atMs } : {}),
+          ...(patch.label !== undefined ? { label: patch.label } : {}),
+          ...(patch.color !== undefined ? { color: patch.color } : {}),
+        };
+        if (!Number.isInteger(next.atMs) || next.atMs < 0)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerAtInvalid"),
+          );
+        if (next.label.length === 0 || next.label.length > MARKER_LABEL_MAX)
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerLabelInvalid"),
+          );
+        if (!(MARKER_COLORS as readonly string[]).includes(next.color))
+          throw new CommandError(
+            "VALIDATION_FAILED",
+            i18n.t("errors:command.markerColorUnknown"),
+          );
+        updated.set(patch.markerId, next);
+        inversePatches.push({
+          markerId: marker.id,
+          atMs: marker.atMs,
+          label: marker.label,
+          color: marker.color,
+        });
+      }
+      return {
+        next: replaceTimeline(moka, {
+          ...timeline,
+          markers: held.map((marker) => updated.get(marker.id) ?? marker),
+          schemaVersion: TIMELINE_SCHEMA_VERSION,
+        }),
+        inverse: [
+          {
+            type: "updateMarkers",
+            timelineId: command.timelineId,
+            patches: inversePatches,
+          },
+        ],
+      };
+    }
+
+    case "removeMarkers": {
+      const timeline = timelineOf(moka, command.timelineId);
+      const held = timeline.markers ?? [];
+      const removing =
+        command.all === true
+          ? new Set(held.map((marker) => marker.id))
+          : new Set(command.markerIds ?? []);
+      if (removing.size === 0)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.nothingToRemove"),
+        );
+      const removed = held.filter((marker) => removing.has(marker.id));
+      if (removed.length !== removing.size)
+        throw new CommandError(
+          "MOKA_FIELD_MISSING",
+          i18n.t("errors:command.markerNotFound"),
+        );
+      const remaining = held.filter((marker) => !removing.has(marker.id));
+      return {
+        next: replaceTimeline(moka, {
+          ...timeline,
+          markers: remaining.length > 0 ? remaining : undefined,
+          schemaVersion: TIMELINE_SCHEMA_VERSION,
+        }),
+        inverse: [
+          {
+            type: "addMarkers",
+            timelineId: command.timelineId,
+            markers: removed,
+          },
+        ],
+      };
+    }
+
+    case "setTimelineRange": {
+      const timeline = timelineOf(moka, command.timelineId);
+      const inMs = command.inMs;
+      const outMs = command.outMs;
+      if (
+        (inMs !== null && (!Number.isInteger(inMs) || inMs < 0)) ||
+        (outMs !== null && (!Number.isInteger(outMs) || outMs < 0))
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.rangeInvalid"),
+        );
+      if (inMs !== null && outMs !== null && inMs >= outMs)
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:command.rangeInvalid"),
+        );
+      return {
+        next: replaceTimeline(moka, {
+          ...timeline,
+          inPointMs: inMs ?? undefined,
+          outPointMs: outMs ?? undefined,
+          schemaVersion: TIMELINE_SCHEMA_VERSION,
+        }),
+        inverse: [
+          {
+            type: "setTimelineRange",
+            timelineId: command.timelineId,
+            inMs: timeline.inPointMs ?? null,
+            outMs: timeline.outPointMs ?? null,
+          },
+        ],
+      };
     }
 
     case "moveClips": {

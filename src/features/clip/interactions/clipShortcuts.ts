@@ -6,6 +6,8 @@ import { cutEndMs } from "../timeline/geometry";
 import { nextFrameMs, prevFrameMs } from "../timeline/timecode";
 import {
   activeTimeline,
+  addMarkerAtPlayhead,
+  clearRange,
   clearSelection,
   copySelection,
   cutSelection,
@@ -16,6 +18,7 @@ import {
   rippleDeleteSelection,
   rippleTrimToPlayhead,
   selectAll,
+  setRangeEdge,
   selectedClips,
   splitSelectionAtPlayhead,
 } from "./clipActions";
@@ -86,6 +89,22 @@ export const CLIP_SHORTCUT_GROUPS: ClipShortcutGroup[] = [
           "clip:shortcuts.chord.delete",
           "clip:shortcuts.chord.backspace",
         ],
+      },
+      {
+        label: "clip:shortcuts.label.addMarker",
+        chords: ["clip:shortcuts.chord.m"],
+      },
+      {
+        label: "clip:shortcuts.label.setIn",
+        chords: ["clip:shortcuts.chord.i"],
+      },
+      {
+        label: "clip:shortcuts.label.setOut",
+        chords: ["clip:shortcuts.chord.o"],
+      },
+      {
+        label: "clip:shortcuts.label.clearRange",
+        chords: ["clip:shortcuts.chord.shiftX"],
       },
       {
         label: "clip:common.rippleTrimStart",
@@ -242,6 +261,26 @@ export function useClipShortcuts(options: ClipShortcutOptions = {}) {
         return;
       }
 
+      if (event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        addMarkerAtPlayhead();
+        return;
+      }
+      if (event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        setRangeEdge("in");
+        return;
+      }
+      if (event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        setRangeEdge("out");
+        return;
+      }
+      if (event.key.toLowerCase() === "x" && event.shiftKey) {
+        event.preventDefault();
+        clearRange();
+        return;
+      }
       if (event.key.toLowerCase() === "q") {
         event.preventDefault();
         rippleTrimToPlayhead("start");

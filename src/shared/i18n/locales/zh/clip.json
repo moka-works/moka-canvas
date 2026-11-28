@@ -56,6 +56,10 @@
       "backSecond": "后退一秒",
       "backToHead": "回到开头",
       "clearSelection": "清除选择",
+      "addMarker": "添加标记",
+      "setIn": "设置入点",
+      "setOut": "设置出点",
+      "clearRange": "清除入出点",
       "editSubtitle": "编辑字幕",
       "forwardFrame": "前进一帧",
       "forwardSecond": "前进一秒",
@@ -89,6 +93,10 @@
       "shiftDelete": "Shift + Delete",
       "q": "Q",
       "w": "W",
+      "i": "I",
+      "m": "M",
+      "o": "O",
+      "shiftX": "Shift + X",
       "shiftLeft": "Shift + ←",
       "shiftRight": "Shift + →",
       "space": "Space",
@@ -98,6 +106,9 @@
   "stage": {
     "splitHint": "拖动可让预览更大或更小——双击恢复 60/40",
     "splitLabel": "预览高度"
+  },
+  "markers": {
+    "default": "标记 {{n}}"
   },
   "menu": {
     "addSubtitle": "在此添加字幕",
@@ -457,6 +468,11 @@
     "deleteGap": "删除空隙",
 
     "addTextClip": "添加文字片段",
+    "addMarker": "添加标记",
+    "removeMarker": "删除标记",
+    "clearMarkers": "清除标记",
+    "setRange": "设置工作范围",
+    "clearRange": "清除工作范围",
     "addTimeline": "添加时间线",
     "addTrack": "添加轨道",
     "addTransition": "添加转场",
