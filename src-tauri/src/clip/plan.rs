@@ -129,11 +129,7 @@ pub fn build_plan(
     if timeline.clips.is_empty() {
         return Err(PlanError::Empty);
     }
-    let words: Vec<&TimelineClip> = timeline
-        .clips
-        .iter()
-        .filter(|clip| clip.kind == TrackKind::Text)
-        .collect();
+    let words = super::ass::visible_text_clips(timeline);
     // Words the preview shows must not disappear on the way out: a build
     // without the subtitle filter is unavailable for this timeline rather
     // than quietly wordless.
@@ -1199,6 +1195,18 @@ mod tests {
         let error = plan(&world, &timeline, &fixtures::caps(&["fade"], false)).unwrap_err();
         assert_eq!(error.code(), "FFMPEG_UNAVAILABLE");
         assert!(error.to_string().contains("ass"), "{error}");
+    }
+
+    #[test]
+    fn a_hidden_text_row_is_neither_burned_in_nor_a_libass_requirement() {
+        let world = world(&[]);
+        let words = fixtures::text("c1", "t1", 0, 2000, "Hello", fixtures::text_style());
+        let mut row = fixtures::track("t1", TrackKind::Text);
+        row.hidden = true;
+        let timeline = fixtures::timeline("Cut", vec![row], vec![words], Vec::new());
+        let plan = ok(&world, &timeline, &fixtures::caps(&["fade"], false));
+        assert!(plan.ass.is_none());
+        assert!(!plan.graph.contains("ass="), "{}", plan.graph);
     }
 
     #[test]

@@ -5,7 +5,9 @@
 //! package 11's §5, written the way the subtitle renderer spells it.
 
 use super::fonts::{CJK_FAMILY, LATIN_FAMILY};
-use crate::domain::{TextAlign, TextClipStyle, TextPosition, TimelineClip, TimelineDocument};
+use crate::domain::{
+    TextAlign, TextClipStyle, TextPosition, TimelineClip, TimelineDocument, TrackKind,
+};
 
 /// The header and style a script starts with. `Encoding` is 1 because the
 /// renderer's own default is, and nothing here has a reason to disagree.
@@ -23,17 +25,30 @@ const MARGIN_H_SHARE: f64 = 0.05;
 /// The plate's padding, in font sizes: the same reference the preview pads by.
 const PLATE_PADDING_SHARE: f64 = 0.6;
 
+/// The text clips whose row is drawn.
+///
+/// A hidden row keeps its words out of the burn-in, which is what the preview
+/// already does: what is hidden on the stage must not appear on the way out.
+pub fn visible_text_clips(timeline: &TimelineDocument) -> Vec<&TimelineClip> {
+    timeline
+        .clips
+        .iter()
+        .filter(|clip| clip.kind == TrackKind::Text && clip.text.is_some())
+        .filter(|clip| {
+            timeline
+                .tracks
+                .iter()
+                .any(|track| track.id == clip.track_id && !track.hidden)
+        })
+        .collect()
+}
+
 /// The script for every text clip on a timeline.
 ///
 /// A timeline without words answers with an empty string, which is what the
 /// caller tests before writing a file at all.
 pub fn build_ass(timeline: &TimelineDocument) -> String {
-    let mut clips: Vec<&TimelineClip> = timeline
-        .clips
-        .iter()
-        .filter(|clip| clip.kind == crate::domain::TrackKind::Text)
-        .filter(|clip| clip.text.is_some())
-        .collect();
+    let mut clips = visible_text_clips(timeline);
     clips.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.id.cmp(&b.id)));
     if clips.is_empty() {
         // Nothing to burn in is not an empty script: it is no script, and the
@@ -331,6 +346,15 @@ mod tests {
         assert_eq!(escape_text("a\\b{c}\nd"), "a\\\\b\\{c\\}\\Nd");
         // A Windows line ending is one break, not a break and a stray return.
         assert_eq!(escape_text("one\r\ntwo"), "one\\Ntwo");
+    }
+
+    #[test]
+    fn a_hidden_row_keeps_its_words_out_of_the_script() {
+        let words = fixtures::text("c1", "t1", 0, 2000, "Hello", fixtures::text_style());
+        let mut row = fixtures::track("t1", TrackKind::Text);
+        row.hidden = true;
+        let timeline = fixtures::timeline("Cut", vec![row], vec![words], Vec::new());
+        assert!(build_ass(&timeline).is_empty());
     }
 
     #[test]
