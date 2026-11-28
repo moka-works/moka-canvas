@@ -120,6 +120,10 @@ moka tasks get run <id> --json
 ```bash
 moka tools call timeline.get --input '{"timelineId":"tl_1","aroundMs":12000}' --json
 moka tools call clip.trim --input ./trim.json --json
+moka tools call clip.add --input '{"timelineId":"tl_1","kind":"video","assetId":"a_1","startMs":12000,"placement":"ripple","rippleScope":"all"}' --json
+moka tools call clip.ripple_delete --input '{"timelineId":"tl_1","clipIds":["cl_1"],"confirm":"delete-clips","scope":"all"}' --yes --json
+moka tools call clip.close_gaps --input '{"timelineId":"tl_1"}' --json
+moka tools call clip.delete_gap --input '{"timelineId":"tl_1","trackId":"tr_v1","atMs":8000}' --json
 moka tools call clip.split --input '{"timelineId":"tl_1","clipIds":["cl_1"],"atMs":12000}' --json
 moka tools call clip.add_transition --input ./transition.json --json
 moka tools call timeline.export --input '{"timelineId":"tl_1","destination":"/path/out.mp4","overwrite":false}' --yes --json

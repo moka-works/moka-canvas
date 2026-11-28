@@ -13,10 +13,10 @@ use serde_json::{json, Value};
 use crate::api::{ApiState, ProjectSession};
 use crate::clip::jobs::ExportRun;
 use crate::domain::{
-    now_iso, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, MokaFile, TextAlign,
-    TextClipData, TextClipStyle, TextPosition, TimelineClip, TimelineDocument,
-    TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind, TrackPatch,
-    TransitionKind,
+    now_iso, ClipMove, ClipPatch, ClipPatchEntry, DocumentCommand, InsertMode, MokaFile,
+    RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
+    TimelineDocument, TimelineSettingsPatch, TimelineTrack, TimelineTransition, TrackKind,
+    TrackPatch, TransitionKind,
 };
 use crate::generate::{GenerateInput, GenerateRequest, InputRole};
 use crate::project::ProjectStore;
@@ -233,6 +233,9 @@ pub async fn command(
             ))
         }
         "clip.add" => clip_add(moka, &args),
+        "clip.ripple_delete" => clip_ripple_delete(moka, &args),
+        "clip.close_gaps" => clip_close_gaps(moka, &args),
+        "clip.delete_gap" => clip_delete_gap(moka, &args),
         "clip.update" => clip_update(moka, &args),
         "clip.move" => clip_move(moka, &args),
         "clip.trim" => clip_trim(moka, &args),
@@ -496,6 +499,7 @@ fn clip_add(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             "duration, speed, and source points must agree: round(duration * speed) = out - in",
         ));
     }
+    let placement = args.opt_str("placement").unwrap_or("fit");
     let track_id = match args.opt_str("trackId") {
         Some(track_id) => {
             let track = track_of_id(timeline, track_id)?;
@@ -507,10 +511,30 @@ fn clip_add(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
                 )));
             }
             ensure_unlocked(timeline, track_id)?;
-            validate_no_overlap(timeline, track_id, start, duration, None)?;
+            if placement == "fit" {
+                validate_no_overlap(timeline, track_id, start, duration, None)?;
+            }
             track_id.to_string()
         }
-        None => pick_track(timeline, kind, start, duration)?,
+        None => match placement {
+            "fit" => pick_track(timeline, kind, start, duration)?,
+            "overwrite" | "ripple" => timeline
+                .tracks
+                .iter()
+                .find(|track| track.kind == kind && !track.locked)
+                .map(|track| track.id.clone())
+                .ok_or_else(|| {
+                    ToolError::new(
+                        "NO_TRACK_FOR_KIND",
+                        format!("no unlocked {} track; add a track first", kind.as_str()),
+                    )
+                })?,
+            other => {
+                return Err(ToolError::validation(format!(
+                    "placement '{other}' is not fit, overwrite, or ripple"
+                )))
+            }
+        },
     };
     let now = now_iso();
     let text = if kind == TrackKind::Text {
@@ -543,13 +567,120 @@ fn clip_add(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         filter: None,
         text,
     };
-    Ok(ToolOutcome::write(
-        format!("Added \"{}\" at {start} ms", clip.label),
-        json!({"clipId": clip.id, "trackId": track_id}),
-        vec![DocumentCommand::AddClips {
+    let ripple_scope = match args.opt_str("rippleScope") {
+        None => None,
+        Some("all") => Some(RippleScope::All),
+        Some("track") => Some(RippleScope::Track),
+        Some(other) => {
+            return Err(ToolError::validation(format!(
+                "rippleScope '{other}' is not all or track"
+            )))
+        }
+    };
+    let command = match placement {
+        "fit" => DocumentCommand::AddClips {
             timeline_id: timeline.id.clone(),
-            clips: vec![clip],
+            clips: vec![clip.clone()],
             seams: None,
+        },
+        "overwrite" | "ripple" => DocumentCommand::InsertClips {
+            timeline_id: timeline.id.clone(),
+            clips: vec![clip.clone()],
+            mode: if placement == "overwrite" {
+                InsertMode::Overwrite
+            } else {
+                InsertMode::Ripple
+            },
+            ripple_scope,
+        },
+        other => {
+            return Err(ToolError::validation(format!(
+                "placement '{other}' is not fit, overwrite, or ripple"
+            )))
+        }
+    };
+    Ok(ToolOutcome::write(
+        format!("Added \"{}\" at {start} ms ({placement})", clip.label),
+        json!({"clipId": clip.id, "trackId": track_id}),
+        vec![command],
+    ))
+}
+
+fn clip_ripple_delete(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    args.confirmed()?;
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let clip_ids = args.req_strings("clipIds")?;
+    let scope = match args.opt_str("scope").unwrap_or("all") {
+        "all" => RippleScope::All,
+        "track" => RippleScope::Track,
+        other => {
+            return Err(ToolError::validation(format!(
+                "scope '{other}' is not all or track"
+            )))
+        }
+    };
+    let labels: Vec<&str> = timeline
+        .clips
+        .iter()
+        .filter(|clip| clip_ids.contains(&clip.id))
+        .map(|clip| clip.label.as_str())
+        .collect();
+    Ok(ToolOutcome::write(
+        format!(
+            "Deleted {} clips and closed the gap: {}",
+            clip_ids.len(),
+            labels.join(", ")
+        ),
+        json!({"clipIds": clip_ids}),
+        vec![DocumentCommand::RippleDeleteClips {
+            timeline_id: timeline.id.clone(),
+            clip_ids,
+            scope: Some(scope),
+        }],
+    ))
+}
+
+fn clip_close_gaps(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let track_id = args.opt_str("trackId").map(str::to_string);
+    if let Some(id) = &track_id {
+        track_of_id(timeline, id)?;
+    }
+    Ok(ToolOutcome::write(
+        match &track_id {
+            Some(id) => format!("Closed the gaps on {id}"),
+            None => "Closed the gaps on every row".to_string(),
+        },
+        json!({"trackId": track_id}),
+        vec![DocumentCommand::CloseGaps {
+            timeline_id: timeline.id.clone(),
+            track_id,
+        }],
+    ))
+}
+
+fn clip_delete_gap(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
+    let timeline = super::timeline_of(moka, args.req_str("timelineId")?)?;
+    let track_id = args.req_str("trackId")?.to_string();
+    track_of_id(timeline, &track_id)?;
+    let at_ms = args.req_i64("atMs")?;
+    let scope = match args.opt_str("scope").unwrap_or("track") {
+        "all" => RippleScope::All,
+        "track" => RippleScope::Track,
+        other => {
+            return Err(ToolError::validation(format!(
+                "scope '{other}' is not all or track"
+            )))
+        }
+    };
+    Ok(ToolOutcome::write(
+        format!("Deleted the gap at {at_ms} ms on {track_id}"),
+        json!({"trackId": track_id, "atMs": at_ms}),
+        vec![DocumentCommand::DeleteGap {
+            timeline_id: timeline.id.clone(),
+            track_id,
+            at_ms,
+            scope: Some(scope),
         }],
     ))
 }

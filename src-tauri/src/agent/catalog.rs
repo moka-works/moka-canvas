@@ -726,6 +726,24 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("speed", "number", "Playback speed"),
             ("volume", "number", "Volume, 0 to 1"),
             ("text", "object", "Text content and style for a text clip"),
+            ("placement", "string", "fit, overwrite, or ripple; fit refuses an occupied place"),
+            ("rippleScope", "string", "all or track, for placement ripple"),
+        ])),
+        command("clip.ripple_delete", "clip", ToolRisk::Destroy, "Delete clips and pull what followed them back.", schema(&["timelineId", "clipIds", "confirm"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("clipIds", "array", "Clips to delete"),
+            ("scope", "string", "all or track"),
+            ("confirm", "string", "Must be non-empty"),
+        ])),
+        command("clip.close_gaps", "clip", ToolRisk::Write, "Pull each row's clips left until the gaps between them are gone.", schema(&["timelineId"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("trackId", "string", "One row; every row when omitted"),
+        ])),
+        command("clip.delete_gap", "clip", ToolRisk::Write, "Take the empty stretch at a moment out and pull the rest back.", schema(&["timelineId", "trackId", "atMs"], &[
+            ("timelineId", "string", "Timeline id"),
+            ("trackId", "string", "Track holding the gap"),
+            ("atMs", "integer", "A moment inside the gap"),
+            ("scope", "string", "all or track"),
         ])),
         command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
             ("timelineId", "string", "Timeline id"),

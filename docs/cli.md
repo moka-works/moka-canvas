@@ -63,6 +63,14 @@ moka --project ./lake tools call timeline.get --input '{"timelineId":"tl_1"}'
 # 写（command 可撤销）
 moka --project ./lake tools call clip.trim \
   --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","durationMs":4000}]}'
+# 在任意位置落片：fit 只接受空位；overwrite 裁/切底下；ripple 整体后移
+moka --project ./lake tools call clip.add \
+  --input '{"timelineId":"tl_1","kind":"video","assetId":"a_1","startMs":12000,"placement":"ripple","rippleScope":"all"}'
+moka --project ./lake --yes tools call clip.ripple_delete \
+  --input '{"timelineId":"tl_1","clipIds":["cl_1"],"confirm":"delete-clips","scope":"all"}'
+moka --project ./lake tools call clip.close_gaps --input '{"timelineId":"tl_1","trackId":"tr_v1"}'
+moka --project ./lake tools call clip.delete_gap \
+  --input '{"timelineId":"tl_1","trackId":"tr_v1","atMs":8000,"scope":"track"}'
 moka --project ./lake changes list
 moka --project ./lake changes undo cs_...
 

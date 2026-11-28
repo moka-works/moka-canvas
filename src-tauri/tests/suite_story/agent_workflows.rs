@@ -27,8 +27,7 @@ fn test_app(root: &Path) -> axum::Router {
 /// The registry is process-wide, and it is what a model's protocol is checked
 /// against when a planner asks whether it can read a voice recording.
 async fn converters() {
-    static ROOT: tokio::sync::OnceCell<tempfile::TempDir> =
-        tokio::sync::OnceCell::const_new();
+    static ROOT: tokio::sync::OnceCell<tempfile::TempDir> = tokio::sync::OnceCell::const_new();
     ROOT.get_or_init(|| async {
         let dir = tempfile::TempDir::new().expect("a temporary models root");
         moka_canvas::converter::deploy::ensure_deployed(dir.path())
@@ -816,15 +815,12 @@ async fn a_story_batch_can_be_planned_from_the_document() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|input| input["role"] == "referenceAudio"
-                && input["assetId"] == "asset-voice"),
+            .any(|input| input["role"] == "referenceAudio" && input["assetId"] == "asset-voice"),
         "{}",
         item["inputs"]
     );
     let prompt = item["prompt"].as_str().unwrap();
-    assert!(prompt.contains(
-        "<Audio 1> carries the voice of the speaker labelled (S1)"
-    ));
+    assert!(prompt.contains("<Audio 1> carries the voice of the speaker labelled (S1)"));
     assert!(prompt.contains("Ahe (S1): \"Quiet.\""), "{prompt}");
 
     let shot_voice = call(
@@ -845,8 +841,7 @@ async fn a_story_batch_can_be_planned_from_the_document() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|input| input["role"] == "referenceAudio"
-                && input["assetId"] == "asset-voice"),
+            .any(|input| input["role"] == "referenceAudio" && input["assetId"] == "asset-voice"),
         "{}",
         item["inputs"]
     );
@@ -1347,7 +1342,10 @@ async fn a_bridge_is_filmed_between_the_clips_beside_it() {
         );
     }
     for (index, act_id) in [&before, &after].into_iter().enumerate() {
-        let act = acts.iter().find(|act| act["id"] == act_id.as_str()).unwrap();
+        let act = acts
+            .iter()
+            .find(|act| act["id"] == act_id.as_str())
+            .unwrap();
         let keyframe_id = act["keyframes"][0]["id"].as_str().unwrap();
         for target in [
             json!({
@@ -1610,8 +1608,14 @@ async fn a_turnaround_sheet_can_be_filed_for_a_character_made_without_its_place(
         json!({"paths": [main_picture.to_string_lossy(), sheet.to_string_lossy()]}),
     )
     .await;
-    let main_asset = imported["assetsAdded"][0]["id"].as_str().unwrap().to_string();
-    let sheet_asset = imported["assetsAdded"][1]["id"].as_str().unwrap().to_string();
+    let main_asset = imported["assetsAdded"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let sheet_asset = imported["assetsAdded"][1]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     for (view, asset) in [("main", &main_asset), ("turnaround", &sheet_asset)] {
         call(
@@ -1639,4 +1643,86 @@ async fn a_turnaround_sheet_can_be_filed_for_a_character_made_without_its_place(
         "the sheet's place holds only the sheet, not a copy of the main picture"
     );
     assert_eq!(takes[0]["assetIds"][0], sheet_asset);
+}
+
+#[tokio::test]
+async fn a_cutting_room_plan_inserts_and_closes_gaps() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let app = test_app(temp.path());
+    create_project(&app, &project).await;
+
+    let created = call(&app, "timeline.create", json!({"name": "Cut"})).await;
+    let timeline_id = created["data"]["timelineId"].as_str().unwrap().to_string();
+    let first = call(
+        &app,
+        "clip.add",
+        json!({"timelineId": timeline_id, "kind": "text",
+               "startMs": 0, "durationMs": 2000,
+               "text": {"content": "One"}}),
+    )
+    .await;
+    let first_id = first["data"]["clipId"].as_str().unwrap().to_string();
+    call(
+        &app,
+        "clip.add",
+        json!({"timelineId": timeline_id, "kind": "text",
+               "startMs": 4000, "durationMs": 1000,
+               "text": {"content": "Two"}}),
+    )
+    .await;
+
+    let opened = current(&app).await;
+    let track_id = opened["moka"]["timelines"][0]["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|track| track["kind"] == "text")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let closed = call(
+        &app,
+        "clip.close_gaps",
+        json!({"timelineId": timeline_id, "trackId": track_id}),
+    )
+    .await;
+    assert_eq!(closed["commands"][0]["type"], "closeGaps");
+    let opened = current(&app).await;
+    let second = &opened["moka"]["timelines"][0]["clips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|clip| clip["startMs"] == 2000)
+        .expect("the second cue was pulled left");
+    assert_eq!(second["durationMs"], 1000);
+
+    let inserted = call(
+        &app,
+        "clip.add",
+        json!({"timelineId": timeline_id, "kind": "text", "placement": "ripple",
+               "rippleScope": "track", "startMs": 1000, "durationMs": 500,
+               "text": {"content": "Middle"}}),
+    )
+    .await;
+    assert_eq!(inserted["commands"][0]["type"], "insertClips");
+    let opened = current(&app).await;
+    assert_eq!(
+        opened["moka"]["timelines"][0]["clips"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+
+    let removed = call(
+        &app,
+        "clip.ripple_delete",
+        json!({"timelineId": timeline_id, "clipIds": [first_id],
+               "confirm": "delete-clips", "scope": "track"}),
+    )
+    .await;
+    assert_eq!(removed["commands"][0]["type"], "rippleDeleteClips");
 }
