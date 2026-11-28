@@ -363,6 +363,23 @@ function encodeClip(clip: TimelineClip): Record<string, unknown> {
   };
   if (clip.assetId !== undefined) doc.assetId = clip.assetId;
   if (clip.adjust !== undefined) doc.adjust = encodeAdjust(clip.adjust);
+  if (clip.transform !== undefined)
+    doc.transform = {
+      scale: asDouble(clip.transform.scale),
+      x: asDouble(clip.transform.x),
+      y: asDouble(clip.transform.y),
+      rotation: asDouble(clip.transform.rotation),
+      ...(clip.transform.crop !== undefined
+        ? {
+            crop: {
+              top: asDouble(clip.transform.crop.top),
+              right: asDouble(clip.transform.crop.right),
+              bottom: asDouble(clip.transform.crop.bottom),
+              left: asDouble(clip.transform.crop.left),
+            },
+          }
+        : {}),
+    };
   if (clip.filter !== undefined) doc.filter = clip.filter;
   if (clip.text !== undefined)
     doc.text = {
@@ -1465,6 +1482,46 @@ function decodeClip(value: unknown): TimelineClip {
   if (doc.assetId !== undefined)
     clip.assetId = asString(doc.assetId, "clips[].assetId");
   if (doc.adjust !== undefined) clip.adjust = decodeAdjust(doc.adjust);
+  if (doc.transform !== undefined) {
+    const transform = asRecord(doc.transform, "clips[].transform");
+    const crop =
+      transform.crop === undefined
+        ? undefined
+        : (() => {
+            const held = asRecord(transform.crop, "clips[].transform.crop");
+            return {
+              top: requireField(
+                unwrapNumber(held.top),
+                "clips[].transform.crop.top",
+              ),
+              right: requireField(
+                unwrapNumber(held.right),
+                "clips[].transform.crop.right",
+              ),
+              bottom: requireField(
+                unwrapNumber(held.bottom),
+                "clips[].transform.crop.bottom",
+              ),
+              left: requireField(
+                unwrapNumber(held.left),
+                "clips[].transform.crop.left",
+              ),
+            };
+          })();
+    clip.transform = {
+      scale: requireField(
+        unwrapNumber(transform.scale),
+        "clips[].transform.scale",
+      ),
+      x: requireField(unwrapNumber(transform.x), "clips[].transform.x"),
+      y: requireField(unwrapNumber(transform.y), "clips[].transform.y"),
+      rotation: requireField(
+        unwrapNumber(transform.rotation),
+        "clips[].transform.rotation",
+      ),
+      ...(crop !== undefined ? { crop } : {}),
+    };
+  }
   if (doc.filter !== undefined) {
     const filter = asString(doc.filter, "clips[].filter") as ClipFilterPreset;
     clip.filter = filter;

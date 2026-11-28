@@ -93,6 +93,7 @@ fn material(
         fade_out_ms: 0,
         muted: false,
         opacity: 1.0,
+        transform: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
         asset_id: Some(asset_id.to_string()),

@@ -791,7 +791,7 @@ fn clip_tools() -> Vec<ToolSpec> {
             ("inMs", "integer", "Range start; omit both to clear"),
             ("outMs", "integer", "Range end"),
         ])),
-        command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
+        command("clip.update", "clip", ToolRisk::Write, "Change clip label, volume, fades, opacity, filter, colour adjustments, transform, or text. Not position or timing.", schema(&["timelineId", "clipId"], &[
             ("timelineId", "string", "Timeline id"),
             ("clipId", "string", "Clip id"),
             ("patch", "object", "Fields to merge into the clip"),

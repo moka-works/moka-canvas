@@ -292,6 +292,22 @@ export interface TextClipData {
  * text clip has no material clock of its own, so its in point is 0 and its
  * out point is its duration.
  */
+export interface ClipCrop {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** How a picture sits on the frame: fitted at 1, centred at 0, unrotated at 0. */
+export interface ClipTransform {
+  scale: number;
+  x: number;
+  y: number;
+  rotation: number;
+  crop?: ClipCrop;
+}
+
 export interface TimelineClip {
   id: ClipId;
   trackId: TrackId;
@@ -317,6 +333,8 @@ export interface TimelineClip {
   filter?: ClipFilterPreset;
   /** 0..1, for a clip on an upper video track drawing over the one below. */
   opacity: number;
+  /** Position, scale, rotation and crop of a picture; absent means fitted. */
+  transform?: ClipTransform;
   /** Present exactly on text clips. */
   text?: TextClipData;
   createdAt: IsoTimestamp;

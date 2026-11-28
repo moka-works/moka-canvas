@@ -200,14 +200,31 @@ function drawPictureClip(
     !filterEnabled && (look.filter.length > 0 || look.veil !== null);
 
   // A picture stored turned is fitted by its turned shape, so what fills the
-  // frame is what a viewer sees rather than what the file memorised.
-  const turned = picture.rotationDeg === 90 || picture.rotationDeg === 270;
+  // frame is what a viewer sees rather than what the file memorised. A clip's
+  // own transform composes on top of that turn.
+  const transform = clip.transform;
+  const crop = transform?.crop;
+  const sourceX = picture.width * (crop?.left ?? 0);
+  const sourceY = picture.height * (crop?.top ?? 0);
+  const sourceWidth =
+    picture.width * (1 - (crop?.left ?? 0) - (crop?.right ?? 0));
+  const sourceHeight =
+    picture.height * (1 - (crop?.top ?? 0) - (crop?.bottom ?? 0));
+  const totalRotation = picture.rotationDeg + (transform?.rotation ?? 0);
+  const turned = Math.abs(totalRotation % 180) === 90;
   const box = containRect(
-    turned ? picture.height : picture.width,
-    turned ? picture.width : picture.height,
+    turned ? sourceHeight : sourceWidth,
+    turned ? sourceWidth : sourceHeight,
     frameWidth,
     frameHeight,
   );
+  const scale = transform?.scale ?? 1;
+  const destWidth = box.width * scale;
+  const destHeight = box.height * scale;
+  const destX =
+    box.x + (box.width - destWidth) / 2 + (transform?.x ?? 0) * frameWidth;
+  const destY =
+    box.y + (box.height - destHeight) / 2 + (transform?.y ?? 0) * frameHeight;
   // Whatever the context already carries is part of this clip's presence: a
   // seam blend sets its factor on the context, so the two multiply where the
   // clip's own opacity and fades are applied.
@@ -215,27 +232,28 @@ function drawPictureClip(
   ctx.save();
   ctx.globalAlpha = alpha * carried;
   if (filter) ctx.filter = filter;
-  if (picture.rotationDeg !== 0) {
-    // The file asks for the turn and WebCodecs never applies it; package 12
-    // lets ffmpeg autorotate from the same matrix, so both sides agree.
-    ctx.translate(box.x + box.width / 2, box.y + box.height / 2);
-    ctx.rotate((picture.rotationDeg * Math.PI) / 180);
-    ctx.drawImage(
-      picture.source,
-      -box.width / 2,
-      -box.height / 2,
-      box.width,
-      box.height,
-    );
-  } else {
-    ctx.drawImage(picture.source, box.x, box.y, box.width, box.height);
-  }
+  // The file asks for its turn and WebCodecs never applies it; ffmpeg
+  // autorotates from the same matrix, so both sides agree. The clip's own
+  // rotation is added to it.
+  ctx.translate(destX + destWidth / 2, destY + destHeight / 2);
+  if (totalRotation !== 0) ctx.rotate((totalRotation * Math.PI) / 180);
+  ctx.drawImage(
+    picture.source,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    -destWidth / 2,
+    -destHeight / 2,
+    destWidth,
+    destHeight,
+  );
   if (filter) ctx.filter = "none";
   if (veil) {
     ctx.globalAlpha = alpha * veil.alpha * carried;
     ctx.globalCompositeOperation = "soft-light";
     ctx.fillStyle = veil.color;
-    ctx.fillRect(box.x, box.y, box.width, box.height);
+    ctx.fillRect(-destWidth / 2, -destHeight / 2, destWidth, destHeight);
   }
   ctx.restore();
   return { coloursSkipped, drew: true };

@@ -241,6 +241,42 @@ pub fn check_clip(
             "Clip opacity is outside 0–1",
         ));
     }
+    if let Some(transform) = &clip.transform {
+        if clip.kind != TrackKind::Video {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "Only a picture can be scaled or cropped",
+            ));
+        }
+        if !transform.scale.is_finite()
+            || !(0.05..=10.0).contains(&transform.scale)
+            || !transform.x.is_finite()
+            || !(-1.0..=1.0).contains(&transform.x)
+            || !transform.y.is_finite()
+            || !(-1.0..=1.0).contains(&transform.y)
+            || !transform.rotation.is_finite()
+            || !(-180.0..=180.0).contains(&transform.rotation)
+        {
+            return Err(CommandError::new(
+                "VALIDATION_FAILED",
+                "Scale runs 0.05–10, position −1–1, rotation −180–180",
+            ));
+        }
+        if let Some(crop) = &transform.crop {
+            let sides = [crop.top, crop.right, crop.bottom, crop.left];
+            if sides
+                .iter()
+                .any(|side| !side.is_finite() || !(0.0..=0.45).contains(side))
+                || crop.top + crop.bottom >= 0.9
+                || crop.left + crop.right >= 0.9
+            {
+                return Err(CommandError::new(
+                    "VALIDATION_FAILED",
+                    "Crop sides run 0 to 0.45 and leave a picture between them",
+                ));
+            }
+        }
+    }
     if clip.fade_in_ms < 0
         || clip.fade_out_ms < 0
         || clip.fade_in_ms as i128 + clip.fade_out_ms as i128 > clip.duration_ms as i128
@@ -999,6 +1035,11 @@ pub fn merge_clip_patch(clip: &TimelineClip, patch: &ClipPatch) -> TimelineClip 
     if let Some(opacity) = patch.opacity {
         merged.opacity = opacity;
     }
+    if patch.clear_transform == Some(true) {
+        merged.transform = None;
+    } else if let Some(transform) = &patch.transform {
+        merged.transform = Some(transform.clone());
+    }
     // The double layer: left off leaves the grade, null clears it, a value sets
     // it. A plain Option could not tell the first two apart.
     if let Some(adjust) = &patch.adjust {
@@ -1069,6 +1110,10 @@ pub fn invert_clip_patch(clip: &TimelineClip, patch: &ClipPatch) -> ClipPatch {
     }
     if patch.opacity.is_some() {
         inverse.opacity = Some(clip.opacity);
+    }
+    if patch.transform.is_some() || patch.clear_transform == Some(true) {
+        inverse.transform = clip.transform.clone();
+        inverse.clear_transform = Some(clip.transform.is_none());
     }
     if let Some(adjust) = &patch.adjust {
         // A grade the patch brought in from nothing goes back out as null; one

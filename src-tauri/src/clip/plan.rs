@@ -576,10 +576,50 @@ fn picture_filters(
     if clip.speed != 1.0 {
         parts.push(format!("setpts=PTS/{}", num(clip.speed)));
     }
-    parts.push(format!(
-        "scale={width}:{height}:force_original_aspect_ratio=decrease,\
+    if let Some(transform) = &clip.transform {
+        if let Some(crop) = &transform.crop {
+            parts.push(format!(
+                "crop=iw*{w}:ih*{h}:iw*{l}:ih*{t}",
+                w = num(1.0 - crop.left - crop.right),
+                h = num(1.0 - crop.top - crop.bottom),
+                l = num(crop.left),
+                t = num(crop.top),
+            ));
+        }
+        if transform.rotation != 0.0 {
+            parts.push(format!(
+                "rotate={angle}*PI/180:ow=rotw(iw):oh=roth(ih):fillcolor=none",
+                angle = num(transform.rotation),
+            ));
+        }
+        parts.push(format!(
+            "scale={width}:{height}:force_original_aspect_ratio=decrease"
+        ));
+        if transform.scale != 1.0 {
+            parts.push(format!(
+                "scale=iw*{scale}:ih*{scale}",
+                scale = num(transform.scale),
+            ));
+        }
+        if transform.scale <= 1.0 {
+            parts.push(format!(
+                "pad={width}:{height}:min({width}-iw\\,max(0\\,(ow-iw)/2+{x}*{width})):min({height}-ih\\,max(0\\,(oh-ih)/2+{y}*{height})):color={background}",
+                x = num(transform.x),
+                y = num(transform.y),
+            ));
+        } else {
+            parts.push(format!(
+                "crop={width}:{height}:max(0\\,min(iw-{width}\\,(iw-{width})/2-{x}*{width})):max(0\\,min(ih-{height}\\,(ih-{height})/2-{y}*{height}))",
+                x = num(transform.x),
+                y = num(transform.y),
+            ));
+        }
+    } else {
+        parts.push(format!(
+            "scale={width}:{height}:force_original_aspect_ratio=decrease,\
 pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={background}"
-    ));
+        ));
+    }
     if let Some(adjust) = &clip.adjust {
         parts.push(format!(
             "eq=brightness={brightness}:contrast={contrast}:saturation={saturation}",
@@ -862,6 +902,39 @@ mod tests {
         assert!(plan.graph.contains("setpts=PTS+0/TB"));
         assert!(plan.audio);
         assert!(plan.ass.is_none());
+    }
+
+    #[test]
+    fn a_transformed_picture_is_fitted_then_moved_and_turned() {
+        let world = world(&[video()]);
+        let mut clip = fixtures::material("c1", "t1", TrackKind::Video, "a1", 0, 2000);
+        clip.transform = Some(crate::domain::ClipTransform {
+            scale: 0.5,
+            x: 0.2,
+            y: -0.1,
+            rotation: 15.0,
+            crop: Some(crate::domain::ClipCrop {
+                top: 0.1,
+                right: 0.05,
+                bottom: 0.1,
+                left: 0.05,
+            }),
+        });
+        let timeline = fixtures::timeline(
+            "Cut",
+            vec![fixtures::track("t1", TrackKind::Video)],
+            vec![clip],
+            Vec::new(),
+        );
+        let plan = ok(&world, &timeline, &fixtures::caps(&["fade"], true));
+        assert!(
+            plan.graph.contains("crop=iw*0.9:ih*0.8:iw*0.05:ih*0.1"),
+            "{}",
+            plan.graph
+        );
+        assert!(plan.graph.contains("rotate=15*PI/180"), "{}", plan.graph);
+        assert!(plan.graph.contains("scale=iw*0.5:ih*0.5"), "{}", plan.graph);
+        assert!(plan.graph.contains("pad=1920:1080:min("), "{}", plan.graph);
     }
 
     #[test]

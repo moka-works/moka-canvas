@@ -324,6 +324,12 @@
     "start": "Start",
     "textSection": "Text",
     "tooFastToast": "Too short to run that fast",
+    "positionX": "X position, %",
+    "positionY": "Y position, %",
+    "resetTransform": "Reset transform",
+    "rotation": "Rotation, °",
+    "scalePercent": "Scale, %",
+    "transformSection": "Transform",
     "volumeLabel": "Volume"
   },
   "textFields": {

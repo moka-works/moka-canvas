@@ -1930,3 +1930,74 @@ describe("markers and the working range", () => {
     expect(next.timelines![0].schemaVersion).toBe(2);
   });
 });
+
+describe("a picture's transform", () => {
+  it("scales, places, turns and crops a picture, and the codec keeps it", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    const transform = {
+      scale: 0.5,
+      x: 0.2,
+      y: -0.1,
+      rotation: 15,
+      crop: { top: 0.1, right: 0.05, bottom: 0.1, left: 0.05 },
+    };
+    const next = expectRoundTrip(moka, {
+      type: "updateClips",
+      timelineId: ids.timeline,
+      patches: [{ clipId: ids.videoClip, patch: { transform } }],
+    });
+    expect(
+      next.timelines![0].clips.find((clip) => clip.id === ids.videoClip)!
+        .transform,
+    ).toEqual(transform);
+    expect(
+      decodeMokaFile(encodeMokaFile(next)).timelines![0].clips.find(
+        (clip) => clip.id === ids.videoClip,
+      )!.transform,
+    ).toEqual(transform);
+  });
+
+  it("refuses a transform outside the frame's bounds", () => {
+    const moka = buildTimelineMokaFile();
+    const ids = timelineIds();
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateClips",
+          timelineId: ids.timeline,
+          patches: [
+            {
+              clipId: ids.videoClip,
+              patch: {
+                transform: { scale: 20, x: 0, y: 0, rotation: 0 },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      codeOf(() =>
+        apply(moka, {
+          type: "updateClips",
+          timelineId: ids.timeline,
+          patches: [
+            {
+              clipId: ids.videoClip,
+              patch: {
+                transform: {
+                  scale: 1,
+                  x: 0,
+                  y: 0,
+                  rotation: 0,
+                  crop: { top: 0.5, right: 0, bottom: 0.5, left: 0 },
+                },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toBe("VALIDATION_FAILED");
+  });
+});

@@ -304,6 +304,26 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
     );
   };
 
+  const transformClips = clips.filter((clip) => clip.kind === "video");
+  const firstTransform = transformClips[0]?.transform;
+  const transformDefaults = { scale: 1, x: 0, y: 0, rotation: 0 };
+  const applyTransform = (
+    patch: Partial<{ scale: number; x: number; y: number; rotation: number }>,
+  ) => {
+    commit(
+      transformClips.map((clip) => ({
+        clipId: clip.id,
+        patch: {
+          transform: {
+            ...transformDefaults,
+            ...(clip.transform ?? {}),
+            ...patch,
+          },
+        },
+      })),
+    );
+  };
+
   const soundClips = clips.filter(materialHoldsSound);
   const volume = sharedValue(soundClips.map((clip) => clip.volume));
   const muted = sharedValue(soundClips.map((clip) => clip.muted));
@@ -559,6 +579,50 @@ export function ClipFields({ timeline, clips }: ClipFieldsProps) {
           <p className="inspector-note">{t("clip:clipFields.speedLocked")}</p>
         )}
       </section>
+
+      {transformClips.length > 0 && (
+        <section className="inspector-section">
+          <h3>{t("clip:clipFields.transformSection")}</h3>
+          <div className="clip-inspector-pair">
+            <NumberField
+              label={t("clip:clipFields.scalePercent")}
+              max={1_000}
+              min={5}
+              onCommit={(value) => applyTransform({ scale: value / 100 })}
+              value={Math.round((firstTransform?.scale ?? 1) * 100)}
+            />
+            <NumberField
+              label={t("clip:clipFields.rotation")}
+              max={180}
+              min={-180}
+              onCommit={(value) => applyTransform({ rotation: value })}
+              value={Math.round(firstTransform?.rotation ?? 0)}
+            />
+          </div>
+          <div className="clip-inspector-pair">
+            <NumberField
+              label={t("clip:clipFields.positionX")}
+              max={100}
+              min={-100}
+              onCommit={(value) => applyTransform({ x: value / 100 })}
+              value={Math.round((firstTransform?.x ?? 0) * 100)}
+            />
+            <NumberField
+              label={t("clip:clipFields.positionY")}
+              max={100}
+              min={-100}
+              onCommit={(value) => applyTransform({ y: value / 100 })}
+              value={Math.round((firstTransform?.y ?? 0) * 100)}
+            />
+          </div>
+          <button
+            onClick={() => applyTransform(transformDefaults)}
+            type="button"
+          >
+            {t("clip:clipFields.resetTransform")}
+          </button>
+        </section>
+      )}
 
       {soundClips.length > 0 && (
         <section className="inspector-section">

@@ -1100,6 +1100,26 @@ pub struct TextClipData {
 /// writes them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ClipCrop {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipTransform {
+    pub scale: f64,
+    pub x: f64,
+    pub y: f64,
+    pub rotation: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<ClipCrop>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TimelineClip {
     pub id: ClipId,
     pub track_id: TrackId,
@@ -1119,6 +1139,9 @@ pub struct TimelineClip {
     pub muted: bool,
     /// 0..1, for a clip on an upper video track drawing over the one below.
     pub opacity: f64,
+    /// Position, scale, rotation and crop of a picture; absent means fitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<ClipTransform>,
     pub created_at: IsoTimestamp,
     pub updated_at: IsoTimestamp,
     /// The material the clip reads; a text clip names none.
@@ -1442,6 +1465,11 @@ pub struct ClipPatch {
     pub muted: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<ClipTransform>,
+    /// Put back a picture that had no transform of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_transform: Option<bool>,
     /// Absent leaves the grade, null clears it, a value sets it.
     #[serde(
         default,

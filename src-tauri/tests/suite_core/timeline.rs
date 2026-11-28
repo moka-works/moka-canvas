@@ -9,11 +9,11 @@ use moka_canvas::domain::timeline::{
 };
 use moka_canvas::domain::validate::validate_moka_file;
 use moka_canvas::domain::{
-    new_id, AssetProbe, CanvasDocument, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide, ClipSlip,
-    DocumentCommand, InsertMode, MokaFile, ProjectMetadata, ResourceEntry, ResourceRegistry,
-    RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition, TimelineClip,
-    TimelineDocument, TimelineMarker, TimelineSettings, TimelineSettingsPatch, TimelineTrack,
-    TimelineTransition, TrackKind, TrackPatch, TransitionKind, MOKA_FILE_VERSION,
+    new_id, AssetProbe, CanvasDocument, ClipCrop, ClipMove, ClipPatch, ClipPatchEntry, ClipSlide,
+    ClipSlip, ClipTransform, DocumentCommand, InsertMode, MokaFile, ProjectMetadata, ResourceEntry,
+    ResourceRegistry, RippleScope, TextAlign, TextClipData, TextClipStyle, TextPosition,
+    TimelineClip, TimelineDocument, TimelineMarker, TimelineSettings, TimelineSettingsPatch,
+    TimelineTrack, TimelineTransition, TrackKind, TrackPatch, TransitionKind, MOKA_FILE_VERSION,
 };
 use moka_canvas::project::codec::{decode_moka_file, encode_moka_file};
 use moka_canvas::project::store::ProjectRegistry;
@@ -208,6 +208,7 @@ fn clip_of(moka: &MokaFile, asset_id: &str, track_id: &str, start_ms: i64) -> Ti
         fade_out_ms: 0,
         muted: false,
         opacity: 1.0,
+        transform: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
         asset_id: Some(asset.id.clone()),
@@ -253,6 +254,7 @@ fn text_clip(content: &str, track_id: &str, start_ms: i64) -> TimelineClip {
         fade_out_ms: 0,
         muted: false,
         opacity: 1.0,
+        transform: None,
         created_at: NOW.into(),
         updated_at: NOW.into(),
         asset_id: None,
@@ -328,6 +330,7 @@ fn timeline_fixture() -> MokaFile {
             fade_out_ms: 0,
             muted: false,
             opacity: 1.0,
+            transform: None,
             created_at: NOW.into(),
             updated_at: NOW.into(),
             asset_id: Some(VIDEO_ASSET.into()),
@@ -2063,6 +2066,93 @@ fn recomposes_a_seam_chain_through_the_public_commands_and_one_undo_puts_the_old
         .transitions
         .iter()
         .all(|transition| transition.kind == TransitionKind::DipToBlack));
+}
+
+#[test]
+fn transforms_a_picture_and_undoes_it() {
+    let moka = timeline_fixture();
+    let transform = ClipTransform {
+        scale: 0.5,
+        x: 0.2,
+        y: -0.1,
+        rotation: 15.0,
+        crop: Some(ClipCrop {
+            top: 0.1,
+            right: 0.05,
+            bottom: 0.1,
+            left: 0.05,
+        }),
+    };
+    let next = round_trip(
+        &moka,
+        vec![DocumentCommand::UpdateClips {
+            timeline_id: TIMELINE.into(),
+            patches: vec![ClipPatchEntry {
+                clip_id: VIDEO_CLIP.into(),
+                patch: ClipPatch {
+                    transform: Some(transform.clone()),
+                    ..Default::default()
+                },
+            }],
+        }],
+    );
+    assert_eq!(clip_at(&next, 0, VIDEO_CLIP).transform, Some(transform));
+}
+
+#[test]
+fn refuses_a_transform_outside_the_frame_and_a_crop_that_empties_it() {
+    let moka = timeline_fixture();
+    let too_large = ClipTransform {
+        scale: 20.0,
+        x: 0.0,
+        y: 0.0,
+        rotation: 0.0,
+        crop: None,
+    };
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateClips {
+                timeline_id: TIMELINE.into(),
+                patches: vec![ClipPatchEntry {
+                    clip_id: VIDEO_CLIP.into(),
+                    patch: ClipPatch {
+                        transform: Some(too_large),
+                        ..Default::default()
+                    },
+                }],
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
+    let empty = ClipTransform {
+        scale: 1.0,
+        x: 0.0,
+        y: 0.0,
+        rotation: 0.0,
+        crop: Some(ClipCrop {
+            top: 0.5,
+            right: 0.0,
+            bottom: 0.5,
+            left: 0.0,
+        }),
+    };
+    assert_eq!(
+        code_of(
+            &moka,
+            DocumentCommand::UpdateClips {
+                timeline_id: TIMELINE.into(),
+                patches: vec![ClipPatchEntry {
+                    clip_id: VIDEO_CLIP.into(),
+                    patch: ClipPatch {
+                        transform: Some(empty),
+                        ..Default::default()
+                    },
+                }],
+            }
+        ),
+        "VALIDATION_FAILED"
+    );
 }
 
 #[test]

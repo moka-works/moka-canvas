@@ -324,6 +324,12 @@
     "start": "开始",
     "textSection": "文字",
     "tooFastToast": "片段太短，无法以该速度播放",
+    "positionX": "X 位置（%）",
+    "positionY": "Y 位置（%）",
+    "resetTransform": "重置变换",
+    "rotation": "旋转（°）",
+    "scalePercent": "缩放（%）",
+    "transformSection": "变换",
     "volumeLabel": "音量"
   },
   "textFields": {

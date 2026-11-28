@@ -192,6 +192,51 @@ export function checkClip(
       "VALIDATION_FAILED",
       i18n.t("errors:timeline.clipOpacityOutside"),
     );
+  if (clip.transform !== undefined) {
+    const transform = clip.transform;
+    if (clip.kind !== "video")
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:timeline.transformNeedsPicture"),
+      );
+    if (
+      !Number.isFinite(transform.scale) ||
+      transform.scale < 0.05 ||
+      transform.scale > 10 ||
+      !Number.isFinite(transform.x) ||
+      transform.x < -1 ||
+      transform.x > 1 ||
+      !Number.isFinite(transform.y) ||
+      transform.y < -1 ||
+      transform.y > 1 ||
+      !Number.isFinite(transform.rotation) ||
+      transform.rotation < -180 ||
+      transform.rotation > 180
+    )
+      throw new CommandError(
+        "VALIDATION_FAILED",
+        i18n.t("errors:timeline.transformOutside"),
+      );
+    if (transform.crop !== undefined) {
+      const sides = [
+        transform.crop.top,
+        transform.crop.right,
+        transform.crop.bottom,
+        transform.crop.left,
+      ];
+      if (
+        sides.some(
+          (side) => !Number.isFinite(side) || side < 0 || side > 0.45,
+        ) ||
+        transform.crop.top + transform.crop.bottom >= 0.9 ||
+        transform.crop.left + transform.crop.right >= 0.9
+      )
+        throw new CommandError(
+          "VALIDATION_FAILED",
+          i18n.t("errors:timeline.cropOutside"),
+        );
+    }
+  }
   if (
     !Number.isInteger(clip.fadeInMs) ||
     clip.fadeInMs < 0 ||
