@@ -216,6 +216,8 @@
     "brightness": "亮度",
     "contrast": "对比度",
     "saturation": "饱和度",
+    "temperature": "色温",
+    "tint": "色调",
     "selectHint": "选择片段进行调整"
   },
   "textPanel": {

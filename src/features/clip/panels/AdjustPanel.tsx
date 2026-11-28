@@ -30,6 +30,8 @@ const AXES = [
   { key: "brightness", labelKey: "clip:adjust.brightness" },
   { key: "contrast", labelKey: "clip:adjust.contrast" },
   { key: "saturation", labelKey: "clip:adjust.saturation" },
+  { key: "temperature", labelKey: "clip:adjust.temperature" },
+  { key: "tint", labelKey: "clip:adjust.tint" },
 ] as const;
 
 type Axis = (typeof AXES)[number]["key"];
@@ -51,6 +53,9 @@ export function AdjustPanel() {
     contrast: sharedValue(clips.map((clip) => clip.adjust?.contrast ?? 0)) ?? 0,
     saturation:
       sharedValue(clips.map((clip) => clip.adjust?.saturation ?? 0)) ?? 0,
+    temperature:
+      sharedValue(clips.map((clip) => clip.adjust?.temperature ?? 0)) ?? 0,
+    tint: sharedValue(clips.map((clip) => clip.adjust?.tint ?? 0)) ?? 0,
   };
   const [held, setHeld] = useState<ClipAdjust | null>(null);
   const shown = held ?? shared;
@@ -82,7 +87,9 @@ export function AdjustPanel() {
           : after !== null &&
             before.brightness === after.brightness &&
             before.contrast === after.contrast &&
-            before.saturation === after.saturation;
+            before.saturation === after.saturation &&
+            (before.temperature ?? 0) === (after.temperature ?? 0) &&
+            (before.tint ?? 0) === (after.tint ?? 0);
       return same ? [] : [{ clipId: clip.id, patch: { adjust: after } }];
     });
     if (patches.length === 0) return;
@@ -97,7 +104,7 @@ export function AdjustPanel() {
     <div className="clip-adjust-page" data-testid="clip-adjust-panel">
       {AXES.map(({ key, labelKey }) => {
         const label = t(labelKey);
-        const slider = sliderFromAdjust(shown[key]);
+        const slider = sliderFromAdjust(shown[key] ?? 0);
         return (
           <label className="clip-adjust-row" key={key}>
             <span>{label}</span>

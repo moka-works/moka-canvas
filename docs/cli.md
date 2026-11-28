@@ -65,6 +65,11 @@ moka --project ./lake tools call clip.trim \
   --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","durationMs":4000}]}'
 moka --project ./lake tools call clip.update \
   --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"transform":{"scale":0.5,"x":0.2,"y":-0.1,"rotation":15}}}'
+# 调色：亮度/对比/饱和，以及色温/色调（-1..1，0 为中性）
+moka --project ./lake tools call clip.update \
+  --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"adjust":{"brightness":0.1,"contrast":0.2,"saturation":0.15,"temperature":0.3,"tint":-0.1}}}'
+moka --project ./lake tools call clip.update \
+  --input '{"timelineId":"tl_1","clipId":"cl_1","patch":{"adjust":null}}'
 moka --project ./lake tools call clip.reverse --input '{"timelineId":"tl_1","clipIds":["cl_1"]}'
 moka --project ./lake tools call clip.freeze --input '{"timelineId":"tl_1","clipId":"cl_1","atMs":12000,"durationMs":2000}'
 moka --project ./lake tools call clip.slip --input '{"timelineId":"tl_1","edits":[{"clipId":"cl_1","byMs":500}]}'

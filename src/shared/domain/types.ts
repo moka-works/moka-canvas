@@ -256,6 +256,10 @@ export interface ClipAdjust {
   contrast: number;
   /** -1..1, drained to loud. */
   saturation: number;
+  /** -1..1, cooler to warmer. Absent is neutral. */
+  temperature?: number;
+  /** -1..1, greener to more magenta. Absent is neutral. */
+  tint?: number;
 }
 
 /** How a text clip is written, in pixels on the timeline's own canvas. */

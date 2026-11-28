@@ -216,6 +216,8 @@
     "brightness": "Brightness",
     "contrast": "Contrast",
     "saturation": "Saturation",
+    "temperature": "Temperature",
+    "tint": "Tint",
     "selectHint": "Select a clip to adjust"
   },
   "textPanel": {

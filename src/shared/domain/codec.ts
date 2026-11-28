@@ -320,11 +320,17 @@ function encodeFolder(folder: CanvasFolder): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 function encodeAdjust(adjust: ClipAdjust): Record<string, unknown> {
-  return {
+  const doc: Record<string, unknown> = {
     brightness: asDouble(adjust.brightness),
     contrast: asDouble(adjust.contrast),
     saturation: asDouble(adjust.saturation),
   };
+  // Neutral white balance leaves no key behind, so a document written before
+  // these axes existed comes back the way it went in.
+  if (adjust.temperature !== undefined)
+    doc.temperature = asDouble(adjust.temperature);
+  if (adjust.tint !== undefined) doc.tint = asDouble(adjust.tint);
+  return doc;
 }
 
 function encodeTextStyle(style: TextClipStyle): Record<string, unknown> {
@@ -1380,11 +1386,16 @@ function decodeFolders(value: unknown): CanvasFolder[] | undefined {
 function decodeAdjust(value: unknown): ClipAdjust | undefined {
   if (value === undefined || value === null) return undefined;
   const doc = asRecord(value, "clips[].adjust");
-  return {
+  const adjust: ClipAdjust = {
     brightness: requireField(unwrapNumber(doc.brightness), "adjust.brightness"),
     contrast: requireField(unwrapNumber(doc.contrast), "adjust.contrast"),
     saturation: requireField(unwrapNumber(doc.saturation), "adjust.saturation"),
   };
+  const temperature = unwrapNumber(doc.temperature);
+  if (temperature !== undefined) adjust.temperature = temperature;
+  const tint = unwrapNumber(doc.tint);
+  if (tint !== undefined) adjust.tint = tint;
+  return adjust;
 }
 
 const TEXT_STYLE_KEYS = [

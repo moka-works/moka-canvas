@@ -656,6 +656,19 @@ pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={background}"
             contrast = num((1.0 + adjust.contrast).clamp(0.0, 2.0)),
             saturation = num((1.0 + adjust.saturation).clamp(0.0, 2.0)),
         ));
+        // White balance is a channel push: warm lifts red and drops blue, and
+        // tint moves green against magenta. Half the axis range is enough to
+        // read as a cast without turning the picture into a filter.
+        let temperature = adjust.temperature.unwrap_or(0.0).clamp(-1.0, 1.0);
+        let tint = adjust.tint.unwrap_or(0.0).clamp(-1.0, 1.0);
+        if temperature.abs() > 0.005 || tint.abs() > 0.005 {
+            parts.push(format!(
+                "colorbalance=rs={red}:gm={green}:bs={blue}",
+                red = num(temperature * 0.2),
+                green = num(-tint * 0.2),
+                blue = num(-temperature * 0.2),
+            ));
+        }
     }
     if let Some(preset) = clip.filter.as_deref() {
         if let Some(filters) = preset_filters(preset) {
@@ -1417,6 +1430,10 @@ mod tests {
         let world = world(&[video()]);
         let mut clip = fixtures::material("c1", "t1", TrackKind::Video, "a1", 0, 2000);
         clip.adjust = Some(fixtures::adjust(0.25, 0.5, -1.0));
+        if let Some(adjust) = clip.adjust.as_mut() {
+            adjust.temperature = Some(0.5);
+            adjust.tint = Some(-0.5);
+        }
         clip.filter = Some("warm".to_string());
         clip.opacity = 0.5;
         clip.fade_in_ms = 200;
@@ -1436,6 +1453,11 @@ mod tests {
         assert!(
             plan.graph
                 .contains("eq=brightness=0.25:contrast=1.5:saturation=0"),
+            "{}",
+            plan.graph
+        );
+        assert!(
+            plan.graph.contains("colorbalance=rs=0.1:gm=0.1:bs=-0.1"),
             "{}",
             plan.graph
         );

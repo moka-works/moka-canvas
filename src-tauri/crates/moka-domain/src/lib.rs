@@ -1061,6 +1061,10 @@ pub struct ClipAdjust {
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<f64>,
 }
 
 /// How a text clip is written, in pixels on the timeline's own canvas.

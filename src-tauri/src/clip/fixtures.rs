@@ -243,6 +243,8 @@ pub fn adjust(brightness: f64, contrast: f64, saturation: f64) -> ClipAdjust {
         brightness,
         contrast,
         saturation,
+        temperature: None,
+        tint: None,
     }
 }
 

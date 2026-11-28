@@ -196,9 +196,9 @@ function drawPictureClip(
   // Without a filter on the canvas the grade is dropped, and the caller is
   // told: a picture shown ungraded is a fact to put on the badge.
   const filter = filterEnabled ? look.filter : "";
-  const veil = filterEnabled ? look.veil : null;
+  const veils = filterEnabled ? look.veils : [];
   const coloursSkipped =
-    !filterEnabled && (look.filter.length > 0 || look.veil !== null);
+    !filterEnabled && (look.filter.length > 0 || look.veils.length > 0);
 
   // A picture stored turned is fitted by its turned shape, so what fills the
   // frame is what a viewer sees rather than what the file memorised. A clip's
@@ -252,7 +252,7 @@ function drawPictureClip(
       ctx.drawImage(picture.source, box.x, box.y, box.width, box.height);
     }
     if (filter) ctx.filter = "none";
-    if (veil) {
+    for (const veil of veils) {
       ctx.globalAlpha = alpha * veil.alpha * carried;
       ctx.globalCompositeOperation = "soft-light";
       ctx.fillStyle = veil.color;
@@ -273,7 +273,7 @@ function drawPictureClip(
       destHeight,
     );
     if (filter) ctx.filter = "none";
-    if (veil) {
+    for (const veil of veils) {
       ctx.globalAlpha = alpha * veil.alpha * carried;
       ctx.globalCompositeOperation = "soft-light";
       ctx.fillStyle = veil.color;

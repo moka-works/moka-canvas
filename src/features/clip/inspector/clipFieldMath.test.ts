@@ -192,17 +192,28 @@ describe("fades, names and grades", () => {
       brightness: 4,
       contrast: -3,
       saturation: Number.NaN,
+      temperature: 2,
+      tint: Number.NaN,
     };
     expect(clampAdjust(wild)).toEqual({
       brightness: 1,
       contrast: -1,
       saturation: 0,
+      temperature: 1,
     });
     expect(
       adjustIsUntouched({ brightness: 0, contrast: 0, saturation: 0 }),
     ).toBe(true);
     expect(
       adjustIsUntouched({ brightness: 0.4, contrast: 0, saturation: 0 }),
+    ).toBe(false);
+    expect(
+      adjustIsUntouched({
+        brightness: 0,
+        contrast: 0,
+        saturation: 0,
+        temperature: 0.3,
+      }),
     ).toBe(false);
   });
 });

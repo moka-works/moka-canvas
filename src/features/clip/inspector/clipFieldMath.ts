@@ -30,11 +30,20 @@ export const ADJUST_FLOOR = 0.005;
 export function clampAdjust(adjust: ClipAdjust): ClipAdjust {
   const axis = (value: number) =>
     Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
-  return {
+  const clamped: ClipAdjust = {
     brightness: axis(adjust.brightness),
     contrast: axis(adjust.contrast),
     saturation: axis(adjust.saturation),
   };
+  if (adjust.temperature !== undefined) {
+    const temperature = axis(adjust.temperature);
+    if (Math.abs(temperature) > ADJUST_FLOOR) clamped.temperature = temperature;
+  }
+  if (adjust.tint !== undefined) {
+    const tint = axis(adjust.tint);
+    if (Math.abs(tint) > ADJUST_FLOOR) clamped.tint = tint;
+  }
+  return clamped;
 }
 
 /** Whether a grade asks for nothing at all, which is stored as no grade. */
@@ -42,7 +51,9 @@ export function adjustIsUntouched(adjust: ClipAdjust): boolean {
   return (
     Math.abs(adjust.brightness) <= ADJUST_FLOOR &&
     Math.abs(adjust.contrast) <= ADJUST_FLOOR &&
-    Math.abs(adjust.saturation) <= ADJUST_FLOOR
+    Math.abs(adjust.saturation) <= ADJUST_FLOOR &&
+    Math.abs(adjust.temperature ?? 0) <= ADJUST_FLOOR &&
+    Math.abs(adjust.tint ?? 0) <= ADJUST_FLOOR
   );
 }
 

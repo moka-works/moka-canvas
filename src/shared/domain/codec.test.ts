@@ -923,6 +923,20 @@ describe("moka codec", () => {
     expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true);
   });
 
+  it("carries white balance with the grade and leaves neutral off", () => {
+    const cut = buildCutMokaFile();
+    const graded = cut.timelines![0].clips.find((clip) => clip.adjust)!;
+    graded.adjust = {
+      ...graded.adjust!,
+      temperature: 0.4,
+      tint: -0.25,
+    };
+    const decoded = decodeMokaFile(encodeMokaFile(cut));
+    expect(
+      decoded.timelines![0].clips.find((clip) => clip.id === graded.id)!.adjust,
+    ).toEqual(graded.adjust);
+  });
+
   /**
    * The shared pair the other language reads: it decodes the binary to this
    * model and writes the binary back byte for byte, so what a cut timeline

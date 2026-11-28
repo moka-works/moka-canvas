@@ -26,7 +26,8 @@ export interface LookVeil {
 export interface Look {
   /** What the canvas filter is set to; empty when there is nothing to do. */
   filter: string;
-  veil: LookVeil | null;
+  /** Colour washes laid over the picture, in the order the grade asks. */
+  veils: LookVeil[];
 }
 
 /** How far below a fraction an adjustment is taken to be a nudge not worth drawing. */
@@ -74,10 +75,42 @@ export function presetVeil(
   return null;
 }
 
+/**
+ * White balance as a wash, because the canvas has no temperature control.
+ *
+ * The exporter moves the channels themselves; the preview splits the cast in
+ * two — warm against cool, green against magenta — and blends each at the
+ * strength the axis asks for. Two washes rather than one mixed colour keeps a
+ * green-tinted cool clip green and cool instead of averaging it to grey.
+ */
+export function whiteBalanceVeils(adjust: ClipAdjust | undefined): LookVeil[] {
+  if (!adjust) return [];
+  const veils: LookVeil[] = [];
+  const temperature = adjust.temperature ?? 0;
+  if (Math.abs(temperature) > ADJUST_FLOOR) {
+    veils.push({
+      color: temperature > 0 ? "#ff9a4d" : "#4d9aff",
+      alpha: 0.25 * Math.abs(temperature),
+    });
+  }
+  const tint = adjust.tint ?? 0;
+  if (Math.abs(tint) > ADJUST_FLOOR) {
+    veils.push({
+      color: tint > 0 ? "#ff5ad1" : "#5aff8a",
+      alpha: 0.2 * Math.abs(tint),
+    });
+  }
+  return veils;
+}
+
 /** Everything a clip's grade asks for, in one reading. */
 export function clipLook(clip: Pick<TimelineClip, "adjust" | "filter">): Look {
   const filter = [adjustFilter(clip.adjust), presetFilter(clip.filter)]
     .filter((part) => part.length > 0)
     .join(" ");
-  return { filter, veil: presetVeil(clip.filter) };
+  const preset = presetVeil(clip.filter);
+  return {
+    filter,
+    veils: [...(preset ? [preset] : []), ...whiteBalanceVeils(clip.adjust)],
+  };
 }
