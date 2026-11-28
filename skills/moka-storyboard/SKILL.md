@@ -392,11 +392,12 @@ moka --project <PROJECT> tools call story.get --input '{
 ```
 
 If the reader wants a cut now, `story.assemble` lays the chapter's pictures,
-clips, line readings, whole-act voice and score into a timeline, with optional
-subtitles. It reuses the story's edit timeline, so check with the reader before
-overwriting an existing cut; the room's Edit step is where the cut is reviewed
-and adjusted. Say what was assembled — never call a cut finished when its sound
-is not in it.
+clips, line readings, whole-act voice and score into a timeline of that
+chapter's own, with optional subtitles; pass `chapterId`. Each episode keeps its
+own assembled timeline, so check with the reader before overwriting that
+episode's existing cut; the room's Edit step is where the cut is reviewed and
+adjusted. Say what was assembled — never call a cut finished when its sound is
+not in it.
 
 Do **not** confirm the storyboard or edit step unless the reader explicitly
 says to. A finished batch is not a confirmation.

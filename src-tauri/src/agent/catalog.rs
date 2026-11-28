@@ -1174,9 +1174,10 @@ fn story_tools() -> Vec<ToolSpec> {
             ("kind", "string", "image or video"),
             ("prompts", "object", "Map of ask id to {prompt, auto} or null"),
         ])),
-        command("story.assemble", "story", ToolRisk::Write, "Assemble a story into a timeline: pictures or clips, line readings, whole-act voice and score, optionally subtitles.", schema(&["storyId"], &[
+        command("story.assemble", "story", ToolRisk::Write, "Assemble one episode into the timeline it owns: pictures or clips, line readings, whole-act voice and score, optionally subtitles.", schema(&["storyId", "chapterId"], &[
             ("storyId", "string", "Story id"),
-            ("timelineId", "string", "Existing timeline, or a new one when omitted"),
+            ("chapterId", "string", "Episode to assemble"),
+            ("timelineId", "string", "Existing timeline, or the episode's own when omitted"),
             ("timelineName", "string", "Name for a new timeline"),
             ("withSubtitles", "boolean", "Lay each spoken line on a text track"),
         ])),

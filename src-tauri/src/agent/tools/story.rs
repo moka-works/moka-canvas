@@ -14,9 +14,10 @@ use std::collections::HashMap;
 use crate::api::{ApiState, ProjectSession};
 use crate::domain::commands::make_node;
 use crate::domain::story::{
-    StoryAct, StoryActPatch, StoryBriefPatch, StoryChapter, StoryDocument, StoryEdit,
-    StoryEditClip, StoryElement, StoryElementPatch, StoryKeyframe, StoryKeyframePatch, StorySlot,
-    StorySlotTarget, StoryTake, StoryVoiceProfile, REFERENCE_IMAGES_MAX, STORY_SCHEMA_VERSION,
+    StoryAct, StoryActPatch, StoryBriefPatch, StoryChapter, StoryChapterCut, StoryDocument,
+    StoryEdit, StoryEditClip, StoryElement, StoryElementPatch, StoryKeyframe, StoryKeyframePatch,
+    StorySlot, StorySlotTarget, StoryTake, StoryVoiceProfile, REFERENCE_IMAGES_MAX,
+    STORY_SCHEMA_VERSION,
 };
 use crate::domain::{
     now_iso, DocumentCommand, MokaFile, TimelineClip, TimelineDocument, TimelineSettings,
@@ -1798,9 +1799,9 @@ fn readiness(story: &StoryDocument) -> (Value, Vec<Value>) {
         }
     }
 
-    let edit_ok = story.edit.timeline_id.is_some();
+    let edit_ok = !story.chapter_cuts().is_empty();
     if !edit_ok {
-        gaps.push(json!({"step": "edit", "kind": "noTimeline", "message": "the story has no assembled timeline"}));
+        gaps.push(json!({"step": "edit", "kind": "noTimeline", "message": "no episode has an assembled timeline yet"}));
     }
     let ready = json!({
         "idea": idea_ok,
@@ -2559,8 +2560,22 @@ fn connect(canvas: &mut crate::domain::CanvasDocument, from: &str, to: &str) {
 
 fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> {
     let story = super::story_of(moka, args.req_str("storyId")?)?;
-    let timeline_id = args.opt_str("timelineId").map(str::to_string);
-    let timeline_name = args.opt_str("timelineName").unwrap_or("Story").to_string();
+    let chapter_id = args.req_str("chapterId")?;
+    let chapter_at = story
+        .chapters
+        .iter()
+        .position(|chapter| chapter.id == chapter_id)
+        .ok_or_else(|| ToolError::validation("that chapter is not in the story"))?;
+    let chapter = &story.chapters[chapter_at];
+    let cut = story.chapter_cut(&chapter.id);
+    let timeline_id = args
+        .opt_str("timelineId")
+        .map(str::to_string)
+        .or_else(|| cut.as_ref().map(|cut| cut.timeline_id.clone()));
+    let timeline_name = args
+        .opt_str("timelineName")
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{} · Episode {}", story.name, chapter_at + 1));
     let with_subtitles = args.opt_bool("withSubtitles", false);
     let settings = timeline_settings(story);
     let frame_width = settings.width;
@@ -2585,57 +2600,55 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
     let mut shots: std::collections::HashMap<String, (i64, i64)> = std::collections::HashMap::new();
     let mut cursor = 0_i64;
 
-    for chapter in &story.chapters {
-        for act in &chapter.acts {
-            starts.entry(act.id.clone()).or_insert(cursor);
-            let units = assembly_units(act, &story.shot_granularity, moka, cursor);
-            for unit in units {
-                if let Some(keyframe_id) = &unit.keyframe_id {
-                    shots.insert(
-                        format!("{}:{}", act.id, keyframe_id),
-                        (unit.start_ms, unit.duration_ms),
-                    );
-                }
-                digest_units.push((
-                    act.id.clone(),
-                    unit.keyframe_id.clone(),
-                    unit.start_ms,
-                    unit.duration_ms,
-                    unit.asset_id.clone(),
-                ));
-                let clip_id = crate::domain::new_id();
-                edit_clips.push(StoryEditClip {
-                    act_id: act.id.clone(),
-                    keyframe_id: unit.keyframe_id.clone(),
-                    clip_id: clip_id.clone(),
-                });
-                clips.push(TimelineClip {
-                    id: clip_id,
-                    track_id: video_track.clone(),
-                    kind: TrackKind::Video,
-                    label: act.title.clone(),
-                    start_ms: unit.start_ms,
-                    duration_ms: unit.duration_ms.max(100),
-                    in_point_ms: unit.in_point_ms,
-                    out_point_ms: unit.out_point_ms,
-                    speed: 1.0,
-                    volume: 1.0,
-                    fade_in_ms: 0,
-                    fade_out_ms: 0,
-                    muted: false,
-                    opacity: 1.0,
-                    transform: None,
-                    freeze: None,
-                    reversed: None,
-                    created_at: now.clone(),
-                    updated_at: now.clone(),
-                    asset_id: Some(unit.asset_id),
-                    adjust: None,
-                    filter: None,
-                    text: None,
-                });
-                cursor = cursor.max(unit.start_ms + unit.duration_ms);
+    for act in &chapter.acts {
+        starts.entry(act.id.clone()).or_insert(cursor);
+        let units = assembly_units(act, &story.shot_granularity, moka, cursor);
+        for unit in units {
+            if let Some(keyframe_id) = &unit.keyframe_id {
+                shots.insert(
+                    format!("{}:{}", act.id, keyframe_id),
+                    (unit.start_ms, unit.duration_ms),
+                );
             }
+            digest_units.push((
+                act.id.clone(),
+                unit.keyframe_id.clone(),
+                unit.start_ms,
+                unit.duration_ms,
+                unit.asset_id.clone(),
+            ));
+            let clip_id = crate::domain::new_id();
+            edit_clips.push(StoryEditClip {
+                act_id: act.id.clone(),
+                keyframe_id: unit.keyframe_id.clone(),
+                clip_id: clip_id.clone(),
+            });
+            clips.push(TimelineClip {
+                id: clip_id,
+                track_id: video_track.clone(),
+                kind: TrackKind::Video,
+                label: act.title.clone(),
+                start_ms: unit.start_ms,
+                duration_ms: unit.duration_ms.max(100),
+                in_point_ms: unit.in_point_ms,
+                out_point_ms: unit.out_point_ms,
+                speed: 1.0,
+                volume: 1.0,
+                fade_in_ms: 0,
+                fade_out_ms: 0,
+                muted: false,
+                opacity: 1.0,
+                transform: None,
+                freeze: None,
+                reversed: None,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+                asset_id: Some(unit.asset_id),
+                adjust: None,
+                filter: None,
+                text: None,
+            });
+            cursor = cursor.max(unit.start_ms + unit.duration_ms);
         }
     }
     if clips.is_empty() {
@@ -2645,24 +2658,21 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         ));
     }
 
-    let voice_rows = story.chapters.iter().any(|chapter| {
-        chapter.acts.iter().any(|act| {
-            act.voice
-                .as_ref()
-                .is_some_and(|slot| !slot.takes.is_empty())
-                || act.keyframes.iter().any(|keyframe| {
-                    keyframe.voices.as_ref().is_some_and(|voices| {
-                        voices.iter().any(|voice| !voice.slot.takes.is_empty())
-                    })
-                })
-        })
+    let voice_rows = chapter.acts.iter().any(|act| {
+        act.voice
+            .as_ref()
+            .is_some_and(|slot| !slot.takes.is_empty())
+            || act.keyframes.iter().any(|keyframe| {
+                keyframe
+                    .voices
+                    .as_ref()
+                    .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
+            })
     });
-    let music_rows = story.chapters.iter().any(|chapter| {
-        chapter.acts.iter().any(|act| {
-            act.music
-                .as_ref()
-                .is_some_and(|slot| !slot.takes.is_empty())
-        })
+    let music_rows = chapter.acts.iter().any(|act| {
+        act.music
+            .as_ref()
+            .is_some_and(|slot| !slot.takes.is_empty())
     });
     let voice_track = voice_rows.then(crate::domain::new_id);
     let music_track = music_rows.then(crate::domain::new_id);
@@ -2673,77 +2683,72 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
         tracks.push(audio_track(track_id, "Music", &now));
     }
 
-    for chapter in &story.chapters {
-        for act in &chapter.acts {
-            let Some(act_start) = starts.get(&act.id).copied() else {
-                continue;
-            };
-            let per_line = act.keyframes.iter().any(|keyframe| {
-                keyframe
-                    .voices
-                    .as_ref()
-                    .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
-            });
-            if let Some(track_id) = &voice_track {
-                if per_line {
-                    for keyframe in &act.keyframes {
-                        let window = shots
-                            .get(&format!("{}:{}", act.id, keyframe.id))
-                            .copied()
-                            .unwrap_or((act_start, keyframe.duration_ms));
-                        let voices = keyframe.voices.as_deref().unwrap_or_default();
-                        for voice in voices {
-                            let Some(take) = voice.slot.takes.last() else {
-                                continue;
-                            };
-                            for asset_id in &take.asset_ids {
-                                if moka.resources.find(asset_id).is_none() {
-                                    continue;
-                                }
-                                let duration = resource_duration(moka, asset_id)
-                                    .unwrap_or(window.1)
-                                    .max(100);
-                                clips
-                                    .push(audio_clip(track_id, asset_id, window.0, duration, &now));
-                                edit_clips.push(StoryEditClip {
-                                    act_id: act.id.clone(),
-                                    keyframe_id: Some(keyframe.id.clone()),
-                                    clip_id: clips.last().unwrap().id.clone(),
-                                });
-                            }
-                        }
-                    }
-                } else if let Some(take) = act.voice.as_ref().and_then(|slot| slot.takes.last()) {
-                    for asset_id in &take.asset_ids {
-                        if moka.resources.find(asset_id).is_none() {
+    for act in &chapter.acts {
+        let Some(act_start) = starts.get(&act.id).copied() else {
+            continue;
+        };
+        let per_line = act.keyframes.iter().any(|keyframe| {
+            keyframe
+                .voices
+                .as_ref()
+                .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
+        });
+        if let Some(track_id) = &voice_track {
+            if per_line {
+                for keyframe in &act.keyframes {
+                    let window = shots
+                        .get(&format!("{}:{}", act.id, keyframe.id))
+                        .copied()
+                        .unwrap_or((act_start, keyframe.duration_ms));
+                    let voices = keyframe.voices.as_deref().unwrap_or_default();
+                    for voice in voices {
+                        let Some(take) = voice.slot.takes.last() else {
                             continue;
+                        };
+                        for asset_id in &take.asset_ids {
+                            if moka.resources.find(asset_id).is_none() {
+                                continue;
+                            }
+                            let duration = resource_duration(moka, asset_id)
+                                .unwrap_or(window.1)
+                                .max(100);
+                            clips.push(audio_clip(track_id, asset_id, window.0, duration, &now));
+                            edit_clips.push(StoryEditClip {
+                                act_id: act.id.clone(),
+                                keyframe_id: Some(keyframe.id.clone()),
+                                clip_id: clips.last().unwrap().id.clone(),
+                            });
                         }
-                        let duration =
-                            resource_duration(moka, asset_id).unwrap_or(act_duration(act));
-                        clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
-                        edit_clips.push(StoryEditClip {
-                            act_id: act.id.clone(),
-                            keyframe_id: Some(String::new()),
-                            clip_id: clips.last().unwrap().id.clone(),
-                        });
                     }
                 }
-            }
-            if let Some(track_id) = &music_track {
-                if let Some(take) = act.music.as_ref().and_then(|slot| slot.takes.last()) {
-                    for asset_id in &take.asset_ids {
-                        if moka.resources.find(asset_id).is_none() {
-                            continue;
-                        }
-                        let duration =
-                            resource_duration(moka, asset_id).unwrap_or(act_duration(act));
-                        clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
-                        edit_clips.push(StoryEditClip {
-                            act_id: act.id.clone(),
-                            keyframe_id: Some(String::new()),
-                            clip_id: clips.last().unwrap().id.clone(),
-                        });
+            } else if let Some(take) = act.voice.as_ref().and_then(|slot| slot.takes.last()) {
+                for asset_id in &take.asset_ids {
+                    if moka.resources.find(asset_id).is_none() {
+                        continue;
                     }
+                    let duration = resource_duration(moka, asset_id).unwrap_or(act_duration(act));
+                    clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
+                    edit_clips.push(StoryEditClip {
+                        act_id: act.id.clone(),
+                        keyframe_id: Some(String::new()),
+                        clip_id: clips.last().unwrap().id.clone(),
+                    });
+                }
+            }
+        }
+        if let Some(track_id) = &music_track {
+            if let Some(take) = act.music.as_ref().and_then(|slot| slot.takes.last()) {
+                for asset_id in &take.asset_ids {
+                    if moka.resources.find(asset_id).is_none() {
+                        continue;
+                    }
+                    let duration = resource_duration(moka, asset_id).unwrap_or(act_duration(act));
+                    clips.push(audio_clip(track_id, asset_id, act_start, duration, &now));
+                    edit_clips.push(StoryEditClip {
+                        act_id: act.id.clone(),
+                        keyframe_id: Some(String::new()),
+                        clip_id: clips.last().unwrap().id.clone(),
+                    });
                 }
             }
         }
@@ -2762,40 +2767,38 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             solo: None,
             created_at: now.clone(),
         });
-        for chapter in &story.chapters {
-            for act in &chapter.acts {
-                let Some(act_start) = starts.get(&act.id).copied() else {
+        for act in &chapter.acts {
+            let Some(act_start) = starts.get(&act.id).copied() else {
+                continue;
+            };
+            for keyframe in &act.keyframes {
+                let lines: Vec<_> = keyframe
+                    .dialogue
+                    .iter()
+                    .filter(|line| !line.text.trim().is_empty())
+                    .collect();
+                if lines.is_empty() {
                     continue;
-                };
-                for keyframe in &act.keyframes {
-                    let lines: Vec<_> = keyframe
-                        .dialogue
-                        .iter()
-                        .filter(|line| !line.text.trim().is_empty())
-                        .collect();
-                    if lines.is_empty() {
-                        continue;
-                    }
-                    let (start, total) = shots
-                        .get(&format!("{}:{}", act.id, keyframe.id))
-                        .copied()
-                        .unwrap_or((act_start, keyframe.duration_ms));
-                    let share = (total / lines.len() as i64).max(1);
-                    for (index, line) in lines.iter().enumerate() {
-                        let clip_id = crate::domain::new_id();
-                        clips.push(text_clip(
-                            &text_track,
-                            &line.text,
-                            start + index as i64 * share,
-                            share,
-                            &now,
-                        ));
-                        edit_clips.push(StoryEditClip {
-                            act_id: act.id.clone(),
-                            keyframe_id: Some(String::new()),
-                            clip_id,
-                        });
-                    }
+                }
+                let (start, total) = shots
+                    .get(&format!("{}:{}", act.id, keyframe.id))
+                    .copied()
+                    .unwrap_or((act_start, keyframe.duration_ms));
+                let share = (total / lines.len() as i64).max(1);
+                for (index, line) in lines.iter().enumerate() {
+                    let clip_id = crate::domain::new_id();
+                    clips.push(text_clip(
+                        &text_track,
+                        &line.text,
+                        start + index as i64 * share,
+                        share,
+                        &now,
+                    ));
+                    edit_clips.push(StoryEditClip {
+                        act_id: act.id.clone(),
+                        keyframe_id: Some(String::new()),
+                        clip_id,
+                    });
                 }
             }
         }
@@ -2854,12 +2857,10 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
     let timeline_id = match timeline_id {
         Some(id) => {
             let existing = super::timeline_of(moka, &id)?;
-            let mine: Vec<String> = story
-                .edit
-                .clip_by_act
-                .as_deref()
-                .unwrap_or_default()
+            let mine: Vec<String> = cut
                 .iter()
+                .filter(|cut| cut.timeline_id == id)
+                .flat_map(|cut| cut.clip_by_act.iter())
                 .filter(|entry| existing.clips.iter().any(|clip| clip.id == entry.clip_id))
                 .map(|entry| entry.clip_id.clone())
                 .collect();
@@ -2927,87 +2928,103 @@ fn assemble(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolError> 
             keyframe_id.as_deref().unwrap_or_default()
         ));
     }
-    for chapter in &story.chapters {
-        for act in &chapter.acts {
-            let per_line = act.keyframes.iter().any(|keyframe| {
-                keyframe
-                    .voices
-                    .as_ref()
-                    .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
-            });
-            if per_line {
-                for keyframe in &act.keyframes {
-                    for voice in keyframe.voices.as_deref().unwrap_or_default() {
-                        if let Some(asset_id) = voice
-                            .slot
-                            .takes
-                            .last()
-                            .and_then(|take| take.asset_ids.first())
-                        {
-                            digest_rows.push(format!(
-                                "voice:{}:{}:{}:{asset_id}",
-                                act.id, keyframe.id, voice.line_id
-                            ));
-                        }
-                    }
-                }
-            } else if let Some(asset_id) = act
-                .voice
+    for act in &chapter.acts {
+        let per_line = act.keyframes.iter().any(|keyframe| {
+            keyframe
+                .voices
                 .as_ref()
-                .and_then(|slot| slot.takes.last())
-                .and_then(|take| take.asset_ids.first())
-            {
-                digest_rows.push(format!("voice:{}:::{asset_id}", act.id));
-            }
-            if let Some(asset_id) = act
-                .music
-                .as_ref()
-                .and_then(|slot| slot.takes.last())
-                .and_then(|take| take.asset_ids.first())
-            {
-                digest_rows.push(format!("music:{}::{asset_id}", act.id));
-            }
-            if with_subtitles {
-                for keyframe in &act.keyframes {
-                    for line in &keyframe.dialogue {
-                        if line.text.trim().is_empty() {
-                            continue;
-                        }
+                .is_some_and(|voices| voices.iter().any(|voice| !voice.slot.takes.is_empty()))
+        });
+        if per_line {
+            for keyframe in &act.keyframes {
+                for voice in keyframe.voices.as_deref().unwrap_or_default() {
+                    if let Some(asset_id) = voice
+                        .slot
+                        .takes
+                        .last()
+                        .and_then(|take| take.asset_ids.first())
+                    {
                         digest_rows.push(format!(
-                            "caption:{}:{}:{}:{}",
-                            act.id,
-                            keyframe.id,
-                            line.id.as_deref().unwrap_or_default(),
-                            line.text
+                            "voice:{}:{}:{}:{asset_id}",
+                            act.id, keyframe.id, voice.line_id
                         ));
                     }
+                }
+            }
+        } else if let Some(asset_id) = act
+            .voice
+            .as_ref()
+            .and_then(|slot| slot.takes.last())
+            .and_then(|take| take.asset_ids.first())
+        {
+            digest_rows.push(format!("voice:{}:::{asset_id}", act.id));
+        }
+        if let Some(asset_id) = act
+            .music
+            .as_ref()
+            .and_then(|slot| slot.takes.last())
+            .and_then(|take| take.asset_ids.first())
+        {
+            digest_rows.push(format!("music:{}::{asset_id}", act.id));
+        }
+        if with_subtitles {
+            for keyframe in &act.keyframes {
+                for line in &keyframe.dialogue {
+                    if line.text.trim().is_empty() {
+                        continue;
+                    }
+                    digest_rows.push(format!(
+                        "caption:{}:{}:{}:{}",
+                        act.id,
+                        keyframe.id,
+                        line.id.as_deref().unwrap_or_default(),
+                        line.text
+                    ));
                 }
             }
         }
     }
     let digest = assembly_digest(&digest_rows);
 
-    let edit = StoryEdit {
-        timeline_id: Some(timeline_id.clone()),
-        clip_by_act: Some(edit_clips),
-        ..StoryEdit::default()
-    };
+    let clip_count = edit_clips.len();
+    let mut cuts: Vec<StoryChapterCut> = story
+        .edit
+        .chapter_cuts
+        .iter()
+        .flatten()
+        .filter(|cut| {
+            cut.chapter_id != chapter.id
+                && story.chapters.iter().any(|held| held.id == cut.chapter_id)
+        })
+        .cloned()
+        .collect();
+    cuts.push(StoryChapterCut {
+        chapter_id: chapter.id.clone(),
+        timeline_id: timeline_id.clone(),
+        clip_by_act: edit_clips,
+        assembled_digest: Some(digest.clone()),
+    });
+    cuts.sort_by_key(|cut| {
+        story
+            .chapters
+            .iter()
+            .position(|held| held.id == cut.chapter_id)
+    });
     commands.push(DocumentCommand::SetStoryEdit {
         story_id: story.id.clone(),
         patch: crate::domain::story::StoryEditPatch {
-            timeline_id: Some(Some(timeline_id.clone())),
-            clip_by_act: Some(Some(edit.clip_by_act.clone().unwrap_or_default())),
-            assembled_digest: Some(Some(digest.clone())),
+            chapter_cuts: Some(Some(cuts)),
+            ..Default::default()
         },
     });
     Ok(ToolOutcome::write(
         format!(
-            "Assembled {} clips onto timeline {timeline_id}",
-            edit.clip_by_act.as_ref().map(Vec::len).unwrap_or(0)
+            "Assembled episode {chapter_id} with {clip_count} clips onto timeline {timeline_id}"
         ),
         json!({
             "timelineId": timeline_id,
-            "clips": edit.clip_by_act.as_ref().map(Vec::len).unwrap_or(0),
+            "chapterId": chapter.id,
+            "clips": clip_count,
             "withSubtitles": with_subtitles,
             "digest": digest,
         }),
