@@ -5265,6 +5265,20 @@ body.is-dragging-split {
   gap: 4px;
 }
 
+/* The placement and ripple scope buttons carry words rather than icons, so
+   they take the width the words need instead of the square every icon gets. */
+.clip-tl-modes {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+}
+
+.clip-tl-modes .clip-tl-button {
+  padding: 0 7px;
+  white-space: nowrap;
+  width: auto;
+}
+
 .clip-tl-button {
   align-items: center;
   background: transparent;
