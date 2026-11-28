@@ -2638,10 +2638,14 @@ function applyOne(
         const follower = followerOf(pulled, leader)!;
         const startMs =
           leader.startMs + leader.durationMs - transition.durationMs;
+        const delta = startMs - follower.startMs;
         pulled = {
           ...pulled,
           clips: pulled.clips.map((clip) =>
-            clip.id === follower.id ? { ...clip, startMs } : clip,
+            clip.trackId === follower.trackId &&
+            clip.startMs >= follower.startMs
+              ? { ...clip, startMs: clip.startMs + delta }
+              : clip,
           ),
         };
       }
@@ -2694,10 +2698,14 @@ function applyOne(
           );
         checkTracksUnlocked(working, [leader.trackId]);
         const startMs = leader.startMs + leader.durationMs;
+        const delta = startMs - follower.startMs;
         working = {
           ...working,
           clips: working.clips.map((clip) =>
-            clip.id === follower.id ? { ...clip, startMs } : clip,
+            clip.trackId === follower.trackId &&
+            clip.startMs >= follower.startMs
+              ? { ...clip, startMs: clip.startMs + delta }
+              : clip,
           ),
         };
       }

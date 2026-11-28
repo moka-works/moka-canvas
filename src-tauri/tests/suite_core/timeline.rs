@@ -1662,7 +1662,7 @@ fn removes_a_transition_and_gives_the_follower_its_place_back() {
 }
 
 #[test]
-fn refuses_to_release_when_a_clip_is_in_the_way() {
+fn releases_the_seam_and_moves_a_clip_in_the_way_along() {
     let moka = cut();
     let tail = clip_of(&moka, CUT_VIDEO_ASSET_A, CUT_VIDEO_TRACK, 5_500);
     let (with_tail, _) = apply(
@@ -1673,31 +1673,33 @@ fn refuses_to_release_when_a_clip_is_in_the_way() {
             seams: None,
         }],
     );
-    assert_eq!(
-        code_of(
-            &with_tail,
-            DocumentCommand::RemoveTransitions {
-                timeline_id: CUT_TIMELINE.into(),
-                transition_ids: vec![CUT_TRANSITION.into()],
-            }
-        ),
-        "CLIP_OVERLAP"
+    let (next, _) = apply(
+        &with_tail,
+        vec![DocumentCommand::RemoveTransitions {
+            timeline_id: CUT_TIMELINE.into(),
+            transition_ids: vec![CUT_TRANSITION.into()],
+        }],
     );
+    assert_eq!(clip_at(&next, 0, CUT_CLIP_B).start_ms, 4_000);
+    assert!(next.timelines.as_ref().unwrap()[0]
+        .clips
+        .iter()
+        .any(|clip| clip.start_ms == 6_000));
 }
 
 #[test]
-fn refuses_to_tear_a_seam_out_from_under_the_one_behind_it() {
-    let (chained, _) = seam_chain();
-    assert_eq!(
-        code_of(
-            &chained,
-            DocumentCommand::RemoveTransitions {
-                timeline_id: CUT_TIMELINE.into(),
-                transition_ids: vec![CUT_TRANSITION.into()],
-            }
-        ),
-        "TRANSITION_SEAM"
+fn tears_one_seam_out_and_keeps_the_chain_behind_it_whole() {
+    let (chained, clip_c) = seam_chain();
+    let (next, _) = apply(
+        &chained,
+        vec![DocumentCommand::RemoveTransitions {
+            timeline_id: CUT_TIMELINE.into(),
+            transition_ids: vec![CUT_TRANSITION.into()],
+        }],
     );
+    assert_eq!(next.timelines.as_ref().unwrap()[0].transitions.len(), 1);
+    assert_eq!(clip_at(&next, 0, CUT_CLIP_B).start_ms, 4_000);
+    assert_eq!(clip_at(&next, 0, &clip_c).start_ms, 5_600);
 }
 
 #[test]
@@ -1756,18 +1758,17 @@ fn takes_a_whole_seam_chain_down_in_one_command_and_puts_it_back() {
     assert_eq!(clip_at(&next, 0, CUT_CLIP_B).start_ms, 4_000);
     assert_eq!(clip_at(&next, 0, &clip_c).start_ms, 6_000);
 
-    // Taking the same chain apart right to left runs the follower into the one
-    // still pulled back behind it, which the document refuses.
-    assert_eq!(
-        code_of(
-            &moka,
-            DocumentCommand::RemoveTransitions {
-                timeline_id: CUT_TIMELINE.into(),
-                transition_ids: vec![CUT_TRANSITION_2.into(), CUT_TRANSITION.into()],
-            }
-        ),
-        "CLIP_OVERLAP"
+    // Taking the same chain apart right to left leaves the same cut: every
+    // release moves the suffix along with it.
+    let (reversed, _) = apply(
+        &moka,
+        vec![DocumentCommand::RemoveTransitions {
+            timeline_id: CUT_TIMELINE.into(),
+            transition_ids: vec![CUT_TRANSITION_2.into(), CUT_TRANSITION.into()],
+        }],
     );
+    assert_eq!(clip_at(&reversed, 0, CUT_CLIP_B).start_ms, 4_000);
+    assert_eq!(clip_at(&reversed, 0, &clip_c).start_ms, 6_000);
 }
 
 #[test]

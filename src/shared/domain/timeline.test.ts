@@ -1438,7 +1438,7 @@ describe("transition commands", () => {
     );
   });
 
-  it("refuses to release when a clip is in the way", () => {
+  it("releases the seam and moves a clip in the way along", () => {
     const moka = buildCutMokaFile();
     const ids = cutFixtureIds();
     const withTail = apply(moka, {
@@ -1446,26 +1446,33 @@ describe("transition commands", () => {
       timelineId: ids.timeline,
       clips: [clipOf(moka, ids.videoAssetA, ids.videoTrack, 5_500)],
     }).next;
-    const code = codeOf(() =>
-      apply(withTail, {
-        type: "removeTransitions",
-        timelineId: ids.timeline,
-        transitionIds: [ids.transition],
-      }),
+    const next = apply(withTail, {
+      type: "removeTransitions",
+      timelineId: ids.timeline,
+      transitionIds: [ids.transition],
+    }).next;
+    const timeline = next.timelines![0];
+    expect(timeline.clips.find((clip) => clip.id === ids.clipB)!.startMs).toBe(
+      4_000,
     );
-    expect(code).toBe("CLIP_OVERLAP");
+    expect(timeline.clips.some((clip) => clip.startMs === 6_000)).toBe(true);
   });
 
-  it("refuses to tear a seam out from under the one behind it", () => {
-    const { ids, moka } = seamChain();
-    const code = codeOf(() =>
-      apply(moka, {
-        type: "removeTransitions",
-        timelineId: ids.timeline,
-        transitionIds: [ids.transition],
-      }),
+  it("tears one seam out and keeps the chain behind it whole", () => {
+    const { ids, moka, clipC } = seamChain();
+    const next = apply(moka, {
+      type: "removeTransitions",
+      timelineId: ids.timeline,
+      transitionIds: [ids.transition],
+    }).next;
+    const timeline = next.timelines![0];
+    expect(timeline.transitions).toHaveLength(1);
+    expect(timeline.clips.find((clip) => clip.id === ids.clipB)!.startMs).toBe(
+      4_000,
     );
-    expect(code).toBe("TRANSITION_SEAM");
+    expect(timeline.clips.find((clip) => clip.id === clipC)!.startMs).toBe(
+      5_600,
+    );
   });
 
   it("takes a clip and its seam out together, and the undo restores both in one step", () => {
@@ -1513,16 +1520,20 @@ describe("transition commands", () => {
       6_000,
     );
 
-    // Taking the same chain apart right to left runs the follower into the
-    // one still pulled back behind it, which the document refuses.
-    const code = codeOf(() =>
-      apply(moka, {
-        type: "removeTransitions",
-        timelineId: ids.timeline,
-        transitionIds: [ids.transition2, ids.transition],
-      }),
-    );
-    expect(code).toBe("CLIP_OVERLAP");
+    // Taking the same chain apart right to left leaves the same cut: every
+    // release moves the suffix along with it.
+    const reversed = apply(moka, {
+      type: "removeTransitions",
+      timelineId: ids.timeline,
+      transitionIds: [ids.transition2, ids.transition],
+    }).next;
+    expect(
+      reversed.timelines![0].clips.find((clip) => clip.id === ids.clipB)!
+        .startMs,
+    ).toBe(4_000);
+    expect(
+      reversed.timelines![0].clips.find((clip) => clip.id === clipC)!.startMs,
+    ).toBe(6_000);
   });
 
   it("recomposes a seam chain through the public commands, and one undo puts the old chain back", () => {

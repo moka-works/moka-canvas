@@ -2350,8 +2350,11 @@ pub fn apply_timeline_command(
                     leader.start_ms as i128 + leader.duration_ms as i128
                         - transition.duration_ms as i128,
                 );
-                if let Some(clip) = pulled.clips.iter_mut().find(|clip| clip.id == follower.id) {
-                    clip.start_ms = start_ms;
+                let delta = start_ms - follower.start_ms;
+                for clip in &mut pulled.clips {
+                    if clip.track_id == follower.track_id && clip.start_ms >= follower.start_ms {
+                        clip.start_ms += delta;
+                    }
                 }
             }
             let mut next = pulled;
@@ -2414,8 +2417,11 @@ pub fn apply_timeline_command(
                 };
                 ensure_track_unlocked(&working, &leader.track_id)?;
                 let start_ms = to_i64(leader.start_ms as i128 + leader.duration_ms as i128);
-                if let Some(clip) = working.clips.iter_mut().find(|clip| clip.id == follower.id) {
-                    clip.start_ms = start_ms;
+                let delta = start_ms - follower.start_ms;
+                for clip in &mut working.clips {
+                    if clip.track_id == follower.track_id && clip.start_ms >= follower.start_ms {
+                        clip.start_ms += delta;
+                    }
                 }
             }
             let removed: Vec<TimelineTransition> = transition_ids
