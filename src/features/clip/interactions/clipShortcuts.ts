@@ -14,6 +14,7 @@ import {
   nearestClipEdgeMs,
   pasteAtPlayhead,
   rippleDeleteSelection,
+  rippleTrimToPlayhead,
   selectAll,
   selectedClips,
   splitSelectionAtPlayhead,
@@ -85,6 +86,14 @@ export const CLIP_SHORTCUT_GROUPS: ClipShortcutGroup[] = [
           "clip:shortcuts.chord.delete",
           "clip:shortcuts.chord.backspace",
         ],
+      },
+      {
+        label: "clip:common.rippleTrimStart",
+        chords: ["clip:shortcuts.chord.q"],
+      },
+      {
+        label: "clip:common.rippleTrimEnd",
+        chords: ["clip:shortcuts.chord.w"],
       },
       {
         label: "clip:common.rippleDeleteSelection",
@@ -233,6 +242,16 @@ export function useClipShortcuts(options: ClipShortcutOptions = {}) {
         return;
       }
 
+      if (event.key.toLowerCase() === "q") {
+        event.preventDefault();
+        rippleTrimToPlayhead("start");
+        return;
+      }
+      if (event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        rippleTrimToPlayhead("end");
+        return;
+      }
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         if (event.shiftKey) rippleDeleteSelection();

@@ -44,6 +44,7 @@ import {
   rangeBetween,
   removeTrack,
   rippleDeleteSelection,
+  rippleTrimToPlayhead,
   renameTrack,
   selectAll,
   selectedClips,
@@ -1129,5 +1130,31 @@ describe("the clipboard and ripple delete", () => {
     expect(cut().clips).toHaveLength(1);
     expect(cut().clips[0].id).toBe(follower.id);
     expect(cut().clips[0].startMs).toBe(0);
+  });
+});
+
+describe("ripple trimming to the playhead", () => {
+  it("takes the head or tail out under the playhead and closes the gap", () => {
+    const ids = timelineIds();
+    open(buildTimelineMokaFile(), {
+      timelineId: ids.timeline,
+      clipIds: [ids.videoClip],
+      playheadMs: 2_000,
+    });
+
+    rippleTrimToPlayhead("start");
+    expect(cut().clips).toHaveLength(1);
+    expect([cut().clips[0].startMs, cut().clips[0].durationMs]).toEqual([
+      0, 2_000,
+    ]);
+
+    undo();
+    expect(cut().clips[0].startMs).toBe(0);
+    expect(cut().clips[0].durationMs).toBe(4_000);
+
+    rippleTrimToPlayhead("end");
+    expect([cut().clips[0].startMs, cut().clips[0].durationMs]).toEqual([
+      0, 2_000,
+    ]);
   });
 });

@@ -306,6 +306,42 @@ export function deleteGapOn(trackId: TrackId, atMs: number): void {
   ]);
 }
 
+/**
+ * Trims the clip under the playhead back to it, from its start (Q) or to it
+ * from its end (W), taking the time out of the rows the room is rippling.
+ */
+export function rippleTrimToPlayhead(edge: "start" | "end"): void {
+  const timeline = activeTimeline();
+  if (!timeline) return;
+  const playhead = useClipStore.getState().playheadMs;
+  const chosen = new Set(useClipStore.getState().selection.clipIds);
+  const crossing = clipsCrossingPlayhead(timeline, playhead);
+  const target = crossing.find((clip) => chosen.has(clip.id)) ?? crossing[0];
+  if (!target) return;
+  const startMs = edge === "start" ? target.startMs : playhead;
+  const endMs =
+    edge === "start" ? playhead : target.startMs + target.durationMs;
+  if (endMs <= startMs) return;
+  const scope = useClipStore.getState().rippleScope;
+  execute(
+    i18n.t(
+      edge === "start"
+        ? "clip:history.rippleTrimStart"
+        : "clip:history.rippleTrimEnd",
+    ),
+    [
+      {
+        type: "removeRange",
+        timelineId: timeline.id,
+        startMs,
+        endMs,
+        scope,
+        ...(scope === "track" ? { trackId: target.trackId } : {}),
+      },
+    ],
+  );
+}
+
 /** Deletes the chosen clips and pulls what followed them back. */
 export function rippleDeleteSelection(): void {
   const timeline = activeTimeline();
