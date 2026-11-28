@@ -936,7 +936,7 @@ fn clip_freeze(moka: &MokaFile, args: &Args<'_>) -> Result<ToolOutcome, ToolErro
                 .clips
                 .iter()
                 .filter(|clip| {
-                    clip.track_id != ""
+                    !clip.track_id.is_empty()
                         && clip.start_ms <= at
                         && at < clip.start_ms + clip.duration_ms
                 })
