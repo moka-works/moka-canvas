@@ -58,6 +58,15 @@ moka tools describe story.update_keyframe
 - Do not invent tool names or IDs. Use only what the catalog and read results contain.
 - If a tool call returns `TOOLS_VERSION_MISMATCH`, refresh the catalog/CLI and retry the step; do not replay completed tools.
 
+### When a tool or capability seems missing
+
+A gap may be in this build rather than in the catalog. The catalog and
+`moka doctor` describe what this build offers; if a tool you need is absent or
+behaves differently from its schema, stop and tell the user: name the missing
+capability and the call you attempted. Do not invent a tool, patch the running
+server, or change an installed binary; the project's `AGENTS.md` records
+deployment-specific rules, and the user decides how to proceed.
+
 ## 4. Reading and writing
 
 Read:
@@ -140,6 +149,7 @@ moka tools call timeline.export --input '{"timelineId":"tl_1","destination":"/pa
 - Times are integer milliseconds; `duration * speed = out - in`.
 - Locked tracks reject edits; unlock deliberately with `timeline.update_track`.
 - Exports need a destination and `--yes`.
+- `clip.ripple_delete` and `timeline.remove_range` are destructive; run them only after the user explicitly approves, not by copying the example.
 
 ### Assets
 
@@ -174,8 +184,11 @@ moka tools call story.confirm_step --input '{"storyId":"st_1","step":"storyboard
 
 - Text is shortened to 2000 characters unless `fullText` is true; `synopsisLength`/`contentLength` and the `*Truncated` flags say whether anything was left out. Use `chapterId`/`actId` to read one part of a long story.
 - `include:["slots"]` returns every place's current files, take count and pending set. Use it before planning media.
-- `story.plan_job` builds the next batch from the document itself: the same prompts the room uses, the targets still missing work, their reference pictures, hand-written prompt overrides and their models, grouped into `waves`. It spends nothing and writes nothing; start each wave with `story.start_job` using the answer's `kind` (pass the wave's `model`). Kinds: `outline` (whole story, or one chapter when `chapterId` is set), `elements`, `mergeElements` (with `groups`), `actPlan`, `storyboard`, `continuity`, `outlineRevision`, `elementArt`, `keyframeArt`, `actVideo`, `keyframeVideo`, `lineVoice`, `voice`, `music`. Use `includeExisting` to plan a redraw of a place that already has a current take. Video plans attach a speaking character's reference recording as a `referenceAudio` input when the chosen model's converter declares `audioReference` and the piece fits the recording window that converter declares (MiniMax H3 names 11 seconds); the prompt gains the matching `<Audio k>` lines, and a piece past the window is planned without them with a warning.
-- `story.start_job` is `spend`; confirm before starting. `model` and `parallel` are optional; without `model` the capability's default answers.
+- `story.plan_job` builds the next batch from the document itself: the same prompts the room uses, the targets still missing work, their reference pictures, hand-written prompt overrides and their models, grouped into `waves`. It spends nothing and writes nothing; start each wave with `story.start_job` using the answer's `kind` (pass the wave's `model`). Kinds: `outline` (whole story, or one chapter when `chapterId` is set), `elements`, `mergeElements` (with `groups`), `actPlan`, `storyboard`, `continuity`, `outlineRevision`, `elementArt`, `keyframeArt`, `actVideo`, `keyframeVideo`, `lineVoice`, `voice`, `music`. Use `includeExisting` to plan a redraw of a place that already has a current take.
+- Video plans attach a speaking character's reference recording as a `referenceAudio` input when the chosen model's converter declares `audioReference` and the piece fits the recording window that converter declares (MiniMax H3 names 11 seconds); the prompt gains the matching `<Audio k>` lines, and a piece past the window is planned without them with a warning.
+- `kind:"elements"` reads the telling in parts: it splits by the story's `splitChars` setting (or the call's `budget`, 1000–1000000 characters) into `elements:1..n`, and each part carries the scripts' own cast lists and recurring scene headings as a checklist. After the parts are applied, `story.element_repeats` returns the names more than one part described as `groups` for `kind:"mergeElements"`; `story.audit_elements` reports cast names and recurring places no element covers.
+- A cast is identified by `story.plan_job kind:"elements"` and started as a batch; its answer is the base cast. Do not replace that reading with a hand-written list. After it is applied, supplement what it missed — entries and each element's visually distinct forms — rather than bypassing it.
+- `story.start_job` is `spend`; confirm before starting. `model` and `parallel` are optional; without `model` the capability's default answers. `models` takes a pool instead: pieces take turns round-robin in the order given, each model's pieces start as that model's own batch, and the answer lists every batch under `data.jobs` while `task` covers the first. Use it when several configs of one model family should share the work.
 - `project.describe_models` reports `audioReference: true` on a video model whose converter reads the speakers' recordings, with `audioReferenceSeconds` and `audioReferenceSpeakers` where the converter names its window and count (MiniMax H3: 11 seconds, three speakers). A clip plan attaches them automatically within those numbers; no extra flag is passed to `plan_job` or `start_job`.
 - **Someone must apply a job's answer exactly once.** If the Moka app has the story room loaded, it lists the story's jobs and writes unread answers into the document with its own parsers (including reference recognition for pictures). In that case do **not** also call `set_slot` or `replace_*`, or the answer lands twice. If no app is open, read `task.get` and apply it yourself: `story.set_slot` (media) or `story.add_* / story.update_* / story.replace_*` (text), with the same care as any other write.
 - `story.replace_chapters/acts/keyframes/elements` are `destroy`: they remove anything not listed. Use them only when the user explicitly asks to replace/rewrite; dry-run first and show the diff.
@@ -230,6 +243,8 @@ moka sessions delete <id> --yes --json
 | 8    | destination required                     |
 
 On failure, show the user `error.code` and `error.message` (plus `details` when useful). Do not retry destructive or spending calls blindly; re-read state first.
+
+A slow or failing generation is not automatically the model's fault or the app's. Read the provider's own log before changing anything, and confirm which version the running instance is. Probe the provider directly with one small request and read its headers, then separate three cases: caller parameters, conversion layer, provider code. Do not patch or restart a running service on your own; report the evidence and let the reader redeploy.
 
 ## 9. Final answer
 
