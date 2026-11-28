@@ -1124,7 +1124,7 @@ function KeyframePromptCell({
   const [pickingElement, setPickingElement] = useState(false);
   const [addingReference, setAddingReference] = useState(false);
   const referenceFile = useRef<HTMLInputElement>(null);
-  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const images = useProjectStore((state) => state.moka?.resources.images) ?? [];
   const inspecting =
     inspectingId === null
       ? undefined

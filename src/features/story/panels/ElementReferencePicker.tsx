@@ -39,7 +39,7 @@ export function ElementReferencePicker({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const shelf = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const shelf = useProjectStore((state) => state.moka?.resources.images) ?? [];
   const file = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
 

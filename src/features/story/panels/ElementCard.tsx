@@ -115,7 +115,7 @@ export const ElementCard = memo(function ElementCard({
   // The dialog that names the picture this form's drawing is made from.
   const [pickingReference, setPickingReference] = useState(false);
   const run = useStoryWavesAsk();
-  const images = useProjectStore((state) => state.moka?.resources.images ?? []);
+  const images = useProjectStore((state) => state.moka?.resources.images) ?? [];
   const variants = element.variants ?? [];
   const variant = elementForm(element, formId ?? undefined);
   const mainSlot = variant === undefined ? element.main : variant.main;
