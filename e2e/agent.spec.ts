@@ -133,7 +133,9 @@ test("every story step ends with the assistant", async ({ page }) => {
   await page.goto("/");
   await createProject(page, join(home, "project"), "Agent story", "Story");
   await newStory(page, "The lake");
+  await page.getByTestId("story-face-stories").click();
   await page.locator(".story-row-name").filter({ hasText: "The lake" }).click();
+  await page.getByTestId("story-face-steps").click();
 
   const dock = page.getByTestId("agent-dock");
   await expect(dock).toBeVisible();

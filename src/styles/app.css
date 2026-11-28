@@ -6742,14 +6742,20 @@ body.is-dragging-split {
 }
 
 .story-side {
-  background: var(--surface);
-  border-right: 1px solid var(--stroke);
-  display: flex;
-  flex-direction: column;
   gap: 10px;
   padding: 16px 12px 12px;
-  position: relative;
   width: var(--panel-left-width, 280px);
+}
+
+/* What stands in the story column: the list of tellings, or the five steps.
+   Both fill the column under the head the column itself provides. */
+.story-side-content,
+.story-steps-face {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
 }
 
 .story-side-head {
@@ -6987,19 +6993,22 @@ body.is-dragging-split {
   color: var(--success);
 }
 
-.story-flow-body {
+.story-flow {
   display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
 }
 
+/* The five steps read down the column beside the stage: the list scrolls on
+   its own and the column's head stays where it is. */
 .story-steps {
-  border-right: 1px solid var(--stroke);
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
-  padding: 14px 10px;
-  width: 208px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .story-step-row {

@@ -34,6 +34,13 @@
     "nameTooLong": "A name is at most {{max}} characters",
     "limit": "A project tells at most {{max}} stories"
   },
+  "rail": {
+    "label": "Story panels",
+    "stories": "Stories",
+    "storiesHint": "The stories this project tells",
+    "steps": "Steps",
+    "stepsHint": "Choose which step of the telling you are on"
+  },
   "list": {
     "neverEdited": "never edited",
     "updatedAgo": "updated {{when}}"
@@ -78,7 +85,9 @@
   },
   "steps": {
     "label": "The five steps",
-    "locked": "{{step}} comes first"
+    "locked": "{{step}} comes first",
+    "title": "Steps",
+    "none": "No story yet to walk through"
   },
   "step": {
     "idea": "Premise",

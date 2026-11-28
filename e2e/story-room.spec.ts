@@ -154,6 +154,8 @@ test("a story is renamed in place, and the rename can be undone", async ({
   await field.fill("Night Train");
   await field.press("Enter");
   await expect(page.locator(".story-head-name")).toHaveText("Night Train");
+  // The list the row stands in is the column's other face.
+  await page.getByTestId("story-face-stories").click();
   await expect(page.locator(".story-row-name")).toHaveText("Night Train");
   await expect(page.locator(".story-bar-tab.is-active")).toHaveText(
     "Night Train",
@@ -180,6 +182,7 @@ test("a second story gets a tab, and the tab turns the room over", async ({
 
   await page.getByTestId("story-tab-Rain at Night").click();
   await expect(page.locator(".story-head-name")).toHaveText("Rain at Night");
+  await page.getByTestId("story-face-stories").click();
   await expect(page.locator(".story-row.is-active .story-row-name")).toHaveText(
     "Rain at Night",
   );
@@ -200,11 +203,13 @@ test("a narrow window keeps the stage and folds the column away", async ({
   await expect(page.locator(".story-side")).toBeVisible();
 
   // The column beside the stage is the first thing to go when the window is
-  // too narrow to hold both — the same 900px rule the other rooms obey.
+  // too narrow to hold both — the same 900px rule the other rooms obey. The
+  // steps live in that column now, so they go with it and the stage keeps the
+  // work itself.
   await page.setViewportSize({ width: 880, height: 800 });
   await expect(page.locator(".story-side")).toBeHidden();
   await expect(page.locator(".story-stage")).toBeVisible();
-  await expect(page.getByTestId("story-step-idea")).toBeVisible();
+  await expect(page.getByTestId("story-step-idea")).toBeHidden();
 
   forgetHome(home);
 });

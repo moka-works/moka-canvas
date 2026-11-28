@@ -1087,10 +1087,12 @@ test("a board's folds are kept across the app being closed", async ({
     // rather than every act and every episode unfolded.
     await page.reload();
     await openRecent(page, "Story Seed", "Story");
+    await page.getByTestId("story-face-stories").click();
     await page
       .locator(".story-row-name")
       .filter({ hasText: "Rain at Night" })
       .click();
+    await page.getByTestId("story-face-steps").click();
     await page.getByTestId("story-step-storyboard").click();
     await expect(page.getByTestId("story-step-body-storyboard")).toBeVisible();
     const reopened = page.getByTestId("story-act-0");

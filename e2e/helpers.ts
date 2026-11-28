@@ -296,10 +296,12 @@ export async function openSeededStory(
   if (beforeOpen !== undefined) await beforeOpen();
   await page.goto("/");
   await openRecent(page, "Story Seed", "Story");
+  await page.getByTestId("story-face-stories").click();
   await page
     .locator(".story-row-name")
     .filter({ hasText: "Rain at Night" })
     .click();
+  await page.getByTestId("story-face-steps").click();
 }
 
 /**
@@ -322,6 +324,10 @@ export async function filmAct(
 
 /** Begin a story under a name, from the door that stands open. */
 export async function newStory(page: Page, name: string) {
+  // The list is where a story is begun once the project tells one already, so
+  // the column is turned to it whether or not it is standing there.
+  const storiesFace = page.getByTestId("story-face-stories");
+  if ((await storiesFace.count()) > 0) await storiesFace.click();
   // Two doors do the same thing: the empty room's own button, and the + over
   // the column once the project tells a story already.
   const empty = page.getByTestId("story-empty-new");
@@ -338,6 +344,9 @@ export async function newStory(page: Page, name: string) {
   await expect(
     page.locator(".story-row-name").filter({ hasText: name }),
   ).toBeVisible({ timeout: 10_000 });
+  // The work that follows is read on the steps, so the column is turned there.
+  const stepsFace = page.getByTestId("story-face-steps");
+  if ((await stepsFace.count()) > 0) await stepsFace.click();
 }
 
 /**

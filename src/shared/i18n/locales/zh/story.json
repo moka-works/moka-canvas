@@ -34,6 +34,13 @@
     "nameTooLong": "名字最多 {{max}} 个字符",
     "limit": "一个项目最多讲 {{max}} 个故事"
   },
+  "rail": {
+    "label": "故事面板",
+    "stories": "故事列表",
+    "storiesHint": "这个项目正在讲的故事",
+    "steps": "步骤",
+    "stepsHint": "选择要站在讲述的哪一步"
+  },
   "list": {
     "neverEdited": "从未修改",
     "updatedAgo": "{{when}}更新"
@@ -78,7 +85,9 @@
   },
   "steps": {
     "label": "五个步骤",
-    "locked": "要先完成{{step}}"
+    "locked": "要先完成{{step}}",
+    "title": "步骤",
+    "none": "还没有可以推进的故事"
   },
   "step": {
     "idea": "创意",

@@ -77,6 +77,11 @@ function tabNames(): string[] {
   );
 }
 
+/** Turns the room's column to the list, where a story is renamed or removed. */
+function showStories() {
+  fireEvent.click(screen.getByTestId("story-face-stories"));
+}
+
 function activeTab(): string | null {
   const tab = document.querySelector(".story-bar-tab.is-active > button");
   return tab?.textContent ?? null;
@@ -137,6 +142,7 @@ describe("a project that tells no story yet", () => {
       screen.getByTestId("story-step-idea").getAttribute("aria-selected"),
     ).toBe("true");
     expect(screen.getByTestId("story-step-body-idea")).toBeTruthy();
+    showStories();
     expect(rowNames()).toEqual(["雨夜列车"]);
     expect(useProjectStore.getState().moka?.stories?.length).toBe(1);
     // The question is asked once: the name is the only thing a new story is
@@ -545,6 +551,7 @@ describe("the strip across the bar", () => {
   it("shows the stories being told, and turns to the one that is clicked", () => {
     const { moka, id } = withStory(buildStoryMokaFile(), "第二个故事");
     openRoom(moka);
+    showStories();
     expect(tabNames()).toEqual(["雨夜列车", "第二个故事"]);
     expect(activeTab()).toBe("雨夜列车");
 
@@ -574,6 +581,7 @@ describe("the strip across the bar", () => {
 describe("naming a story", () => {
   it("renames it in the column, and gives the old name back on undo", () => {
     openRoom(buildStoryMokaFile());
+    showStories();
     fireEvent.click(screen.getByRole("button", { name: "Rename 雨夜列车" }));
 
     const input = screen.getByRole("textbox", { name: "Rename 雨夜列车" });
@@ -587,6 +595,7 @@ describe("naming a story", () => {
 
   it("keeps the input standing when the name cannot be taken", () => {
     openRoom(buildStoryMokaFile());
+    showStories();
     fireEvent.click(screen.getByRole("button", { name: "Rename 雨夜列车" }));
 
     const input = screen.getByRole("textbox", { name: "Rename 雨夜列车" });
@@ -605,6 +614,7 @@ describe("taking a story away", () => {
     const { moka, id } = withStory(buildStoryMokaFile(), "第二个故事");
     openRoom(moka);
     quietly(() => useStoryStore.getState().select(id));
+    showStories();
     expect(activeRow()).toBe("第二个故事");
 
     fireEvent.click(screen.getByTestId("story-delete-第二个故事"));
@@ -625,6 +635,7 @@ describe("taking a story away", () => {
     const { moka, id } = withStory(buildStoryMokaFile(), "第二个故事");
     openRoom(moka);
     quietly(() => useStoryStore.getState().select(id));
+    showStories();
     fireEvent.click(screen.getByTestId("story-delete-第二个故事"));
     fireEvent.click(screen.getByTestId("remove-story-confirm"));
 
@@ -644,6 +655,7 @@ describe("taking a story away", () => {
 
   it("puts the question down without deleting when it is cancelled", () => {
     openRoom(buildStoryMokaFile());
+    showStories();
     fireEvent.click(screen.getByTestId("story-delete-雨夜列车"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByTestId("remove-story")).toBeNull();

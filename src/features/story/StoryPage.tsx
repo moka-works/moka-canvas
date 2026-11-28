@@ -12,9 +12,10 @@ import { useProjectStore } from "../editor/stores/projectStore";
 import { i18n } from "../../shared/i18n";
 import { StoryFlow } from "./StoryFlow";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { StoryDialog } from "./components/StoryDialog";
 import { StoryIcon } from "./components/StoryIcons";
 import { StoryTopBar } from "./components/StoryTopBar";
-import { StorySide } from "./panels/StorySide";
+import { StorySidebar } from "./panels/StorySidebar";
 import { forgetTextAssets } from "./readText";
 import { useEditStarts } from "./panels/editStarts";
 import { useImagePromptSessions } from "./panels/imagePromptSessions";
@@ -43,6 +44,7 @@ export function StoryPage() {
   const leftWidth = usePanelWidths((state) => state.left);
   const leftFolded = usePanelFolds((state) => state.left);
   const projectId = useProjectStore((state) => state.moka?.metadata.id ?? null);
+  const newStoryOpen = useStoryStore((state) => state.newStoryOpen);
 
   // Entering the room is a seam in the history: what is undone here is not
   // undone on a canvas, and a board's undos stop at the door.
@@ -210,7 +212,7 @@ export function StoryPage() {
     <div className="story-page" data-testid="story-page">
       <StoryTopBar onGo={onGo} onHome={() => void goHome()} />
       <div className="story-body" style={panelWidthStyle(leftWidth, null)}>
-        {leftFolded ? <PanelUnfold side="left" /> : <StorySide />}
+        {leftFolded ? <PanelUnfold side="left" /> : <StorySidebar />}
         {!leftFolded && <PanelResizer side="left" />}
         <main className="story-stage">
           {story !== null ? (
@@ -227,6 +229,15 @@ export function StoryPage() {
           )}
         </main>
       </div>
+
+      {/* The question a new story is opened under belongs to the room rather
+          than to the column's list face: the strip and the list both offer to
+          begin one, and the list may not be the face that is standing. */}
+      {newStoryOpen && (
+        <StoryDialog
+          onClose={() => useStoryStore.getState().setNewStoryOpen(false)}
+        />
+      )}
 
       {leaving !== null && (
         <ConfirmDialog

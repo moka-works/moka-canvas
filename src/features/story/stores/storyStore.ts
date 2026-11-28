@@ -26,9 +26,18 @@ import {
 export type PendingLeave =
   { kind: "step"; step: StoryStep } | { kind: "story"; storyId: string | null };
 
+/** The two faces the story room's left column turns over between. */
+export type StorySideFace = "stories" | "steps";
+
 interface StoryState {
   storyId: string | null;
   step: StoryStep;
+  /**
+   * Which face the left column is showing, or null for the room's own choice:
+   * the steps once a telling is open, and the list while there is none to open.
+   * A reader who has turned the column themselves keeps it turned.
+   */
+  side: StorySideFace | null;
   /** Which episode step four has open; null is the first of them. */
   openChapterId: string | null;
   /** The cards unfolded in steps three and four, by element or act id. */
@@ -66,6 +75,8 @@ interface StoryState {
   adopt: (moka: MokaFile | null) => void;
   select: (storyId: string | null) => void;
   goStep: (step: StoryStep) => void;
+  /** Turns the left column to the list of stories or the five steps. */
+  setSide: (side: StorySideFace) => void;
   /** Opens the elements step on one of its cards, or clears the place. */
   focusElement: (elementId: string | null) => void;
   /** Opens the elements step on one card of the cast, at its voice form. */
@@ -223,6 +234,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
   return {
     storyId: null,
     step: "idea",
+    side: null,
     openChapterId: null,
     expanded: [],
     newStoryOpen: false,
@@ -291,6 +303,10 @@ export const useStoryStore = create<StoryState>()((set, get) => {
       goToStep(step);
     },
 
+    setSide(side) {
+      set({ side });
+    },
+
     focusElement(elementId) {
       // Going to the elements step is not leaving it: only what the step is
       // holding back from a departure stands in the way of one, and this is
@@ -349,6 +365,7 @@ export const useStoryStore = create<StoryState>()((set, get) => {
       set({
         storyId: null,
         step: "idea",
+        side: null,
         openChapterId: null,
         expanded: [],
         newStoryOpen: false,

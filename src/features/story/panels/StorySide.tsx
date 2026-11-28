@@ -9,11 +9,9 @@ import {
 } from "../../../shared/domain";
 import { execute } from "../../editor/commands/execute";
 import { useProjectStore } from "../../editor/stores/projectStore";
-import { PanelFold } from "../../editor/components/PanelFold";
 import { i18n } from "../../../shared/i18n";
 import { relativeTime } from "../relativeTime";
 import { useStoryStore } from "../stores/storyStore";
-import { StoryDialog } from "../components/StoryDialog";
 import { RemoveStoryDialog } from "../components/RemoveStoryDialog";
 
 /**
@@ -29,18 +27,12 @@ export function StorySide() {
   const { t } = useTranslation();
   const moka = useProjectStore((state) => state.moka);
   const storyId = useStoryStore((state) => state.storyId);
-  const creating = useStoryStore((state) => state.newStoryOpen);
   const [removing, setRemoving] = useState<StoryDocument | null>(null);
   const stories = moka?.stories ?? [];
   const full = stories.length >= MAX_STORIES_PER_PROJECT;
 
   return (
-    <aside
-      aria-label={t("story:side.label")}
-      className="story-side"
-      id="story-panel-left"
-    >
-      <PanelFold side="left" />
+    <section className="story-side-content">
       <div className="story-side-head">
         <h2>{t("story:side.title")}</h2>
         <button
@@ -77,11 +69,6 @@ export function StorySide() {
           </ul>
         )}
       </div>
-      {creating && (
-        <StoryDialog
-          onClose={() => useStoryStore.getState().setNewStoryOpen(false)}
-        />
-      )}
       {removing && (
         <RemoveStoryDialog
           onCancel={() => setRemoving(null)}
@@ -92,7 +79,7 @@ export function StorySide() {
           story={removing}
         />
       )}
-    </aside>
+    </section>
   );
 }
 

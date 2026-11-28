@@ -1,30 +1,14 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ASPECT_LABELS,
   STORY_NAME_MAX,
-  STORY_STEPS,
   formatDuration,
-  stepReachable,
-  storyProgress,
   type StoryDocument,
-  type StoryStep,
-  type StoryStepProgress,
 } from "../../shared/domain";
 import { execute } from "../editor/commands/execute";
 import { AgentDock } from "../assistant/agent/AgentDock";
-import {
-  StepFailurePanel,
-  type FailureAnchor,
-} from "./components/StepFailurePanel";
 import { StoryStepBody } from "./steps/StoryStepBody";
-import { useStoryStepFailure } from "./stores/storyJobStore";
 import {
   rememberStepScroll,
   stepScrollAt,
@@ -35,21 +19,17 @@ import {
  * One story's telling, from the premise to the finished film.
  *
  * The head says what the whole rests on — how long, in what frame, in what
- * words — and the column beside it is the five steps: which is being stood on,
- * which are still to come, and how far each has got. What the step itself
- * looks like is the step's own business, and each one is a component of its
- * own so that a board being edited does not re-render the outline beside it.
+ * words — and the stage under it is the step being stood on. Which step that is
+ * and how far each has got are read in the room's left column, so the work the
+ * step draws is given the whole width here. What the step itself looks like is
+ * the step's own business, and each one is a component of its own so that a
+ * board being edited does not re-render the outline beside it.
  */
 export function StoryFlow({ story }: { story: StoryDocument }) {
   const { t } = useTranslation();
   const step = useStoryStore((state) => state.step);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [failures, setFailures] = useState<{
-    step: StoryStep;
-    anchor: FailureAnchor;
-  } | null>(null);
-  const progress = storyProgress(story);
 
   // The scroller is one element shared by every step, so a step is put back
   // where the reader left it rather than inheriting the last step's offset —
@@ -89,55 +69,6 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
     }
     setRenaming(null);
     setError(null);
-  };
-
-  const onStepKeys = (event: KeyboardEvent<HTMLElement>) => {
-    const at = STORY_STEPS.indexOf(step);
-    const movable = STORY_STEPS.filter(
-      (each) => stepReachable(progress, each) || each === "idea",
-    );
-    const go = (next: StoryStep) => {
-      event.preventDefault();
-      useStoryStore.getState().goStep(next);
-      const button = document.querySelector<HTMLButtonElement>(
-        `[data-testid="story-step-${next}"]`,
-      );
-      button?.focus();
-    };
-    if (event.key === "ArrowDown") {
-      const next = movable.find((each) => STORY_STEPS.indexOf(each) > at);
-      if (next) go(next);
-    } else if (event.key === "ArrowUp") {
-      const before = [...movable]
-        .reverse()
-        .find((each) => STORY_STEPS.indexOf(each) < at);
-      if (before) go(before);
-    } else if (event.key === "Home") {
-      go("idea");
-    } else if (event.key === "End") {
-      const last = movable[movable.length - 1];
-      if (last) go(last);
-    }
-  };
-
-  /**
-   * The panel a badge opens, and the badge it belongs to.
-   *
-   * A badge is the panel's own door: pressing the one already open puts the
-   * panel away rather than opening the same reading again.
-   */
-  const showFailures = (at: StoryStep, anchor: FailureAnchor) => {
-    setFailures((held) => (held?.step === at ? null : { step: at, anchor }));
-  };
-  const closeFailures = () => {
-    const at = failures?.step;
-    setFailures(null);
-    if (at === undefined) return;
-    document
-      .querySelector<HTMLButtonElement>(
-        `[data-testid="story-step-failed-${at}"]`,
-      )
-      ?.focus();
   };
 
   return (
@@ -209,137 +140,22 @@ export function StoryFlow({ story }: { story: StoryDocument }) {
           </span>
         </span>
       </header>
-      <div className="story-flow-body">
-        <nav
-          aria-label={t("story:steps.label")}
-          className="story-steps"
-          onKeyDown={onStepKeys}
-          role="tablist"
-        >
-          {STORY_STEPS.map((each, index) => (
-            <StepButton
-              current={each === step}
-              failuresOpen={failures?.step === each}
-              index={index}
-              key={each}
-              onShowFailures={(anchor) => showFailures(each, anchor)}
-              progress={progress}
-              step={each}
-              storyId={story.id}
-            />
-          ))}
-        </nav>
-        <main
-          aria-labelledby={`story-step-tab-${step}`}
-          className="story-step-body"
-          data-testid={`story-step-body-${step}`}
-          id={`story-step-panel-${step}`}
-          ref={bodyRef}
-          role="tabpanel"
-          tabIndex={-1}
-        >
-          {/* Keyed by the story: a step's own in-flight work — the parts it
-              has not sent and the merge that follows them — belongs to the
-              telling it was read from, and another telling opens a step of
-              its own rather than inheriting the last one's. */}
-          <StoryStepBody key={story.id} step={step} story={story} />
-          <AgentDock compact room="story" />
-        </main>
-      </div>
-      {failures !== null && (
-        <StepFailurePanel
-          anchor={failures.anchor}
-          onClose={closeFailures}
-          step={failures.step}
-          story={story}
-        />
-      )}
-    </div>
-  );
-}
-
-function StepButton({
-  step,
-  index,
-  current,
-  failuresOpen,
-  onShowFailures,
-  progress,
-  storyId,
-}: {
-  step: StoryStep;
-  index: number;
-  current: boolean;
-  failuresOpen: boolean;
-  onShowFailures: (anchor: FailureAnchor) => void;
-  progress: Record<StoryStep, StoryStepProgress>;
-  storyId: string;
-}) {
-  const { t } = useTranslation();
-  const held = progress[step];
-  const reachable = stepReachable(progress, step);
-  const previous = STORY_STEPS[Math.max(0, index - 1)];
-  // What a step is waiting on is not in the document, so the count of pieces
-  // that did not come back is laid over the step rather than read off it.
-  const failure = useStoryStepFailure(storyId, step);
-  return (
-    <div className="story-step-row" role="presentation">
-      <button
-        aria-controls={`story-step-panel-${step}`}
-        aria-selected={current}
-        className={`story-step is-${held.state}${current ? " is-active" : ""}${
-          failure === null ? "" : " is-failed"
-        }`}
-        data-testid={`story-step-${step}`}
-        disabled={!reachable}
-        id={`story-step-tab-${step}`}
-        onClick={() => useStoryStore.getState().goStep(step)}
-        role="tab"
-        title={
-          !reachable
-            ? t("story:steps.locked", { step: t(`story:step.${previous}`) })
-            : failure === null
-              ? t(`story:stepHint.${step}`)
-              : failure.reasons.length === 0
-                ? t("story:jobs.stepFailed", { failed: failure.failed })
-                : t("story:jobs.stepFailedWith", {
-                    failed: failure.failed,
-                    reason: failure.reasons[0],
-                  })
-        }
-        type="button"
+      <main
+        aria-labelledby={`story-step-tab-${step}`}
+        className="story-step-body"
+        data-testid={`story-step-body-${step}`}
+        id={`story-step-panel-${step}`}
+        ref={bodyRef}
+        role="tabpanel"
+        tabIndex={-1}
       >
-        <span className="story-step-index">{index + 1}</span>
-        <span className="story-step-name">{t(`story:step.${step}`)}</span>
-        <span className="story-step-count">
-          {held.total > 0 ? `${held.done}/${held.total}` : ""}
-        </span>
-      </button>
-      {failure !== null && (
-        // The badge is its own control rather than part of the step's tab: a
-        // step that cannot be walked to still has a batch that came home short,
-        // and what that batch says is not reached by pressing a disabled tab.
-        <button
-          aria-expanded={failuresOpen}
-          aria-haspopup="dialog"
-          aria-label={t("story:jobs.viewFailures", {
-            step: t(`story:step.${step}`),
-            count: failure.failed,
-          })}
-          className="story-step-failed"
-          data-testid={`story-step-failed-${step}`}
-          onClick={(event) =>
-            onShowFailures(event.currentTarget.getBoundingClientRect())
-          }
-          title={t("story:jobs.viewFailures", {
-            step: t(`story:step.${step}`),
-            count: failure.failed,
-          })}
-          type="button"
-        >
-          {failure.failed}
-        </button>
-      )}
+        {/* Keyed by the story: a step's own in-flight work — the parts it
+            has not sent and the merge that follows them — belongs to the
+            telling it was read from, and another telling opens a step of
+            its own rather than inheriting the last one's. */}
+        <StoryStepBody key={story.id} step={step} story={story} />
+        <AgentDock compact room="story" />
+      </main>
     </div>
   );
 }
